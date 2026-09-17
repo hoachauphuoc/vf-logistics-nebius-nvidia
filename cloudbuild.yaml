@@ -1,0 +1,48 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/vf-logistics/fraud-detection-nebius:$COMMIT_SHA', '.']
+  
+  # Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/vf-logistics/fraud-detection-nebius:$COMMIT_SHA']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'vf-fraud-detection-nebius'
+      - '--image'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/vf-logistics/fraud-detection-nebius:$COMMIT_SHA'
+      - '--region'
+      - 'asia-southeast1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--timeout'
+      - '300'
+      # PROJECT_ID is still needed for Firestore/Pub-Sub/Storage/Model Armor.
+      # NEBIUS_API_KEY and TAVILY_API_KEY must be set via --update-secrets or
+      # substitutions in a real deploy; placeholders here fail closed rather
+      # than silently deploying with no model access.
+      - '--set-env-vars'
+      - 'PROJECT_ID=$PROJECT_ID,WORKER_MODE=ondemand,STORE_BACKEND=firestore,DECISIONS_TOPIC=case-decisions,CLAIM_LEASE_SECONDS=120,DOCUMENT_BUCKET=${_DOCUMENT_BUCKET},NEMOTRON_MODEL=${_NEMOTRON_MODEL},VISION_MODEL=${_VISION_MODEL},INVESTIGATION_MODEL=${_INVESTIGATION_MODEL}'
+
+substitutions:
+  # Where uploaded documents are archived for audit. Override per environment.
+  _DOCUMENT_BUCKET: 'vf-shipping-documents-304507056252'
+  _NEMOTRON_MODEL: 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B'
+  _VISION_MODEL: 'openbmb/MiniCPM-V-4_5'
+  _INVESTIGATION_MODEL: 'nvidia/nemotron-3-super-120b-a12b'
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/vf-logistics/fraud-detection-nebius:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

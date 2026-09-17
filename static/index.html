@@ -1,0 +1,1923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VF Logistics | AI Fraud Detection</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --bg-2: #121a33;
+    --card: #161f3d;
+    --line: #24304f;
+    --txt: #e8edf9;
+    --muted: #96a2c0;
+    --blue: #4285f4;
+    --green: #34a853;
+    --yellow: #fbbc05;
+    --red: #ea4335;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 20% -10%, #1b2750 0%, var(--bg) 55%);
+    color: var(--txt);
+    min-height: 100vh;
+  }
+  header {
+    padding: 28px 24px 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--blue), var(--green) 60%, var(--yellow));
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 18px; color: #0b1020;
+  }
+  h1 { margin: 0; font-size: 24px; letter-spacing: -0.4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .badge {
+    font-size: 12px; padding: 5px 11px; border-radius: 999px;
+    background: #1d2846; border: 1px solid var(--line); color: var(--muted);
+  }
+  .badge b { color: var(--txt); font-weight: 600; }
+  main {
+    max-width: 1200px; margin: 0 auto; padding: 16px 24px 60px;
+  }
+  #view-single {
+    display: grid; grid-template-columns: 420px 1fr; gap: 22px;
+  }
+  #view-single[hidden] { display: none; }
+
+  /* ---- view switcher ---- */
+  .viewnav { display: flex; gap: 8px; margin-bottom: 18px; }
+  .vtab {
+    padding: 10px 18px; font-size: 13px; border-radius: 10px; cursor: pointer;
+    background: #1a2340; border: 1px solid var(--line); color: var(--muted);
+    font-weight: 600;
+  }
+  .vtab.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* ---- ops header ---- */
+  .opshead { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+  .opsbtns { display: flex; gap: 10px; flex-shrink: 0; min-width: 300px; }
+  .opsbtns button { margin-top: 0; }
+
+  /* ---- intake panel ---- */
+  .intake { margin-top: 20px; transition: border-color .12s, background .12s; }
+  /* The hint invites you to drop a file, so dropping has to be visibly a target. */
+  .intake.dragging { border-color: var(--blue); background: #18244a; }
+  .intake.dragging .hint { color: var(--txt); }
+  .introw { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+  .introw-actions { display: flex; gap: 10px; flex-shrink: 0; align-items: center; min-width: 340px; }
+  .introw-actions button { margin-top: 0; width: auto; padding: 11px 18px; white-space: nowrap; }
+  .introw-actions input[type=file] { font-size: 12px; }
+  .introw-actions input[type=number] { width: 90px; }
+  #intakeout:not(:empty) { margin-top: 16px; }
+
+  /* ---- review queue ---- */
+  .qbadge { display: none; background: var(--red); color: #fff; border-radius: 9px;
+    padding: 1px 7px; font-size: 11px; margin-left: 5px; }
+  .qbadge.on { display: inline-block; }
+  .reviewgrid { display: grid; grid-template-columns: 340px 1fr; gap: 22px; margin-top: 20px; }
+  #view-review[hidden], #view-gov[hidden] { display: none; }
+  .qitem { border: 1px solid var(--line); border-left: 3px solid var(--yellow);
+    border-radius: 9px; padding: 10px 12px; margin-bottom: 9px; cursor: pointer; font-size: 12px; }
+  .qitem:hover { border-color: var(--blue); }
+  .qitem.sel { border-color: var(--blue); background: #1b2440; }
+  .docframe { width: 100%; height: 520px; border: 1px solid var(--line);
+    border-radius: 10px; background: #fff; margin-top: 10px; }
+  .rvactions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .rvactions button { margin-top: 0; }
+  .btn-block { background: linear-gradient(135deg, var(--red), #b5271b); }
+  textarea { width: 100%; box-sizing: border-box; padding: 11px 13px; font-size: 13px;
+    font-family: ui-monospace, Consolas, monospace; background: #131c33;
+    border: 1px solid var(--line); border-radius: 10px; color: #e8edf7; }
+  .disputed { border-left: 4px solid var(--yellow); background: #2a2414;
+    padding: 13px 15px; border-radius: 10px; font-size: 13px; margin: 12px 0; }
+
+  /* ---- KPI tiles ---- */
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 20px 0; }
+  .kpi {
+    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+  }
+  .kpi .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .kpi .v { font-size: 26px; font-weight: 700; margin-top: 6px; }
+  .kpi .s { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  /* ---- pipeline board ---- */
+  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 14px; }
+  .col { background: #141c33; border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 150px; }
+  .colhead { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .colhead .n { float: right; color: #e8edf7; }
+  .ccard {
+    background: #1b2440; border: 1px solid var(--line); border-left: 3px solid var(--blue);
+    border-radius: 9px; padding: 9px 10px; margin-bottom: 8px; cursor: pointer;
+    font-size: 11px; transition: transform .12s, box-shadow .3s, background .3s;
+  }
+  .ccard:hover { transform: translateX(2px); border-color: var(--blue); }
+  .ccard.state-changed {
+    animation: highlight-pulse 0.8s ease-out;
+  }
+  .ccard.new-case {
+    animation: slide-in 0.5s ease-out;
+  }
+  .ccard.processing {
+    box-shadow: 0 0 12px rgba(255, 205, 86, 0.4);
+    border-left-color: var(--yellow);
+  }
+  @keyframes highlight-pulse {
+    0% { transform: scale(1.05); box-shadow: 0 0 20px var(--blue); background: rgba(79, 172, 254, 0.2); }
+    100% { transform: scale(1); box-shadow: none; background: #1b2440; }
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-15px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .ccard .cid { font-weight: 700; font-size: 11px; color: #e8edf7; word-break: break-all; }
+  .ccard .cmeta { color: var(--muted); margin-top: 4px; }
+  .working { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--yellow); margin-right: 5px; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+
+  /* ---- cost monitor ---- */
+  .cost-monitor { margin-top: 22px; }
+  .cost-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .cost-header h3 { margin: 0; font-size: 14px; }
+  .cost-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .cost-kpi { background: #141c33; border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
+  .cost-kpi.highlight-cost { background: linear-gradient(135deg, #1a3a1a 0%, #0d1f0d 100%); border-color: var(--green); }
+  .cost-k { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: var(--muted); margin-bottom: 4px; }
+  .cost-v { font-size: 18px; font-weight: 700; color: #e8edf7; font-variant-numeric: tabular-nums; }
+  .cost-kpi.highlight-cost .cost-v { color: var(--green); }
+  .cost-breakdown { border-top: 1px solid var(--line); padding-top: 12px; }
+  .cost-breakdown h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 8px; }
+  .agent-cost { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #141c33; border-radius: 6px; margin-bottom: 6px; font-size: 11px; }
+  .agent-cost .agent-name { font-weight: 700; color: #e8edf7; }
+  .agent-cost .agent-stats { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ---- feeds ---- */
+  .opsgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 22px; }
+  .feed { max-height: 340px; overflow-y: auto; margin-top: 12px; }
+  .fitem { border-left: 2px solid var(--line); padding: 7px 0 7px 12px; font-size: 12px; transition: all 0.2s; }
+  .fitem.highlight { background: rgba(79, 172, 254, 0.15); border-left-color: var(--blue); }
+  .fitem .ft { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .fitem .fm { margin-top: 2px; line-height: 1.5; }
+  .feed-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .feed-header h3 { margin: 0; }
+  .feed-filter { display: flex; align-items: center; gap: 8px; }
+  .feed-filter select { background: #0f1730; color: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+  .feed-filter select:focus { outline: none; border-color: var(--blue); }
+  .feed-filter .clear-filter { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 8px; }
+  .feed-filter .clear-filter:hover { color: var(--blue); }
+  .case-filter-badge { background: var(--blue); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+
+  /* ---- compliance fieldset ---- */
+  .fieldset { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .fshead { font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--blue); margin-bottom: 6px; }
+
+  /* ---- trace ---- */
+  .hop { border-left: 3px solid var(--blue); background: #1a2340; padding: 12px 14px;
+    border-radius: 0 10px 10px 0; margin-bottom: 10px; }
+  .hop .hh { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
+  .hop .hl { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 1100px) {
+    #view-single { grid-template-columns: 1fr; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .board { grid-template-columns: 1fr 1fr; }
+    .opsgrid { grid-template-columns: 1fr; }
+    .opshead { flex-direction: column; }
+    .opsbtns { min-width: 0; width: 100%; }
+  }
+  @media (max-width: 940px) { #view-single { grid-template-columns: 1fr; } }
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+  .card .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 14px; font-size: 13px; border-radius: 9px; cursor: pointer;
+    background: #1a2340; border: 1px solid var(--line); color: var(--muted);
+  }
+  .tab.on { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  input, select, textarea {
+    width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
+    background: #0f1730; border: 1px solid var(--line); border-radius: 9px; color: var(--txt);
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    width: 100%; margin-top: 20px; padding: 13px; font-size: 14px; font-weight: 600;
+    font-family: inherit; cursor: pointer; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, var(--blue), #1b6ef3); color: #fff;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .ghost { background: #1a2340; border: 1px solid var(--line); color: var(--muted); margin-top: 10px; }
+  .empty { display: grid; place-items: center; min-height: 300px; color: var(--muted); text-align: center; }
+  .empty .big { font-size: 40px; margin-bottom: 10px; opacity: .5; }
+  .spinner {
+    width: 34px; height: 34px; border: 3px solid var(--line);
+    border-top-color: var(--blue); border-radius: 50%;
+    animation: spin .8s linear infinite; margin: 0 auto 14px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .score-wrap { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .gauge { position: relative; width: 132px; height: 132px; flex-shrink: 0; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge .val {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 30px; font-weight: 800;
+  }
+  .lvl { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.7; }
+  .flag {
+    border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px;
+    padding: 13px 15px; margin-top: 11px; background: #0f1730;
+  }
+  .flag .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .flag .ty { font-weight: 700; font-size: 14px; }
+  .sev { font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; letter-spacing: .6px; }
+  .flag p { margin: 8px 0 0; font-size: 13px; color: #c3ccdf; line-height: 1.65; }
+  .flag pre {
+    margin: 9px 0 0; font-size: 11px; color: var(--muted);
+    background: #0b1226; padding: 9px 11px; border-radius: 7px;
+    overflow-x: auto; white-space: pre-wrap;
+  }
+  ul.recs { margin: 10px 0 0; padding-left: 20px; }
+  ul.recs li { font-size: 13px; color: #c3ccdf; line-height: 1.7; margin-bottom: 7px; }
+  .sec { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .sec h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  details { margin-top: 22px; }
+  summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  details pre {
+    margin-top: 10px; font-size: 11px; background: #0b1226; color: #9fb0d0;
+    padding: 14px; border-radius: 9px; overflow-x: auto; max-height: 360px;
+  }
+  .err { border-left: 4px solid var(--red); background: #2a1418; padding: 15px; border-radius: 10px; font-size: 13px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 24px 34px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">VF</div>
+    <div>
+      <h1>VF Logistics | AI Fraud Detection</h1>
+      <div class="sub">Autonomous multi-agent workflow &bull; NVIDIA Nemotron 3 on Nebius Token Factory</div>
+    </div>
+  </div>
+  <div class="badges">
+    <span class="badge">Hackathon: <b>Nebius x NVIDIA Global AI Hackathon</b></span>
+    <span class="badge">Track: <b>Best Apps and Agents</b></span>
+    <span class="badge">Models: <b>Nemotron 3 Nano</b> + <b>Super</b> + <b>MiniCPM-V</b></span>
+    <span class="badge">Runtime: <b>Cloud Run &bull; asia-southeast1</b></span>
+  </div>
+</header>
+
+<main>
+  <div class="viewnav">
+    <div class="vtab on" data-view="ops">Autonomous Operations</div>
+    <div class="vtab" data-view="review">Review Queue <span id="qbadge" class="qbadge"></span></div>
+    <div class="vtab" data-view="gov">Governance</div>
+    <div class="vtab" data-view="single">Single Agent Console</div>
+  </div>
+
+  <!-- ================= AUTONOMOUS OPERATIONS ================= -->
+  <section id="view-ops">
+    <div class="card opshead">
+      <div>
+        <h2>Autonomous Operations</h2>
+        <div class="hint">
+          Shipment events arrive, and a background worker drives each case
+          through fraud detection, compliance screening and deep investigation
+          on its own. Press start, then stop touching the keyboard.
+        </div>
+      </div>
+      <div class="opsbtns">
+        <button id="sim">Inject shipment events</button>
+        <button id="reset" class="ghost">Clear board</button>
+        <button id="pause" class="ghost">Pause live view</button>
+      </div>
+    </div>
+
+    <div class="card intake">
+      <div class="introw">
+        <div>
+          <h3>Document intake</h3>
+          <div class="hint">
+            Drop a bill of lading, commercial invoice or packing list (PDF or
+            scan). A Nebius Token Factory vision model transcribes it, the
+            original is archived to Cloud Storage for audit, and the same
+            autonomous pipeline takes over.
+          </div>
+        </div>
+        <div class="introw-actions">
+          <input type="file" id="docfile" accept=".pdf,.png,.jpg,.jpeg,.webp">
+          <button id="docup">Upload document</button>
+        </div>
+      </div>
+
+      <div class="introw" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+        <div>
+          <h3>Volume test</h3>
+          <div class="hint">
+            Randomised shipments weighted like a real book of business: mostly
+            unremarkable, a minority worth screening, a small bad tail. Capped at
+            10 per batch &mdash; enough to watch the worker drain a queue without
+            spending the model budget on repetition.
+          </div>
+        </div>
+        <div class="introw-actions">
+          <input type="number" id="bulkcount" value="10" min="1" max="10">
+          <button id="bulk" class="ghost">Inject batch</button>
+        </div>
+      </div>
+
+      <div id="intakeout"></div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <!-- AI Settings Panel - Future Development (hidden for now) -->
+    <!--
+    <div class="card" style="margin-bottom:16px">
+      <div class="cost-header">
+        <h3>AI Settings</h3>
+        <div class="hint">Configure the Nemotron model used for fraud & compliance agents</div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:center;margin-top:12px">
+        <label style="font-size:13px;color:var(--muted)">Model:</label>
+        <select id="modelSelect" style="padding:8px 12px;border-radius:8px;background:#1a2340;border:1px solid var(--line);color:var(--txt);font-size:13px;min-width:280px">
+          <option value="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B">Nemotron 3 Nano (Budget)</option>
+          <option value="nvidia/nemotron-3-super-120b-a12b">Nemotron 3 Super (Balanced)</option>
+          <option value="nvidia/Nemotron-3-Ultra-550b-a55b">Nemotron 3 Ultra (Serious reasoning)</option>
+        </select>
+        <span id="modelPricing" style="font-size:12px;color:var(--muted)">$0.15/1M in, $0.60/1M out</span>
+      </div>
+    </div>
+    -->
+
+    <div class="card cost-monitor">
+      <div class="cost-header">
+        <h3>Cost Monitor</h3>
+        <div class="hint" id="costHint">Real-time API usage tracking | <span id="currentModelName">Nemotron 3 Nano</span> pricing</div>
+      </div>
+      <div class="cost-kpis" id="costKpis">
+        <div class="cost-kpi">
+          <div class="cost-k">API CALLS</div>
+          <div class="cost-v">0</div>
+        </div>
+        <div class="cost-kpi">
+          <div class="cost-k">INPUT TOKENS</div>
+          <div class="cost-v">0</div>
+        </div>
+        <div class="cost-kpi">
+          <div class="cost-k">OUTPUT TOKENS</div>
+          <div class="cost-v">0</div>
+        </div>
+        <div class="cost-kpi highlight-cost">
+          <div class="cost-k">EST. COST</div>
+          <div class="cost-v">$0.0000</div>
+        </div>
+      </div>
+      <div class="cost-breakdown" id="costBreakdown">
+        <div class="hint">No agent calls yet</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Case pipeline</h3>
+      <div class="hint">Cases move left to right without supervision. Click one to open its trace.</div>
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="opsgrid">
+      <div class="card">
+        <div class="feed-header">
+          <h3>Live event feed</h3>
+          <div class="feed-filter">
+            <select id="feedFilter" onchange="filterFeed('feed', this.value)">
+              <option value="">All cases</option>
+            </select>
+            <button class="clear-filter" onclick="clearFeedFilter()" title="Clear filter">✕</button>
+          </div>
+        </div>
+        <div class="feed" id="feed"></div>
+      </div>
+      <div class="card">
+        <div class="feed-header">
+          <h3>Actions taken on your behalf</h3>
+          <div class="feed-filter">
+            <select id="auditFilter" onchange="filterFeed('auditfeed', this.value)">
+              <option value="">All cases</option>
+            </select>
+            <button class="clear-filter" onclick="clearFeedFilter()" title="Clear filter">✕</button>
+          </div>
+        </div>
+        <div class="hint">Every entry is an auditable state change, not a suggestion.</div>
+        <div class="feed" id="auditfeed"></div>
+      </div>
+    </div>
+
+    <section class="card" id="trace" hidden></section>
+  </section>
+
+  <!-- ================= REVIEW QUEUE ================= -->
+  <section id="view-review" hidden>
+    <div class="card">
+      <h2>Review Queue</h2>
+      <div class="hint">
+        Cases the agent was not permitted to close on its own. The source
+        document is shown alongside the findings, because approving a hold on a
+        transcription you cannot see is not a review.
+      </div>
+    </div>
+
+    <div class="reviewgrid">
+      <div class="card">
+        <h3>Pending</h3>
+        <div id="qlist" class="feed" style="max-height:640px"></div>
+      </div>
+      <div class="card" id="rvdetail">
+        <div class="empty"><div><div class="big">??</div>
+          <div>Select a case to review it.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= GOVERNANCE ================= -->
+  <section id="view-gov" hidden>
+    <div class="card">
+      <h2>Delegation Boundary</h2>
+      <div class="hint">
+        The agent does not earn authority by reasoning well. A human publishes a
+        machine-readable boundary and the agent operates inside it. With no
+        active boundary the system is SUSPENDED: it still analyses and proposes,
+        but the execution gate refuses every protected action.
+      </div>
+      <div id="govstate"></div>
+    </div>
+
+    <div class="card">
+      <h3>Publish a boundary</h3>
+      <div class="hint">
+        Publishing supersedes the previous version. Every executed action records
+        the version that permitted it, so a past decision can be reconstructed
+        against the policy in force at the time.
+      </div>
+      <div class="row" style="margin-top:14px">
+        <div>
+          <label>Published by (required)</label>
+          <input id="govauthor" placeholder="Your name">
+        </div>
+        <div>
+          <label>Note</label>
+          <input id="govnote" value="Initial delegation for pilot operation">
+        </div>
+      </div>
+      <label>Permissions (machine-readable)</label>
+      <textarea id="govperms" rows="18" spellcheck="false"></textarea>
+      <button id="govpublish">Publish delegation boundary</button>
+      <div id="govout"></div>
+    </div>
+
+    <div class="card">
+      <h3>Version history</h3>
+      <div id="govhistory" class="feed"></div>
+    </div>
+  </section>
+
+  <!-- ================= SINGLE AGENT CONSOLE ================= -->
+  <section id="view-single" hidden>
+  <section class="card">
+    <h2>Shipment Input</h2>
+    <div class="hint">Select an agent and enter shipment data to analyze.</div>
+
+    <div class="tabs">
+      <div class="tab on" data-agent="fraud">Fraud Detection</div>
+      <div class="tab" data-agent="compliance">Compliance</div>
+      <div class="tab" data-agent="investigation">Investigation</div>
+    </div>
+
+    <label>Shipment ID</label>
+    <input id="shipment_id" value="VF-2026-0001">
+
+    <div class="row">
+      <div>
+        <label>Origin</label>
+        <input id="origin" value="Ho Chi Minh City">
+      </div>
+      <div>
+        <label>Destination</label>
+        <input id="destination" value="Hanoi">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Weight (kg)</label>
+        <input id="weight_kg" type="number" value="150">
+      </div>
+      <div>
+        <label>Declared Value (USD)</label>
+        <input id="declared_value" type="number" value="2000">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Shipping Cost (USD)</label>
+        <input id="shipping_cost" type="number" value="48">
+      </div>
+      <div>
+        <label>Avg Route Cost (USD)</label>
+        <input id="avg_route_cost" type="number" value="120">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Shipper</label>
+        <input id="shipper_name" value="Thanh Phat Trading Co">
+      </div>
+      <div>
+        <label>Receiver</label>
+        <input id="receiver_name" value="Minh Long Import Ltd">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Shipper TX Count</label>
+        <input id="shipper_tx_count" type="number" value="2">
+      </div>
+      <div>
+        <label>Status</label>
+        <select id="status">
+          <option>pending</option>
+          <option>in_transit</option>
+          <option>delivered</option>
+          <option>flagged</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Route Details</label>
+    <input id="route_details" value="HCMC - Da Nang - Hanoi">
+
+    <div class="fieldset" id="compliance_fields">
+      <div class="fshead">Trade compliance detail</div>
+      <div class="hint">
+        The compliance agent screens cargo classification and counterparty
+        identity. Leaving these blank is itself a finding, which is why the
+        agent reports missing paperwork as a compliance gap.
+      </div>
+
+      <label>Cargo Description</label>
+      <input id="cargo_description" value="Woven cotton garments, 1,200 cartons, retail packed">
+
+      <div class="row">
+        <div>
+          <label>HS Code</label>
+          <input id="hs_code" value="6205.20">
+        </div>
+        <div>
+          <label>Transit Points</label>
+          <input id="transit_points" value="None">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Shipper Company</label>
+          <input id="shipper_company" value="Thanh Phat Trading Co Ltd">
+        </div>
+        <div>
+          <label>Shipper Country</label>
+          <input id="shipper_country" value="Vietnam">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Shipper Tax ID</label>
+          <input id="shipper_tax_id" value="0312345678">
+        </div>
+        <div>
+          <label>Receiver Country</label>
+          <input id="receiver_country" value="Vietnam">
+        </div>
+      </div>
+
+      <label>Receiver Company</label>
+      <input id="receiver_company" value="Minh Long Import Ltd">
+    </div>
+
+    <button id="run">Analyze with AI</button>
+    <button id="demo" class="ghost">Run Sample Demo</button>
+  </section>
+
+  <section class="card" id="out">
+    <div class="empty">
+      <div>
+        <div class="big">???</div>
+        <div>Analysis results will appear here.</div>
+      </div>
+    </div>
+  </section>
+  </section>
+</main>
+
+<footer>VF Logistics Fraud Detection &bull; Built 100% on Google Cloud</footer>
+
+<script>
+const out = document.getElementById('out');
+let agent = 'fraud';
+
+/* Future Development: Model Selection
+const MODEL_PRICING = {
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": { name: "Nemotron 3 Nano", input: 0.06, output: 0.24 },
+  "nvidia/nemotron-3-super-120b-a12b": { name: "Nemotron 3 Super", input: 0.30, output: 0.90 },
+  "nvidia/Nemotron-3-Ultra-550b-a55b": { name: "Nemotron 3 Ultra", input: 1.00, output: 3.00 }
+};
+async function loadModelConfig() { ... }
+function updateModelDisplay(modelId) { ... }
+document.getElementById('modelSelect').onchange = async function() { ... };
+loadModelConfig();
+*/
+
+const ENDPOINTS = {
+  fraud: '/api/v1/fraud/analyze',
+  compliance: '/api/v1/compliance/screen',
+  investigation: '/api/v1/investigation/case'
+};
+
+const SEV_COLOR = {
+  CRITICAL: 'var(--red)',
+  HIGH: '#ff7043',
+  MEDIUM: 'var(--yellow)',
+  LOW: 'var(--green)',
+  REVIEW_REQUIRED: 'var(--yellow)',
+  NON_COMPLIANT: 'var(--red)',
+  COMPLIANT: 'var(--green)'
+};
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    agent = t.dataset.agent;
+  };
+});
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function num(id) { return Number(document.getElementById(id).value) || 0; }
+function str(id) { return document.getElementById(id).value; }
+
+function payload() {
+  return {
+    shipment_id: str('shipment_id'),
+    origin: str('origin'),
+    destination: str('destination'),
+    weight_kg: num('weight_kg'),
+    declared_value: num('declared_value'),
+    shipping_cost: num('shipping_cost'),
+    avg_route_cost: num('avg_route_cost'),
+    shipper_name: str('shipper_name'),
+    receiver_name: str('receiver_name'),
+    shipper_tx_count: num('shipper_tx_count'),
+    status: str('status'),
+    route_details: str('route_details'),
+    cargo_description: str('cargo_description'),
+    hs_code: str('hs_code'),
+    transit_points: str('transit_points'),
+    shipper_company: str('shipper_company'),
+    shipper_country: str('shipper_country'),
+    shipper_tax_id: str('shipper_tax_id'),
+    receiver_company: str('receiver_company'),
+    receiver_country: str('receiver_country'),
+    created_at: new Date().toISOString()
+  };
+}
+
+// The investigation agent expects a nested case envelope, not a flat shipment.
+function casePayload() {
+  const s = payload();
+  const underpriced = s.avg_route_cost > 0 &&
+    s.shipping_cost < s.avg_route_cost * 0.7;
+  const triggers = [];
+  if (underpriced) triggers.push('Shipping cost far below route average');
+  if (s.shipper_tx_count < 5) triggers.push('Shipper has thin transaction history');
+  return {
+    case_id: 'CASE-' + s.shipment_id,
+    trigger_reason: triggers.length ? triggers.join('; ') : 'Manual review requested',
+    risk_score: underpriced ? 78 : 35,
+    primary_shipment: s,
+    related_shipments: [],
+    primary_entity: {
+      name: s.shipper_name,
+      company: s.shipper_name,
+      transaction_count: s.shipper_tx_count,
+      risk_rating: s.shipper_tx_count < 5 ? 'HIGH' : 'MEDIUM',
+      previous_flags: 0
+    },
+    historical_alerts: [],
+    total_volume: s.declared_value,
+    avg_transaction: s.declared_value,
+    anomaly_count_30d: triggers.length
+  };
+}
+
+function loading(msg) {
+  const desc = AGENT_DESC[agent] || '';
+  out.innerHTML = `<div class="empty"><div>
+    <div class="spinner"></div>
+    <div style="font-weight:600;margin-bottom:6px">${esc(msg)}</div>
+    <div style="font-size:12px;opacity:.7;max-width:320px;line-height:1.5">${esc(desc)}</div>
+    <div style="font-size:11px;margin-top:10px;opacity:.5">Nemotron is reasoning...</div>
+  </div></div>`;
+}
+
+function fail(msg) {
+  out.innerHTML = `<h2>Error</h2><div class="err">${esc(msg)}</div>`;
+}
+
+// Agent returns `analysis` as JSON string (response_mime_type=application/json).
+function parseAnalysis(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+function gauge(score) {
+  const pct = Math.max(0, Math.min(100, Number(score) || 0));
+  const r = 56, C = 2 * Math.PI * r;
+  const color = pct >= 75 ? 'var(--red)' : pct >= 50 ? '#ff7043' : pct >= 25 ? 'var(--yellow)' : 'var(--green)';
+  return `<div class="gauge">
+    <svg width="132" height="132">
+      <circle cx="66" cy="66" r="${r}" fill="none" stroke="var(--line)" stroke-width="11"></circle>
+      <circle cx="66" cy="66" r="${r}" fill="none" stroke="${color}" stroke-width="11"
+        stroke-linecap="round" stroke-dasharray="${C}"
+        stroke-dashoffset="${C * (1 - pct / 100)}"></circle>
+    </svg>
+    <div class="val" style="color:${color}">${pct}</div>
+  </div>`;
+}
+
+function flagCard(f) {
+  if (typeof f === 'string') {
+    return `<div class="flag" style="border-left-color:var(--yellow)">
+      <p style="margin:0">${esc(f)}</p>
+    </div>`;
+  }
+  const sev = (f.severity || f.risk_level || 'MEDIUM').toUpperCase();
+  const color = SEV_COLOR[sev] || 'var(--yellow)';
+  const type = f.type || f.category || f.issue || f.item || f.factor || 'Finding';
+  const desc = f.description || f.detail || f.explanation || f.summary || '';
+  const extra = f.details && typeof f.details === 'object'
+    ? `<pre>${esc(JSON.stringify(f.details, null, 2))}</pre>` : '';
+  return `<div class="flag" style="border-left-color:${color}">
+    <div class="top">
+      <span class="ty">${esc(type)}</span>
+      <span class="sev" style="background:${color};color:#0b1020">${esc(sev)}</span>
+    </div>
+    ${desc ? `<p>${esc(desc)}</p>` : ''}
+    ${extra}
+  </div>`;
+}
+
+function render(res, label) {
+  // The API now returns a parsed object under `result`; the legacy per-agent
+  // key is still mirrored for older clients, so both are accepted.
+  const a = res.result && Object.keys(res.result).length
+    ? res.result
+    : parseAnalysis(res.analysis ?? res.screening_result ?? res.investigation_result);
+  const rawJson = JSON.stringify(res, null, 2);
+
+  if (!a || !Object.keys(a).length) {
+    out.innerHTML = `<h2>${esc(label)}</h2>
+      <div class="err">
+        <b>The model did not return usable JSON.</b>
+        ${res.error ? '<br>' + esc(res.error) : ''}
+      </div>
+      <div class="hint" style="margin-top:12px">Model: ${esc(res.model || '-')}</div>
+      <pre style="font-size:12px;background:#0b1226;padding:14px;border-radius:9px;overflow-x:auto;white-space:pre-wrap">${esc(
+        res.raw || rawJson
+      )}</pre>`;
+    return;
+  }
+
+  const score = a.risk_score ?? a.compliance_score ?? a.score
+    ?? (a.confidence_level != null ? Math.round(a.confidence_level * 100) : 0);
+  const lvl = (a.risk_level || a.compliance_status || a.fraud_pattern
+    || a.level || '-').toUpperCase();
+  const lvlColor = SEV_COLOR[lvl] || 'var(--blue)';
+  const confRaw = a.confidence ?? a.confidence_level;
+  const conf = confRaw != null ? Math.round(confRaw * 100) + '%' : '-';
+
+  const flags = a.flags || a.issues || a.findings || a.risk_factors
+    || a.evidence || [];
+  const recs = a.recommendations || a.actions || a.next_steps
+    || a.recommended_actions || [];
+  const scoreLabel = a.risk_score != null ? 'Risk score'
+    : a.compliance_score != null ? 'Compliance score'
+    : a.confidence_level != null ? 'Confidence' : 'Score';
+
+  // Additional fields for investigation agent
+  const summary = a.summary || '';
+  const fraudPattern = a.fraud_pattern || '';
+  const exposure = a.exposure_estimate || '';
+  const escalation = a.escalation_required;
+  const connections = a.connections || [];
+
+  out.innerHTML = `
+    <h2>${esc(label)}</h2>
+    <div class="hint">Shipment ${esc(res.shipment_id || res.case_id || str('shipment_id'))}</div>
+
+    <div class="score-wrap">
+      ${gauge(score)}
+      <div>
+        <div class="lvl" style="color:${lvlColor}">${esc(lvl)}</div>
+        <div class="meta">
+          ${esc(scoreLabel)}: <b>${esc(score)}</b> / 100<br>
+          Confidence: <b>${esc(conf)}</b><br>
+          Model: <b>${esc(res.model || 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B')}</b><br>
+          Analyzed: ${esc(res.at || res.analyzed_at || res.screened_at || res.investigated_at || new Date().toISOString())}
+          ${res.latency_ms != null ? `<br>Latency: <b>${esc(res.latency_ms)}ms</b>` : ''}
+        </div>
+      </div>
+    </div>
+
+    ${summary ? `<div class="sec">
+      <h3>Summary</h3>
+      <p style="font-size:13px;color:#c3ccdf;line-height:1.65;margin:8px 0 0">${esc(summary)}</p>
+    </div>` : ''}
+
+    ${fraudPattern ? `<div class="sec">
+      <h3>Fraud Pattern Identified</h3>
+      <div class="flag" style="border-left-color:var(--red)">
+        <span class="ty">${esc(fraudPattern)}</span>
+        ${exposure ? `<p>Estimated exposure: <b>${esc(exposure)}</b></p>` : ''}
+        ${escalation ? `<p style="color:var(--red)"><b>Escalation required</b></p>` : ''}
+      </div>
+    </div>` : ''}
+
+    ${connections.length ? `<div class="sec">
+      <h3>Connected Entities (${connections.length})</h3>
+      ${connections.map(c => `<div class="flag" style="border-left-color:var(--blue)">
+        <span class="ty">${esc(typeof c === 'string' ? c : (c.entity || c.name || JSON.stringify(c)))}</span>
+        ${c.relationship ? `<p>${esc(c.relationship)}</p>` : ''}
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${flags.length ? `<div class="sec">
+      <h3>${a.evidence ? 'Evidence' : 'Findings'} (${flags.length})</h3>
+      ${flags.map(flagCard).join('')}
+    </div>` : ''}
+
+    ${recs.length ? `<div class="sec">
+      <h3>Recommendations</h3>
+      <ul class="recs">${recs.map(r => `<li>${esc(
+        typeof r === 'string' ? r : (r.action || JSON.stringify(r))
+      )}</li>`).join('')}</ul>
+    </div>` : ''}
+
+    <details>
+      <summary>View raw JSON from API</summary>
+      <pre>${esc(rawJson)}</pre>
+    </details>`;
+}
+
+async function call(url, body, label) {
+  loading('Calling ' + label + '...');
+  try {
+    const opt = body
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      : { method: 'GET' };
+    const r = await fetch(url, opt);
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) {
+      throw new Error(`HTTP ${r.status} - response is not JSON:\n${text.slice(0, 400)}`);
+    }
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    render(data.analysis && data.sample_shipment ? data.analysis : data, label);
+  } catch (e) {
+    fail(e.message);
+  }
+}
+
+const LABELS = {
+  fraud: 'Fraud Detection Agent',
+  compliance: 'Compliance Screening Agent',
+  investigation: 'Investigation Agent'
+};
+
+const AGENT_DESC = {
+  fraud: 'Analyzes shipment for fraud indicators including price manipulation, identity fraud, and suspicious patterns.',
+  compliance: 'Screens shipment against sanctions lists (OFAC, UN, EU), trade compliance rules, and AML indicators.',
+  investigation: 'Conducts deep-dive investigation with extended thinking to build a case narrative and recommend actions.'
+};
+
+document.getElementById('run').onclick = () =>
+  call(ENDPOINTS[agent], agent === 'investigation' ? casePayload() : payload(), LABELS[agent]);
+
+document.getElementById('demo').onclick = () =>
+  call('/demo', null, 'Demo - Fraud Detection Agent');
+
+/* ==================================================================
+   AUTONOMOUS OPERATIONS
+   ================================================================== */
+
+const STATES = [
+  ['INGESTED',            'Queued'],
+  ['SPECIALISTS_DONE',    'Fraud + compliance'],
+  ['INVESTIGATED',        'Investigated'],
+  ['AUTO_CLEARED',        'Auto-cleared'],
+  ['PENDING_HUMAN',       'Awaiting human'],
+  ['ESCALATED',           'Escalated']
+];
+
+// Outcomes that still need a person are folded into the awaiting-human column,
+// because on this board "the agent finished" and "the case is closed" are not
+// the same thing.
+const COL_OF = {
+  HELD_FOR_REVIEW: 'PENDING_HUMAN',
+  RELEASED_BY_HUMAN: 'AUTO_CLEARED',
+  BLOCKED_BY_HUMAN: 'PENDING_HUMAN',
+  DEAD_LETTER: 'PENDING_HUMAN'
+};
+
+const OUTCOME_COLOR = {
+  AUTO_CLEARED: 'var(--green)',
+  RELEASED_BY_HUMAN: 'var(--green)',
+  HELD_FOR_REVIEW: 'var(--yellow)',
+  PENDING_HUMAN: 'var(--yellow)',
+  ESCALATED: 'var(--red)',
+  BLOCKED_BY_HUMAN: 'var(--red)',
+  DEAD_LETTER: '#8b93a7'
+};
+
+const TERMINAL = [
+  'AUTO_CLEARED', 'HELD_FOR_REVIEW', 'ESCALATED', 'PENDING_HUMAN',
+  'RELEASED_BY_HUMAN', 'BLOCKED_BY_HUMAN', 'DEAD_LETTER'
+];
+
+let polling = true;
+let openCase = null;
+let lastSnap = null;
+let filterCase = null; // Current case filter for feeds
+let prevCaseStates = {}; // Track previous states for animation
+
+function hhmmss(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toISOString().slice(11, 19);
+}
+
+function kpiTile(k, v, s, color) {
+  return `<div class="kpi">
+    <div class="k">${esc(k)}</div>
+    <div class="v"${color ? ` style="color:${color}"` : ''}>${esc(v)}</div>
+    <div class="s">${esc(s || '')}</div>
+  </div>`;
+}
+
+function renderCostMonitor(snap) {
+  const inputTokens = snap.total_input_tokens || 0;
+  const outputTokens = snap.total_output_tokens || 0;
+  const agentCalls = snap.agent_calls || 0;
+  const cost = snap.estimated_cost_usd || 0;
+  
+  document.getElementById('costKpis').innerHTML = `
+    <div class="cost-kpi">
+      <div class="cost-k">API CALLS</div>
+      <div class="cost-v">${agentCalls.toLocaleString()}</div>
+    </div>
+    <div class="cost-kpi">
+      <div class="cost-k">INPUT TOKENS</div>
+      <div class="cost-v">${inputTokens.toLocaleString()}</div>
+    </div>
+    <div class="cost-kpi">
+      <div class="cost-k">OUTPUT TOKENS</div>
+      <div class="cost-v">${outputTokens.toLocaleString()}</div>
+    </div>
+    <div class="cost-kpi highlight-cost">
+      <div class="cost-k">EST. COST</div>
+      <div class="cost-v">$${cost.toFixed(4)}</div>
+    </div>
+  `;
+  
+  const byAgent = snap.tokens_by_agent || {};
+  const agents = Object.entries(byAgent);
+  
+  if (agents.length === 0) {
+    document.getElementById('costBreakdown').innerHTML = 
+      '<div class="hint">No agent calls yet. Inject events or upload documents to begin.</div>';
+    return;
+  }
+  
+  const breakdown = agents
+    .sort((a, b) => b[1].calls - a[1].calls)
+    .map(([agent, data]) => `
+      <div class="agent-cost">
+        <span class="agent-name">${esc(agent.replace(/_/g, ' '))}</span>
+        <span class="agent-stats">${data.calls} calls | ${data.input.toLocaleString()} in | ${data.output.toLocaleString()} out</span>
+      </div>
+    `).join('');
+  
+  document.getElementById('costBreakdown').innerHTML = 
+    '<h4>Usage by Agent</h4>' + breakdown;
+}
+
+function renderKpis(snap) {
+  const c = snap.counts || {};
+  const w = snap.worker || {};
+  document.getElementById('kpis').innerHTML =
+    kpiTile('In flight', snap.in_flight ?? 0,
+            w.mode === 'poll' ? 'background worker' : 'advances on request',
+            snap.in_flight ? 'var(--yellow)' : null) +
+    kpiTile('Auto-cleared', c.AUTO_CLEARED || 0, 'released within delegated limits', 'var(--green)') +
+    // Escalated cases are inside this number on purpose: AWAITING_HUMAN in the
+    // orchestrator drives the review queue and the decide() guard too, so the
+    // tile, the queue badge and what a reviewer can act on always agree. Said
+    // explicitly because sitting next to the Escalated tile it reads as double
+    // counting, and a reader who adds the two gets a total above the case count.
+    kpiTile('Awaiting human', snap.awaiting_human || 0,
+            `needs a person${c.ESCALATED ? ` — ${c.ESCALATED} of these escalated` : ''}`,
+            (snap.awaiting_human ? 'var(--yellow)' : null)) +
+    kpiTile('Escalated', c.ESCALATED || 0, 'held, SAR drafted — subset of the above', 'var(--red)') +
+    kpiTile('Avg agent latency', (snap.avg_latency_ms || 0) + 'ms',
+            (snap.agent_calls || 0) + ' Nemotron calls');
+
+  const badge = document.getElementById('qbadge');
+  if (badge) {
+    badge.textContent = snap.awaiting_human || 0;
+    badge.className = snap.awaiting_human ? 'qbadge on' : 'qbadge';
+  }
+
+  const agent = snap.agent || {};
+  const head = document.querySelector('#view-ops .opshead .hint');
+  if (head && agent.state) {
+    head.dataset.agentState = agent.state;
+  }
+}
+
+function renderBoard(snap) {
+  const buckets = {};
+  STATES.forEach(([s]) => buckets[s] = []);
+
+  (snap.cases || []).forEach(c => {
+    const col = COL_OF[c.state] || c.state;
+    if (buckets[col]) buckets[col].push(c);
+  });
+
+  document.getElementById('board').innerHTML = STATES.map(([state, label]) => {
+    const items = buckets[state];
+    return `<div class="col">
+      <div class="colhead">${esc(label)}<span class="n">${items.length}</span></div>
+      ${items.map(c => {
+        const active = !TERMINAL.includes(c.state);
+        const color = OUTCOME_COLOR[c.state] || 'var(--blue)';
+        const bits = [];
+        if (c.source === 'document') bits.push('from document');
+        if (c.risk_score != null) bits.push('risk ' + c.risk_score);
+        if (c.compliance_status) bits.push(String(c.compliance_status).toLowerCase().replace(/_/g, ' '));
+        if (c.state === 'HELD_FOR_REVIEW') bits.push('analyst assigned');
+        if (c.state === 'DEAD_LETTER') bits.push('dead letter');
+        const isProcessing = c.worker_lock ? 'processing' : '';
+        return `<div class="ccard ${isProcessing}" style="border-left-color:${color}"
+                     data-case="${esc(c.case_id)}" data-state="${esc(c.state)}">
+          <div class="cid">${active ? '<span class="working"></span>' : ''}${esc(c.shipment_id || c.case_id)}</div>
+          <div class="cmeta">${esc(bits.join(' | ') || 'awaiting first agent')}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+
+  // Apply animations for state changes
+  const currentStates = {};
+  document.querySelectorAll('.ccard').forEach(el => {
+    const caseId = el.dataset.case;
+    const state = el.dataset.state;
+    currentStates[caseId] = state;
+    
+    if (!prevCaseStates[caseId]) {
+      // New case - slide in animation
+      el.classList.add('new-case');
+      setTimeout(() => el.classList.remove('new-case'), 600);
+    } else if (prevCaseStates[caseId] !== state) {
+      // State changed - highlight animation
+      el.classList.add('state-changed');
+      setTimeout(() => el.classList.remove('state-changed'), 1000);
+    }
+    
+    el.onclick = () => { 
+      openCase = caseId; 
+      renderTrace();
+      setFeedFilter(caseId);
+    };
+  });
+  prevCaseStates = currentStates;
+}
+
+// Feed filter functions
+function setFeedFilter(caseId) {
+  filterCase = caseId || null;
+  document.getElementById('feedFilter').value = caseId || '';
+  document.getElementById('auditFilter').value = caseId || '';
+  if (lastSnap) renderFeeds(lastSnap);
+}
+
+function clearFeedFilter() {
+  filterCase = null;
+  document.getElementById('feedFilter').value = '';
+  document.getElementById('auditFilter').value = '';
+  if (lastSnap) renderFeeds(lastSnap);
+}
+
+function filterFeed(feedId, caseId) {
+  filterCase = caseId || null;
+  // Sync both dropdowns
+  document.getElementById('feedFilter').value = caseId || '';
+  document.getElementById('auditFilter').value = caseId || '';
+  if (lastSnap) renderFeeds(lastSnap);
+}
+
+function updateFeedFilterOptions(snap) {
+  // Collect unique case IDs from events and audit
+  const caseIds = new Set();
+  (snap.events || []).forEach(e => e.case_id && caseIds.add(e.case_id));
+  (snap.audit || []).forEach(a => a.case_id && caseIds.add(a.case_id));
+  
+  const sorted = [...caseIds].sort();
+  const options = '<option value="">All cases (' + sorted.length + ')</option>' +
+    sorted.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
+  
+  document.getElementById('feedFilter').innerHTML = options;
+  document.getElementById('auditFilter').innerHTML = options;
+  
+  // Restore selection
+  if (filterCase) {
+    document.getElementById('feedFilter').value = filterCase;
+    document.getElementById('auditFilter').value = filterCase;
+  }
+}
+
+function renderFeeds(snap) {
+  // Update filter dropdown options
+  updateFeedFilterOptions(snap);
+  
+  // Filter events by case if filter is active
+  const events = filterCase 
+    ? (snap.events || []).filter(e => e.case_id === filterCase)
+    : (snap.events || []);
+  
+  const feed = events.map(e => `<div class="fitem${filterCase ? ' highlight' : ''}" data-case="${esc(e.case_id || '')}">
+    <div class="ft">${esc(hhmmss(e.at))} | <b>${esc(e.case_id || '')}</b></div>
+    <div class="fm">${esc(e.message || '')}</div>
+  </div>`).join('');
+  
+  const feedHint = filterCase 
+    ? `<div class="hint">Showing ${events.length} events for case ${filterCase}</div>`
+    : '';
+  document.getElementById('feed').innerHTML =
+    feedHint + (feed || '<div class="hint">No events yet. Inject shipment events to begin.</div>');
+
+  // Filter audit by case if filter is active
+  const audits = filterCase 
+    ? (snap.audit || []).filter(a => a.case_id === filterCase)
+    : (snap.audit || []);
+  
+  const audit = audits.map(a => {
+    const d = a.detail || {};
+    const extra = d.disposition || d.queue || d.reference || d.note || '';
+    return `<div class="fitem${filterCase ? ' highlight' : ''}" data-case="${esc(a.case_id || '')}">
+      <div class="ft">${esc(hhmmss(a.at))} | <b>${esc(a.case_id || '')}</b> | ${esc(a.status || '')}</div>
+      <div class="fm"><b>${esc(a.action || '')}</b>${extra ? ' | ' + esc(extra) : ''}</div>
+    </div>`;
+  }).join('');
+  
+  const auditHint = filterCase 
+    ? `<div class="hint">Showing ${audits.length} actions for case ${filterCase}</div>`
+    : '';
+  document.getElementById('auditfeed').innerHTML =
+    auditHint + (audit || '<div class="hint">No actions taken yet.</div>');
+}
+
+function renderTrace() {
+  const el = document.getElementById('trace');
+  if (!openCase || !lastSnap) { el.hidden = true; return; }
+
+  const c = (lastSnap.cases || []).find(x => x.case_id === openCase);
+  if (!c) { el.hidden = true; return; }
+
+  const audit = (lastSnap.audit || []).filter(a => a.case_id === openCase);
+  const color = OUTCOME_COLOR[c.state] || 'var(--blue)';
+
+  el.hidden = false;
+  el.innerHTML = `
+    <h2>Case trace | ${esc(c.shipment_id || c.case_id)}</h2>
+    <div class="hint">
+      State <b style="color:${color}">${esc(c.state)}</b>
+      | opened ${esc(hhmmss(c.created_at))}
+      | ${(c.steps || []).length} agent hops
+      | source ${esc(c.source || 'event')}
+      ${c.attempts ? ' | ' + c.attempts + ' retries' : ''}
+    </div>
+
+    ${c.provenance && c.provenance.filename ? `<div class="sec">
+      <h3>Source document</h3>
+      <div class="flag" style="border-left-color:var(--blue)">
+        <span class="ty">${esc(c.provenance.filename)}</span>
+        <p>${c.provenance.archived
+          ? 'Archived at ' + esc(c.provenance.uri)
+          : 'Not archived | ' + esc(c.provenance.reason || 'unknown')}</p>
+      </div>
+    </div>` : ''}
+
+    ${c.decision ? `<div class="sec">
+      <h3>Decision</h3>
+      <div class="flag" style="border-left-color:${color}">
+        <span class="ty">${esc(c.decision.outcome)}</span>
+        <p>${esc(c.decision.rationale || '')}</p>
+      </div>
+    </div>` : ''}
+
+    <div class="sec">
+      <h3>Agent hops</h3>
+      ${(c.steps || []).length ? (c.steps || []).map(s => {
+        const r = s.result || {};
+        const facts = [];
+        if (r.extraction_confidence != null) facts.push('extraction confidence ' + r.extraction_confidence);
+        if (r.currency) facts.push('document currency ' + r.currency);
+        if (r.risk_score != null) facts.push('risk_score ' + r.risk_score);
+        if (r.risk_level) facts.push(r.risk_level);
+        if (r.compliance_status) facts.push(r.compliance_status);
+        if (r.compliance_score != null) facts.push('compliance_score ' + r.compliance_score);
+        if (r.fraud_pattern) facts.push(r.fraud_pattern);
+        if (r.exposure_estimate) facts.push('exposure ' + r.exposure_estimate);
+        return `<div class="hop">
+          <div class="hh">
+            <span>${esc(s.agent)}</span>
+            <span class="hl">${esc(s.latency_ms ?? '?')}ms | ${esc(s.model || '')}</span>
+          </div>
+          <div class="cmeta" style="font-size:12px;margin-top:6px;color:#c3ccdf">
+            ${esc(facts.join(' | ') || 'no scalar output')}
+          </div>
+          ${r.summary ? `<p style="font-size:12px;color:#c3ccdf;line-height:1.6;margin:8px 0 0">${esc(r.summary)}</p>` : ''}
+          ${s.parse_error ? `<p style="color:var(--red);font-size:12px;margin:6px 0 0">Model reply was not valid JSON</p>` : ''}
+        </div>`;
+      }).join('') : '<div class="hint">No hops recorded yet.</div>'}
+    </div>
+
+    ${audit.length ? `<div class="sec">
+      <h3>Actions executed (${audit.length})</h3>
+      ${audit.map(a => `<div class="flag" style="border-left-color:var(--green)">
+        <span class="ty">${esc(a.action)} | ${esc(a.status)}</span>
+        <p>${esc(JSON.stringify(a.detail || {}).slice(0, 400))}</p>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${c.last_error ? `<div class="sec">
+      <h3>Last error</h3>
+      <div class="err">${esc(c.last_error)}</div>
+    </div>` : ''}
+
+    <details>
+      <summary>View full case document</summary>
+      <pre>${esc(JSON.stringify(c, null, 2))}</pre>
+    </details>`;
+}
+
+async function poll() {
+  if (!polling) return false;
+  try {
+    const r = await fetch('/api/v1/orchestrator/state');
+    const snap = await r.json();
+    if (snap.error) throw new Error(snap.error);
+    lastSnap = snap;
+    renderKpis(snap);
+    renderCostMonitor(snap);
+    renderBoard(snap);
+    renderFeeds(snap);
+    renderTrace();
+    return (snap.in_flight || 0) > 0;
+  } catch (e) {
+    document.getElementById('feed').innerHTML =
+      `<div class="err">Could not read orchestrator state: ${esc(e.message)}</div>`;
+    return false;
+  }
+}
+
+document.getElementById('sim').onclick = async (ev) => {
+  const btn = ev.target;
+  btn.disabled = true;
+  btn.textContent = 'Injecting...';
+  try {
+    const r = await fetch('/api/v1/simulate', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    btn.textContent = `Injected ${d.injected} | agents working`;
+    await poll();
+  } catch (e) {
+    btn.textContent = 'Injection failed';
+    document.getElementById('feed').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = 'Inject shipment events';
+  }, 2500);
+};
+
+document.getElementById('docup').onclick = async (ev) => {
+  const btn = ev.target;
+  const input = document.getElementById('docfile');
+  const outEl = document.getElementById('intakeout');
+  const file = input.files && input.files[0];
+
+  if (!file) {
+    outEl.innerHTML = '<div class="err">Choose a PDF or scanned image first.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Reading document...';
+  outEl.innerHTML = `<div class="hint">MiniCPM-V is transcribing ${esc(file.name)}...</div>`;
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/v1/events/document', { method: 'POST', body: fd });
+    const d = await r.json();
+
+    if (!d.accepted) throw new Error(d.error || `HTTP ${r.status}`);
+
+    // Injection blocked before the model ran: there is no transcription to show,
+    // and rendering the empty extraction made a deliberate block look like a
+    // failure. Report the block itself instead.
+    if (d.blocked || (d.security && d.security.model_invoked === false)) {
+      const ma = (d.security && d.security.model_armor) || {};
+      const scr = (d.security && d.security.injection_screening) || {};
+      const findings = scr.findings || [];
+      outEl.innerHTML = `
+        <div class="flag" style="border-left-color:var(--red)">
+          <span class="ty">Blocked before the model | case ${esc(d.case_id)} | ${esc(d.state)}</span>
+          <p>The document carried instructions aimed at the model. It was screened
+          in overlapping windows <b>before</b> the model was invoked, so nothing was
+          transcribed and no shipment record was created.</p>
+          <p>Model Armor: <b>${esc(ma.match_state || 'n/a')}</b>${ma.confidence ? ' at ' + esc(ma.confidence) : ''}
+          ${ma.windows_screened ? ' | ' + esc(ma.windows_screened) + ' window(s) screened' : ''}
+          | model invoked: <b>false</b></p>
+          ${findings.length ? `<p>Independent pattern screen also matched:</p>
+            <ul class="recs">${findings.slice(0, 5).map(f =>
+              `<li>${esc(f.type)}: ${esc(f.excerpt)}</li>`).join('')}</ul>` : ''}
+          <p>Routed to a human. The attempt is recorded on the case trace rather
+          than discarded.</p>
+        </div>`;
+      input.value = '';
+      await poll();
+      btn.disabled = false;
+      btn.textContent = 'Upload document';
+      return;
+    }
+
+    const x = d.extracted || {};
+    const notes = x.extraction_notes || [];
+    outEl.innerHTML = `
+      <div class="flag" style="border-left-color:var(--green)">
+        <span class="ty">Extracted in ${esc(d.latency_ms ?? '-')}ms | case ${esc(d.case_id)} opened</span>
+        <p>
+          ${esc(x.shipment_id || '?')} |
+          ${esc(x.origin || '?')} - ${esc(x.destination || '?')} |
+          ${esc(x.cargo_description || 'cargo not stated')} |
+          HS ${esc(x.hs_code || 'not stated')} |
+          value ${esc(x.declared_value ?? '?')} ${esc(x.currency || '')}
+        </p>
+        <p>Archive: ${d.archive && d.archive.archived
+          ? esc(d.archive.uri)
+          : 'not archived | ' + esc((d.archive && d.archive.reason) || 'unknown')}</p>
+        ${notes.length ? `<p>Transcription issues the agents will treat as evidence:</p>
+          <ul class="recs">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      </div>`;
+    input.value = '';
+    await poll();
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">Document intake failed: ${esc(e.message)}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Upload document';
+};
+
+// Drag and drop onto the intake card. The dropped file is handed to the existing
+// file input and the existing button is clicked, so there is one upload path to
+// keep correct rather than two that can drift apart. Without this, dropping a PDF
+// on a card that says "Drop a bill of lading" navigates away and opens the PDF.
+(() => {
+  const card = document.querySelector('.card.intake');
+  const input = document.getElementById('docfile');
+  if (!card || !input) return;
+
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  const isFile = (e) =>
+    Array.from(e.dataTransfer?.types || []).includes('Files');
+
+  card.addEventListener('dragover', (e) => {
+    if (!isFile(e)) return;
+    stop(e);
+    e.dataTransfer.dropEffect = 'copy';
+    card.classList.add('dragging');
+  });
+
+  // dragleave also fires when the cursor crosses into a child element, which
+  // made the highlight flicker. Only clear it when the pointer has actually
+  // left the card.
+  card.addEventListener('dragleave', (e) => {
+    if (!card.contains(e.relatedTarget)) card.classList.remove('dragging');
+  });
+
+  card.addEventListener('drop', (e) => {
+    if (!isFile(e)) return;
+    stop(e);
+    card.classList.remove('dragging');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    document.getElementById('docup').click();
+  });
+
+  // A file dropped anywhere else would be opened by the browser, replacing the
+  // dashboard. Swallow those instead of losing the page.
+  window.addEventListener('dragover', (e) => { if (isFile(e)) e.preventDefault(); });
+  window.addEventListener('drop', (e) => { if (isFile(e)) e.preventDefault(); });
+})();
+
+document.getElementById('bulk').onclick = async (ev) => {
+  const btn = ev.target;
+  const outEl = document.getElementById('intakeout');
+  const count = Number(document.getElementById('bulkcount').value) || 10;
+
+  btn.disabled = true;
+  btn.textContent = 'Injecting...';
+  try {
+    const r = await fetch('/api/v1/simulate/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+
+    const mix = d.profile_mix || {};
+    outEl.innerHTML = `<div class="flag" style="border-left-color:var(--blue)">
+      <span class="ty">Queued ${esc(d.injected)} shipments</span>
+      <p>Generated mix: ${esc(Object.entries(mix).map(([k, v]) => `${v} ${k}`).join(', '))}
+      ${d.capped_at ? ` | capped at ${esc(d.capped_at)}` : ''}</p>
+      <p>${esc(d.note || '')}</p>
+    </div>`;
+    await poll();
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Inject batch';
+};
+
+document.getElementById('reset').onclick = async (ev) => {
+  const btn = ev.target;
+  btn.disabled = true;
+  btn.textContent = 'Clearing...';
+  try {
+    await fetch('/api/v1/orchestrator/reset', { method: 'POST' });
+    openCase = null;
+    document.getElementById('trace').hidden = true;
+    await poll();
+  } catch (e) { /* the next poll will surface any problem */ }
+  btn.disabled = false;
+  btn.textContent = 'Clear board';
+};
+
+document.getElementById('pause').onclick = (ev) => {
+  polling = !polling;
+  ev.target.textContent = polling ? 'Pause live view' : 'Resume live view';
+  if (polling) pollLoop();
+};
+
+/* ==================================================================
+   REVIEW QUEUE
+   ================================================================== */
+
+let selectedReview = null;
+
+async function loadQueue() {
+  try {
+    const r = await fetch('/api/v1/review/queue');
+    const d = await r.json();
+    const cases = d.cases || [];
+
+    const badge = document.getElementById('qbadge');
+    badge.textContent = cases.length;
+    badge.className = cases.length ? 'qbadge on' : 'qbadge';
+
+    document.getElementById('qlist').innerHTML = cases.length
+      ? cases.map(c => {
+          const trig = (c.gate_denials || [])[0];
+          // The board already colours states through OUTCOME_COLOR; the queue was
+          // painting every item yellow, so an escalation looked like a routine hold.
+          const edge = OUTCOME_COLOR[c.state] || 'var(--yellow)';
+          return `<div class="qitem ${c.case_id === selectedReview ? 'sel' : ''}"
+                       style="border-left-color:${edge}"
+                       data-case="${esc(c.case_id)}">
+            <div class="cid">${esc(c.shipment_id || c.case_id)}</div>
+            <div class="cmeta">
+              <span style="color:${edge}">${esc(c.state)}</span>
+              ${c.risk_score != null ? ' | risk ' + esc(c.risk_score) : ''}
+              ${c.source === 'document' ? ' | document' : ''}
+            </div>
+            ${trig ? `<div class="cmeta" style="color:var(--yellow);margin-top:4px">
+              ${esc(trig.reason || '')}</div>` : ''}
+          </div>`;
+        }).join('')
+      : '<div class="hint">Nothing awaiting review.</div>';
+
+    document.querySelectorAll('.qitem').forEach(el => {
+      el.onclick = () => { selectedReview = el.dataset.case; renderReview(cases); loadQueue(); };
+    });
+
+    if (selectedReview) renderReview(cases);
+  } catch (e) {
+    document.getElementById('qlist').innerHTML =
+      `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+function renderReview(cases) {
+  const el = document.getElementById('rvdetail');
+  const c = cases.find(x => x.case_id === selectedReview);
+  if (!c) {
+    el.innerHTML = '<div class="empty"><div><div class="big">??</div>' +
+      '<div>Select a case to review it.</div></div></div>';
+    return;
+  }
+
+  const rec = c.reconciliation || {};
+  const val = c.validation || {};
+  const sec = (c.input_security || {}).injection_screening || {};
+  const hasDoc = !!(c.provenance || {}).uri;
+
+  // A reviewer cannot be asked to release or block a container on a state label
+  // and a risk number alone. Everything the agents produced is on the case, so
+  // put it in front of the person who has to sign.
+  const ship = c.shipment || {};
+  const byAgent = {};
+  for (const s of (c.steps || [])) byAgent[s.agent] = s;
+
+  // Agents return a mix of plain strings and {issue, severity, explanation}
+  // objects. Dumping JSON at a reviewer is not evidence, so unpack the shape.
+  const bulletText = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return esc(v);
+    if (typeof v !== 'object') return esc(String(v));
+    const title = v.issue || v.code || v.type || v.name || v.pattern || '';
+    const body = v.explanation || v.detail || v.description || v.reason || '';
+    const sev = v.severity || v.risk_level || '';
+    if (!title && !body) return esc(JSON.stringify(v));
+    return `${title ? `<b>${esc(title)}</b>` : ''}${
+      sev ? ` <span class="sev" style="background:${
+        SEV_COLOR[String(sev).toUpperCase()] || 'var(--muted)'
+      };color:#0b1020">${esc(sev)}</span>` : ''}${
+      body ? `${title ? ' — ' : ''}${esc(body)}` : ''}`;
+  };
+
+  const bullets = (arr, limit = 6) => (arr && arr.length)
+    ? `<ul class="recs">${arr.slice(0, limit).map(v =>
+        `<li>${bulletText(v)}</li>`).join('')}</ul>`
+    : '';
+
+  const money = (v, cur) => (v === null || v === undefined || v === '')
+    ? 'not stated'
+    : `${esc(Number(v).toLocaleString())} ${esc(cur || ship.currency || '')}`;
+
+  const hop = (name, label) => {
+    const s = byAgent[name];
+    if (!s) return '';
+    const r = s.result || {};
+    let body = '';
+    if (name === 'fraud_detection') {
+      body = `<p>Risk <b>${esc(r.risk_score ?? '-')}</b>
+        (${esc(r.risk_level || 'level not stated')})${
+        r.confidence ? ` | confidence ${esc(r.confidence)}` : ''}</p>
+        ${bullets(r.flags)}${bullets(r.recommendations, 4)}`;
+    } else if (name === 'compliance') {
+      body = `<p>Status <b>${esc(r.compliance_status || '-')}</b>${
+        r.compliance_score !== undefined ? ` | score ${esc(r.compliance_score)}` : ''}</p>
+        ${bullets(r.sanctions_hits)}${bullets(r.regulatory_issues)}
+        ${bullets(r.risk_factors)}${bullets(r.required_actions, 4)}`;
+    } else {
+      body = `<p>${esc(r.summary || 'no summary returned')}</p>
+        ${r.fraud_pattern ? `<p>Pattern: <b>${esc(r.fraud_pattern)}</b></p>` : ''}
+        ${r.exposure_estimate ? `<p>Exposure: <b>${esc(r.exposure_estimate)}</b></p>` : ''}
+        ${bullets(r.evidence)}${bullets(r.recommended_actions, 4)}`;
+    }
+    return `<div class="flag" style="border-left-color:var(--blue)">
+      <div class="top">
+        <span class="ty">${esc(label)}</span>
+        <span class="sev" style="background:#1e2b45;color:#cfe0ff">${
+          esc(s.model || '-')}${s.latency_ms ? ' | ' + esc(s.latency_ms) + 'ms' : ''}</span>
+      </div>
+      ${body}
+    </div>`;
+  };
+
+  const evidence = `
+    <div class="sec">
+      <h3>What is being shipped</h3>
+      <div class="flag" style="border-left-color:var(--muted)">
+        <p>${esc(ship.cargo_description || 'cargo not stated')}${
+          ship.hs_code ? ` | HS ${esc(ship.hs_code)}` : ''}</p>
+        <p>Declared value ${money(ship.declared_value)}${
+          ship.weight_kg ? ` | ${esc(ship.weight_kg)} kg` : ''}${
+          ship.shipping_cost !== undefined ? ` | freight ${money(ship.shipping_cost)}` : ''}${
+          ship.avg_route_cost !== undefined ? ` (route average ${money(ship.avg_route_cost)})` : ''}</p>
+        <p>${esc(ship.origin || '?')} &rarr; ${esc(ship.destination || '?')}${
+          ship.transit_points ? ` via ${esc(ship.transit_points)}` : ''}</p>
+        <p>Shipper ${esc(ship.shipper_company || 'not stated')}${
+          ship.shipper_country ? ` (${esc(ship.shipper_country)})` : ''}
+          &middot; Consignee ${esc(ship.receiver_company || 'not stated')}${
+          ship.receiver_country ? ` (${esc(ship.receiver_country)})` : ''}</p>
+      </div>
+    </div>
+
+    ${(byAgent.fraud_detection || byAgent.compliance || byAgent.investigation) ? `
+    <div class="sec">
+      <h3>What the agents found</h3>
+      ${hop('fraud_detection', 'Fraud detection')}
+      ${hop('compliance', 'Compliance screening')}
+      ${hop('investigation', 'Investigation')}
+    </div>` : ''}`;
+
+  el.innerHTML = `
+    <h2>${esc(c.shipment_id || c.case_id)}</h2>
+    <div class="hint">
+      State <b>${esc(c.state)}</b>
+      ${c.proposed_outcome ? ` | agent proposed <b>${esc(c.proposed_outcome)}</b>` : ''}
+      | source ${esc(c.source || 'event')}
+    </div>
+
+    ${sec.blocked ? `<div class="err" style="margin-top:14px">
+      <b>This document contained suspected prompt injection.</b><br>
+      ${esc([...new Set((sec.findings || []).map(f => f.type))].join(', '))}.
+      The deterministic risk floor is computed from numbers and code-resident
+      lists, so the injection could not lower it.
+    </div>` : ''}
+
+    ${rec.score_disputed ? `<div class="disputed">
+      <b>The agent and the deterministic checks disagreed.</b><br>
+      Agent scored <b>${esc(rec.model_risk)}</b>.
+      Deterministic floor was <b>${esc(rec.risk_floor)}</b>.
+      Effective risk used: <b>${esc(rec.effective_risk)}</b> (${esc(rec.source)}).
+    </div>` : ''}
+
+    ${(c.gate_denials || []).length ? `<div class="sec">
+      <h3>Why the agent could not close this</h3>
+      ${c.gate_denials.map(d => `<div class="flag" style="border-left-color:var(--yellow)">
+        <span class="ty">${esc(d.action)}</span>
+        <p>${esc(d.reason)}</p>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${evidence}
+
+    <div class="sec">
+      <h3>Source document</h3>
+      ${hasDoc
+        ? `${(c.provenance || {}).generated
+              ? `<div class="hint">Rendered from the shipment event that opened this
+                   case (${esc((c.provenance || {}).rendered_from || c.source || 'event')}).
+                   This is the received record as a bill of lading, not a scan of a
+                   shipper's original.</div>`
+              : `<div class="hint">Original document as uploaded
+                   (${esc((c.provenance || {}).filename || 'document.pdf')}).</div>`}
+           <iframe class="docframe" src="/api/v1/review/${encodeURIComponent(c.case_id)}/document"></iframe>`
+        : `<div class="hint">No document is available for this case
+             (${esc((c.provenance || {}).reason || c.source || 'internal event')}).
+             Do not release without one.</div>`}
+    </div>
+
+    ${(val.findings || []).length ? `<div class="sec">
+      <h3>Deterministic findings (${val.findings.length})</h3>
+      ${val.findings.map(f => `<div class="flag" style="border-left-color:${
+        SEV_COLOR[f.severity] || 'var(--yellow)'}">
+        <div class="top">
+          <span class="ty">${esc(f.code)}</span>
+          <span class="sev" style="background:${SEV_COLOR[f.severity] || 'var(--yellow)'};color:#0b1020">${esc(f.severity)}</span>
+        </div>
+        <p>${esc(f.detail)}</p>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div class="sec">
+      <h3>Your decision</h3>
+      <div class="row">
+        <div>
+          <label>Reviewer (required)</label>
+          <input id="rvwho" placeholder="Your name">
+        </div>
+        <div>
+          <label>Note (required unless releasing)</label>
+          <input id="rvnote" placeholder="Reason for the decision">
+        </div>
+      </div>
+      <div class="rvactions">
+        <button data-act="release">Release shipment</button>
+        <button data-act="block" class="btn-block">Block shipment</button>
+        <button data-act="request_info" class="ghost">Request info</button>
+      </div>
+      <div id="rvout"></div>
+    </div>`;
+
+  el.querySelectorAll('.rvactions button').forEach(b => {
+    b.onclick = () => submitReview(c.case_id, b.dataset.act);
+  });
+}
+
+async function submitReview(caseId, action) {
+  const outEl = document.getElementById('rvout');
+  const reviewer = (document.getElementById('rvwho').value || '').trim();
+  const note = (document.getElementById('rvnote').value || '').trim();
+
+  if (!reviewer) {
+    outEl.innerHTML = '<div class="err">A reviewer name is required.</div>';
+    return;
+  }
+  if (action !== 'release' && !note) {
+    outEl.innerHTML = `<div class="err">A note is required when the action is ${esc(action)}.</div>`;
+    return;
+  }
+
+  outEl.innerHTML = '<div class="hint">Recording decision...</div>';
+  try {
+    const r = await fetch(`/api/v1/review/${encodeURIComponent(caseId)}/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, reviewer, note })
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+
+    outEl.innerHTML = `<div class="flag" style="border-left-color:var(--green)">
+      <span class="ty">Recorded | case is now ${esc(d.state)}</span>
+      ${d.review && d.review.sar_signed
+        ? `<p>SAR ${esc(d.review.sar_signed)} signed by ${esc(d.review.reviewer)}.</p>` : ''}
+    </div>`;
+    selectedReview = null;
+    await loadQueue();
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+/* ==================================================================
+   GOVERNANCE
+   ================================================================== */
+
+async function loadGovernance() {
+  try {
+    const [aR, bR] = await Promise.all([
+      fetch('/api/v1/governance/agent'),
+      fetch('/api/v1/governance/boundaries')
+    ]);
+    const agent = await aR.json();
+    const hist = await bR.json();
+
+    const suspended = agent.state === 'SUSPENDED';
+    document.getElementById('govstate').innerHTML = `
+      <div class="flag" style="border-left-color:${suspended ? 'var(--red)' : 'var(--green)'};margin-top:14px">
+        <span class="ty">Agent ${esc(agent.state)}</span>
+        <p>${esc(agent.reason)}</p>
+      </div>`;
+
+    const ta = document.getElementById('govperms');
+    if (!ta.value.trim()) {
+      ta.value = JSON.stringify(
+        (agent.boundary && agent.boundary.permissions) || hist.proposed_template,
+        null, 2);
+    }
+
+    const boundaries = hist.boundaries || [];
+    document.getElementById('govhistory').innerHTML = boundaries.length
+      ? boundaries.map(b => `<div class="fitem">
+          <div class="ft">${esc(hhmmss(b.published_at))} | ${esc(b.status)}</div>
+          <div class="fm"><b>${esc(b.boundary_id)}</b> by ${esc(b.published_by)}${b.note ? ' | ' + esc(b.note) : ''}${b.superseded_by ? ` | superseded by ${esc(b.superseded_by)}` : ''}</div>
+        </div>`).join('')
+      : '<div class="hint">No boundary has ever been published. The agent is fail-closed.</div>';
+  } catch (e) {
+    document.getElementById('govstate').innerHTML =
+      `<div class="err">${esc(e.message)}</div>`;
+  }
+}
+
+document.getElementById('govpublish').onclick = async (ev) => {
+  const btn = ev.target;
+  const outEl = document.getElementById('govout');
+  const author = (document.getElementById('govauthor').value || '').trim();
+
+  if (!author) {
+    outEl.innerHTML = '<div class="err">A publisher name is required. Delegated ' +
+      'authority nobody is named as having granted is not delegation.</div>';
+    return;
+  }
+
+  let permissions;
+  try {
+    permissions = JSON.parse(document.getElementById('govperms').value);
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">Permissions are not valid JSON: ${esc(e.message)}</div>`;
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+  try {
+    const r = await fetch('/api/v1/governance/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        author,
+        note: document.getElementById('govnote').value,
+        permissions
+      })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    outEl.innerHTML = `<div class="flag" style="border-left-color:var(--green)">
+      <span class="ty">${esc(d.boundary.boundary_id)} is now ACTIVE</span>
+      <p>Published by ${esc(d.boundary.published_by)}${
+        d.boundary.supersedes ? `, superseding ${esc(d.boundary.supersedes)}` : ''}.</p>
+    </div>`;
+    await loadGovernance();
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Publish delegation boundary';
+};
+
+// View switcher
+document.querySelectorAll('.vtab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.vtab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    const v = t.dataset.view;
+    document.getElementById('view-ops').hidden = v !== 'ops';
+    document.getElementById('view-review').hidden = v !== 'review';
+    document.getElementById('view-gov').hidden = v !== 'gov';
+    document.getElementById('view-single').hidden = v !== 'single';
+    if (v === 'review') loadQueue();
+    if (v === 'gov') loadGovernance();
+  };
+});
+
+// Sequential polling, not setInterval. In request-driven mode a state call may
+// itself advance a case and take several seconds, and a fixed interval would
+// stack overlapping requests on top of each other.
+let pollTimer = null;
+
+function schedulePoll(delayMs) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(pollLoop, delayMs);
+}
+
+async function pollLoop() {
+  if (!polling) return;
+  const busy = await poll();
+  // Come back immediately while there is work in flight, idle slower when not.
+  schedulePoll(busy ? 250 : 2500);
+}
+
+pollLoop();
+</script>
+</body>
+</html>

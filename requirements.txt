@@ -1,0 +1,27 @@
+# AI model layer - Nebius Token Factory (OpenAI-compatible)
+# The openai package's AsyncOpenAI client talks to Token Factory; used by
+# nebius_client.py for all four agents (three text, one vision).
+openai>=1.40.0
+
+# Google Cloud Services (infrastructure only - no AI SDK from Google is used)
+google-cloud-firestore>=2.11.0
+google-cloud-pubsub>=2.18.0
+google-cloud-storage>=2.10.0
+
+# Web Framework
+flask>=2.3.0
+gunicorn>=21.2.0
+flask-cors>=4.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+pypdf>=4.0.0
+httpx>=0.24.0
+
+# PyMuPDF rasterises the first page of an uploaded PDF to PNG before it is sent
+# to the vision model - Token Factory's vision models take images, not PDFs.
+pymupdf>=1.24.0
+
+# fpdf2 renders event-sourced shipments into a bill of lading so every case has
+# paperwork a human can review, not only the ones uploaded as a document.
+fpdf2>=2.7.0

@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test coverage
+htmlcov/
+.coverage
+
+# Demo-video production: the narration script, the Text-to-Speech tooling that
+# renders the voiceover, and its output. The submission shows the finished video;
+# how it was assembled is not part of the project and would only invite a reader
+# to look for a connection to the service that does not exist.
+docs/video-script.txt
+tools_build_narration.py
+build/
+
+# Scratch probes. Anything named tmp_* is a throwaway and must never be committed.
+tmp_*
