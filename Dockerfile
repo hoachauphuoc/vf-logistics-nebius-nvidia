@@ -43,7 +43,6 @@ COPY --from=builder /opt/venv /opt/venv
 
 # Copy application code
 COPY --chown=appuser:appgroup src/ src/
-COPY --chown=appuser:appgroup pyproject.toml .
 
 # Switch to non-root user
 USER appuser
