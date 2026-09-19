@@ -24,6 +24,8 @@ from .document_agent import (
     get_agent_info as get_document_agent_info
 )
 
+from .debate_agent import conduct_debate
+
 __all__ = [
     "analyze_shipment",
     "batch_analyze",
@@ -37,4 +39,5 @@ __all__ = [
     "extract_shipment",
     "mime_for",
     "get_document_agent_info",
+    "conduct_debate",
 ]

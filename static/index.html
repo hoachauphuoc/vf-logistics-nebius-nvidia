@@ -5,62 +5,163 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VF Logistics | AI Fraud Detection</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  
   :root {
-    --bg: #0b1020;
-    --bg-2: #121a33;
-    --card: #161f3d;
-    --line: #24304f;
-    --txt: #e8edf9;
-    --muted: #96a2c0;
-    --blue: #4285f4;
-    --green: #34a853;
-    --yellow: #fbbc05;
-    --red: #ea4335;
+    /* Dark Glassmorphism palette */
+    --bg: #09090B;
+    --bg-2: #111827;
+    --bg-grid: rgba(255,255,255,0.02);
+    --card: rgba(255, 255, 255, 0.03);
+    --card-hover: rgba(255, 255, 255, 0.06);
+    --glass: rgba(17, 24, 39, 0.7);
+    --line: rgba(255, 255, 255, 0.08);
+    --line-glow: rgba(255, 255, 255, 0.15);
+    --txt: #F9FAFB;
+    --muted: #9CA3AF;
+    
+    /* Sponsor accent colors */
+    --nvidia: #76B900;
+    --nvidia-glow: rgba(118, 185, 0, 0.3);
+    --nebius: #6366F1;
+    --nebius-glow: rgba(99, 102, 241, 0.3);
+    --nebius-light: #8B5CF6;
+    
+    /* Status colors */
+    --green: #10B981;
+    --green-glow: rgba(16, 185, 129, 0.25);
+    --yellow: #F59E0B;
+    --yellow-glow: rgba(245, 158, 11, 0.25);
+    --red: #EF4444;
+    --red-glow: rgba(239, 68, 68, 0.25);
+    --blue: #3B82F6;
+    --blue-glow: rgba(59, 130, 246, 0.25);
+    
+    /* Legacy compatibility */
+    --accent: var(--nvidia);
+    
+    --sidebar-bg: #030712;
+    --sidebar-w: 240px;
+    --sidebar-w-collapsed: 64px;
+
+    /* Aliases and extended palette */
+    --bg2: var(--bg-2);
+    --bg3: #1a2233;
+    --fg: var(--txt);
+    --bg-code: #0b1226;
+    --bg-selected: #1b2440;
+    --bg-error: #2a1418;
+    --bg-warning: #2a2414;
+    --purple: #9333ea;
+    --purple-dark: #6b21a8;
+    --code-fg: #9fb0d0;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
-    background: radial-gradient(1200px 600px at 20% -10%, #1b2750 0%, var(--bg) 55%);
+    font-family: 'Inter', "Segoe UI", Roboto, system-ui, sans-serif;
+    background: var(--bg);
     color: var(--txt);
     min-height: 100vh;
+    /* Cyber grid background */
+    background-image: 
+      linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+      radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%);
+    background-size: 50px 50px, 50px 50px, 100% 100%;
+    background-position: -1px -1px, -1px -1px, 0 0;
   }
-  header {
-    padding: 28px 24px 12px;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  .brand { display: flex; align-items: center; gap: 14px; }
-  .logo {
-    width: 44px; height: 44px; border-radius: 12px;
-    background: linear-gradient(135deg, var(--blue), var(--green) 60%, var(--yellow));
-    display: grid; place-items: center;
-    font-weight: 800; font-size: 18px; color: #0b1020;
-  }
-  h1 { margin: 0; font-size: 24px; letter-spacing: -0.4px; }
-  .sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
-  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
-  .badge {
-    font-size: 12px; padding: 5px 11px; border-radius: 999px;
-    background: #1d2846; border: 1px solid var(--line); color: var(--muted);
-  }
-  .badge b { color: var(--txt); font-weight: 600; }
-  main {
-    max-width: 1200px; margin: 0 auto; padding: 16px 24px 60px;
-  }
-  #view-single {
-    display: grid; grid-template-columns: 420px 1fr; gap: 22px;
-  }
-  #view-single[hidden] { display: none; }
 
-  /* ---- view switcher ---- */
-  .viewnav { display: flex; gap: 8px; margin-bottom: 18px; }
-  .vtab {
-    padding: 10px 18px; font-size: 13px; border-radius: 10px; cursor: pointer;
-    background: #1a2340; border: 1px solid var(--line); color: var(--muted);
-    font-weight: 600;
+  /* ---- app shell: sidebar + topbar ---- */
+  .app-shell { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: var(--sidebar-w); flex-shrink: 0; 
+    background: linear-gradient(180deg, var(--sidebar-bg) 0%, rgba(3, 7, 18, 0.95) 100%);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid var(--line); position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column; transition: width .15s ease; overflow: hidden;
   }
-  .vtab.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .sidebar.collapsed { width: var(--sidebar-w-collapsed); }
+  .sidebar-brand {
+    display: flex; align-items: center; gap: 10px; padding: 18px 16px;
+    border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .sidebar-brand .logo {
+    width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--nvidia), var(--nebius) 70%);
+    display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff;
+    box-shadow: 0 0 20px var(--nvidia-glow), 0 0 40px var(--nebius-glow);
+  }
+  .sidebar-brand .brandtxt { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; }
+  .sidebar-brand .brandtxt small { display: block; color: var(--muted); font-size: 10px; font-weight: 400; }
+  .sidebar.collapsed .brandtxt { display: none; }
+  /* The logo is 32px wide with zero flex-shrink; in the 64px collapsed
+     rail that leaves no room for the toggle button next to it (padding
+     alone is 32px), so the button was being clipped off-screen by the
+     sidebar's overflow:hidden - clicking to expand had nothing to click.
+     Hiding the logo when collapsed gives the toggle the room it needs. */
+  .sidebar.collapsed .sidebar-brand .logo { display: none; }
+  .sidebar-collapse-btn {
+    margin-left: auto; background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 4px; width: auto; margin-top: 0; font-size: 14px;
+  }
+  .sidebar.collapsed .sidebar-collapse-btn { margin-left: 0; }
+  .sidebar-nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+  .navitem {
+    display: flex; align-items: center; gap: 12px; padding: 11px 17px;
+    border-left: 3px solid transparent; color: var(--muted); font-size: 13px;
+    font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden;
+  }
+  .navitem svg { flex-shrink: 0; width: 18px; height: 18px; }
+  .navitem:hover { color: var(--txt); background: rgba(255,255,255,.05); }
+  .navitem.on {
+    border-left-color: var(--nvidia); background: rgba(118, 185, 0, 0.1); color: #fff;
+  }
+  .sidebar.collapsed .navitem span.navlabel { display: none; }
+  body.demo-mode .demo-hide { display: none !important; }
+  .sidebar-footer {
+    padding: 14px 16px; border-top: 1px solid var(--line); flex-shrink: 0;
+    background: rgba(0,0,0,0.3);
+  }
+  .sidebar.collapsed .sidebar-footer { display: none; }
+  .sidebar-footer .badge {
+    display: block; font-size: 10px; padding: 4px 0; color: var(--muted); border: none; background: none;
+    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  }
+  .sidebar-footer .badge b { color: var(--nvidia); }
+  .sidebar-footer .terminal-line {
+    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    font-size: 10px; color: var(--muted); margin-top: 6px;
+  }
+  .sidebar-footer .terminal-line::before {
+    content: '>';
+    color: var(--nvidia);
+    margin-right: 6px;
+  }
+
+  .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .topbar #pagetitle { font-size: 18px; font-weight: 700; }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .status-pill {
+    font-size: 12px; padding: 6px 12px; border-radius: 999px; font-weight: 600;
+    background: rgba(255,255,255,0.05); backdrop-filter: blur(10px);
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .status-pill.ok { color: var(--nvidia); border-color: var(--nvidia-glow); box-shadow: 0 0 15px var(--nvidia-glow); }
+  .status-pill.bad { color: var(--red); border-color: var(--red-glow); box-shadow: 0 0 15px var(--red-glow); }
+  main {
+    max-width: 1200px; margin: 0 auto; padding: 16px 24px 60px; width: 100%;
+  }
+  @media (max-width: 900px) {
+    .sidebar { position: fixed; z-index: 20; width: var(--sidebar-w-collapsed); }
+    .sidebar .navitem span.navlabel, .sidebar .brandtxt, .sidebar .logo { display: none; }
+    .sidebar-footer { display: none; }
+    .main-content { margin-left: var(--sidebar-w-collapsed); }
+  }
 
   /* ---- ops header ---- */
   .opshead { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
@@ -88,39 +189,116 @@
   .qitem { border: 1px solid var(--line); border-left: 3px solid var(--yellow);
     border-radius: 9px; padding: 10px 12px; margin-bottom: 9px; cursor: pointer; font-size: 12px; }
   .qitem:hover { border-color: var(--blue); }
-  .qitem.sel { border-color: var(--blue); background: #1b2440; }
+  .qitem.sel { border-color: var(--blue); background: var(--bg-selected); }
   .docframe { width: 100%; height: 520px; border: 1px solid var(--line);
     border-radius: 10px; background: #fff; margin-top: 10px; }
-  .rvactions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .rvactions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
   .rvactions button { margin-top: 0; }
   .btn-block { background: linear-gradient(135deg, var(--red), #b5271b); }
+  .btn-debate { background: linear-gradient(135deg, var(--purple), var(--purple-dark)); }
+  .debate-section { margin-top: 16px; }
+  .debate-verdict { padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; }
+  .debate-verdict.verdict-confirm { background: linear-gradient(135deg, #14532d 0%, #166534 100%); border-left: 4px solid var(--green); }
+  .debate-verdict.verdict-disagree { background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%); border-left: 4px solid var(--red); }
+  .debate-verdict h4 { margin: 0 0 8px 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .debate-verdict p { margin: 6px 0; font-size: 13px; color: var(--txt); }
+  .debate-trace { margin-top: 12px; }
+  .debate-round { background: var(--bg-selected); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 12px; }
+  .debate-round-header { font-weight: 700; color: var(--blue); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .debate-round-tool { color: var(--purple); font-weight: 600; }
+  .debate-round-args { color: var(--muted); font-size: 11px; margin-left: 12px; }
+  .debate-round-result { background: var(--bg2); padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 11px; overflow-x: auto; }
   textarea { width: 100%; box-sizing: border-box; padding: 11px 13px; font-size: 13px;
-    font-family: ui-monospace, Consolas, monospace; background: #131c33;
-    border: 1px solid var(--line); border-radius: 10px; color: #e8edf7; }
-  .disputed { border-left: 4px solid var(--yellow); background: #2a2414;
+    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; background: var(--bg2);
+    border: 1px solid var(--line); border-radius: 10px; color: var(--fg); }
+  .disputed { border-left: 4px solid var(--yellow); background: var(--bg-warning);
     padding: 13px 15px; border-radius: 10px; font-size: 13px; margin: 12px 0; }
 
-  /* ---- KPI tiles ---- */
-  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 20px 0; }
+  /* ---- KPI tiles (Glassmorphism) ---- */
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin: 24px 0; }
   .kpi {
-    background: linear-gradient(180deg, var(--card), var(--bg-2));
-    border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+    background: var(--card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+    overflow: hidden;
   }
-  .kpi .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
-  .kpi .v { font-size: 26px; font-weight: 700; margin-top: 6px; }
-  .kpi .s { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  }
+  .kpi:hover {
+    background: var(--card-hover);
+    border-color: var(--line-glow);
+    transform: translateY(-2px);
+  }
+  .kpi .kpi-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .kpi .kpi-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .kpi .kpi-icon.icon-cases { background: rgba(59, 130, 246, 0.15); color: var(--blue); }
+  .kpi .kpi-icon.icon-reviewed { background: rgba(16, 185, 129, 0.15); color: var(--green); }
+  .kpi .kpi-icon.icon-flagged { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+  .kpi .kpi-icon.icon-accuracy { background: rgba(118, 185, 0, 0.15); color: var(--nvidia); }
+  .kpi .kpi-icon.icon-latency { background: rgba(99, 102, 241, 0.15); color: var(--nebius); }
+  .kpi .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; font-weight: 600; }
+  .kpi .v { font-size: 32px; font-weight: 800; margin-top: 4px; letter-spacing: -0.5px; }
+  .kpi .v.v-nvidia { color: var(--nvidia); text-shadow: 0 0 30px var(--nvidia-glow); }
+  .kpi .v.v-nebius { color: var(--nebius); text-shadow: 0 0 30px var(--nebius-glow); }
+  .kpi .v.v-green { color: var(--green); }
+  .kpi .v.v-red { color: var(--red); }
+  .kpi .s { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .kpi .nebius-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9px; font-weight: 600; color: var(--nebius);
+    background: rgba(99, 102, 241, 0.1); padding: 3px 8px; border-radius: 6px;
+    margin-top: 8px;
+  }
+  .kpi .nebius-badge::before { content: '⚡'; }
 
-  /* ---- pipeline board ---- */
-  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 14px; }
-  .col { background: #141c33; border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 150px; }
-  .colhead { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
-  .colhead .n { float: right; color: #e8edf7; }
-  .ccard {
-    background: #1b2440; border: 1px solid var(--line); border-left: 3px solid var(--blue);
-    border-radius: 9px; padding: 9px 10px; margin-bottom: 8px; cursor: pointer;
-    font-size: 11px; transition: transform .12s, box-shadow .3s, background .3s;
+  /* ---- pipeline board (Glassmorphism) ---- */
+  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-top: 16px; }
+  .col { 
+    background: var(--card); 
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 14px; padding: 12px; min-height: 160px;
   }
-  .ccard:hover { transform: translateX(2px); border-color: var(--blue); }
+  .colhead { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+  .colhead .n { float: right; color: var(--txt); background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 6px; font-size: 10px; }
+  
+  /* ---- Case cards (Glassmorphism + Risk Bar) ---- */
+  .ccard {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer;
+    font-size: 11px; transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .ccard::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  }
+  .ccard:hover { 
+    transform: translateY(-2px); 
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--line-glow);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  .ccard.high-risk { border-left: 3px solid var(--red); }
+  .ccard.medium-risk { border-left: 3px solid var(--yellow); }
+  .ccard.low-risk { border-left: 3px solid var(--green); }
+  .ccard.ai-processing { border-left: 3px solid var(--nebius); box-shadow: 0 0 20px var(--nebius-glow); }
   .ccard.state-changed {
     animation: highlight-pulse 0.8s ease-out;
   }
@@ -128,65 +306,239 @@
     animation: slide-in 0.5s ease-out;
   }
   .ccard.processing {
-    box-shadow: 0 0 12px rgba(255, 205, 86, 0.4);
-    border-left-color: var(--yellow);
+    box-shadow: 0 0 20px var(--nebius-glow);
+    border-left-color: var(--nebius);
   }
   @keyframes highlight-pulse {
-    0% { transform: scale(1.05); box-shadow: 0 0 20px var(--blue); background: rgba(79, 172, 254, 0.2); }
-    100% { transform: scale(1); box-shadow: none; background: #1b2440; }
+    0% { transform: scale(1.02); box-shadow: 0 0 25px var(--nebius-glow); background: rgba(99, 102, 241, 0.15); }
+    100% { transform: scale(1); box-shadow: none; background: rgba(255,255,255,0.03); }
   }
   @keyframes slide-in {
     from { opacity: 0; transform: translateY(-15px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  .ccard .cid { font-weight: 700; font-size: 11px; color: #e8edf7; word-break: break-all; }
-  .ccard .cmeta { color: var(--muted); margin-top: 4px; }
+  .ccard .cid { font-weight: 700; font-size: 12px; color: var(--txt); word-break: break-all; }
+  .ccard .cmeta { color: var(--muted); margin-top: 6px; font-size: 10px; }
+  
+  /* Risk Progress Bar */
+  .ccard .risk-bar {
+    height: 4px; border-radius: 2px; margin-top: 10px;
+    background: rgba(255,255,255,0.1);
+    overflow: hidden;
+  }
+  .ccard .risk-bar-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+  .ccard .risk-bar-fill.risk-low { 
+    background: linear-gradient(90deg, var(--green), #34D399); 
+    box-shadow: 0 0 8px var(--green-glow);
+  }
+  .ccard .risk-bar-fill.risk-medium { 
+    background: linear-gradient(90deg, var(--yellow), #FBBF24); 
+    box-shadow: 0 0 8px var(--yellow-glow);
+  }
+  .ccard .risk-bar-fill.risk-high { 
+    background: linear-gradient(90deg, #F87171, var(--red)); 
+    box-shadow: 0 0 8px var(--red-glow);
+  }
+  
+  /* AI Context Badges */
+  .ccard .ai-badges {
+    display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;
+  }
+  .ccard .ai-badge {
+    font-size: 9px; font-weight: 600; padding: 3px 7px; border-radius: 4px;
+    display: inline-flex; align-items: center; gap: 3px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .ccard .ai-badge.badge-nemotron {
+    background: rgba(118, 185, 0, 0.15); color: var(--nvidia);
+    border: 1px solid rgba(118, 185, 0, 0.3);
+  }
+  .ccard .ai-badge.badge-tavily {
+    background: rgba(59, 130, 246, 0.15); color: var(--blue);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+  .ccard .ai-badge.badge-nebius {
+    background: rgba(99, 102, 241, 0.15); color: var(--nebius);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+  }
+  .ccard .risk-score {
+    font-size: 10px; font-weight: 700; margin-top: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ccard .risk-score .score-value { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+  .ccard .risk-score.score-high .score-value { color: var(--red); }
+  .ccard .risk-score.score-medium .score-value { color: var(--yellow); }
+  .ccard .risk-score.score-low .score-value { color: var(--green); }
   .working { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
     background: var(--yellow); margin-right: 5px; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
 
-  /* ---- cost monitor ---- */
-  .cost-monitor { margin-top: 22px; }
-  .cost-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-  .cost-header h3 { margin: 0; font-size: 14px; }
-  .cost-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-  .cost-kpi { background: #141c33; border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
-  .cost-kpi.highlight-cost { background: linear-gradient(135deg, #1a3a1a 0%, #0d1f0d 100%); border-color: var(--green); }
-  .cost-k { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: var(--muted); margin-bottom: 4px; }
-  .cost-v { font-size: 18px; font-weight: 700; color: #e8edf7; font-variant-numeric: tabular-nums; }
-  .cost-kpi.highlight-cost .cost-v { color: var(--green); }
-  .cost-breakdown { border-top: 1px solid var(--line); padding-top: 12px; }
-  .cost-breakdown h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 8px; }
-  .agent-cost { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #141c33; border-radius: 6px; margin-bottom: 6px; font-size: 11px; }
-  .agent-cost .agent-name { font-weight: 700; color: #e8edf7; }
-  .agent-cost .agent-stats { color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* ---- board controls (search / sort / filter) ---- */
+  .board-controls {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin: 12px 0 6px; padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .board-controls input[type="text"] {
+    flex: 1; min-width: 200px; padding: 8px 12px; font-size: 12px;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--fg); outline: none;
+  }
+  .board-controls input[type="text"]:focus { border-color: var(--blue); }
+  .board-controls select {
+    padding: 8px 10px; font-size: 11px;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--fg); cursor: pointer;
+  }
+  .board-controls .bc-stats {
+    font-size: 11px; color: var(--muted); white-space: nowrap;
+  }
 
-  /* ---- feeds ---- */
-  .opsgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 22px; }
-  .feed { max-height: 340px; overflow-y: auto; margin-top: 12px; }
-  .fitem { border-left: 2px solid var(--line); padding: 7px 0 7px 12px; font-size: 12px; transition: all 0.2s; }
-  .fitem.highlight { background: rgba(79, 172, 254, 0.15); border-left-color: var(--blue); }
-  .fitem .ft { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-  .fitem .fm { margin-top: 2px; line-height: 1.5; }
+  /* ---- priority badges ---- */
+  .priority-badge {
+    font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+  }
+  .priority-badge.p-critical { background: rgba(239,68,68,0.2); color: var(--red); }
+  .priority-badge.p-high { background: rgba(245,158,11,0.2); color: var(--yellow); }
+  .priority-badge.p-medium { background: rgba(59,130,246,0.2); color: var(--blue); }
+  .priority-badge.p-low { background: rgba(255,255,255,0.06); color: var(--muted); }
+
+  /* ---- SLA indicators ---- */
+  .ccard-sla {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 6px; font-size: 9px;
+  }
+  .sla-tag { padding: 2px 5px; border-radius: 3px; font-weight: 600; }
+  .sla-tag.sla-overdue { background: rgba(239,68,68,0.15); color: var(--red); }
+  .sla-tag.sla-urgent { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .sla-tag.sla-ok { color: var(--muted); }
+  .sla-tag.sla-done { color: var(--green); }
+  .ccard-date { color: var(--muted); font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+
+  /* ---- card header row ---- */
+  .ccard-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .ccard-head .cid { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---- show-more button ---- */
+  .show-more-btn {
+    width: 100%; padding: 8px; margin-top: 4px; font-size: 11px; font-weight: 600;
+    background: rgba(255,255,255,0.04); border: 1px dashed var(--line);
+    border-radius: 8px; color: var(--muted); cursor: pointer; text-align: center;
+  }
+  .show-more-btn:hover { background: rgba(255,255,255,0.08); color: var(--txt); }
+  .col-scroll { max-height: 600px; overflow-y: auto; }
+
+  /* ---- cost monitor (Glassmorphism) ---- */
+  .cost-monitor { margin-top: 24px; }
+  .cost-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .cost-header h3 { margin: 0; font-size: 15px; font-weight: 700; }
+  .cost-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+  .cost-kpi { 
+    background: var(--card); 
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px; text-align: center; 
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .cost-kpi:hover { background: var(--card-hover); }
+  .cost-kpi.highlight-cost { 
+    background: linear-gradient(135deg, rgba(118, 185, 0, 0.1) 0%, rgba(118, 185, 0, 0.05) 100%); 
+    border-color: rgba(118, 185, 0, 0.3);
+    box-shadow: 0 0 20px var(--nvidia-glow);
+  }
+  .cost-k { font-size: 10px; font-weight: 700; letter-spacing: .5px; color: var(--muted); margin-bottom: 6px; }
+  .cost-v { font-size: 20px; font-weight: 800; color: var(--txt); font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+  .cost-kpi.highlight-cost .cost-v { color: var(--nvidia); text-shadow: 0 0 20px var(--nvidia-glow); }
+  .cost-breakdown { border-top: 1px solid var(--line); padding-top: 14px; }
+  .cost-breakdown h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 10px; }
+  .agent-cost { 
+    display: flex; justify-content: space-between; align-items: center; 
+    padding: 8px 12px; background: var(--card); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; font-size: 11px;
+    transition: background 0.2s ease;
+  }
+  .agent-cost:hover { background: var(--card-hover); }
+  .agent-cost .agent-name { font-weight: 700; color: var(--txt); }
+  .agent-cost .agent-stats { color: var(--muted); font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+
+  /* ---- feeds (Glassmorphism) ---- */
+  .opsgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+  .feed { max-height: 360px; overflow-y: auto; margin-top: 14px; }
+  .fitem { 
+    border-left: 2px solid var(--line); padding: 9px 0 9px 14px; font-size: 12px; 
+    transition: background 0.2s ease;
+    background: transparent;
+  }
+  .fitem:hover { background: rgba(255,255,255,0.02); }
+  .fitem.highlight { background: rgba(99, 102, 241, 0.1); border-left-color: var(--nebius); }
+  .fitem .ft { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+  .fitem .fm { margin-top: 3px; line-height: 1.5; }
   .feed-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-  .feed-header h3 { margin: 0; }
+  .feed-header h3 { margin: 0; font-size: 15px; font-weight: 700; }
   .feed-filter { display: flex; align-items: center; gap: 8px; }
-  .feed-filter select { background: #0f1730; color: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
-  .feed-filter select:focus { outline: none; border-color: var(--blue); }
+  .feed-filter select { 
+    background: var(--card); backdrop-filter: blur(8px);
+    color: var(--txt); border: 1px solid var(--line); border-radius: 8px; 
+    padding: 6px 12px; font-size: 11px; cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  .feed-filter select:hover { border-color: var(--line-glow); }
+  .feed-filter select:focus { outline: none; border-color: var(--nebius); box-shadow: 0 0 10px var(--nebius-glow); }
   .feed-filter .clear-filter { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 8px; }
-  .feed-filter .clear-filter:hover { color: var(--blue); }
-  .case-filter-badge { background: var(--blue); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .feed-filter .clear-filter:hover { color: var(--nebius); }
+  .case-filter-badge { background: var(--nebius); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
 
-  /* ---- compliance fieldset ---- */
-  .fieldset { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  /* ---- audit trail page (Glassmorphism) ---- */
+  .audit-toolbar { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 12px; align-items: center; }
+  .audit-toolbar input, .audit-toolbar select {
+    padding: 10px 14px; font-size: 12px; margin: 0;
+    background: var(--card); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 10px; color: var(--txt);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .audit-toolbar input:focus, .audit-toolbar select:focus { border-color: var(--nebius); box-shadow: 0 0 12px var(--nebius-glow); }
+  .audit-clear-btn { width: auto; margin: 0; padding: 10px 18px; font-size: 12px; white-space: nowrap; }
+  @media (max-width: 1100px) { .audit-toolbar { grid-template-columns: 1fr 1fr; } }
+  .audit-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+  .audit-table th {
+    text-align: left; padding: 10px 14px; color: var(--muted); font-size: 10px;
+    text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--bg-2); backdrop-filter: blur(12px);
+  }
+  .audit-table td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .audit-table tbody tr { transition: background 0.2s ease; }
+  .audit-table tbody tr:hover { background: rgba(255,255,255,.04); }
+  .audit-table td.mono { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; color: var(--muted); white-space: nowrap; }
+  .audit-table td.small { font-size: 11px; color: #c3ccdf; white-space: normal; }
+  .status-badge {
+    font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .4px; 
+    background: rgba(255,255,255,0.05); color: var(--muted);
+  }
+  .status-badge.status-done { background: rgba(16, 185, 129, 0.15); color: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+  .status-badge.status-denied { background: rgba(239, 68, 68, 0.15); color: var(--red); box-shadow: 0 0 8px var(--red-glow); }
+  .status-badge.status-skipped { background: rgba(245, 158, 11, 0.15); color: var(--yellow); box-shadow: 0 0 8px var(--yellow-glow); }
+
+  /* ---- compliance fieldset (Glassmorphism) ---- */
+  .fieldset { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
   .fshead { font-size: 12px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .6px; color: var(--blue); margin-bottom: 6px; }
+    letter-spacing: .6px; color: var(--nebius); margin-bottom: 8px; }
 
-  /* ---- trace ---- */
-  .hop { border-left: 3px solid var(--blue); background: #1a2340; padding: 12px 14px;
-    border-radius: 0 10px 10px 0; margin-bottom: 10px; }
+  /* ---- trace (Glassmorphism) ---- */
+  .hop { 
+    border-left: 3px solid var(--nebius); 
+    background: var(--card); 
+    backdrop-filter: blur(8px);
+    padding: 14px 16px;
+    border-radius: 0 12px 12px 0; margin-bottom: 12px;
+    transition: background 0.2s ease;
+  }
+  .hop:hover { background: var(--card-hover); }
   .hop .hh { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; }
-  .hop .hl { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .hop .hl { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
 
   @media (max-width: 1100px) {
     #view-single { grid-template-columns: 1fr; }
@@ -197,55 +549,92 @@
     .opsbtns { min-width: 0; width: 100%; }
   }
   @media (max-width: 940px) { #view-single { grid-template-columns: 1fr; } }
+  @media (max-width: 768px) {
+    .reviewgrid { grid-template-columns: 1fr; }
+    .cost-kpis { grid-template-columns: repeat(2, 1fr); }
+    .rvactions { grid-template-columns: repeat(2, 1fr); }
+    .row { grid-template-columns: 1fr; }
+    .introw { flex-direction: column; }
+    .introw-actions { min-width: unset; width: 100%; }
+    .kpis { grid-template-columns: 1fr; }
+    .board { grid-template-columns: 1fr; }
+    .audit-toolbar { grid-template-columns: 1fr; }
+    .workflow-box { flex-direction: column; }
+    .workflow-step::after { content: ''; }
+    .workflow-step { border-radius: 8px; }
+    .board-controls { flex-direction: column; }
+  }
   .card {
-    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    background: var(--card);
+    backdrop-filter: blur(12px);
     border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 20px;
+    border-radius: 18px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
   }
-  .card h2 { margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
-  .card .hint { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  }
+  .card h2 { margin: 0 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+  .card .hint { color: var(--muted); font-size: 12px; margin-bottom: 18px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
   .tab {
-    padding: 8px 14px; font-size: 13px; border-radius: 9px; cursor: pointer;
-    background: #1a2340; border: 1px solid var(--line); color: var(--muted);
+    padding: 9px 16px; font-size: 13px; border-radius: 10px; cursor: pointer;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--line); color: var(--muted);
+    transition: background 0.2s ease, color 0.2s ease;
   }
-  .tab.on { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  .tab:hover { background: rgba(255,255,255,0.06); border-color: var(--line-glow); }
+  .tab.on { background: var(--nebius); border-color: var(--nebius); color: #fff; font-weight: 600; box-shadow: 0 0 15px var(--nebius-glow); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; font-weight: 500; }
   input, select, textarea {
-    width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
-    background: #0f1730; border: 1px solid var(--line); border-radius: 9px; color: var(--txt);
+    width: 100%; padding: 11px 14px; font-size: 14px; font-family: inherit;
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 10px; color: var(--txt);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--nebius); box-shadow: 0 0 12px var(--nebius-glow); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   button {
-    width: 100%; margin-top: 20px; padding: 13px; font-size: 14px; font-weight: 600;
-    font-family: inherit; cursor: pointer; border: none; border-radius: 10px;
-    background: linear-gradient(135deg, var(--blue), #1b6ef3); color: #fff;
+    width: 100%; margin-top: 22px; padding: 14px; font-size: 14px; font-weight: 600;
+    font-family: inherit; cursor: pointer; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, var(--nebius), var(--nebius-light)); color: #fff;
+    box-shadow: 0 4px 20px var(--nebius-glow);
+    transition: transform 0.2s ease, opacity 0.2s ease;
   }
-  button:hover { filter: brightness(1.1); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  .ghost { background: #1a2340; border: 1px solid var(--line); color: var(--muted); margin-top: 10px; }
+  button:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 6px 25px var(--nebius-glow); }
+  button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .ghost { 
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); color: var(--muted); margin-top: 12px;
+    box-shadow: none;
+  }
+  .ghost:hover { background: rgba(255,255,255,0.06); border-color: var(--line-glow); box-shadow: none; }
   .empty { display: grid; place-items: center; min-height: 300px; color: var(--muted); text-align: center; }
-  .empty .big { font-size: 40px; margin-bottom: 10px; opacity: .5; }
+  .empty .big { font-size: 44px; margin-bottom: 12px; opacity: .5; }
   .spinner {
-    width: 34px; height: 34px; border: 3px solid var(--line);
-    border-top-color: var(--blue); border-radius: 50%;
-    animation: spin .8s linear infinite; margin: 0 auto 14px;
+    width: 36px; height: 36px; border: 3px solid var(--line);
+    border-top-color: var(--nebius); border-radius: 50%;
+    animation: spin .8s linear infinite; margin: 0 auto 16px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .score-wrap { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-  .gauge { position: relative; width: 132px; height: 132px; flex-shrink: 0; }
+  .score-wrap { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .gauge { position: relative; width: 140px; height: 140px; flex-shrink: 0; }
   .gauge svg { transform: rotate(-90deg); }
   .gauge .val {
     position: absolute; inset: 0; display: grid; place-items: center;
-    font-size: 30px; font-weight: 800;
+    font-size: 32px; font-weight: 800;
   }
-  .lvl { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
-  .meta { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.7; }
+  .lvl { font-size: 24px; font-weight: 800; letter-spacing: -0.4px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.7; }
   .flag {
-    border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px;
-    padding: 13px 15px; margin-top: 11px; background: #0f1730;
+    border: 1px solid var(--line); border-left-width: 4px; border-radius: 12px;
+    padding: 14px 16px; margin-top: 12px; background: rgba(255,255,255,0.02);
+    backdrop-filter: blur(8px);
   }
   .flag .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .flag .ty { font-weight: 700; font-size: 14px; }
@@ -253,7 +642,7 @@
   .flag p { margin: 8px 0 0; font-size: 13px; color: #c3ccdf; line-height: 1.65; }
   .flag pre {
     margin: 9px 0 0; font-size: 11px; color: var(--muted);
-    background: #0b1226; padding: 9px 11px; border-radius: 7px;
+    background: var(--bg-code); padding: 9px 11px; border-radius: 7px;
     overflow-x: auto; white-space: pre-wrap;
   }
   ul.recs { margin: 10px 0 0; padding-left: 20px; }
@@ -263,48 +652,240 @@
   details { margin-top: 22px; }
   summary { cursor: pointer; font-size: 12px; color: var(--muted); }
   details pre {
-    margin-top: 10px; font-size: 11px; background: #0b1226; color: #9fb0d0;
-    padding: 14px; border-radius: 9px; overflow-x: auto; max-height: 360px;
+    margin-top: 10px; font-size: 11px; background: var(--bg-code); color: var(--code-fg);
+    padding: 14px; border-radius: 9px; overflow: auto; max-height: 360px;
   }
-  .err { border-left: 4px solid var(--red); background: #2a1418; padding: 15px; border-radius: 10px; font-size: 13px; }
+  .err { border-left: 4px solid var(--red); background: var(--bg-error); padding: 15px; border-radius: 10px; font-size: 13px; }
   footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 24px 34px; }
+
+  /* Governance editable lists */
+  .editable-list { 
+    display: flex; flex-wrap: wrap; gap: 8px; 
+    min-height: 44px; padding: 10px; 
+    background: var(--bg2); border-radius: 8px; border: 1px solid var(--line);
+  }
+  .editable-list .list-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg3); padding: 6px 10px; border-radius: 6px;
+    font-size: 13px; color: var(--fg);
+    white-space: nowrap; flex-shrink: 0; max-width: 100%;
+  }
+  .editable-list .list-item span {
+    white-space: nowrap;
+  }
+  .editable-list .list-item.route {
+    background: linear-gradient(135deg, #1a2744 0%, #0f1929 100%);
+    border: 1px solid var(--line);
+  }
+  .editable-list .list-item .remove-btn {
+    background: none; border: none; color: var(--red); cursor: pointer;
+    font-size: 16px; padding: 0 2px; line-height: 1; opacity: 0.7;
+    flex-shrink: 0;
+  }
+  .editable-list .list-item .remove-btn:hover { opacity: 1; }
+  .editable-list.chips .list-item {
+    background: linear-gradient(135deg, #2d1f3d 0%, #1a1429 100%);
+    border: 1px solid #3d2a5c;
+  }
+  .editable-list .list-item.vip {
+    background: linear-gradient(135deg, #142b1f 0%, #0f1a14 100%);
+    border: 1px solid var(--line);
+  }
+  .vip-tag {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 2px 6px; border-radius: 4px; color: var(--muted);
+    background: rgba(255,255,255,0.06); flex-shrink: 0;
+  }
+  .vip-tag.verified { color: var(--green); background: rgba(46, 204, 113, 0.15); }
+  .gov-tabcontent { margin-top: 0; }
+  #gov-tabs { margin-bottom: 0; }
+
+  /* Governance UX — section guides */
+  .section-guide {
+    background: linear-gradient(135deg, rgba(52, 152, 219, 0.08) 0%, rgba(52, 152, 219, 0.02) 100%);
+    border: 1px solid rgba(52, 152, 219, 0.2); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 14px; font-size: 13px; line-height: 1.6;
+  }
+  .section-guide b { color: var(--accent); }
+  .section-guide .guide-icon { font-size: 18px; margin-right: 6px; vertical-align: -2px; }
+  .section-guide .example {
+    background: var(--bg2); border-radius: 6px; padding: 8px 12px;
+    margin-top: 8px; font-size: 12px; color: var(--muted); border-left: 3px solid var(--accent);
+  }
+  .workflow-box {
+    display: flex; gap: 0; align-items: stretch; margin: 14px 0 6px;
+    font-size: 12px; overflow-x: auto;
+  }
+  .workflow-step {
+    flex: 1; min-width: 120px; padding: 10px 14px; text-align: center;
+    background: var(--bg2); border: 1px solid var(--line); position: relative;
+  }
+  .workflow-step:first-child { border-radius: 8px 0 0 8px; }
+  .workflow-step:last-child { border-radius: 0 8px 8px 0; }
+  .workflow-step .step-num {
+    display: inline-block; width: 20px; height: 20px; line-height: 20px;
+    border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700;
+    font-size: 11px; margin-bottom: 4px;
+  }
+  .workflow-step .step-label { display: block; font-weight: 600; color: var(--fg); }
+  .workflow-step .step-detail { display: block; color: var(--muted); margin-top: 2px; }
+  .workflow-step::after {
+    content: '→'; position: absolute; right: -8px; top: 50%;
+    transform: translateY(-50%); color: var(--accent); font-size: 16px; z-index: 1;
+  }
+  .workflow-step:last-child::after { content: ''; }
+
+  /* Tavily verification panel */
+  .verify-panel {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px; margin-top: 10px; display: none;
+  }
+  .verify-panel.show { display: block; }
+  .verify-panel .verify-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .verify-panel .verify-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  }
+  .verify-status.v-high { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+  .verify-status.v-medium { background: rgba(245, 158, 11, 0.15); color: var(--yellow); }
+  .verify-status.v-low { background: rgba(231, 76, 60, 0.15); color: var(--red); }
+  .verify-status.v-none { background: rgba(255,255,255,0.06); color: var(--muted); }
+  .verify-status.v-loading { background: rgba(52, 152, 219, 0.15); color: var(--accent); }
+  .verify-result {
+    background: var(--bg3); border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 8px; font-size: 12px; line-height: 1.5;
+  }
+  .verify-result .vr-title { font-weight: 600; color: var(--fg); }
+  .verify-result .vr-url { color: var(--accent); font-size: 11px; word-break: break-all; }
+  .verify-result .vr-snippet { color: var(--muted); margin-top: 4px; }
+  .verify-actions {
+    display: flex; gap: 8px; margin-top: 10px;
+  }
+  .verify-actions button { font-size: 13px; padding: 6px 16px; }
+  .verify-actions .btn-confirm { background: var(--green); color: #fff; }
+  .verify-actions .btn-confirm:hover { background: #059669; }
+  .verify-actions .btn-override { background: var(--bg3); color: var(--muted); border: 1px solid var(--line); }
+  .verify-actions .btn-cancel { background: none; color: var(--muted); }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand">
+<div class="app-shell">
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
     <div class="logo">VF</div>
-    <div>
-      <h1>VF Logistics | AI Fraud Detection</h1>
-      <div class="sub">Autonomous multi-agent workflow &bull; NVIDIA Nemotron 3 on Nebius Token Factory</div>
+    <div class="brandtxt">VF Logistics<small>AI Fraud Detection</small></div>
+    <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Collapse sidebar">&#171;</button>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="navitem on" data-view="ops">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <span class="navlabel" data-i18n="nav.pipeline">Dashboard</span>
     </div>
-  </div>
-  <div class="badges">
-    <span class="badge">Hackathon: <b>Nebius x NVIDIA Global AI Hackathon</b></span>
+    <div class="navitem" data-view="devops">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="navlabel" data-i18n="nav.devops">DevOps</span>
+    </div>
+    <div class="navitem" data-view="review">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="navlabel" data-i18n="nav.review">Review Queue</span>
+      <span id="qbadge" class="qbadge"></span>
+    </div>
+    <div class="navitem" data-view="audit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+      <span class="navlabel" data-i18n="nav.audit">Audit Trail</span>
+    </div>
+    <div class="navitem" data-view="gov">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8.5 8 11 4.5-2.5 8-6 8-11V5l-8-3z"/></svg>
+      <span class="navlabel" data-i18n="nav.governance">Governance</span>
+    </div>
+    <div class="navitem demo-hide" data-view="single">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+      <span class="navlabel" data-i18n="nav.single">Agent Console</span>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="badge"><b>Nebius</b> x <b>NVIDIA</b> Hackathon</span>
     <span class="badge">Track: <b>Best Apps and Agents</b></span>
-    <span class="badge">Models: <b>Nemotron 3 Nano</b> + <b>Super</b> + <b>MiniCPM-V</b></span>
-    <span class="badge">Runtime: <b>Cloud Run &bull; asia-southeast1</b></span>
+    <div class="terminal-line">nemotron-super-49b active</div>
+    <div class="terminal-line">nebius-serverless connected</div>
+    <div class="terminal-line" style="color: var(--nvidia);">system operational</div>
   </div>
-</header>
+</aside>
+
+<div class="main-content">
+  <header class="topbar">
+    <div id="pagetitle">Dashboard</div>
+    <div class="topbar-actions">
+      <span class="status-pill" id="healthpill">&#9679; Checking...</span>
+      <button id="lang-toggle" style="background:#1a2340; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; margin-top:0; width:auto;">🌐 EN / VI</button>
+    </div>
+  </header>
 
 <main>
-  <div class="viewnav">
-    <div class="vtab on" data-view="ops">Autonomous Operations</div>
-    <div class="vtab" data-view="review">Review Queue <span id="qbadge" class="qbadge"></span></div>
-    <div class="vtab" data-view="gov">Governance</div>
-    <div class="vtab" data-view="single">Single Agent Console</div>
-  </div>
-
   <!-- ================= AUTONOMOUS OPERATIONS ================= -->
   <section id="view-ops">
+    <div class="card">
+      <h2>Autonomous Operations Dashboard</h2>
+      <div class="hint">
+        Shipment events arrive, and a background worker drives each case
+        through fraud detection, compliance screening and deep investigation
+        on its own. Live status of every case in flight.
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="card">
+      <h3>Case pipeline</h3>
+      <div class="hint">Cases move left to right without supervision. Click one to open its trace.</div>
+      <div class="board-controls">
+        <input type="text" id="board-search" placeholder="Search by ID, company, destination..." oninput="onBoardSearch()">
+        <select id="board-sort" onchange="onBoardSort()">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="risk-high">Risk: High to Low</option>
+          <option value="risk-low">Risk: Low to High</option>
+          <option value="priority">Priority (urgent first)</option>
+          <option value="sla">SLA (expiring first)</option>
+        </select>
+        <select id="board-priority-filter" onchange="onBoardFilter()">
+          <option value="">All priorities</option>
+          <option value="CRITICAL">Critical only</option>
+          <option value="HIGH">High and above</option>
+          <option value="MEDIUM">Medium and above</option>
+        </select>
+        <span class="bc-stats" id="board-stats"></span>
+      </div>
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="card">
+      <div class="feed-header">
+        <h3>Live event feed</h3>
+        <div class="feed-filter">
+          <select id="feedFilter" onchange="filterFeed(this.value)">
+            <option value="">All cases</option>
+          </select>
+          <button class="clear-filter" onclick="clearFeedFilter()" title="Clear filter">✕</button>
+        </div>
+      </div>
+      <div class="feed" id="feed"></div>
+    </div>
+
+    <section class="card" id="trace" hidden></section>
+  </section>
+
+  <!-- ================= DEVOPS ================= -->
+  <section id="view-devops" hidden>
     <div class="card opshead">
       <div>
-        <h2>Autonomous Operations</h2>
+        <h2>DevOps Controls</h2>
         <div class="hint">
-          Shipment events arrive, and a background worker drives each case
-          through fraud detection, compliance screening and deep investigation
-          on its own. Press start, then stop touching the keyboard.
+          Operational levers for the pipeline: inject demo traffic, upload real
+          documents, clear the board, and watch API cost accrue in real time.
         </div>
       </div>
       <div class="opsbtns">
@@ -331,7 +912,7 @@
         </div>
       </div>
 
-      <div class="introw" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="introw demo-hide" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
         <div>
           <h3>Volume test</h3>
           <div class="hint">
@@ -350,28 +931,7 @@
       <div id="intakeout"></div>
     </div>
 
-    <div class="kpis" id="kpis"></div>
-
-    <!-- AI Settings Panel - Future Development (hidden for now) -->
-    <!--
-    <div class="card" style="margin-bottom:16px">
-      <div class="cost-header">
-        <h3>AI Settings</h3>
-        <div class="hint">Configure the Nemotron model used for fraud & compliance agents</div>
-      </div>
-      <div style="display:flex;gap:16px;align-items:center;margin-top:12px">
-        <label style="font-size:13px;color:var(--muted)">Model:</label>
-        <select id="modelSelect" style="padding:8px 12px;border-radius:8px;background:#1a2340;border:1px solid var(--line);color:var(--txt);font-size:13px;min-width:280px">
-          <option value="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B">Nemotron 3 Nano (Budget)</option>
-          <option value="nvidia/nemotron-3-super-120b-a12b">Nemotron 3 Super (Balanced)</option>
-          <option value="nvidia/Nemotron-3-Ultra-550b-a55b">Nemotron 3 Ultra (Serious reasoning)</option>
-        </select>
-        <span id="modelPricing" style="font-size:12px;color:var(--muted)">$0.15/1M in, $0.60/1M out</span>
-      </div>
-    </div>
-    -->
-
-    <div class="card cost-monitor">
+    <div class="card cost-monitor demo-hide">
       <div class="cost-header">
         <h3>Cost Monitor</h3>
         <div class="hint" id="costHint">Real-time API usage tracking | <span id="currentModelName">Nemotron 3 Nano</span> pricing</div>
@@ -398,42 +958,42 @@
         <div class="hint">No agent calls yet</div>
       </div>
     </div>
+  </section>
+
+  <!-- ================= AUDIT TRAIL ================= -->
+  <section id="view-audit" hidden>
+    <div class="card">
+      <h2>Audit Trail</h2>
+      <div class="hint">
+        Every action taken on your behalf, written once and never modified or
+        deleted. Filters query the server directly, so a case from long ago
+        is found the same way as one from a minute ago — not just whatever
+        page happened to be loaded. Case ID, action and status are exact
+        matches and mutually exclusive; picking one clears the others.
+      </div>
+    </div>
 
     <div class="card">
-      <h3>Case pipeline</h3>
-      <div class="hint">Cases move left to right without supervision. Click one to open its trace.</div>
-      <div class="board" id="board"></div>
-    </div>
-
-    <div class="opsgrid">
-      <div class="card">
-        <div class="feed-header">
-          <h3>Live event feed</h3>
-          <div class="feed-filter">
-            <select id="feedFilter" onchange="filterFeed('feed', this.value)">
-              <option value="">All cases</option>
-            </select>
-            <button class="clear-filter" onclick="clearFeedFilter()" title="Clear filter">✕</button>
-          </div>
-        </div>
-        <div class="feed" id="feed"></div>
+      <div class="audit-toolbar">
+        <input type="text" id="auditCaseId" placeholder="Exact case ID, e.g. CASE-VF-102036-DIRTY">
+        <select id="auditActionSel"><option value="">All actions</option></select>
+        <select id="auditStatusSel"><option value="">All statuses</option></select>
+        <select id="auditPageSize">
+          <option value="25">25 / page</option>
+          <option value="50" selected>50 / page</option>
+          <option value="100">100 / page</option>
+          <option value="200">200 / page</option>
+        </select>
+        <button class="ghost audit-clear-btn" id="auditClearBtn">Clear filters</button>
       </div>
-      <div class="card">
-        <div class="feed-header">
-          <h3>Actions taken on your behalf</h3>
-          <div class="feed-filter">
-            <select id="auditFilter" onchange="filterFeed('auditfeed', this.value)">
-              <option value="">All cases</option>
-            </select>
-            <button class="clear-filter" onclick="clearFeedFilter()" title="Clear filter">✕</button>
-          </div>
-        </div>
-        <div class="hint">Every entry is an auditable state change, not a suggestion.</div>
-        <div class="feed" id="auditfeed"></div>
+      <div class="hint" id="auditcount" style="margin-top:10px"></div>
+      <div id="audittable"></div>
+      <div class="audit-pager" style="display:flex;gap:8px;margin-top:12px;align-items:center">
+        <button class="ghost" id="auditPrevBtn" disabled>&larr; Prev</button>
+        <button class="ghost" id="auditNextBtn" disabled>Next &rarr;</button>
+        <button class="ghost" id="auditRefreshBtn">Refresh</button>
       </div>
     </div>
-
-    <section class="card" id="trace" hidden></section>
   </section>
 
   <!-- ================= REVIEW QUEUE ================= -->
@@ -449,8 +1009,12 @@
 
     <div class="reviewgrid">
       <div class="card">
-        <h3>Pending</h3>
+        <h3>Pending <span id="qtotalhint" class="hint" style="font-weight:400"></span></h3>
         <div id="qlist" class="feed" style="max-height:640px"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="ghost" id="queuePrevBtn" disabled>&larr; Prev</button>
+          <button class="ghost" id="queueNextBtn" disabled>Next &rarr;</button>
+        </div>
       </div>
       <div class="card" id="rvdetail">
         <div class="empty"><div><div class="big">??</div>
@@ -462,42 +1026,271 @@
   <!-- ================= GOVERNANCE ================= -->
   <section id="view-gov" hidden>
     <div class="card">
-      <h2>Delegation Boundary</h2>
+      <h2>Governance Settings</h2>
       <div class="hint">
-        The agent does not earn authority by reasoning well. A human publishes a
-        machine-readable boundary and the agent operates inside it. With no
-        active boundary the system is SUSPENDED: it still analyses and proposes,
-        but the execution gate refuses every protected action.
+        This page controls how shipments are automatically processed.
+        You decide which companies are trusted, which are blocked, and what the AI agent is allowed to do on its own.
+      </div>
+      <div class="workflow-box">
+        <div class="workflow-step">
+          <span class="step-num">1</span>
+          <span class="step-label">Shipment arrives</span>
+          <span class="step-detail">Document or event</span>
+        </div>
+        <div class="workflow-step">
+          <span class="step-num">2</span>
+          <span class="step-label">Rules check</span>
+          <span class="step-detail">Your rules below</span>
+        </div>
+        <div class="workflow-step">
+          <span class="step-num">3</span>
+          <span class="step-label">Auto / AI / Human</span>
+          <span class="step-detail">Based on rules</span>
+        </div>
+        <div class="workflow-step">
+          <span class="step-num">4</span>
+          <span class="step-label">Decision</span>
+          <span class="step-detail">Clear / Hold / Reject</span>
+        </div>
       </div>
       <div id="govstate"></div>
     </div>
 
+    <!-- Tabs for different governance sections -->
     <div class="card">
-      <h3>Publish a boundary</h3>
-      <div class="hint">
-        Publishing supersedes the previous version. Every executed action records
-        the version that permitted it, so a past decision can be reconstructed
-        against the policy in force at the time.
+      <div class="tabs" id="gov-tabs">
+        <div class="tab on" data-govtab="prefilter">Auto-Processing Rules</div>
+        <div class="tab" data-govtab="boundary">AI Agent Permissions</div>
+        <div class="tab" data-govtab="history">Change History</div>
       </div>
-      <div class="row" style="margin-top:14px">
-        <div>
-          <label>Published by (required)</label>
-          <input id="govauthor" placeholder="Your name">
-        </div>
-        <div>
-          <label>Note</label>
-          <input id="govnote" value="Initial delegation for pilot operation">
-        </div>
-      </div>
-      <label>Permissions (machine-readable)</label>
-      <textarea id="govperms" rows="18" spellcheck="false"></textarea>
-      <button id="govpublish">Publish delegation boundary</button>
-      <div id="govout"></div>
     </div>
 
-    <div class="card">
-      <h3>Version history</h3>
-      <div id="govhistory" class="feed"></div>
+    <!-- TAB 1: Auto-Processing Rules -->
+    <div id="govtab-prefilter" class="gov-tabcontent">
+      <div class="card">
+        <h3>Trusted Companies (Auto-Clear)</h3>
+        <div class="section-guide">
+          <span class="guide-icon">&#9989;</span>
+          Shipments from these companies are <b>automatically cleared</b> without waiting for AI review,
+          as long as no other red flags are detected (abnormal freight, suspicious destination, etc.).
+          Adding a <b>tax ID</b> enables strict identity matching — if someone claims to be this company
+          but provides a different tax ID, the shipment is <b>blocked immediately</b>.
+          <div class="example">
+            Example: "Vinamilk" with tax ID "0100107518" → auto-cleared. Someone claiming to be "Vinamilk" with
+            tax ID "9999999999" → identity mismatch → blocked and escalated.
+          </div>
+        </div>
+        <div id="vip-registry" class="editable-list" style="margin-top:14px"></div>
+        <div class="row" style="margin-top:8px">
+          <input id="vip-company-input" placeholder="Company name (e.g., Vinamilk)" style="flex:1">
+          <input id="vip-taxid-input" placeholder="Tax ID (optional, enables strict matching)" style="flex:1">
+          <button type="button" id="vip-verify-btn" onclick="verifyAndAddVip()">Verify &amp; Add</button>
+        </div>
+        <div id="vip-verify-panel" class="verify-panel"></div>
+      </div>
+
+      <div class="card">
+        <h3>Blocked Companies &amp; Tax IDs (Auto-Reject)</h3>
+        <div class="section-guide">
+          <span class="guide-icon">&#128683;</span>
+          Shipments from these companies or tax IDs are <b>automatically rejected</b>.
+          Use this for known bad actors, sanctioned entities, or shell companies you've identified.
+          <div class="example">
+            Example: Add "Shadow Logistics LLC" → any shipment from this company is instantly rejected,
+            no AI review needed.
+          </div>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <div style="flex:1">
+            <label>Company Names</label>
+            <div id="blacklist-companies" class="editable-list"></div>
+            <div class="row" style="margin-top:8px">
+              <input id="blacklist-company-input" placeholder="Company name to block...">
+              <button type="button" onclick="verifyAndAddBlacklist('blacklist-companies', 'blacklist-company-input', 'company')">Verify &amp; Add</button>
+            </div>
+            <div id="bl-company-verify-panel" class="verify-panel"></div>
+          </div>
+          <div style="flex:1">
+            <label>Tax IDs</label>
+            <div id="blacklist-taxids" class="editable-list"></div>
+            <div class="row" style="margin-top:8px">
+              <input id="blacklist-taxid-input" placeholder="Tax ID to block...">
+              <button type="button" onclick="verifyAndAddBlacklist('blacklist-taxids', 'blacklist-taxid-input', 'tax_id')">Verify &amp; Add</button>
+            </div>
+            <div id="bl-taxid-verify-panel" class="verify-panel"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Safe Domestic Routes</h3>
+        <div class="section-guide">
+          <span class="guide-icon">&#128666;</span>
+          Low-value shipments on these routes are <b>automatically cleared</b>.
+          This is designed for high-volume domestic freight that rarely poses a risk.
+          <div class="example">
+            Example: "Ho Chi Minh City → Hanoi" with value under $100 → auto-cleared.
+          </div>
+        </div>
+        <div id="safe-routes" class="editable-list" style="margin-top:14px"></div>
+        <div class="row" style="margin-top:8px">
+          <input id="route-origin-input" placeholder="Origin city (e.g., Ho Chi Minh City)" style="flex:1">
+          <input id="route-dest-input" placeholder="Destination city (e.g., Hanoi)" style="flex:1">
+          <button type="button" onclick="addRoute()">+ Add Route</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Low-Value Threshold</h3>
+        <div class="hint">Shipments below this value on safe routes above are auto-cleared. Default: $100 USD.</div>
+        <div class="row" style="margin-top:14px;align-items:center">
+          <label style="margin:0">Threshold (USD):</label>
+          <input id="low-value-threshold" type="number" min="0" step="10" value="100" style="width:120px">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center">
+          <div>
+            <label>Your name (required for audit trail)</label>
+            <input id="prefilter-author" placeholder="Your name">
+          </div>
+          <button id="save-prefilter-btn" style="margin-left:auto">Save Rules</button>
+        </div>
+        <div id="prefilter-out"></div>
+      </div>
+    </div>
+
+    <!-- TAB 2: AI Agent Permissions -->
+    <div id="govtab-boundary" class="gov-tabcontent" style="display:none">
+      <div class="card">
+        <h3>When Can the AI Release Shipments?</h3>
+        <div class="section-guide">
+          <span class="guide-icon">&#129302;</span>
+          These settings control when the AI agent can <b>approve and release</b> a shipment on its own,
+          without waiting for a human reviewer. If any condition below is not met, the shipment goes
+          to the Review Queue for a human to decide.
+          <div class="example">
+            Example: If max value is $25,000 and max risk is 39, a $10,000 shipment with risk score 25
+            → AI can release. A $50,000 shipment → must wait for human review.
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="auto-release-permitted" checked>
+            Permit auto-release
+          </label>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <div>
+            <label>Max Declared Value (USD)</label>
+            <input id="auto-release-max-value" type="number" min="0" step="1000" value="25000">
+          </div>
+          <div>
+            <label>Max Effective Risk Score</label>
+            <input id="auto-release-max-risk" type="number" min="0" max="100" value="39">
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="auto-release-zero-findings" checked>
+            Require zero deterministic findings
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Restricted Goods (Always Require Human Review)</h3>
+        <div class="section-guide">
+          <span class="guide-icon">&#9888;&#65039;</span>
+          Shipments containing these HS codes (product categories) <b>always require human review</b>,
+          regardless of risk score. Use this for dual-use goods, controlled substances, or sensitive materials.
+          <div class="example">
+            Example: HS code "8401" (nuclear reactors) → any shipment with this code goes to human review.
+          </div>
+        </div>
+        <div id="forbidden-hs-codes" class="editable-list" style="margin-top:14px"></div>
+        <div class="row" style="margin-top:8px">
+          <input id="hs-code-input" placeholder="HS code prefix (e.g., 8504)">
+          <button type="button" onclick="addListItem('forbidden-hs-codes', 'hs-code-input')">+ Add HS Code</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Restricted Destinations</h3>
+        <div class="hint">Shipments to these countries always require human review, regardless of other factors.</div>
+        <div id="forbidden-destinations" class="editable-list chips" style="margin-top:14px"></div>
+        <div class="row" style="margin-top:8px">
+          <input id="dest-input" placeholder="Country name (e.g., north korea)">
+          <button type="button" onclick="addListItem('forbidden-destinations', 'dest-input')">+ Add Destination</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Mandatory Human Review Triggers</h3>
+        <div class="hint">These conditions always send the case to a human reviewer, regardless of risk score or AI analysis.</div>
+        <div id="human-review-conditions" style="margin-top:14px">
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <input type="checkbox" data-condition="score_disputed" checked> Score disputed
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <input type="checkbox" data-condition="injection_detected" checked disabled> Injection detected (non-waivable)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <input type="checkbox" data-condition="forbidden_field_attempted" checked disabled> Forbidden field attempted (non-waivable)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <input type="checkbox" data-condition="compliance_blocked" checked> Compliance blocked
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <input type="checkbox" data-condition="exposure_claim_unsupported" checked> Exposure claim unsupported
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Suspicious Activity Reports (SAR)</h3>
+        <div class="hint">Control whether the AI agent can draft or submit formal Suspicious Activity Reports to regulators.</div>
+        <div style="margin-top:14px">
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <input type="checkbox" id="sar-may-draft" checked> May draft SAR
+          </label>
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="sar-may-file"> May file SAR (submit to regulator)
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-top:14px">
+          <div>
+            <label>Published by (required)</label>
+            <input id="govauthor" placeholder="Your name">
+          </div>
+          <div>
+            <label>Note</label>
+            <input id="govnote" value="Updated via Governance UI">
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <button id="govpublish">Save AI Permissions</button>
+          <button type="button" onclick="toggleJsonEditor()" style="margin-left:8px;background:var(--bg2)">Advanced: JSON</button>
+        </div>
+        <div id="json-editor-wrapper" style="display:none;margin-top:14px">
+          <label>Raw JSON (for advanced users)</label>
+          <textarea id="govperms" rows="18" spellcheck="false"></textarea>
+        </div>
+        <div id="govout"></div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Change History -->
+    <div id="govtab-history" class="gov-tabcontent" style="display:none">
+      <div class="card">
+        <h3>Change History</h3>
+        <div class="hint">Every change to rules and permissions is logged here with who made the change and when.</div>
+        <div id="govhistory" class="feed"></div>
+      </div>
     </div>
   </section>
 
@@ -643,8 +1436,53 @@
 </main>
 
 <footer>VF Logistics Fraud Detection &bull; Built 100% on Google Cloud</footer>
+</div>
+</div>
 
+<script src="/static/i18n.js"></script>
 <script>
+const _i18n = new I18n(localStorage.getItem('vf_lang') || 'en');
+_i18n.updatePageLanguage();
+document.getElementById('lang-toggle').addEventListener('click', () => {
+  const next = _i18n.getLocale() === 'en' ? 'vi' : 'en';
+  _i18n.setLocale(next);
+  localStorage.setItem('vf_lang', next);
+  document.getElementById('lang-toggle').textContent = next === 'vi' ? '🌐 VI / EN' : '🌐 EN / VI';
+  const activeNav = document.querySelector('.navitem.on');
+  const title = document.getElementById('pagetitle');
+  if (activeNav && title && typeof NAV_TITLES !== 'undefined' && NAV_TITLES[activeNav.dataset.view]) {
+    title.textContent = NAV_TITLES[activeNav.dataset.view]();
+  }
+});
+
+// DEMO_MODE hides secondary features (Agent Console, Cost Monitor, Volume
+// test) so a recording stays on the features that carry the project's
+// argument. It defaults to off so normal visitors always see the full app -
+// append ?demo=1 to preview the trimmed-down recording view on demand, or
+// ?full=1 to force everything on even if the server-side flag is set.
+(async function applyDemoMode() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('full') === '1') return;
+  const forceDemo = params.get('demo') === '1';
+  try {
+    let demoMode = forceDemo;
+    if (!forceDemo) {
+      const res = await fetch('/api/v1/config');
+      const cfg = await res.json();
+      demoMode = !!cfg.demo_mode;
+    }
+    if (demoMode) {
+      document.body.classList.add('demo-mode');
+      const activeNav = document.querySelector('.navitem.on');
+      if (activeNav && activeNav.classList.contains('demo-hide')) {
+        document.querySelector('.navitem[data-view="ops"]').click();
+      }
+    }
+  } catch (e) {
+    // Config fetch failing should never block the dashboard from rendering.
+  }
+})();
+
 const out = document.getElementById('out');
 let agent = 'fraud';
 
@@ -820,7 +1658,7 @@ function render(res, label) {
         ${res.error ? '<br>' + esc(res.error) : ''}
       </div>
       <div class="hint" style="margin-top:12px">Model: ${esc(res.model || '-')}</div>
-      <pre style="font-size:12px;background:#0b1226;padding:14px;border-radius:9px;overflow-x:auto;white-space:pre-wrap">${esc(
+      <pre style="font-size:12px;background:var(--bg-code);padding:14px;border-radius:9px;overflow-x:auto;white-space:pre-wrap">${esc(
         res.raw || rawJson
       )}</pre>`;
     return;
@@ -977,6 +1815,20 @@ const OUTCOME_COLOR = {
   DEAD_LETTER: '#8b93a7'
 };
 
+// Reverse of COL_OF, so a column's header count can sum every raw backend
+// state that folds into it, rather than counting only the column's own
+// literal state name.
+const STATES_IN_COL = {};
+STATES.forEach(([s]) => { STATES_IN_COL[s] = [s]; });
+Object.entries(COL_OF).forEach(([rawState, col]) => {
+  (STATES_IN_COL[col] || (STATES_IN_COL[col] = [])).push(rawState);
+});
+
+function columnTotal(snap, col) {
+  const counts = snap.counts || {};
+  return (STATES_IN_COL[col] || [col]).reduce((sum, s) => sum + (counts[s] || 0), 0);
+}
+
 const TERMINAL = [
   'AUTO_CLEARED', 'HELD_FOR_REVIEW', 'ESCALATED', 'PENDING_HUMAN',
   'RELEASED_BY_HUMAN', 'BLOCKED_BY_HUMAN', 'DEAD_LETTER'
@@ -988,17 +1840,144 @@ let lastSnap = null;
 let filterCase = null; // Current case filter for feeds
 let prevCaseStates = {}; // Track previous states for animation
 
+// ---- Board search / sort / filter / pagination state ----
+let boardSearchText = '';
+let boardSortKey = 'newest';
+let boardPriorityFilter = '';
+const COL_PAGE_SIZE = 8;
+let boardExpanded = {}; // {STATE: true} when "show more" is clicked
+
+const PRIORITY_RANK = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3};
+const SLA_HOURS = {CRITICAL: 2, HIGH: 8, MEDIUM: 24, LOW: 72};
+
+function casePriority(c) {
+  const risk = c.risk_score;
+  const cs = (c.compliance_status || '').toUpperCase();
+  if (risk >= 90 || cs === 'BLOCKED') return 'CRITICAL';
+  if (risk >= 70 || cs === 'REVIEW_REQUIRED' || c.state === 'ESCALATED') return 'HIGH';
+  if (risk != null && risk >= 40) return 'MEDIUM';
+  if (risk == null) return 'MEDIUM'; // ungraded = unknown = treat as medium
+  return 'LOW';
+}
+
+function caseSlaDeadline(c) {
+  const created = new Date(c.created_at);
+  if (isNaN(created)) return null;
+  const p = casePriority(c);
+  return new Date(created.getTime() + SLA_HOURS[p] * 3600000);
+}
+
+function slaStatus(c) {
+  if (TERMINAL.includes(c.state)) return {text: 'Resolved', cls: 'sla-done'};
+  const deadline = caseSlaDeadline(c);
+  if (!deadline) return {text: '', cls: ''};
+  const diff = deadline - new Date();
+  if (diff < 0) return {text: 'Overdue ' + fmtDur(-diff), cls: 'sla-overdue'};
+  if (diff < 3600000) return {text: fmtDur(diff) + ' left', cls: 'sla-urgent'};
+  return {text: fmtDur(diff) + ' left', cls: 'sla-ok'};
+}
+
+function fmtDur(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h >= 24) return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('en-GB', {day: '2-digit', month: 'short'})
+    + ' ' + d.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
+}
+
+function matchesBoardSearch(c, text) {
+  if (!text) return true;
+  const t = text.toLowerCase();
+  const s = c.shipment || {};
+  return (c.case_id || '').toLowerCase().includes(t)
+    || (c.shipment_id || '').toLowerCase().includes(t)
+    || (s.shipper_company || '').toLowerCase().includes(t)
+    || (s.destination || '').toLowerCase().includes(t)
+    || (s.receiver_company || '').toLowerCase().includes(t)
+    || (s.origin || '').toLowerCase().includes(t)
+    || (c.state || '').toLowerCase().includes(t)
+    || (c.compliance_status || '').toLowerCase().includes(t);
+}
+
+function matchesPriorityFilter(c, filter) {
+  if (!filter) return true;
+  const p = casePriority(c);
+  if (filter === 'CRITICAL') return p === 'CRITICAL';
+  if (filter === 'HIGH') return p === 'CRITICAL' || p === 'HIGH';
+  if (filter === 'MEDIUM') return p !== 'LOW';
+  return true;
+}
+
+function sortBoardCases(cases, key) {
+  const fns = {
+    'newest': (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0),
+    'oldest': (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0),
+    'risk-high': (a, b) => (b.risk_score || 0) - (a.risk_score || 0),
+    'risk-low': (a, b) => (a.risk_score || 0) - (b.risk_score || 0),
+    'priority': (a, b) => PRIORITY_RANK[casePriority(a)] - PRIORITY_RANK[casePriority(b)],
+    'sla': (a, b) => (caseSlaDeadline(a) || 0) - (caseSlaDeadline(b) || 0),
+  };
+  return [...cases].sort(fns[key] || fns['newest']);
+}
+
+function onBoardSearch() {
+  boardSearchText = (document.getElementById('board-search').value || '').trim();
+  if (lastSnap) renderBoard(lastSnap);
+}
+function onBoardSort() {
+  boardSortKey = document.getElementById('board-sort').value;
+  if (lastSnap) renderBoard(lastSnap);
+}
+function onBoardFilter() {
+  boardPriorityFilter = document.getElementById('board-priority-filter').value;
+  if (lastSnap) renderBoard(lastSnap);
+}
+function toggleColumn(state) {
+  boardExpanded[state] = !boardExpanded[state];
+  if (lastSnap) renderBoard(lastSnap);
+}
+
 function hhmmss(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return isNaN(d) ? '' : d.toISOString().slice(11, 19);
 }
 
+const KPI_ICONS = {
+  'In flight': { icon: '📊', class: 'icon-cases' },
+  'Auto-cleared': { icon: '✓', class: 'icon-reviewed' },
+  'Cleared by Rules': { icon: '⚡', class: 'icon-accuracy', nvidia: true },  // SQL pre-filter
+  'Cleared by AI': { icon: '✓', class: 'icon-reviewed' },  // Nemotron
+  'Awaiting human': { icon: '👤', class: 'icon-flagged' },
+  'Escalated': { icon: '⚠', class: 'icon-flagged' },
+  'Avg agent latency': { icon: '⚡', class: 'icon-latency', nebius: true }
+};
+
 function kpiTile(k, v, s, color) {
+  const cfg = KPI_ICONS[k] || { icon: '📈', class: 'icon-cases' };
+  const vClass = color ? (
+    color.includes('green') ? 'v-green' :
+    color.includes('red') ? 'v-red' :
+    color.includes('nvidia') ? 'v-nvidia' :
+    color.includes('nebius') || cfg.nebius ? 'v-nebius' : ''
+  ) : '';
+  const nebiusBadge = cfg.nebius ? '<div class="nebius-badge">Powered by Nebius</div>' : '';
   return `<div class="kpi">
-    <div class="k">${esc(k)}</div>
-    <div class="v"${color ? ` style="color:${color}"` : ''}>${esc(v)}</div>
+    <div class="kpi-header">
+      <div class="kpi-icon ${cfg.class}">${cfg.icon}</div>
+      <div class="k">${esc(k)}</div>
+    </div>
+    <div class="v ${vClass}"${color && !vClass ? ` style="color:${color}"` : ''}>${esc(v)}</div>
     <div class="s">${esc(s || '')}</div>
+    ${nebiusBadge}
   </div>`;
 }
 
@@ -1052,11 +2031,24 @@ function renderCostMonitor(snap) {
 function renderKpis(snap) {
   const c = snap.counts || {};
   const w = snap.worker || {};
+  
+  // Cost-Aware Hybrid Architecture: Split auto-cleared by rules vs AI
+  const clearedByRules = snap.cleared_by_rules || 0;
+  const clearedByAI = snap.cleared_by_ai || 0;
+  const totalCleared = clearedByRules + clearedByAI + (snap.cleared_by_unknown || 0);
+  
+  // Calculate percentages for rules vs AI
+  const rulesPercent = totalCleared > 0 ? Math.round((clearedByRules / totalCleared) * 100) : 0;
+  const aiPercent = totalCleared > 0 ? Math.round((clearedByAI / totalCleared) * 100) : 0;
+  
   document.getElementById('kpis').innerHTML =
     kpiTile('In flight', snap.in_flight ?? 0,
             w.mode === 'poll' ? 'background worker' : 'advances on request',
             snap.in_flight ? 'var(--yellow)' : null) +
-    kpiTile('Auto-cleared', c.AUTO_CLEARED || 0, 'released within delegated limits', 'var(--green)') +
+    kpiTile('Cleared by Rules', clearedByRules, 
+            `SQL pre-filter (${rulesPercent}%) — zero AI cost`, 'var(--nvidia)') +
+    kpiTile('Cleared by AI', clearedByAI, 
+            `Nemotron Nano (${aiPercent}%) — token cost`, 'var(--green)') +
     // Escalated cases are inside this number on purpose: AWAITING_HUMAN in the
     // orchestrator drives the review queue and the decide() guard too, so the
     // tile, the queue badge and what a reviewer can act on always agree. Said
@@ -1065,7 +2057,6 @@ function renderKpis(snap) {
     kpiTile('Awaiting human', snap.awaiting_human || 0,
             `needs a person${c.ESCALATED ? ` — ${c.ESCALATED} of these escalated` : ''}`,
             (snap.awaiting_human ? 'var(--yellow)' : null)) +
-    kpiTile('Escalated', c.ESCALATED || 0, 'held, SAR drafted — subset of the above', 'var(--red)') +
     kpiTile('Avg agent latency', (snap.avg_latency_ms || 0) + 'ms',
             (snap.agent_calls || 0) + ' Nemotron calls');
 
@@ -1076,41 +2067,90 @@ function renderKpis(snap) {
   }
 
   const agent = snap.agent || {};
-  const head = document.querySelector('#view-ops .opshead .hint');
+  const head = document.querySelector('#view-devops .opshead .hint');
   if (head && agent.state) {
     head.dataset.agentState = agent.state;
   }
 }
 
 function renderBoard(snap) {
+  const allCases = snap.cases || [];
+
+  // Apply search and priority filters
+  const filtered = allCases.filter(c =>
+    matchesBoardSearch(c, boardSearchText) && matchesPriorityFilter(c, boardPriorityFilter)
+  );
+
+  // Update stats counter
+  const statsEl = document.getElementById('board-stats');
+  if (statsEl) {
+    statsEl.textContent = filtered.length < allCases.length
+      ? `${filtered.length} of ${allCases.length} cases`
+      : `${allCases.length} cases`;
+  }
+
+  // Bucket into columns
   const buckets = {};
   STATES.forEach(([s]) => buckets[s] = []);
-
-  (snap.cases || []).forEach(c => {
+  filtered.forEach(c => {
     const col = COL_OF[c.state] || c.state;
     if (buckets[col]) buckets[col].push(c);
   });
 
+  // Sort each bucket
+  Object.keys(buckets).forEach(k => {
+    buckets[k] = sortBoardCases(buckets[k], boardSortKey);
+  });
+
   document.getElementById('board').innerHTML = STATES.map(([state, label]) => {
     const items = buckets[state];
+    const total = columnTotal(snap, state);
+    const expanded = boardExpanded[state];
+    const pageSize = expanded ? items.length : COL_PAGE_SIZE;
+    const visible = items.slice(0, pageSize);
+    const remaining = items.length - visible.length;
+
     return `<div class="col">
-      <div class="colhead">${esc(label)}<span class="n">${items.length}</span></div>
-      ${items.map(c => {
+      <div class="colhead">${esc(label)}<span class="n">${items.length}${items.length < total ? '/' + total : ''}</span></div>
+      <div class="col-scroll">
+      ${visible.map(c => {
         const active = !TERMINAL.includes(c.state);
-        const color = OUTCOME_COLOR[c.state] || 'var(--blue)';
+        const color = OUTCOME_COLOR[c.state] || 'var(--nebius)';
         const bits = [];
         if (c.source === 'document') bits.push('from document');
-        if (c.risk_score != null) bits.push('risk ' + c.risk_score);
         if (c.compliance_status) bits.push(String(c.compliance_status).toLowerCase().replace(/_/g, ' '));
         if (c.state === 'HELD_FOR_REVIEW') bits.push('analyst assigned');
         if (c.state === 'DEAD_LETTER') bits.push('dead letter');
         const isProcessing = c.worker_lock ? 'processing' : '';
-        return `<div class="ccard ${isProcessing}" style="border-left-color:${color}"
+        
+        const riskScore = c.risk_score != null ? c.risk_score : 50;
+        const riskLevel = riskScore >= 70 ? 'high' : riskScore >= 40 ? 'medium' : 'low';
+        const riskClass = riskScore >= 70 ? 'high-risk' : riskScore >= 40 ? 'medium-risk' : 'low-risk';
+        
+        const priority = casePriority(c);
+        const sla = slaStatus(c);
+        
+        return `<div class="ccard ${isProcessing} ${riskClass}" style="border-left-color:${color}"
                      data-case="${esc(c.case_id)}" data-state="${esc(c.state)}">
-          <div class="cid">${active ? '<span class="working"></span>' : ''}${esc(c.shipment_id || c.case_id)}</div>
+          <div class="ccard-head">
+            <div class="cid">${active ? '<span class="working"></span>' : ''}${esc(c.shipment_id || c.case_id)}</div>
+            <span class="priority-badge p-${priority.toLowerCase()}">${priority}</span>
+          </div>
           <div class="cmeta">${esc(bits.join(' | ') || 'awaiting first agent')}</div>
+          <div class="ccard-sla">
+            <span class="sla-tag ${sla.cls}">${sla.text}</span>
+            <span class="ccard-date">${fmtDate(c.created_at)}</span>
+          </div>
+          <div class="risk-bar"><div class="risk-bar-fill risk-${riskLevel}" style="width:${riskScore}%"></div></div>
+          <div class="risk-score score-${riskLevel}">
+            <span>Risk:</span>
+            <span class="score-value">${riskScore}/100</span>
+          </div>
         </div>`;
       }).join('')}
+      </div>
+      ${remaining > 0 ? `<button class="show-more-btn" onclick="toggleColumn('${state}')">Show ${remaining} more</button>` : ''}
+      ${expanded && items.length > COL_PAGE_SIZE ? `<button class="show-more-btn" onclick="toggleColumn('${state}')">Collapse</button>` : ''}
     </div>`;
   }).join('');
 
@@ -1122,11 +2162,9 @@ function renderBoard(snap) {
     currentStates[caseId] = state;
     
     if (!prevCaseStates[caseId]) {
-      // New case - slide in animation
       el.classList.add('new-case');
       setTimeout(() => el.classList.remove('new-case'), 600);
     } else if (prevCaseStates[caseId] !== state) {
-      // State changed - highlight animation
       el.classList.add('state-changed');
       setTimeout(() => el.classList.remove('state-changed'), 1000);
     }
@@ -1144,94 +2182,191 @@ function renderBoard(snap) {
 function setFeedFilter(caseId) {
   filterCase = caseId || null;
   document.getElementById('feedFilter').value = caseId || '';
-  document.getElementById('auditFilter').value = caseId || '';
   if (lastSnap) renderFeeds(lastSnap);
 }
 
 function clearFeedFilter() {
   filterCase = null;
   document.getElementById('feedFilter').value = '';
-  document.getElementById('auditFilter').value = '';
   if (lastSnap) renderFeeds(lastSnap);
 }
 
-function filterFeed(feedId, caseId) {
+function filterFeed(caseId) {
   filterCase = caseId || null;
-  // Sync both dropdowns
   document.getElementById('feedFilter').value = caseId || '';
-  document.getElementById('auditFilter').value = caseId || '';
   if (lastSnap) renderFeeds(lastSnap);
 }
 
 function updateFeedFilterOptions(snap) {
-  // Collect unique case IDs from events and audit
   const caseIds = new Set();
   (snap.events || []).forEach(e => e.case_id && caseIds.add(e.case_id));
-  (snap.audit || []).forEach(a => a.case_id && caseIds.add(a.case_id));
-  
+
   const sorted = [...caseIds].sort();
   const options = '<option value="">All cases (' + sorted.length + ')</option>' +
     sorted.map(id => `<option value="${esc(id)}">${esc(id)}</option>`).join('');
-  
+
   document.getElementById('feedFilter').innerHTML = options;
-  document.getElementById('auditFilter').innerHTML = options;
-  
-  // Restore selection
+
   if (filterCase) {
     document.getElementById('feedFilter').value = filterCase;
-    document.getElementById('auditFilter').value = filterCase;
   }
 }
 
 function renderFeeds(snap) {
-  // Update filter dropdown options
   updateFeedFilterOptions(snap);
-  
-  // Filter events by case if filter is active
-  const events = filterCase 
+
+  const events = filterCase
     ? (snap.events || []).filter(e => e.case_id === filterCase)
     : (snap.events || []);
-  
+
   const feed = events.map(e => `<div class="fitem${filterCase ? ' highlight' : ''}" data-case="${esc(e.case_id || '')}">
     <div class="ft">${esc(hhmmss(e.at))} | <b>${esc(e.case_id || '')}</b></div>
     <div class="fm">${esc(e.message || '')}</div>
   </div>`).join('');
-  
-  const feedHint = filterCase 
+
+  const feedHint = filterCase
     ? `<div class="hint">Showing ${events.length} events for case ${filterCase}</div>`
     : '';
   document.getElementById('feed').innerHTML =
     feedHint + (feed || '<div class="hint">No events yet. Inject shipment events to begin.</div>');
-
-  // Filter audit by case if filter is active
-  const audits = filterCase 
-    ? (snap.audit || []).filter(a => a.case_id === filterCase)
-    : (snap.audit || []);
-  
-  const audit = audits.map(a => {
-    const d = a.detail || {};
-    const extra = d.disposition || d.queue || d.reference || d.note || '';
-    return `<div class="fitem${filterCase ? ' highlight' : ''}" data-case="${esc(a.case_id || '')}">
-      <div class="ft">${esc(hhmmss(a.at))} | <b>${esc(a.case_id || '')}</b> | ${esc(a.status || '')}</div>
-      <div class="fm"><b>${esc(a.action || '')}</b>${extra ? ' | ' + esc(extra) : ''}</div>
-    </div>`;
-  }).join('');
-  
-  const auditHint = filterCase 
-    ? `<div class="hint">Showing ${audits.length} actions for case ${filterCase}</div>`
-    : '';
-  document.getElementById('auditfeed').innerHTML =
-    auditHint + (audit || '<div class="hint">No actions taken yet.</div>');
 }
 
-function renderTrace() {
+// ---- Audit Trail page: server-side filter + cursor pagination, fetched
+// on demand (page open / filter change / pager click) rather than on the
+// fast global poll loop - this page is a lookup tool, not a live feed, and
+// a client-side filter over whatever 80 rows happened to be loaded cannot
+// find an older match that is genuinely in Firestore. ----
+let auditCaseId = '';
+let auditActionFilter = '';
+let auditStatusFilter = '';
+let auditPageSize = 50;
+let auditCursorStack = [];   // cursors for pages already seen, so Prev can go back
+let auditCursor = null;      // cursor for the page currently displayed
+let auditNextCursor = null;  // cursor returned alongside the current page
+
+function statusBadgeClass(s) {
+  if (s === 'done') return 'status-done';
+  if (s === 'denied') return 'status-denied';
+  if (s === 'skipped') return 'status-skipped';
+  return '';
+}
+
+function setSelectOptions(id, values, current, allLabel) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<option value="">${allLabel}</option>` +
+    values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  el.value = current || '';
+}
+
+// Actions/statuses are a small, code-defined vocabulary (unlike case IDs,
+// which are unbounded), so seeding the dropdowns from whatever page is
+// currently loaded is a reasonable approximation rather than a correctness
+// gap - a value that has never appeared on a loaded page simply cannot be
+// selected yet, but exact-match filtering by case ID (a free-text field
+// below) is exact and not restricted to what has loaded.
+function updateAuditFilterOptions(rows) {
+  const actions = [...new Set(rows.map(a => a.action).filter(Boolean))].sort();
+  const statuses = [...new Set(rows.map(a => a.status).filter(Boolean))].sort();
+  setSelectOptions('auditActionSel', actions, auditActionFilter, 'All actions');
+  setSelectOptions('auditStatusSel', statuses, auditStatusFilter, 'All statuses');
+}
+
+async function loadAuditPage(direction) {
+  const table = document.getElementById('audittable');
+  if (!table) return; // page not in DOM yet
+
+  if (direction === 'next' && auditNextCursor) {
+    auditCursorStack.push(auditCursor);
+    auditCursor = auditNextCursor;
+  } else if (direction === 'prev') {
+    auditCursor = auditCursorStack.pop() || null;
+  } else if (direction === 'reset') {
+    auditCursorStack = [];
+    auditCursor = null;
+  }
+
+  const params = new URLSearchParams({ limit: String(auditPageSize) });
+  if (auditCursor) params.set('cursor', auditCursor);
+  if (auditCaseId) params.set('case_id', auditCaseId);
+  else if (auditActionFilter) params.set('action', auditActionFilter);
+  else if (auditStatusFilter) params.set('status', auditStatusFilter);
+
+  let rows = [];
+  try {
+    const r = await fetch('/api/v1/audit?' + params.toString());
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    rows = d.items || [];
+    auditNextCursor = d.next_cursor || null;
+  } catch (e) {
+    table.innerHTML = `<div class="err">Could not load audit trail: ${esc(e.message)}</div>`;
+    return;
+  }
+
+  updateAuditFilterOptions(rows);
+
+  const tableRows = rows.map(a => {
+    const d = a.detail || {};
+    const extra = d.disposition || d.queue || d.reference || d.note || d.gate_reason || '';
+    return `<tr>
+      <td class="mono">${esc(hhmmss(a.at))}</td>
+      <td class="mono">${esc(a.case_id || '-')}</td>
+      <td><b>${esc(a.action || '')}</b></td>
+      <td><span class="status-badge ${statusBadgeClass(a.status)}">${esc(a.status || '')}</span></td>
+      <td class="small">${esc(extra)}</td>
+    </tr>`;
+  }).join('');
+
+  table.innerHTML = `<table class="audit-table">
+    <thead><tr><th>Time</th><th>Case</th><th>Action</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>${tableRows || '<tr><td colspan="5" class="hint" style="padding:20px">No actions match this filter.</td></tr>'}</tbody>
+  </table>`;
+
+  const countEl = document.getElementById('auditcount');
+  if (countEl) {
+    countEl.textContent = rows.length
+      ? `Showing ${rows.length} result(s)${auditNextCursor ? ' — more available' : ' — end of results'}`
+      : 'No results for this filter.';
+  }
+
+  const prevBtn = document.getElementById('auditPrevBtn');
+  const nextBtn = document.getElementById('auditNextBtn');
+  if (prevBtn) prevBtn.disabled = auditCursorStack.length === 0 && !auditCursor;
+  if (nextBtn) nextBtn.disabled = !auditNextCursor;
+}
+
+// Full case detail (steps, decision, provenance) is fetched per-case on
+// demand rather than kept in the board's snapshot: the board window is
+// slim and paginated, so a case opened from an older page is not
+// guaranteed to be sitting in `lastSnap.cases` at all past a small volume.
+let _traceCache = { case_id: null, case: null, audit: [] };
+
+async function renderTrace() {
   const el = document.getElementById('trace');
-  if (!openCase || !lastSnap) { el.hidden = true; return; }
+  if (!openCase) { el.hidden = true; return; }
 
-  const c = (lastSnap.cases || []).find(x => x.case_id === openCase);
-  if (!c) { el.hidden = true; return; }
+  if (_traceCache.case_id !== openCase) {
+    el.hidden = false;
+    el.innerHTML = '<div class="hint">Loading case trace...</div>';
+    try {
+      const [caseRes, auditRes] = await Promise.all([
+        fetch('/api/v1/orchestrator/case/' + encodeURIComponent(openCase)),
+        fetch('/api/v1/audit?case_id=' + encodeURIComponent(openCase) + '&limit=100'),
+      ]);
+      const c = await caseRes.json();
+      if (c.error) throw new Error(c.error);
+      const auditData = await auditRes.json();
+      _traceCache = { case_id: openCase, case: c, audit: auditData.items || [] };
+    } catch (e) {
+      el.innerHTML = `<div class="err">Could not load case ${esc(openCase)}: ${esc(e.message)}</div>`;
+      return;
+    }
+  }
 
-  const audit = (lastSnap.audit || []).filter(a => a.case_id === openCase);
+  const c = _traceCache.case;
+  const audit = _traceCache.audit;
+  if (!c || !c.case_id) { el.hidden = true; return; }
   const color = OUTCOME_COLOR[c.state] || 'var(--blue)';
 
   el.hidden = false;
@@ -1286,6 +2421,14 @@ function renderTrace() {
           </div>
           ${r.summary ? `<p style="font-size:12px;color:#c3ccdf;line-height:1.6;margin:8px 0 0">${esc(r.summary)}</p>` : ''}
           ${s.parse_error ? `<p style="color:var(--red);font-size:12px;margin:6px 0 0">Model reply was not valid JSON</p>` : ''}
+          ${'external_search_used' in s ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)">
+            <span style="font-size:11px;font-weight:700;letter-spacing:.03em;color:${s.external_search_used ? 'var(--green)' : '#8f9bb3'}">
+              ${s.external_search_used ? '\u2713 LIVE TAVILY SEARCH USED' : '\u26a0 TAVILY SEARCH RETURNED NOTHING (degraded gracefully)'}
+            </span>
+            ${(s.external_search_results || []).length ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:12px;color:#9aa5bd">
+              ${s.external_search_results.map(r2 => `<li><a href="${esc(r2.url)}" target="_blank" rel="noopener" style="color:var(--blue)">${esc(r2.title || r2.url)}</a></li>`).join('')}
+            </ul>` : ''}
+          </div>` : ''}
         </div>`;
       }).join('') : '<div class="hint">No hops recorded yet.</div>'}
     </div>
@@ -1312,7 +2455,7 @@ function renderTrace() {
 async function poll() {
   if (!polling) return false;
   try {
-    const r = await fetch('/api/v1/orchestrator/state');
+    const r = await fetch('/api/v1/orchestrator/state?limit=500');
     const snap = await r.json();
     if (snap.error) throw new Error(snap.error);
     lastSnap = snap;
@@ -1320,6 +2463,11 @@ async function poll() {
     renderCostMonitor(snap);
     renderBoard(snap);
     renderFeeds(snap);
+    // Audit Trail is a lookup tool, not a live feed: it fetches its own
+    // filtered/paginated data on demand (page open, filter change, pager
+    // click) rather than re-rendering from this fast poll, so a filtered
+    // search is never silently limited to whatever this tick happened to
+    // carry.
     renderTrace();
     return (snap.in_flight || 0) > 0;
   } catch (e) {
@@ -1530,16 +2678,45 @@ document.getElementById('pause').onclick = (ev) => {
    ================================================================== */
 
 let selectedReview = null;
+let queueCursorStack = [];
+let queueCursor = null;
+let queueNextCursor = null;
 
-async function loadQueue() {
+async function loadQueue(direction) {
+  if (direction === 'next' && queueNextCursor) {
+    queueCursorStack.push(queueCursor);
+    queueCursor = queueNextCursor;
+  } else if (direction === 'prev') {
+    queueCursor = queueCursorStack.pop() || null;
+  } else if (direction === 'reset') {
+    queueCursorStack = [];
+    queueCursor = null;
+  }
+
   try {
-    const r = await fetch('/api/v1/review/queue');
-    const d = await r.json();
+    const params = new URLSearchParams({ limit: '40' });
+    if (queueCursor) params.set('cursor', queueCursor);
+    const [queueRes, metricsRes] = await Promise.all([
+      fetch('/api/v1/review/queue?' + params.toString()),
+      fetch('/api/v1/metrics/summary'),
+    ]);
+    const d = await queueRes.json();
+    if (d.error) throw new Error(d.error);
     const cases = d.cases || [];
+    queueNextCursor = d.next_cursor || null;
+
+    // The badge and total reflect the true system-wide count (from the
+    // cached global aggregation), not just how many rows this page
+    // happened to fetch - the page size must never look like the total.
+    const metrics = await metricsRes.json();
+    const total = metrics.awaiting_human ?? cases.length;
 
     const badge = document.getElementById('qbadge');
-    badge.textContent = cases.length;
-    badge.className = cases.length ? 'qbadge on' : 'qbadge';
+    badge.textContent = total;
+    badge.className = total ? 'qbadge on' : 'qbadge';
+
+    const totalHint = document.getElementById('qtotalhint');
+    if (totalHint) totalHint.textContent = `(${total} total)`;
 
     document.getElementById('qlist').innerHTML = cases.length
       ? cases.map(c => {
@@ -1567,6 +2744,11 @@ async function loadQueue() {
     });
 
     if (selectedReview) renderReview(cases);
+
+    const prevBtn = document.getElementById('queuePrevBtn');
+    const nextBtn = document.getElementById('queueNextBtn');
+    if (prevBtn) prevBtn.disabled = queueCursorStack.length === 0 && !queueCursor;
+    if (nextBtn) nextBtn.disabled = !queueNextCursor;
   } catch (e) {
     document.getElementById('qlist').innerHTML =
       `<div class="err">${esc(e.message)}</div>`;
@@ -1720,7 +2902,7 @@ function renderReview(cases) {
                    shipper's original.</div>`
               : `<div class="hint">Original document as uploaded
                    (${esc((c.provenance || {}).filename || 'document.pdf')}).</div>`}
-           <iframe class="docframe" src="/api/v1/review/${encodeURIComponent(c.case_id)}/document"></iframe>`
+           <iframe class="docframe" sandbox="allow-same-origin" src="/api/v1/review/${encodeURIComponent(c.case_id)}/document"></iframe>`
         : `<div class="hint">No document is available for this case
              (${esc((c.provenance || {}).reason || c.source || 'internal event')}).
              Do not release without one.</div>`}
@@ -1735,6 +2917,16 @@ function renderReview(cases) {
           <span class="sev" style="background:${SEV_COLOR[f.severity] || 'var(--yellow)'};color:#0b1020">${esc(f.severity)}</span>
         </div>
         <p>${esc(f.detail)}</p>
+      </div>`).join('')}
+    </div>` : ''}
+
+    ${(c.reviews || []).length ? `<div class="sec">
+      <h3>Review history (${c.reviews.length})</h3>
+      ${c.reviews.slice().reverse().map(rv => `<div class="fitem">
+        <div class="ft">${esc(hhmmss(rv.at))} | ${esc(rv.action)}
+          ${rv.action === 'request_info' ? '<span class="sev" style="background:var(--yellow);color:#0b1020">awaiting info</span>' : ''}</div>
+        <div class="fm"><b>${esc(rv.reviewer)}</b>${rv.note ? ' | ' + esc(rv.note) : ''}
+          ${rv.state_before !== rv.state_after ? ` | ${esc(rv.state_before)} &rarr; ${esc(rv.state_after)}` : ''}</div>
       </div>`).join('')}
     </div>` : ''}
 
@@ -1754,19 +2946,32 @@ function renderReview(cases) {
         <button data-act="release">Release shipment</button>
         <button data-act="block" class="btn-block">Block shipment</button>
         <button data-act="request_info" class="ghost">Request info</button>
+        <button data-act="deep_review" class="btn-debate">Deep Review</button>
       </div>
       <div id="rvout"></div>
     </div>`;
 
   el.querySelectorAll('.rvactions button').forEach(b => {
-    b.onclick = () => submitReview(c.case_id, b.dataset.act);
+    b.onclick = () => {
+      if (b.dataset.act === 'deep_review') {
+        submitDeepReview(c.case_id);
+      } else {
+        submitReview(c.case_id, b.dataset.act);
+      }
+    };
   });
 }
+
+const DECISION_CONFIRM = {
+  block: 'Block this shipment? This immediately holds it and cannot be undone from here.',
+  release: 'Release this shipment? This immediately authorises the shipment to move.',
+};
 
 async function submitReview(caseId, action) {
   const outEl = document.getElementById('rvout');
   const reviewer = (document.getElementById('rvwho').value || '').trim();
   const note = (document.getElementById('rvnote').value || '').trim();
+  const buttons = document.querySelectorAll('.rvactions button');
 
   if (!reviewer) {
     outEl.innerHTML = '<div class="err">A reviewer name is required.</div>';
@@ -1776,6 +2981,14 @@ async function submitReview(caseId, action) {
     outEl.innerHTML = `<div class="err">A note is required when the action is ${esc(action)}.</div>`;
     return;
   }
+  if (DECISION_CONFIRM[action] && !window.confirm(DECISION_CONFIRM[action])) {
+    return;
+  }
+
+  buttons.forEach(b => b.disabled = true);
+  const clicked = document.querySelector(`.rvactions button[data-act="${action}"]`);
+  const originalLabel = clicked ? clicked.textContent : '';
+  if (clicked) clicked.textContent = 'Recording...';
 
   outEl.innerHTML = '<div class="hint">Recording decision...</div>';
   try {
@@ -1791,17 +3004,498 @@ async function submitReview(caseId, action) {
       <span class="ty">Recorded | case is now ${esc(d.state)}</span>
       ${d.review && d.review.sar_signed
         ? `<p>SAR ${esc(d.review.sar_signed)} signed by ${esc(d.review.reviewer)}.</p>` : ''}
+      ${action === 'request_info'
+        ? '<p>Case stays in the queue flagged as awaiting info until it is reviewed again.</p>' : ''}
     </div>`;
+
+    const finishedCase = caseId;
     selectedReview = null;
-    await loadQueue();
+    document.getElementById('rvnote').value && (document.getElementById('rvnote').value = '');
+    await advanceToNextCase(finishedCase);
   } catch (e) {
     outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    buttons.forEach(b => b.disabled = false);
+    if (clicked) clicked.textContent = originalLabel;
   }
 }
+
+async function submitDeepReview(caseId) {
+  const outEl = document.getElementById('rvout');
+  const buttons = document.querySelectorAll('.rvactions button');
+  const clicked = document.querySelector('.rvactions button[data-act="deep_review"]');
+  const originalLabel = clicked ? clicked.textContent : '';
+
+  if (!window.confirm('Run Deep Review? Nemotron Super (120B) will review Nano\'s assessment using function calling. This takes 15-30 seconds.')) {
+    return;
+  }
+
+  buttons.forEach(b => b.disabled = true);
+  if (clicked) clicked.textContent = 'Running...';
+
+  outEl.innerHTML = '<div class="hint"><span class="working"></span>Senior Auditor reviewing Junior Analyst assessment...</div>';
+
+  try {
+    const r = await fetch(`/api/v1/review/${encodeURIComponent(caseId)}/deep-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+
+    outEl.innerHTML = renderDebateResult(d);
+    buttons.forEach(b => b.disabled = false);
+    if (clicked) clicked.textContent = originalLabel;
+
+    // Refresh the case to show updated trace
+    await loadQueue('reset');
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    buttons.forEach(b => b.disabled = false);
+    if (clicked) clicked.textContent = originalLabel;
+  }
+}
+
+function renderDebateResult(d) {
+  const verdict = d.verdict || {};
+  const debate = d.debate || {};
+  const trace = debate.debate_trace || [];
+  const verdictStr = verdict.verdict || 'UNKNOWN';
+  const confidence = (verdict.confidence || 0) * 100;
+  const isConfirm = verdictStr === 'CONFIRM';
+
+  let html = `<div class="debate-section">
+    <div class="debate-verdict ${isConfirm ? 'verdict-confirm' : 'verdict-disagree'}">
+      <h4>
+        ${isConfirm ? '&#10004;' : '&#10006;'}
+        Senior Auditor Verdict: <strong>${esc(verdictStr)}</strong>
+        <span style="font-weight:400;color:var(--muted)">(${confidence.toFixed(0)}% confidence)</span>
+      </h4>
+      <p><strong>Rationale:</strong> ${esc(verdict.rationale || 'No rationale provided')}</p>
+      <p><strong>Recommended Action:</strong> ${esc(verdict.recommended_action || 'N/A')}</p>
+      ${verdict.adjusted_risk_score !== undefined ? `<p><strong>Adjusted Risk Score:</strong> ${verdict.adjusted_risk_score}/100</p>` : ''}
+    </div>
+    <details class="debate-trace">
+      <summary style="cursor:pointer;color:var(--blue);font-weight:600">Debate Trace (${trace.length} tool calls)</summary>`;
+
+  for (const t of trace) {
+    if (t.tool) {
+      html += `<div class="debate-round">
+        <div class="debate-round-header">
+          <span>Round ${t.round}</span>
+          <span class="debate-round-tool">${esc(t.tool)}</span>
+        </div>
+        <div class="debate-round-args">Args: ${esc(JSON.stringify(t.arguments || {}))}</div>
+        <div class="debate-round-result"><pre style="margin:0;white-space:pre-wrap">${esc(JSON.stringify(t.result || {}, null, 2))}</pre></div>
+      </div>`;
+    }
+  }
+
+  html += `</details>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px">Completed in ${d.latency_ms || 0}ms</p>
+  </div>`;
+  return html;
+}
+
+// After a decision is recorded the reviewer should not have to hunt for the
+// next item themselves - pick the next case still awaiting review so the
+// queue can be worked top to bottom without extra clicks.
+async function advanceToNextCase(finishedCaseId) {
+  try {
+    const r = await fetch('/api/v1/review/queue');
+    const d = await r.json();
+    const cases = (d.cases || []).filter(c => c.case_id !== finishedCaseId);
+    if (cases.length) selectedReview = cases[0].case_id;
+  } catch (e) {
+    // If the refresh fails, loadQueue() below will surface the error as usual.
+  }
+  await loadQueue('reset');
+}
+
+const _queuePrevBtn = document.getElementById('queuePrevBtn');
+if (_queuePrevBtn) _queuePrevBtn.onclick = () => loadQueue('prev');
+const _queueNextBtn = document.getElementById('queueNextBtn');
+if (_queueNextBtn) _queueNextBtn.onclick = () => loadQueue('next');
 
 /* ==================================================================
    GOVERNANCE
    ================================================================== */
+
+// Governance tab switching
+document.querySelectorAll('#gov-tabs .tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('#gov-tabs .tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    const tabName = tab.dataset.govtab;
+    document.querySelectorAll('.gov-tabcontent').forEach(c => c.style.display = 'none');
+    const target = document.getElementById('govtab-' + tabName);
+    if (target) target.style.display = 'block';
+  };
+});
+
+function toggleJsonEditor() {
+  const wrapper = document.getElementById('json-editor-wrapper');
+  wrapper.style.display = wrapper.style.display === 'none' ? 'block' : 'none';
+}
+
+// Editable list helpers
+function renderListItems(containerId, items, isRoute = false, isVip = false) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = items.map((item, idx) => {
+    if (isRoute) {
+      return `<div class="list-item route" data-idx="${idx}">
+        <span>${esc(item.origin)} → ${esc(item.destination)}</span>
+        <button class="remove-btn" onclick="removeListItem('${containerId}', ${idx})">×</button>
+      </div>`;
+    }
+    if (isVip) {
+      const tax = (item.tax_id || '').trim();
+      return `<div class="list-item vip" data-idx="${idx}" data-company="${esc(item.company)}" data-taxid="${esc(tax)}">
+        <span>${esc(item.company)}${tax ? ' &middot; ' + esc(tax) : ''}</span>
+        <span class="vip-tag${tax ? ' verified' : ''}">${tax ? 'verified' : 'name-only'}</span>
+        <button class="remove-btn" onclick="removeListItem('${containerId}', ${idx})">×</button>
+      </div>`;
+    }
+    return `<div class="list-item" data-idx="${idx}">
+      <span>${esc(item)}</span>
+      <button class="remove-btn" onclick="removeListItem('${containerId}', ${idx})">×</button>
+    </div>`;
+  }).join('');
+}
+
+function getListItems(containerId) {
+  const container = document.getElementById(containerId);
+  const items = [];
+  if (containerId === 'vip-registry') {
+    container.querySelectorAll('.list-item').forEach(el => {
+      items.push({ company: el.dataset.company || '', tax_id: el.dataset.taxid || '' });
+    });
+    return items;
+  }
+  container.querySelectorAll('.list-item').forEach(el => {
+    const span = el.querySelector('span');
+    if (span) {
+      const text = span.textContent;
+      if (text.includes(' → ')) {
+        const [origin, dest] = text.split(' → ');
+        items.push({ origin: origin.trim(), destination: dest.trim() });
+      } else {
+        items.push(text.trim());
+      }
+    }
+  });
+  return items;
+}
+
+function addListItem(containerId, inputId) {
+  const input = document.getElementById(inputId);
+  const value = (input.value || '').trim();
+  if (!value) return;
+  
+  const items = getListItems(containerId);
+  const isRoute = containerId === 'safe-routes';
+  if (!isRoute) {
+    if (!items.includes(value)) {
+      items.push(value);
+      renderListItems(containerId, items);
+    }
+  }
+  input.value = '';
+}
+
+// ─── Tavily Entity Verification ───
+async function verifyEntity(type, value) {
+  try {
+    const r = await fetch('/api/v1/governance/verify-entity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, value, country: 'vietnam' })
+    });
+    return await r.json();
+  } catch (e) {
+    return { verified: false, confidence: 'none', results: [], summary: 'Verification service unavailable.' };
+  }
+}
+
+function renderVerifyPanel(panelId, data, onConfirm, onCancel) {
+  const panel = document.getElementById(panelId);
+  const statusCls = 'v-' + (data.confidence || 'none');
+  const statusLabel = data.verified ? 'Verified' : (data.confidence === 'none' ? 'Not Found' : 'Uncertain');
+
+  let html = `<div class="verify-header">
+    <span class="verify-status ${statusCls}">${statusLabel} (${data.confidence} confidence)</span>
+    <span style="color:var(--muted);font-size:12px">${esc(data.summary || '')}</span>
+  </div>`;
+
+  if (data.results && data.results.length > 0) {
+    for (const r of data.results.slice(0, 3)) {
+      html += `<div class="verify-result">
+        <div class="vr-title">${esc(r.title)}</div>
+        <div class="vr-url">${esc(r.url)}</div>
+        <div class="vr-snippet">${esc(r.snippet)}</div>
+      </div>`;
+    }
+  }
+
+  html += `<div class="verify-actions">`;
+  if (data.verified) {
+    html += `<button class="btn-confirm" id="${panelId}-confirm">Add (Verified)</button>`;
+  } else {
+    html += `<button class="btn-override" id="${panelId}-confirm">Add Anyway (Unverified)</button>`;
+  }
+  html += `<button class="btn-cancel" id="${panelId}-cancel">Cancel</button>`;
+  html += `</div>`;
+
+  panel.innerHTML = html;
+  panel.classList.add('show');
+
+  document.getElementById(panelId + '-confirm').onclick = () => {
+    onConfirm();
+    panel.classList.remove('show');
+    panel.innerHTML = '';
+  };
+  document.getElementById(panelId + '-cancel').onclick = () => {
+    if (onCancel) onCancel();
+    panel.classList.remove('show');
+    panel.innerHTML = '';
+  };
+}
+
+async function verifyAndAddVip() {
+  const companyInput = document.getElementById('vip-company-input');
+  const taxidInput = document.getElementById('vip-taxid-input');
+  const company = (companyInput.value || '').trim();
+  const taxId = (taxidInput.value || '').trim();
+  if (!company) return;
+
+  const items = getListItems('vip-registry');
+  if (items.some(e => e.company.toLowerCase() === company.toLowerCase())) {
+    companyInput.value = '';
+    taxidInput.value = '';
+    return;
+  }
+
+  const btn = document.getElementById('vip-verify-btn');
+  const panel = document.getElementById('vip-verify-panel');
+  btn.disabled = true;
+  btn.textContent = 'Verifying...';
+  panel.innerHTML = '<div class="verify-header"><span class="verify-status v-loading">Searching web...</span></div>';
+  panel.classList.add('show');
+
+  const data = await verifyEntity('company', company);
+
+  if (taxId) {
+    const taxData = await verifyEntity('tax_id', taxId);
+    if (taxData.results) data.results = [...(data.results || []), ...taxData.results];
+    if (!taxData.verified && data.verified) {
+      data.confidence = 'medium';
+      data.summary += ' Tax ID verification: ' + taxData.summary;
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Verify & Add';
+
+  renderVerifyPanel('vip-verify-panel', data,
+    () => {
+      items.push({ company, tax_id: taxId });
+      renderListItems('vip-registry', items, false, true);
+      companyInput.value = '';
+      taxidInput.value = '';
+    },
+    () => {}
+  );
+}
+
+async function verifyAndAddBlacklist(containerId, inputId, entityType) {
+  const input = document.getElementById(inputId);
+  const value = (input.value || '').trim();
+  if (!value) return;
+
+  const items = getListItems(containerId);
+  if (items.includes(value)) { input.value = ''; return; }
+
+  const panelId = containerId === 'blacklist-companies' ? 'bl-company-verify-panel' : 'bl-taxid-verify-panel';
+  const panel = document.getElementById(panelId);
+  panel.innerHTML = '<div class="verify-header"><span class="verify-status v-loading">Searching web...</span></div>';
+  panel.classList.add('show');
+
+  const data = await verifyEntity(entityType, value);
+
+  renderVerifyPanel(panelId, data,
+    () => {
+      items.push(value);
+      renderListItems(containerId, items);
+      input.value = '';
+    },
+    () => {}
+  );
+}
+
+function addVipEntry() {
+  const companyInput = document.getElementById('vip-company-input');
+  const taxidInput = document.getElementById('vip-taxid-input');
+  const company = (companyInput.value || '').trim();
+  const taxId = (taxidInput.value || '').trim();
+
+  if (!company) return;
+
+  const items = getListItems('vip-registry');
+  const exists = items.some(e => e.company.toLowerCase() === company.toLowerCase());
+  if (!exists) {
+    items.push({ company, tax_id: taxId });
+    renderListItems('vip-registry', items, false, true);
+  }
+  companyInput.value = '';
+  taxidInput.value = '';
+}
+
+function addRoute() {
+  const originInput = document.getElementById('route-origin-input');
+  const destInput = document.getElementById('route-dest-input');
+  const origin = (originInput.value || '').trim();
+  const dest = (destInput.value || '').trim();
+  
+  if (!origin || !dest) return;
+  
+  const items = getListItems('safe-routes');
+  const exists = items.some(r => r.origin === origin && r.destination === dest);
+  if (!exists) {
+    items.push({ origin, destination: dest });
+    renderListItems('safe-routes', items, true);
+  }
+  originInput.value = '';
+  destInput.value = '';
+}
+
+function removeListItem(containerId, idx) {
+  const items = getListItems(containerId);
+  const isRoute = containerId === 'safe-routes';
+  const isVip = containerId === 'vip-registry';
+  items.splice(idx, 1);
+  renderListItems(containerId, items, isRoute, isVip);
+}
+
+// Load pre-filter rules from API
+async function loadPrefilterRules() {
+  try {
+    const r = await fetch('/api/v1/governance/prefilter-rules');
+    const rules = await r.json();
+    
+    renderListItems('vip-registry', rules.vip_registry || [], false, true);
+    renderListItems('blacklist-companies', rules.blacklist_companies || []);
+    renderListItems('blacklist-taxids', rules.blacklist_tax_ids || []);
+    renderListItems('safe-routes', rules.safe_routes || [], true);
+    
+    const thresholdInput = document.getElementById('low-value-threshold');
+    if (thresholdInput) thresholdInput.value = rules.low_value_threshold_usd || 100;
+  } catch (e) {
+    console.error('Failed to load pre-filter rules:', e);
+  }
+}
+
+// Save pre-filter rules to API
+document.getElementById('save-prefilter-btn').onclick = async () => {
+  const btn = document.getElementById('save-prefilter-btn');
+  const outEl = document.getElementById('prefilter-out');
+  const author = (document.getElementById('prefilter-author').value || '').trim();
+  
+  if (!author) {
+    outEl.innerHTML = '<div class="err">Your name is required for audit purposes.</div>';
+    return;
+  }
+  
+  const rules = {
+    author,
+    vip_registry: getListItems('vip-registry'),
+    blacklist_companies: getListItems('blacklist-companies'),
+    blacklist_tax_ids: getListItems('blacklist-taxids'),
+    safe_routes: getListItems('safe-routes'),
+    low_value_threshold_usd: parseFloat(document.getElementById('low-value-threshold').value) || 100,
+  };
+  
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  
+  try {
+    const r = await fetch('/api/v1/governance/prefilter-rules', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rules)
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    
+    outEl.innerHTML = `<div class="flag" style="border-left-color:var(--green);margin-top:14px">
+      <span class="ty">Pre-filter rules saved</span>
+      <p>Changes are now active. VIP registry entries: ${rules.vip_registry.length}, 
+         Blacklisted: ${rules.blacklist_companies.length}, Safe routes: ${rules.safe_routes.length}</p>
+    </div>`;
+  } catch (e) {
+    outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
+  
+  btn.disabled = false;
+  btn.textContent = 'Save Rules';
+};
+
+// Load delegation boundary into form
+async function loadBoundaryForm(boundary) {
+  if (!boundary || !boundary.permissions) return;
+  const p = boundary.permissions;
+  
+  // Auto-release settings
+  const ar = p.auto_release || {};
+  document.getElementById('auto-release-permitted').checked = ar.permitted !== false;
+  document.getElementById('auto-release-max-value').value = ar.max_declared_value_usd || 25000;
+  document.getElementById('auto-release-max-risk').value = ar.max_effective_risk || 39;
+  document.getElementById('auto-release-zero-findings').checked = ar.require_zero_deterministic_findings !== false;
+  
+  // Forbidden HS codes
+  renderListItems('forbidden-hs-codes', ar.forbidden_hs_prefixes || []);
+  
+  // Forbidden destinations
+  renderListItems('forbidden-destinations', ar.forbidden_destinations || []);
+  
+  // Require human when
+  const humanWhen = p.require_human_when || [];
+  document.querySelectorAll('#human-review-conditions input[type="checkbox"]').forEach(cb => {
+    const cond = cb.dataset.condition;
+    if (!cb.disabled) {
+      cb.checked = humanWhen.includes(cond);
+    }
+  });
+  
+  // SAR filing
+  const sar = p.sar_filing || {};
+  document.getElementById('sar-may-draft').checked = sar.may_draft !== false;
+  document.getElementById('sar-may-file').checked = sar.may_file === true;
+}
+
+// Collect boundary from form
+function collectBoundaryFromForm() {
+  const humanWhen = [];
+  document.querySelectorAll('#human-review-conditions input[type="checkbox"]:checked').forEach(cb => {
+    humanWhen.push(cb.dataset.condition);
+  });
+  
+  return {
+    allowed_actions: ["assign_analyst", "draft_sar", "hold_shipment", "notify_webhook", "publish_decision"],
+    auto_release: {
+      permitted: document.getElementById('auto-release-permitted').checked,
+      max_declared_value_usd: parseInt(document.getElementById('auto-release-max-value').value) || 25000,
+      max_effective_risk: parseInt(document.getElementById('auto-release-max-risk').value) || 39,
+      require_zero_deterministic_findings: document.getElementById('auto-release-zero-findings').checked,
+      forbidden_hs_prefixes: getListItems('forbidden-hs-codes'),
+      forbidden_destinations: getListItems('forbidden-destinations'),
+    },
+    require_human_when: humanWhen,
+    sar_filing: {
+      may_draft: document.getElementById('sar-may-draft').checked,
+      may_file: document.getElementById('sar-may-file').checked,
+    },
+    reason: "Updated via Governance UI",
+  };
+}
 
 async function loadGovernance() {
   try {
@@ -1812,6 +3506,13 @@ async function loadGovernance() {
     const agent = await aR.json();
     const hist = await bR.json();
 
+    if (!aR.ok || agent.error) {
+      throw new Error(agent.error || `Could not read agent state: HTTP ${aR.status}`);
+    }
+    if (!bR.ok || hist.error) {
+      throw new Error(hist.error || `Could not read boundary history: HTTP ${bR.status}`);
+    }
+
     const suspended = agent.state === 'SUSPENDED';
     document.getElementById('govstate').innerHTML = `
       <div class="flag" style="border-left-color:${suspended ? 'var(--red)' : 'var(--green)'};margin-top:14px">
@@ -1819,12 +3520,15 @@ async function loadGovernance() {
         <p>${esc(agent.reason)}</p>
       </div>`;
 
+    // Load JSON editor with current boundary
     const ta = document.getElementById('govperms');
+    const currentPerms = (agent.boundary && agent.boundary.permissions) || hist.proposed_template;
     if (!ta.value.trim()) {
-      ta.value = JSON.stringify(
-        (agent.boundary && agent.boundary.permissions) || hist.proposed_template,
-        null, 2);
+      ta.value = JSON.stringify(currentPerms, null, 2);
     }
+    
+    // Load form fields from current boundary
+    loadBoundaryForm(agent.boundary || { permissions: hist.proposed_template });
 
     const boundaries = hist.boundaries || [];
     document.getElementById('govhistory').innerHTML = boundaries.length
@@ -1833,6 +3537,9 @@ async function loadGovernance() {
           <div class="fm"><b>${esc(b.boundary_id)}</b> by ${esc(b.published_by)}${b.note ? ' | ' + esc(b.note) : ''}${b.superseded_by ? ` | superseded by ${esc(b.superseded_by)}` : ''}</div>
         </div>`).join('')
       : '<div class="hint">No boundary has ever been published. The agent is fail-closed.</div>';
+    
+    // Also load pre-filter rules
+    await loadPrefilterRules();
   } catch (e) {
     document.getElementById('govstate').innerHTML =
       `<div class="err">${esc(e.message)}</div>`;
@@ -1850,12 +3557,21 @@ document.getElementById('govpublish').onclick = async (ev) => {
     return;
   }
 
+  // Check if JSON editor is visible - use it if so, otherwise use form
+  const jsonWrapper = document.getElementById('json-editor-wrapper');
   let permissions;
-  try {
-    permissions = JSON.parse(document.getElementById('govperms').value);
-  } catch (e) {
-    outEl.innerHTML = `<div class="err">Permissions are not valid JSON: ${esc(e.message)}</div>`;
-    return;
+  
+  if (jsonWrapper.style.display !== 'none') {
+    try {
+      permissions = JSON.parse(document.getElementById('govperms').value);
+    } catch (e) {
+      outEl.innerHTML = `<div class="err">Permissions are not valid JSON: ${esc(e.message)}</div>`;
+      return;
+    }
+  } else {
+    permissions = collectBoundaryFromForm();
+    // Update JSON editor to reflect form values
+    document.getElementById('govperms').value = JSON.stringify(permissions, null, 2);
   }
 
   btn.disabled = true;
@@ -1882,23 +3598,125 @@ document.getElementById('govpublish').onclick = async (ev) => {
     outEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
   }
   btn.disabled = false;
-  btn.textContent = 'Publish delegation boundary';
+  btn.textContent = 'Publish Delegation Boundary';
 };
 
 // View switcher
-document.querySelectorAll('.vtab').forEach(t => {
+const NAV_TITLES = {
+  ops: () => _i18n.t('nav.pipeline'),
+  devops: () => _i18n.t('nav.devops'),
+  review: () => _i18n.t('nav.review'),
+  audit: () => _i18n.t('nav.audit'),
+  gov: () => _i18n.t('nav.governance'),
+  single: () => _i18n.t('nav.single'),
+};
+document.querySelectorAll('.navitem').forEach(t => {
   t.onclick = () => {
-    document.querySelectorAll('.vtab').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('.navitem').forEach(x => x.classList.remove('on'));
     t.classList.add('on');
     const v = t.dataset.view;
     document.getElementById('view-ops').hidden = v !== 'ops';
+    document.getElementById('view-devops').hidden = v !== 'devops';
     document.getElementById('view-review').hidden = v !== 'review';
+    document.getElementById('view-audit').hidden = v !== 'audit';
     document.getElementById('view-gov').hidden = v !== 'gov';
     document.getElementById('view-single').hidden = v !== 'single';
-    if (v === 'review') loadQueue();
+    const title = document.getElementById('pagetitle');
+    if (title && NAV_TITLES[v]) title.textContent = NAV_TITLES[v]();
+    if (v === 'review') loadQueue('reset');
     if (v === 'gov') loadGovernance();
+    if (v === 'audit') loadAuditPage('reset');
   };
 });
+
+// Sidebar collapse toggle
+const _sidebar = document.getElementById('sidebar');
+const _collapseBtn = document.getElementById('sidebar-collapse-btn');
+if (_sidebar && _collapseBtn) {
+  if (localStorage.getItem('vf_sidebar_collapsed') === '1') {
+    _sidebar.classList.add('collapsed');
+    _collapseBtn.innerHTML = '&#187;';
+  }
+  _collapseBtn.onclick = () => {
+    const collapsed = _sidebar.classList.toggle('collapsed');
+    _collapseBtn.innerHTML = collapsed ? '&#187;' : '&#171;';
+    localStorage.setItem('vf_sidebar_collapsed', collapsed ? '1' : '0');
+  };
+}
+
+// Health pill
+fetch('/health').then(r => r.json()).then(h => {
+  const pill = document.getElementById('healthpill');
+  if (!pill) return;
+  const ok = h.status === 'healthy';
+  pill.textContent = (ok ? '● ' : '● ') + (ok ? 'Healthy' : (h.status || 'Degraded'));
+  pill.className = 'status-pill ' + (ok ? 'ok' : 'bad');
+}).catch(() => {
+  const pill = document.getElementById('healthpill');
+  if (pill) { pill.textContent = '● Offline'; pill.className = 'status-pill bad'; }
+});
+
+// Audit Trail toolbar: exact-match case ID input + 2 dropdowns (mutually
+// exclusive with the case ID input, since the server only supports one
+// exact filter at a time) + page-size select + pager buttons.
+const _auditCaseIdEl = document.getElementById('auditCaseId');
+if (_auditCaseIdEl) {
+  let debounce = null;
+  _auditCaseIdEl.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      auditCaseId = _auditCaseIdEl.value.trim();
+      if (auditCaseId) {
+        auditActionFilter = ''; auditStatusFilter = '';
+        const a = document.getElementById('auditActionSel'); if (a) a.value = '';
+        const s = document.getElementById('auditStatusSel'); if (s) s.value = '';
+      }
+      loadAuditPage('reset');
+    }, 300);
+  });
+}
+['auditActionSel', 'auditStatusSel'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('change', () => {
+    if (id === 'auditActionSel') auditActionFilter = el.value;
+    if (id === 'auditStatusSel') auditStatusFilter = el.value;
+    if (el.value) {
+      auditCaseId = '';
+      if (_auditCaseIdEl) _auditCaseIdEl.value = '';
+      const other = id === 'auditActionSel' ? 'auditStatusSel' : 'auditActionSel';
+      const otherEl = document.getElementById(other);
+      if (otherEl) otherEl.value = '';
+      if (id === 'auditActionSel') auditStatusFilter = '';
+      else auditActionFilter = '';
+    }
+    loadAuditPage('reset');
+  });
+});
+const _auditPageSizeEl = document.getElementById('auditPageSize');
+if (_auditPageSizeEl) {
+  _auditPageSizeEl.addEventListener('change', () => {
+    auditPageSize = parseInt(_auditPageSizeEl.value, 10) || 50;
+    loadAuditPage('reset');
+  });
+}
+const _auditClearBtn = document.getElementById('auditClearBtn');
+if (_auditClearBtn) {
+  _auditClearBtn.onclick = () => {
+    auditCaseId = ''; auditActionFilter = ''; auditStatusFilter = '';
+    if (_auditCaseIdEl) _auditCaseIdEl.value = '';
+    const a = document.getElementById('auditActionSel'); if (a) a.value = '';
+    const s = document.getElementById('auditStatusSel'); if (s) s.value = '';
+    loadAuditPage('reset');
+  };
+}
+const _auditPrevBtn = document.getElementById('auditPrevBtn');
+if (_auditPrevBtn) _auditPrevBtn.onclick = () => loadAuditPage('prev');
+const _auditNextBtn = document.getElementById('auditNextBtn');
+if (_auditNextBtn) _auditNextBtn.onclick = () => loadAuditPage('next');
+const _auditRefreshBtn = document.getElementById('auditRefreshBtn');
+if (_auditRefreshBtn) _auditRefreshBtn.onclick = () => loadAuditPage(null);
+
 
 // Sequential polling, not setInterval. In request-driven mode a state call may
 // itself advance a case and take several seconds, and a fixed interval would

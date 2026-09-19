@@ -11,7 +11,7 @@ VF Logistics — Fraud Detection an Operator Can Delegate To
 
 ## Elevator pitch (200 char limit on Devpost)
 
-Four NVIDIA Nemotron agents on Nebius Token Factory screen shipments for fraud and sanctions, grounded by a live Tavily search — but a published Delegation Boundary, not the agents, decides what happens next.
+Five NVIDIA Nemotron agents on Nebius Token Factory screen shipments for fraud. Senior Auditor (Super) debates Junior Analyst (Nano) using function calling. A Delegation Boundary, not the agents, decides.
 
 ## Track
 
@@ -24,7 +24,7 @@ Tavily search call before every screening decision.
 
 ## Hosted project URL
 
-*(fill in after redeploy: Cloud Run service `vf-fraud-detection-nebius`)*
+https://vf-logistics-f7rcctz26a-as.a.run.app
 
 ---
 
@@ -154,11 +154,14 @@ python scripts/test_documents.py 3
 
 ### Features and functionality
 
-- **Four specialised agents across two providers' worth of model shapes** —
+- **Five specialised agents across two providers' worth of model shapes** —
   Nemotron 3 Nano for fraud and compliance, Nemotron 3 Super for
-  investigation, MiniCPM-V-4.5 for document intake — all through one
+  investigation and multi-agent debate, MiniCPM-V-4.5 for document intake — all through one
   OpenAI-compatible client
-- **A real, runtime Tavily search** in the compliance path
+- **Multi-Agent Debate** — Senior Auditor (Nemotron Super) reviews Junior Analyst
+  (Nemotron Nano) using function calling with three tools: request re-evaluation,
+  Tavily search, and render verdict. Opt-in "Deep Review" for cases needing extra scrutiny.
+- **A real, runtime Tavily search** in the compliance path (and in debate)
 - **Autonomous multi-step workflow** — conditional routing with no human
   step-through
 - **Delegation Boundary** — versioned policy published by a named human; the
@@ -211,7 +214,7 @@ code-resident lane tables when no `avg_route_cost` is provided.
 
 **Vision models on OpenAI-compatible endpoints want images, not PDFs.**
 Porting from Gemini's native PDF support meant adding a rasterisation step
-(`pymupdf`, first page to PNG) before the vision model call — a detail that
+(`pypdfium2`, first page to PNG) before the vision model call — a detail that
 would have silently produced garbage transcriptions if missed.
 
 **Structured output travels across providers.** Gemini's
@@ -255,9 +258,26 @@ Two things worth knowing before recording: the board has to be seeded first
 (`POST /api/v1/simulate`) or the cost meter and pipeline board are both empty
 on camera, and a document upload takes roughly 30–60 seconds to reach a
 terminal state, so narration over that scene needs to be long enough to cover
-it. The demo should show, in order: a document upload reaching
-`AUTO_CLEARED`, the compliance agent's Tavily search visible in a case trace,
-and one escalated case with a SAR draft.
+it. `DEMO_MODE=true` hides Agent Console, Cost Monitor and Volume test from
+the sidebar so the recording stays on the features that carry the argument;
+append `?full=1` to see everything regardless.
+
+The Tavily search call is real and runs on every compliance screening, and its
+results are now surfaced directly in the case-trace UI — open any escalated
+or auto-cleared case, expand the compliance hop, and the "LIVE TAVILY SEARCH
+USED" badge with the actual result titles/links (or the "returned nothing,
+degraded gracefully" state) is visible on camera, no narration workaround
+needed. Model Armor is live and enforcing (`sample_docs/injected_bol.pdf` is
+blocked with
+`MATCH_FOUND` at `HIGH` confidence before the vision model ever sees it,
+`case_id` prefixed `CASE-BLOCKED-`), so that scene can be shown directly
+rather than described. The demo should show, in order: a document upload
+reaching `AUTO_CLEARED` with the archive receipt visible, the injected sample
+document blocked by Model Armor, the Governance page with the active
+Delegation Boundary, one escalated case with a SAR draft, and — from the
+Audit Trail, searching `denied` — the real `hold_shipment` denials recorded
+when the boundary was unpublished, as evidence the fail-closed gate is not
+just a slide claim.
 
 ---
 
@@ -270,8 +290,8 @@ google-cloud, cloud-run, firestore, pub-sub, cloud-storage, model-armor,
 openai-sdk, python, flask, gunicorn, asyncio, javascript, html5, docker
 
 **"Try it out" links:**
-- *(Cloud Run URL after redeploy)*
-- *(new public GitHub repo URL after push)*
+- https://vf-logistics-f7rcctz26a-as.a.run.app
+- https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia
 
 ### Additional info
 
@@ -280,7 +300,7 @@ openai-sdk, python, flask, gunicorn, asyncio, javascript, html5, docker
 | **Submitter Type** | Individual |
 | **Country of residence** | Vietnam |
 | **Category** | Best Apps and Agents |
-| **Public code repo URL** | *(new repo, to be pushed)* |
+| **Public code repo URL** | https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | **Reproducible Testing instructions in README?** | **Yes** — README → *Reproducible testing* |
 | **Testing instructions (private)** | No login required. `GET /health` to warm it, then `POST /api/v1/simulate` and poll `GET /api/v1/orchestrator/state`. Full walkthrough in the README. |
 
@@ -288,12 +308,15 @@ openai-sdk, python, flask, gunicorn, asyncio, javascript, html5, docker
 **NVIDIA Nemotron 3 Nano**, **NVIDIA Nemotron 3 Super**, and **MiniCPM-V-4.5**
 
 **Which bonus integrations did you use?** → **Tavily** — a real, runtime
-search call in the compliance agent, verifiable via `GET /agents` and the
-per-case trace
+search call in the compliance agent, verifiable via `GET /agents`, the
+per-case trace UI (compliance hop shows a "LIVE TAVILY SEARCH USED" badge
+with result links), or the raw case document (`external_search_used` /
+`external_search_results`)
 
 > Both the Nebius and Tavily calls are verifiable on the live service:
 > `GET /agents` reports the model per agent, and every compliance response
-> carries `external_search_used`.
+> carries `external_search_used` and the search result titles/links, which
+> the dashboard renders directly in the case trace.
 
 ---
 
@@ -301,18 +324,86 @@ per-case trace
 
 | Item | Status |
 |---|---|
-| Demo video, up to 3 minutes | pending — record using script above |
-| Public code repository | pending — push to a new GitHub repo |
+| Demo video, up to 3 minutes | pending -- upload to YouTube and paste URL here |
+| Public code repository | done — https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
-| Hosted project URL | pending — redeploy to Cloud Run under new service name |
+| Hosted project URL | done -- https://vf-logistics-f7rcctz26a-as.a.run.app |
 | Runtime call to Nebius Token Factory | done — all four agents |
 | NVIDIA open model used | done — Nemotron 3 Nano + Super |
 | Functional Tavily runtime call | done — compliance agent |
 
 If the repository is private, share it per the hackathon's judging
 instructions.
+
+---
+
+## Feedback on Nebius Token Factory, AI Cloud, and NVIDIA tools
+
+### What worked well
+
+1. **OpenAI-compatible API** — Migrating from Gemini took hours, not days. The
+   same `AsyncOpenAI` client talks to Token Factory; only the base URL, model
+   IDs, and pricing table changed. Structured JSON output (`response_format`)
+   works identically.
+
+2. **Model variety in one endpoint** — Having Nemotron Nano (fast/cheap),
+   Nemotron Super (high-quality reasoning), and a vision model (MiniCPM-V)
+   behind the same endpoint simplified architecture. Each agent picks the
+   right model for its job without managing multiple SDKs or auth flows.
+
+3. **Generous hackathon credits** — The Nebius Builder Program credits allowed
+   extensive iteration on prompt engineering and multi-agent orchestration
+   without worrying about cost during development.
+
+4. **Latency for Nemotron Nano** — p95 under 1.5 seconds for the triage agent's
+   short responses is fast enough for a real-time review queue.
+
+### What could be improved
+
+1. **No NVIDIA vision model on Token Factory — this is the one gap that
+   forced a non-NVIDIA model into an otherwise all-NVIDIA pipeline.** Document
+   intake (transcribing bills of lading, invoices, packing lists) needs a
+   vision-language model, and at submission time Token Factory's NVIDIA
+   catalog has none, so this project runs that one agent on `MiniCPM-V-4.5`
+   instead — every other agent is Nemotron. This isn't a small gap: document
+   understanding is one of the most common real-world entry points for an
+   agentic pipeline (someone always starts from a PDF, a scan, or a photo of
+   paperwork), so a team building a genuinely document-first workflow on
+   Token Factory today has no first-party NVIDIA option for the very first
+   step. Concretely: a Nemotron VL/vision variant, or `nvidia/nemotron-parse`
+   style OCR/layout model, exposed through the same OpenAI-compatible endpoint
+   would close this without asking developers to manage a second model
+   provider just to read a document. Separately, the vision endpoint requires
+   images rather than raw PDF bytes (Gemini reads PDFs natively), which meant
+   an extra `pypdfium2` rasterisation step (`document_agent.py`) that
+   cost real debugging time before we realised it was expected, not a bug — a
+   one-line note in the vision-model docs would have saved that.
+
+2. **Streaming for long completions** — The investigation agent's detailed
+   reports can take 8–12 seconds. Streaming would improve perceived latency
+   for the human reviewer waiting on results.
+
+3. **Rate limit headers** — Token Factory returns 429 on rate limit but doesn't
+   include `Retry-After` or `X-RateLimit-*` headers. For production services
+   that need to back off gracefully, knowing when to retry matters.
+
+4. **Batch API** — For offline scoring of historical shipments (backtesting new
+   risk models), a batch endpoint with lower per-token cost would be valuable.
+
+### NVIDIA open models feedback
+
+1. **Nemotron 3 Nano** — Excellent for deterministic classification tasks. The
+   triage agent's risk bucketing is consistent and fast.
+
+2. **Nemotron 3 Super** — Handles complex reasoning (cross-referencing
+   compliance rules, temporal anomaly detection) well. The structured output
+   is reliable.
+
+3. **Wish list** — A Nemotron variant fine-tuned for entity extraction would
+   help the compliance agent pull shipper/receiver names, addresses, and tax
+   IDs more accurately from noisy document transcriptions.
 
 ---
 

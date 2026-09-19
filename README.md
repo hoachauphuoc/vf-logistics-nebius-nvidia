@@ -3,23 +3,35 @@
 **Hackathon:** Nebius x NVIDIA Global AI Hackathon
 **Track:** Best Apps and Agents
 **Bonus target:** Best Use of Tavily ($3,000, stackable with a Track Award)
+**Live demo:** https://vf-logistics-f7rcctz26a-as.a.run.app
 
-A multi-agent system that screens logistics shipments for fraud, sanctions/trade
-compliance violations, and runs deep-dive investigations — without a human
-walking it through each step. The AI model layer runs on **Nebius Token
-Factory**: **NVIDIA Nemotron 3 Nano** for fraud and compliance scoring,
-**NVIDIA Nemotron 3 Super** for deep investigation, and a vision model
-(**MiniCPM-V-4.5**) for document intake, since Token Factory does not yet carry
-an NVIDIA vision model. Infrastructure — Cloud Run, Firestore, Pub/Sub, Cloud
-Storage, Model Armor — stays on Google Cloud; nothing about Nebius's rules
-requires moving hosting, only that the model calls actually go to Token
-Factory, which they do.
+## The problem
+
+Vietnamese logistics operators lose money to shipment fraud that is invisible to
+threshold rules: a shipping cost 60% under the historical route average looks
+like a promo, not under-invoicing. A shipper with 2 lifetime transactions and a
+generic company name looks like a new customer, not a shell entity. Catching
+these requires reading many weak signals *together* — exactly what a rules
+engine cannot do and an analyst has no time to do at volume.
+
+**The impact:** every case a rules engine misses is either a fraud loss that
+surfaces weeks later in a reconciliation, or an analyst spending 20+ minutes
+manually re-deriving a judgment call the agents below make in seconds, for
+every one of hundreds of shipments a day.
 
 A shipment event arrives and nobody touches it again. A background worker scores
 it for fraud, decides on that score whether compliance screening is warranted,
 decides on the screening whether to open a deep investigation, and then acts:
 releasing the shipment, assigning an analyst, or holding the cargo and drafting a
 suspicious activity report for human signature.
+
+The AI model layer runs on **Nebius Token Factory**: **NVIDIA Nemotron 3 Nano**
+for fraud and compliance scoring, **NVIDIA Nemotron 3 Super** for deep
+investigation, and a vision model (**MiniCPM-V-4.5**) for document intake, since
+Token Factory does not yet carry an NVIDIA vision model. Infrastructure — Cloud
+Run, Firestore, Pub/Sub, Cloud Storage, Model Armor — stays on Google Cloud;
+nothing about Nebius's rules requires moving hosting, only that the model calls
+actually go to Token Factory, which they do.
 
 ---
 
@@ -42,7 +54,7 @@ was substantially rebuilt as a new, standalone project:
   shipper and receiver names and folds the findings into the model's context as
   labelled, untrusted external evidence — a real runtime dependency, not a
   simulated one.
-- Document intake gained a PDF-to-image rasterisation step (`pymupdf`), because
+- Document intake gained a PDF-to-image rasterisation step (`pypdfium2`), because
   vision models on Token Factory take images, not raw PDF bytes the way Gemini
   did natively.
 - `config.py`'s model/pricing registry, `.env.example`, `cloudbuild.yaml`, and
@@ -51,15 +63,6 @@ was substantially rebuilt as a new, standalone project:
   delegation boundary, shipper identity verification — was carried over
   unchanged, because none of it is model-specific; it is what keeps the system
   honest regardless of which LLM is doing the reasoning.
-
-## The problem
-
-Vietnamese logistics operators lose money to shipment fraud that is invisible to
-threshold rules: a shipping cost 60% under the historical route average looks
-like a promo, not under-invoicing. A shipper with 2 lifetime transactions and a
-generic company name looks like a new customer, not a shell entity. Catching
-these requires reading many weak signals *together* — exactly what a rules
-engine cannot do and an analyst has no time to do at volume.
 
 ## What the system does
 
@@ -72,6 +75,7 @@ governance control plane:
 | **Fraud Detection** | Price manipulation, route fraud, weight/dimension fraud, document fraud, identity fraud, duplicate & time fraud. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `temperature=0.1` for stable scoring |
 | **Compliance Screening** | Sanctions exposure (OFAC/UN/EU patterns), trade & regulatory compliance, AML indicators — grounded by a live Tavily search. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `temperature=0.1`, runs in parallel with fraud, Tavily search injected as evidence |
 | **AI Investigation** | Multi-step case investigation, pattern analysis, network mapping. | `nvidia/nemotron-3-super-120b-a12b` | Only reached on escalated cases |
+| **Multi-Agent Debate** | Senior Auditor (Super) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. | `nvidia/nemotron-3-super-120b-a12b` | Opt-in via "Deep Review" button, function calling with 3 tools |
 
 ### Model selection, chosen per task
 
@@ -115,6 +119,40 @@ model's context as a clearly labelled, untrusted evidence block — a real
 runtime web search, not a documented-but-unused integration. A Tavily outage
 or a missing API key degrades the agent to its pre-Tavily behaviour rather
 than blocking the pipeline.
+
+### Multi-Agent Debate: Super reviews Nano
+
+The most sophisticated reasoning pattern in the system is **Multi-Agent Debate**,
+where a Senior Auditor (Nemotron Super 120B) reviews the Junior Analyst's
+(Nemotron Nano 30B) fraud assessment. This is an opt-in "Deep Review" operation
+triggered by an analyst when a case needs extra scrutiny.
+
+**Why two models?** Nano is fast and cheap — it scores every shipment that arrives.
+But speed optimises for throughput, not for catching the subtle case that slips
+through. Super is slower and costs more, but it can challenge Nano's reasoning
+and catch what Nano missed. The debate is asymmetric: Super can call Nano back
+for a re-evaluation with specific focus areas, but Nano never calls Super.
+
+**Function calling, not prompt chaining.** Nemotron Super supports native
+tool_calls, so the debate agent uses real function calling with three tools:
+
+| Tool | Purpose |
+|---|---|
+| `request_nano_reevaluation` | Ask Nano to re-score the shipment with specific focus areas (pricing, identity, route, documents, timing) and a hypothesis about what it might have missed |
+| `search_tavily` | Run an additional web search for context (e.g., "Thanh Phat Trading sanctions Vietnam") |
+| `render_final_verdict` | Submit the final verdict: **CONFIRM** (agree with Nano) or **DISAGREE** (found issues Nano missed), with confidence, rationale, and recommended action |
+
+Super iterates through tool calls until it calls `render_final_verdict`, up to
+3 rounds. The debate trace is recorded in the case and rendered in the UI so
+the analyst sees exactly what Super did.
+
+**When to use it.** Deep Review is expensive (~15-30 seconds, Super token costs).
+It is not run automatically. An analyst clicks "Deep Review" when:
+- The risk score seems too low for the red flags present
+- The shipper or receiver name sounds suspicious
+- The case is borderline and the analyst wants a second opinion
+
+The verdict does not override the analyst's decision — it is advisory evidence.
 
 ### The agents are not trusted
 
@@ -302,7 +340,7 @@ the routing policy is configuration rather than something buried in code.
 - **PDF pages are rasterised before reaching the vision model** — Token
   Factory's vision models, like most OpenAI-compatible vision endpoints, take
   images (`image_url` data URLs), not raw PDF bytes the way Gemini's native
-  multimodal input did. `pymupdf` renders the first page to PNG in
+  multimodal input did. `pypdfium2` renders the first page to PNG in
   `document_agent.py` before the call.
 - **Tavily failures degrade, not block** — `tavily_client.search()` returns an
   empty list on any error (missing key, timeout, non-2xx), so a Tavily outage
@@ -512,7 +550,7 @@ gcloud run deploy vf-fraud-detection-nebius \
   --memory 1Gi --cpu 1 --timeout 300 \
   --min-instances 0 --max-instances 3 \
   --set-env-vars "PROJECT_ID=$PROJECT_ID,WORKER_MODE=ondemand,STORE_BACKEND=firestore,DECISIONS_TOPIC=case-decisions,CLAIM_LEASE_SECONDS=120" \
-  --set-secrets "NEBIUS_API_KEY=nebius-api-key:latest,TAVILY_API_KEY=tavily-api-key:latest"
+  --set-secrets "NEBIUS_API_KEY=NEBIUS_API_KEY:latest,TAVILY_API_KEY=TAVILY_API_KEY:latest"
 ```
 
 Verify:
@@ -554,13 +592,50 @@ request, no body, no configuration.
 
 ---
 
+## Firestore composite indexes (required once per project)
+
+`review_queue`, `GET /api/v1/cases?state=...` and `GET /api/v1/audit?...`
+query `state IN [...]`/`case_id`/`action`/`status` combined with an
+`order_by` on a different field, which Firestore only serves from a
+composite index — the collection previously avoided this on purpose to stay
+zero-setup, at the cost of the bugs `firestore.indexes.json` and this step
+now fix (a case waiting for review could silently fall out of the queue
+once enough newer cases existed). Create the four indexes once per project:
+
+```bash
+gcloud firestore indexes composite create --collection-group=cases \
+  --field-config=field-path=state,order=ascending \
+  --field-config=field-path=created_at,order=descending
+
+gcloud firestore indexes composite create --collection-group=audit_log \
+  --field-config=field-path=case_id,order=ascending \
+  --field-config=field-path=at,order=descending
+
+gcloud firestore indexes composite create --collection-group=audit_log \
+  --field-config=field-path=action,order=ascending \
+  --field-config=field-path=at,order=descending
+
+gcloud firestore indexes composite create --collection-group=audit_log \
+  --field-config=field-path=status,order=ascending \
+  --field-config=field-path=at,order=descending
+```
+
+Index builds run in the background (`gcloud firestore indexes composite list`
+to check status) and queries against an unbuilt index fail loudly rather
+than silently, so there is no risk of quietly querying an unindexed
+collection. `firestore.indexes.json` is the source of truth for what should
+exist; the commands above are how to apply it against a plain `gcloud`
+project (no `firebase-tools` dependency required).
+
+---
+
 ## Environment variables
 
 | Variable | Description | Default |
 |---|---|---|
 | `NEBIUS_API_KEY` | Nebius Token Factory API key | unset — required |
 | `NEBIUS_BASE_URL` | Token Factory OpenAI-compatible endpoint | `https://api.tokenfactory.nebius.com/v1/` |
-| `TAVILY_API_KEY` | Tavily API key for the compliance agent's live search | unset — degrades gracefully |
+| `TAVILY_API_KEY` | Tavily API key for the compliance agent's live search | set in production via Secret Manager (`TAVILY_API_KEY`); optional locally — degrades gracefully if unset |
 | `NEMOTRON_MODEL` | Model for fraud detection and compliance screening | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` |
 | `VISION_MODEL` | Model for document intake | `openbmb/MiniCPM-V-4_5` |
 | `INVESTIGATION_MODEL` | Model for investigation, pinned separately | `nvidia/nemotron-3-super-120b-a12b` |
@@ -570,9 +645,9 @@ request, no body, no configuration.
 | `CLAIM_LEASE_SECONDS` | How long a claimed case stays claimed | `180` |
 | `FRAUD_CLEAR_BELOW` | Risk below which auto-clear is considered | `40` |
 | `INVESTIGATE_AT` | Risk at or above which investigation always opens | `70` |
-| `DOCUMENT_BUCKET` | Cloud Storage bucket for document archive | unset |
+| `DOCUMENT_BUCKET` | Cloud Storage bucket for document archive | unset — set to `vf-fraud-detection-phuochoa-documents` in production |
 | `MODEL_ARMOR_TEMPLATE` | Model Armor template id | `vf-document-intake` |
-| `MODEL_ARMOR_LOCATION` | Model Armor region | `asia-southeast1` |
+| `MODEL_ARMOR_LOCATION` | Model Armor region — availability is limited; `asia-southeast1` was rejected in testing, `us-central1` worked | `asia-southeast1` |
 | `EXECUTOR_URL` | Executor service URL | unset |
 | `DECISIONS_TOPIC` | Pub/Sub topic for published decisions | `case-decisions` |
 | `NOTIFY_WEBHOOK_URL` | Outbound alert webhook | unset |
@@ -598,7 +673,7 @@ Nemotron tiers at runtime; investigation ignores it and reads
 Gemini read PDF bytes directly; MiniCPM-V, like most vision models behind an
 OpenAI-compatible API, expects an `image_url` — sending raw PDF bytes there
 either errors or silently misreads the document. `document_agent.py` now
-rasterises the first page to PNG with `pymupdf` before the call.
+rasterises the first page to PNG with `pypdfium2` before the call.
 
 **A degrade-gracefully rule matters as much for a new dependency as an old
 one.** Tavily is new to this system, and it would have been easy to let a
@@ -640,6 +715,18 @@ has no dedicated OFAC/UN/EU list lookup. Next steps: a real historical-baseline
 store, a dedicated sanctions-list API behind the compliance agent alongside
 Tavily, and replacing the scripted simulator with a production Pub/Sub
 subscription from the shipment system.
+
+Longer term, closing the loop on the humans this system currently escalates
+to: build a **Toloka**-backed human-in-the-loop review layer where real customs
+and compliance reviewers label the Review Queue's escalated cases (agreed with
+the AI, overrode it, or split the difference), and feed that labelled history
+back as fine-tuning data for the Nemotron Nano scoring agents — plus
+**Tandem** sessions with domain experts to pressure-test the fraud/compliance
+prompts against real edge cases before they reach production. Neither is
+implemented yet; today's escalation path already produces the human decisions
+this would need as training signal (`hold_shipment`, `draft_sar`, the analyst's
+resolution), so the labelled data is a byproduct of normal use, not a separate
+collection effort.
 
 ---
 

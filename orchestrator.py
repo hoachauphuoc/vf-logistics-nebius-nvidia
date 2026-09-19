@@ -56,7 +56,7 @@ from agents import (
     investigate_case,
     screen_shipment,
 )
-from store import get_store, new_id, utcnow
+from store import get_store, new_id, utcnow, OptimisticLockError
 
 # Objects the service writes itself. Notifications for this prefix are ignored,
 # or the pipeline would process its own archived output in a loop.
@@ -108,6 +108,52 @@ TERMINAL = (
 # reviewer making a decision.
 AWAITING_HUMAN = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED")
 
+# TTL cache for whole-collection aggregation (count()/sum()). Firestore bills
+# an aggregation query as one read regardless of how many documents match,
+# but the dashboard polls every 250ms while work is in flight - without a
+# cache that turns into ~40 aggregation round trips/second for a number that
+# does not need sub-second freshness. A short cache keeps the totals exact
+# at any collection size while bounding both cost and per-poll latency.
+_METRICS_CACHE_TTL_SECONDS = float(os.getenv("METRICS_CACHE_TTL_SECONDS", "5"))
+_metrics_cache: dict[str, Any] = {"at": 0.0, "value": None}
+
+
+async def global_metrics() -> dict[str, Any]:
+    """Exact counts/token/cost/latency totals across the whole collection,
+    cached briefly so frequent polling does not multiply aggregation reads."""
+    now = time.monotonic()
+    if _metrics_cache["value"] is not None and (
+        now - _metrics_cache["at"] < _METRICS_CACHE_TTL_SECONDS
+    ):
+        return _metrics_cache["value"]
+
+    store = get_store()
+    all_states = ACTIONABLE + TERMINAL
+    counts, rollups, cleared_by = await asyncio.gather(
+        store.count_by_state(all_states), 
+        store.sum_rollups(),
+        store.count_by_cleared_by(),
+    )
+    value = {
+        "counts": counts,
+        "in_flight": sum(counts.get(s, 0) for s in ACTIONABLE),
+        "awaiting_human": sum(counts.get(s, 0) for s in AWAITING_HUMAN),
+        "agent_calls": rollups["agent_calls"],
+        "avg_latency_ms": rollups["avg_latency_ms"],
+        "total_input_tokens": rollups["total_input_tokens"],
+        "total_output_tokens": rollups["total_output_tokens"],
+        "estimated_cost_usd": rollups["estimated_cost_usd"],
+        # Cost-Aware Hybrid Architecture: Split KPI tiles
+        "cleared_by_rules": cleared_by["rules"],
+        "cleared_by_ai": cleared_by["ai"],
+        "cleared_by_unknown": cleared_by["unknown"],
+        "total_auto_cleared": cleared_by["total_auto_cleared"],
+        "at": utcnow(),
+    }
+    _metrics_cache["at"] = now
+    _metrics_cache["value"] = value
+    return value
+
 
 # --------------------------------------------------------------------------
 # Event feed
@@ -155,6 +201,15 @@ async def ingest_shipment(
     existing = await store.get_case(case_id)
     if existing:
         return existing
+
+    # Supply the one fact the shipment is not allowed to assert about itself.
+    # ingest_document already does this after sanitisation; event-sourced
+    # shipments went straight to validate() with no counterparty lookup at
+    # all, which meant check_counterparty()'s identity_mismatch detection -
+    # and the VIP whitelist's own identity check - had nothing to cross-check
+    # an event-sourced claim against. An unknown or mismatched counterparty
+    # writes nothing and leaves the unverified-history floor standing.
+    shipper_registry.enrich(shipment)
 
     case = {
         "case_id": case_id,
@@ -436,18 +491,44 @@ async def _record_step(
     case: dict[str, Any], agent: str, response: dict[str, Any]
 ) -> dict[str, Any]:
     result = response.get("result") or {}
-    case["steps"].append(
-        {
-            "agent": agent,
-            "latency_ms": response.get("latency_ms"),
-            "model": response.get("model"),
-            "parse_error": response.get("parse_error", False),
-            "at": response.get("at"),
-            "result": result,
-            "input_tokens": response.get("input_tokens", 0),
-            "output_tokens": response.get("output_tokens", 0),
-        }
-    )
+    input_tokens = response.get("input_tokens", 0) or 0
+    output_tokens = response.get("output_tokens", 0) or 0
+    latency_ms = response.get("latency_ms")
+    model = response.get("model")
+
+    step: dict[str, Any] = {
+        "agent": agent,
+        "latency_ms": latency_ms,
+        "model": model,
+        "parse_error": response.get("parse_error", False),
+        "at": response.get("at"),
+        "result": result,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+    # Only the compliance step carries these (set in compliance_agent.py);
+    # surfaced so the case trace can show the live Tavily lookup was real,
+    # not just a claim in the docs.
+    if "external_search_used" in response:
+        step["external_search_used"] = response["external_search_used"]
+        step["external_search_results"] = response.get("external_search_results", [])
+    case["steps"].append(step)
+
+    # Denormalized rollups, kept in sync with every step so a global
+    # summary can be computed with Firestore sum()/count() aggregation
+    # instead of fetching and re-scanning `steps[]` for every case in the
+    # collection. sum() cannot reach into an array field, which is exactly
+    # why these live on the case document itself.
+    case["_agent_calls"] = case.get("_agent_calls", 0) + 1
+    case["_input_tokens"] = case.get("_input_tokens", 0) + input_tokens
+    case["_output_tokens"] = case.get("_output_tokens", 0) + output_tokens
+    if isinstance(latency_ms, int):
+        case["_sum_latency_ms"] = case.get("_sum_latency_ms", 0) + latency_ms
+    step_pricing = model_config.pricing_for(model)
+    case["_estimated_cost_usd"] = case.get("_estimated_cost_usd", 0.0) + (
+        input_tokens * step_pricing["input"] + output_tokens * step_pricing["output"]
+    ) / 1_000_000
+
     return result
 
 
@@ -556,12 +637,178 @@ async def _decide(
 
 
 async def advance(case: dict[str, Any]) -> dict[str, Any]:
-    """Run exactly one transition for a case and persist the outcome."""
+    """
+    Run exactly one transition for a case and persist the outcome.
+
+    Uses optimistic locking to prevent lost updates when multiple workers
+    attempt to advance the same case concurrently.
+    """
     store = get_store()
     state = case["state"]
     case_id = case["case_id"]
+    expected_version = case.get("_version")  # Capture version for optimistic lock
 
     if state == "INGESTED":
+        # ---------------------------------------------------------------
+        # SQL Pre-processing Pipeline: Cost-Aware Hybrid Architecture
+        #
+        # Run the full deterministic battery up front, not just whitelist/
+        # blacklist/low-value in isolation. verifier.validate()'s skip_ai
+        # only fires when a clearance signal (whitelist, low-value
+        # domestic) is present AND no other HIGH/CRITICAL finding
+        # contradicts it - a whitelist claim riding alongside a freight
+        # anomaly, a dual-use HS code, a high-risk destination, or an
+        # identity mismatch does NOT get a free pass. This closes the
+        # "type a known company name and skip every check" gap a
+        # whitelist-only short-circuit would otherwise leave open.
+        # ---------------------------------------------------------------
+        validation = verifier.validate(case["shipment"])
+
+        clearance_findings = [
+            f for f in validation["findings"] if f.get("auto_clear_by_rules")
+        ]
+        if clearance_findings and not validation.get("skip_ai"):
+            # A whitelist/low-value signal fired, but something else in the
+            # record contradicts it - this is a more useful signal than an
+            # ordinary grey-area case: someone (or something) claimed a
+            # fast-track identity on a shipment that doesn't otherwise look
+            # clean. Surface it distinctly rather than letting it blend into
+            # routine AI-graded traffic.
+            competing = [
+                f for f in validation["findings"]
+                if f["severity"] in ("HIGH", "CRITICAL") and not f.get("skip_ai")
+            ]
+            await emit(
+                case_id,
+                "prefilter_downgraded",
+                "Whitelist/low-value signal ("
+                + ", ".join(f["code"] for f in clearance_findings)
+                + ") present but overridden by "
+                + ", ".join(f["code"] for f in competing)
+                + " - routed to full AI/human review instead of auto-clear.",
+                agent="sql_prefilter",
+            )
+
+        if validation.get("skip_ai"):
+            auto_reject = bool(validation.get("auto_reject_by_rules"))
+            action = "auto_reject" if auto_reject else "auto_clear"
+            flag = "auto_reject_by_rules" if auto_reject else "auto_clear_by_rules"
+            primary = next((f for f in validation["findings"] if f.get(flag)), {})
+            other_findings = [f for f in validation["findings"] if f is not primary]
+            reason = primary.get("detail", "Cleared by SQL pre-filter rules")
+
+            # Record the prefilter step (no AI, zero tokens)
+            case.setdefault("steps", []).append({
+                "agent": "sql_prefilter",
+                "model": None,
+                "latency_ms": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "at": utcnow(),
+                "result": {
+                    "action": action,
+                    "finding": primary,
+                    "other_findings": other_findings,
+                },
+            })
+
+            # finding_count feeds governance's require_zero_deterministic_findings
+            # gate on auto-release. We only reach this branch when
+            # validation["skip_ai"] is True, which by construction already means
+            # no other HIGH/CRITICAL finding is present - only the clearance
+            # signal itself (CLEAR severity) and possibly harmless MEDIUM/LOW
+            # informational findings (e.g. SHIPPER_HISTORY_UNVERIFIED, which
+            # fires for any counterparty not in the internal book and carries no
+            # risk signal on its own). Neither should count as a blocking finding,
+            # or the gate would deny release_shipment for every genuinely clean
+            # rule-cleared case. The auto_reject branch doesn't go through the
+            # release gate at all (hold_shipment/assign_analyst, not
+            # release_shipment), so finding_count there is for the record only.
+            case["validation"] = {
+                **validation,
+                "finding_count": 0 if action == "auto_clear" else validation["finding_count"],
+                "skip_ai": True,
+                "cleared_by": "rules",
+                "checks_run": validation.get("checks_run", []) + ["prefilter"],
+            }
+            # The release gate also checks reconciliation.auto_clear_permitted (the
+            # same field verifier.reconcile() sets for the AI path). The prefilter
+            # branch builds its own reconciliation here so the gate can auto-release
+            # a rule-cleared case even though verifier.reconcile() itself never runs.
+            case["reconciliation"] = {
+                "effective_risk": 0 if action == "auto_clear" else 100,
+                "model_risk": None,
+                "risk_floor": validation["risk_floor"],
+                "source": "sql prefilter",
+                "score_disputed": False,
+                "auto_clear_permitted": action == "auto_clear",
+                "veto_reasons": [] if action == "auto_clear" else [reason],
+            }
+            
+            if action == "auto_clear":
+                case["risk_score"] = 0
+                case["risk_level"] = "LOW"
+                case["compliance_status"] = "COMPLIANT"
+                case["compliance_score"] = 100
+                case["cleared_by"] = "rules"  # Track for metrics
+                
+                await emit(
+                    case_id,
+                    "prefilter_clear",
+                    f"Auto-cleared by SQL rules: {reason}",
+                    agent="sql_prefilter",
+                    risk_score=0,
+                )
+                
+                # Skip AI, go straight to AUTO_CLEARED
+                case = await _decide(
+                    case,
+                    "AUTO_CLEARED",
+                    f"Cleared by SQL pre-filter rules (zero AI cost): {reason}",
+                    [
+                        ("release_shipment", {
+                            "shipment_id": case["shipment_id"],
+                            "reason": f"Pre-filter rule: {primary.get('code', 'RULE_MATCH')}",
+                        }),
+                    ],
+                )
+                
+            elif action == "auto_reject":
+                case["risk_score"] = 100
+                case["risk_level"] = "CRITICAL"
+                case["compliance_status"] = "BLOCKED"
+                case["compliance_score"] = 0
+                case["cleared_by"] = "rules"  # Track for metrics
+                
+                await emit(
+                    case_id,
+                    "prefilter_reject",
+                    f"Auto-rejected by SQL rules: {reason}",
+                    agent="sql_prefilter",
+                    risk_score=100,
+                )
+                
+                # Skip AI, escalate immediately
+                case = await _decide(
+                    case,
+                    "ESCALATED",
+                    f"Blocked by SQL pre-filter rules: {reason}",
+                    [
+                        ("hold_shipment", {
+                            "shipment_id": case["shipment_id"],
+                            "reason": f"Pre-filter blacklist: {primary.get('code', 'BLACKLIST_MATCH')}",
+                        }),
+                        ("assign_analyst", {"queue": "financial-crime", "priority": "HIGH"}),
+                    ],
+                )
+            
+            # Persist and return - no AI needed
+            await store.put_case(case, expected_version=expected_version)
+            return case
+        
+        # ---------------------------------------------------------------
+        # Grey Area: Needs AI analysis (Nemotron Nano + Tavily)
+        # ---------------------------------------------------------------
         # The two screening disciplines are independent, so they run concurrently.
         # Sequentially this was two round trips of roughly seven seconds each;
         # in parallel a case reaches a decision in about half the wall time for
@@ -583,8 +830,9 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
 
         # Deterministic grounding validation. The agents' scores are claims; this
         # is the part of the system that checks them against arithmetic and
-        # code-resident lists before anything acts on them.
-        validation = verifier.validate(case["shipment"])
+        # code-resident lists before anything acts on them. `validation` was
+        # already computed above (before the AI calls) to decide the
+        # fast-path branch; reused here so both branches see the same facts.
         reconciled = verifier.reconcile(fraud_result.get("risk_score"), validation)
 
         case["validation"] = validation
@@ -635,6 +883,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         )
 
         if clean:
+            case["cleared_by"] = "ai"  # Track for metrics: cleared by Nemotron
             case = await _decide(
                 case,
                 "AUTO_CLEARED",
@@ -738,7 +987,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
 
     case["updated_at"] = utcnow()
     case["claimed"] = False
-    await store.put_case(case)
+    await store.put_case(case, expected_version=expected_version)
     return case
 
 
@@ -910,6 +1159,8 @@ async def human_decide(
     case = await store.get_case(case_id)
     if not case:
         return {"ok": False, "error": "case not found"}
+    expected_version = case.get("_version")  # Capture for optimistic lock
+
     if case.get("state") not in AWAITING_HUMAN:
         return {
             "ok": False,
@@ -963,7 +1214,7 @@ async def human_decide(
             "decided_by": "human",
         }
 
-    await store.put_case(case)
+    await store.put_case(case, expected_version=expected_version)
     await store.add_audit({
         "audit_id": new_id("audit"),
         "case_id": case_id,
@@ -984,10 +1235,150 @@ async def human_decide(
     return {"ok": True, "case_id": case_id, "state": new_state, "review": review}
 
 
-async def review_queue(limit: int = 40) -> list[dict[str, Any]]:
-    """Cases waiting on a person, newest first."""
-    cases = await get_store().list_cases(120)
-    return [c for c in cases if c.get("state") in AWAITING_HUMAN][:limit]
+async def deep_review(case_id: str) -> dict[str, Any]:
+    """
+    Conduct a Multi-Agent Debate on a case.
+
+    Nemotron Super (Senior Auditor) reviews Nemotron Nano's (Junior Analyst)
+    fraud assessment. Super can use function calling to:
+    - Request Nano to re-evaluate with specific focus areas
+    - Run additional Tavily searches for context
+    - Render a final verdict: CONFIRM or DISAGREE
+
+    This is an expensive, opt-in operation triggered by an analyst clicking
+    "Deep Review" on a specific case in the Review Queue.
+    """
+    from agents import conduct_debate
+
+    store = get_store()
+    case = await store.get_case(case_id)
+
+    if not case:
+        return {"ok": False, "error": "case not found"}
+
+    if case.get("state") not in AWAITING_HUMAN:
+        return {
+            "ok": False,
+            "error": f"case must be awaiting human review, current state: {case['state']}",
+        }
+
+    expected_version = case.get("_version")
+
+    await emit(
+        case_id,
+        "debate_start",
+        "Senior Auditor (Nemotron Super) reviewing Junior Analyst (Nano) assessment",
+        agent="debate",
+    )
+
+    try:
+        debate_result = await conduct_debate(case)
+    except Exception as e:
+        await emit(case_id, "debate_error", f"Debate failed: {e}", agent="debate")
+        return {"ok": False, "error": str(e)}
+
+    # Record as a step in the case trace
+    step = {
+        "agent": "debate",
+        "model": debate_result.get("model"),
+        "latency_ms": debate_result.get("latency_ms"),
+        "input_tokens": debate_result.get("input_tokens"),
+        "output_tokens": debate_result.get("output_tokens"),
+        "at": debate_result.get("at") or utcnow(),
+        "result": debate_result.get("result"),
+    }
+    case.setdefault("steps", []).append(step)
+    case["debate"] = debate_result.get("result")
+    case["updated_at"] = utcnow()
+
+    # Update rollups for cost tracking
+    case["_agent_calls"] = case.get("_agent_calls", 0) + 1
+    case["_input_tokens"] = case.get("_input_tokens", 0) + debate_result.get("input_tokens", 0)
+    case["_output_tokens"] = case.get("_output_tokens", 0) + debate_result.get("output_tokens", 0)
+    step_pricing = model_config.pricing_for(debate_result.get("model", ""))
+    case["_estimated_cost_usd"] = case.get("_estimated_cost_usd", 0.0) + (
+        debate_result.get("input_tokens", 0) * step_pricing["input"]
+        + debate_result.get("output_tokens", 0) * step_pricing["output"]
+    ) / 1_000_000
+
+    verdict = (debate_result.get("result") or {}).get("verdict")
+    if verdict:
+        verdict_str = verdict.get("verdict", "UNKNOWN")
+        confidence = verdict.get("confidence", 0)
+        rationale = verdict.get("rationale", "")[:150]
+        await emit(
+            case_id,
+            "debate_verdict",
+            f"Senior Auditor verdict: {verdict_str} (confidence {confidence:.0%}) - {rationale}",
+            agent="debate",
+            verdict=verdict_str,
+            confidence=confidence,
+            recommended_action=verdict.get("recommended_action"),
+        )
+
+    try:
+        await store.put_case(case, expected_version=expected_version)
+    except OptimisticLockError:
+        return {"ok": False, "error": "case was modified concurrently, please retry"}
+
+    return {
+        "ok": True,
+        "case_id": case_id,
+        "debate": debate_result.get("result"),
+        "verdict": verdict,
+        "latency_ms": debate_result.get("latency_ms"),
+    }
+
+
+async def review_queue(
+    cursor: str | None = None, limit: int = 40
+) -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Cases waiting on a person, newest first, with cursor pagination.
+
+    Queries `state IN AWAITING_HUMAN` directly on an indexed field instead of
+    fetching the newest N cases and filtering in Python. The old approach
+    silently dropped a case from the queue the moment 120 newer cases (of
+    any state) existed - a case genuinely held for review would disappear
+    from the one place a human looks for it. See firestore.indexes.json for
+    the composite index this relies on.
+    """
+    return await get_store().query_cases(
+        states=AWAITING_HUMAN, cursor=cursor, limit=limit
+    )
+
+
+# Fields a board card actually renders. A full case document runs ~13KB,
+# mostly `steps[].result` payloads a list view never shows; a slim
+# projection is roughly 100x smaller and is what GET /api/v1/cases returns.
+# Anything more (the trace, decision packs) is fetched per-case on demand
+# via GET /api/v1/orchestrator/case/<id>.
+SLIM_CASE_FIELDS = (
+    "case_id",
+    "shipment_id",
+    "state",
+    "source",
+    "risk_score",
+    "compliance_status",
+    "claimed",
+    "created_at",
+)
+
+
+def slim_case(case: dict[str, Any]) -> dict[str, Any]:
+    return {k: case.get(k) for k in SLIM_CASE_FIELDS}
+
+
+async def list_cases_page(
+    states: tuple[str, ...] | None = None,
+    cursor: str | None = None,
+    limit: int = 50,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Slim, cursor-paginated case listing for GET /api/v1/cases."""
+    cases, next_cursor = await get_store().query_cases(
+        states=states, cursor=cursor, limit=limit
+    )
+    return [slim_case(c) for c in cases], next_cursor
 
 
 def synthesise_packs(case: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1296,69 +1687,58 @@ def worker_status() -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 async def snapshot(limit: int = 60) -> dict[str, Any]:
+    """
+    Dashboard header + a bounded board window.
+
+    KPIs (`counts`, `in_flight`, `awaiting_human`, token/cost/latency
+    totals) come from `global_metrics()` - a TTL-cached whole-collection
+    aggregation - not from the fetched window below, so the numbers
+    describe the real system at any case volume. `cases[]` itself stays
+    windowed because a live board only ever needs to render one page; walk
+    further pages via `GET /api/v1/cases`.
+    """
     store = get_store()
-    all_cases, events, audit = await asyncio.gather(
-        store.list_cases(limit + 40), store.list_events(80), store.list_audit(80)
+    all_cases, events, audit, metrics = await asyncio.gather(
+        store.list_cases(limit + 40),
+        store.list_events(80),
+        store.list_audit(80),
+        global_metrics(),
     )
 
     # Storage dedupe markers are bookkeeping, not cases. They must not appear on
     # the board or be counted in the metrics.
     cases = [c for c in all_cases if not c.get("is_marker")][:limit]
 
-    counts: dict[str, int] = {}
-    latencies: list[int] = []
-    total_input_tokens = 0
-    total_output_tokens = 0
-    estimated_cost = 0.0
+    # Per-agent breakdown is a Cost Monitor detail (a secondary, DEMO_MODE-
+    # hidden feature), not a headline KPI, so it stays windowed rather than
+    # needing a denormalized field per agent per case.
     tokens_by_agent: dict[str, dict[str, int]] = {}
-    
     for case in cases:
-        counts[case["state"]] = counts.get(case["state"], 0) + 1
         for step in case.get("steps", []) or []:
-            if isinstance(step.get("latency_ms"), int):
-                latencies.append(step["latency_ms"])
-            # Aggregate token usage
-            input_t = step.get("input_tokens", 0) or 0
-            output_t = step.get("output_tokens", 0) or 0
-            total_input_tokens += input_t
-            total_output_tokens += output_t
-
-            # Price each step at its own model's rate. Investigation runs on
-            # Flash-Lite at half the Flash rate, so a single project-wide rate
-            # would overstate the bill and hide the reason for the split.
-            step_pricing = model_config.pricing_for(step.get("model"))
-            estimated_cost += (
-                input_t * step_pricing["input"] + output_t * step_pricing["output"]
-            ) / 1_000_000
-            
             agent = step.get("agent", "unknown")
-            if agent not in tokens_by_agent:
-                tokens_by_agent[agent] = {"calls": 0, "input": 0, "output": 0}
-            tokens_by_agent[agent]["calls"] += 1
-            tokens_by_agent[agent]["input"] += input_t
-            tokens_by_agent[agent]["output"] += output_t
-
-    in_flight = sum(1 for c in cases if c["state"] not in TERMINAL)
-    awaiting_human = sum(1 for c in cases if c["state"] in AWAITING_HUMAN)
+            bucket = tokens_by_agent.setdefault(
+                agent, {"calls": 0, "input": 0, "output": 0}
+            )
+            bucket["calls"] += 1
+            bucket["input"] += step.get("input_tokens", 0) or 0
+            bucket["output"] += step.get("output_tokens", 0) or 0
 
     readiness = await governance.agent_readiness()
-
-    estimated_cost = round(estimated_cost, 6)
 
     return {
         "cases": cases,
         "events": events,
         "audit": audit,
-        "counts": counts,
-        "in_flight": in_flight,
-        "awaiting_human": awaiting_human,
+        "counts": metrics["counts"],
+        "in_flight": metrics["in_flight"],
+        "awaiting_human": metrics["awaiting_human"],
         "agent": readiness,
-        "agent_calls": len(latencies),
-        "avg_latency_ms": int(sum(latencies) / len(latencies)) if latencies else 0,
-        "total_input_tokens": total_input_tokens,
-        "total_output_tokens": total_output_tokens,
+        "agent_calls": metrics["agent_calls"],
+        "avg_latency_ms": metrics["avg_latency_ms"],
+        "total_input_tokens": metrics["total_input_tokens"],
+        "total_output_tokens": metrics["total_output_tokens"],
         "tokens_by_agent": tokens_by_agent,
-        "estimated_cost_usd": estimated_cost,
+        "estimated_cost_usd": metrics["estimated_cost_usd"],
         "worker": worker_status(),
         "at": utcnow(),
     }

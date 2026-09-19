@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Screenshots and docs (not needed in runtime)
+screenshots/
+*.md
+!README.md
+
+# Development files
+.env
+.env.local
+.pre-commit-config.yaml
+pyproject.toml
+Makefile
+
+# Test files
+tests/
+scripts/
+sample_docs/
+
+# Submission materials
+SUBMISSION.md
+demo_video/
+
+# Large files that shouldn't be in the image
+*.pdf
+*.png
+*.jpg
+*.jpeg
