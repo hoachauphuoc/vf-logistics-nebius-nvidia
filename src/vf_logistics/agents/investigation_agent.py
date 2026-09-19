@@ -1,4 +1,4 @@
-﻿"""
+"""
 VF Logistics AI Investigation Agent - NVIDIA Nemotron 3 Super, via Nebius Token Factory
 Conducts deep-dive investigations into flagged cases using multi-step reasoning.
 
@@ -15,7 +15,7 @@ import json
 import os
 from typing import Any
 
-import nebius_client
+from vf_logistics import nebius_client, tavily_client
 from ._common import Timer, envelope, parse_model_json
 
 MODEL_ID = os.getenv("INVESTIGATION_MODEL", "nvidia/nemotron-3-super-120b-a12b")
@@ -92,12 +92,37 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
     - Anomaly Count (30d): {case_data.get('anomaly_count_30d', 'N/A')}
     """
     
+    # Tavily enrichment: search for the specific fraud pattern and counterparties
+    tavily_context = ""
+    shipment = case_data.get("primary_shipment", {})
+    shipper = shipment.get("shipper_name", "")
+    receiver = shipment.get("receiver_name", "") or shipment.get("consignee", "")
+    trigger = case_data.get("trigger_reason", "")
+
+    tavily_queries = []
+    if trigger:
+        tavily_queries.append(f'"{trigger}" logistics fraud pattern')
+    if shipper and receiver:
+        tavily_queries.append(f'"{shipper}" "{receiver}" business relationship OR sanctions')
+    elif shipper:
+        tavily_queries.append(f'"{shipper}" fraud OR sanctions OR shell company')
+
+    all_results = []
+    for q in tavily_queries:
+        all_results.extend(await tavily_client.search(q, max_results=3))
+    if all_results:
+        tavily_context = (
+            "\n\n<<<BEGIN EXTERNAL WEB SEARCH FINDINGS (Tavily)>>>\n"
+            + tavily_client.format_findings(all_results)
+            + "\n<<<END EXTERNAL WEB SEARCH FINDINGS>>>\n"
+        )
+
     with Timer() as timer:
         text, input_tokens, output_tokens = await nebius_client.complete_json(
             model=get_model_id(),
             system_prompt=INVESTIGATION_PROMPT,
-            user_text=f"Conduct a thorough investigation:\n{case_text}",
-            temperature=0.2,  # Slightly higher for creative investigation
+            user_text=f"Conduct a thorough investigation:\n{case_text}{tavily_context}",
+            temperature=0.2,
         )
 
     parsed, error = parse_model_json(text)
@@ -114,6 +139,8 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
         case_id=case_data.get("case_id"),
     )
     out["thinking_enabled"] = True
+    out["external_search_used"] = len(all_results) > 0
+    out["external_search_results"] = len(all_results)
     return out
 
 
@@ -122,7 +149,7 @@ def _format_shipment(shipment: dict) -> str:
         return "No data"
     return f"""
     - ID: {shipment.get('shipment_id', 'N/A')}
-    - Route: {shipment.get('origin', 'N/A')} → {shipment.get('destination', 'N/A')}
+    - Route: {shipment.get('origin', 'N/A')} ? {shipment.get('destination', 'N/A')}
     - Value: {shipment.get('declared_value', 'N/A')} USD
     - Cost: {shipment.get('shipping_cost', 'N/A')} USD
     - Shipper: {shipment.get('shipper_name', 'N/A')}
@@ -137,7 +164,7 @@ def _format_related_shipments(shipments: list) -> str:
     for s in shipments[:10]:  # Limit to 10
         if isinstance(s, dict):
             lines.append(
-                f"  - {s.get('shipment_id')}: {s.get('origin')} → {s.get('destination')} "
+                f"  - {s.get('shipment_id')}: {s.get('origin')} ? {s.get('destination')} "
                 f"({s.get('declared_value')} USD)"
             )
         else:

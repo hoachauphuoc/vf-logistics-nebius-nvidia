@@ -41,22 +41,23 @@ import os
 import time
 from typing import Any
 
-import document_render
-import document_store
-import governance
-import model_armor
-import shipper_registry
-import tools
-import untrusted
-import verifier
-import config as model_config
-from agents import (
+from vf_logistics import document_render
+from vf_logistics import document_store
+from vf_logistics import governance
+from vf_logistics import model_armor
+from vf_logistics import shipper_registry
+from vf_logistics import tavily_client
+from vf_logistics import tools
+from vf_logistics import untrusted
+from vf_logistics import verifier
+from vf_logistics import config as model_config
+from vf_logistics.agents import (
     analyze_shipment,
     extract_shipment,
     investigate_case,
     screen_shipment,
 )
-from store import get_store, new_id, utcnow, OptimisticLockError
+from vf_logistics.store import get_store, new_id, utcnow, OptimisticLockError
 
 # Objects the service writes itself. Notifications for this prefix are ignored,
 # or the pipeline would process its own archived output in a loop.
@@ -820,10 +821,29 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             agent="specialists",
         )
 
-        fraud_resp, compliance_resp = await asyncio.gather(
+        # Route validation: search for disruptions on this shipping lane
+        async def _route_search(shipment):
+            origin = shipment.get("origin_country") or shipment.get("origin", "")
+            dest = shipment.get("destination_country") or shipment.get("destination", "")
+            if not origin or not dest:
+                return []
+            q = f"{origin} {dest} shipping route disruption OR port congestion OR sanctions"
+            return await tavily_client.search(q, max_results=3)
+
+        fraud_resp, compliance_resp, route_results = await asyncio.gather(
             analyze_shipment(case["shipment"]),
             screen_shipment(case["shipment"]),
+            _route_search(case["shipment"]),
         )
+
+        # Attach route intelligence to case for downstream agents
+        if route_results:
+            case["route_intelligence"] = tavily_client.format_findings(route_results)
+            case.setdefault("tavily_searches", []).append({
+                "type": "route_validation",
+                "results": len(route_results),
+                "at": utcnow(),
+            })
 
         fraud_result = await _record_step(case, "fraud_detection", fraud_resp)
         compliance_result = await _record_step(case, "compliance", compliance_resp)
@@ -834,6 +854,17 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         # already computed above (before the AI calls) to decide the
         # fast-path branch; reused here so both branches see the same facts.
         reconciled = verifier.reconcile(fraud_result.get("risk_score"), validation)
+
+        # Learning loop: adjust risk based on shipper's human review history
+        shipper_name = case.get("shipment", {}).get("shipper_name", "")
+        adj = shipper_risk_adjustment(shipper_name)
+        if adj != 0:
+            old_risk = reconciled["effective_risk"]
+            reconciled["effective_risk"] = max(0, min(100, old_risk + adj))
+            reconciled["learning_adjustment"] = adj
+            reconciled["learning_note"] = (
+                f"Risk adjusted by {adj:+d} based on shipper feedback history"
+            )
 
         case["validation"] = validation
         case["reconciliation"] = reconciled
@@ -854,6 +885,36 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 agent="verifier",
                 risk_score=reconciled["effective_risk"],
             )
+
+            # Auto-debate: when model and floor disagree significantly,
+            # trigger multi-agent debate without waiting for human
+            if reconciled.get("score_disputed"):
+                try:
+                    debate_result = await conduct_debate(
+                        case_id=case_id,
+                        fraud_result=fraud_result,
+                        compliance_result=compliance_result,
+                        shipment=case["shipment"],
+                        trigger="auto_score_disputed",
+                    )
+                    case.setdefault("steps", []).append({
+                        "agent": "auto_debate",
+                        "model": debate_result.get("model"),
+                        "latency_ms": debate_result.get("latency_ms", 0),
+                        "input_tokens": debate_result.get("input_tokens", 0),
+                        "output_tokens": debate_result.get("output_tokens", 0),
+                        "at": utcnow(),
+                        "result": debate_result.get("result"),
+                    })
+                    case["auto_debate"] = debate_result.get("result")
+                    await emit(
+                        case_id, "debate",
+                        f"Auto-debate triggered (score disputed): "
+                        f"Super re-evaluated in {debate_result.get('latency_ms', '?')}ms",
+                        agent="debate",
+                    )
+                except Exception as exc:
+                    log.warning("Auto-debate failed for %s: %s", case_id, exc)
         else:
             await emit(
                 case_id,
@@ -1232,7 +1293,50 @@ async def human_decide(
         outcome=new_state,
     )
 
+    # Learning loop: update shipper clearance rate for future risk adjustment
+    shipper_name = case.get("shipment", {}).get("shipper_name", "")
+    if shipper_name and action in ("release", "block"):
+        _update_shipper_feedback(store, shipper_name, action)
+
     return {"ok": True, "case_id": case_id, "state": new_state, "review": review}
+
+
+# Shipper feedback tracking for learning loop
+_SHIPPER_FEEDBACK: dict[str, dict] = {}
+
+def _update_shipper_feedback(store, shipper_name: str, action: str):
+    """Track human decisions per shipper to adjust future risk scoring."""
+    key = shipper_name.strip().lower()
+    if not key:
+        return
+    fb = _SHIPPER_FEEDBACK.setdefault(key, {"released": 0, "blocked": 0})
+    if action == "release":
+        fb["released"] += 1
+    elif action == "block":
+        fb["blocked"] += 1
+    total = fb["released"] + fb["blocked"]
+    fb["clearance_rate"] = fb["released"] / total if total else 0.0
+
+def get_shipper_feedback(shipper_name: str) -> dict | None:
+    """Return feedback stats for a shipper, or None if no data."""
+    key = (shipper_name or "").strip().lower()
+    return _SHIPPER_FEEDBACK.get(key)
+
+def shipper_risk_adjustment(shipper_name: str) -> int:
+    """Return risk floor adjustment based on human feedback history.
+
+    Positive = increase floor (more risky), negative = decrease (more trusted).
+    - Cleared 5+ times by humans -> reduce risk floor by 10
+    - Blocked 2+ times by humans -> raise risk floor by 15
+    """
+    fb = get_shipper_feedback(shipper_name)
+    if not fb:
+        return 0
+    if fb["blocked"] >= 2:
+        return 15
+    if fb["released"] >= 5:
+        return -10
+    return 0
 
 
 async def deep_review(case_id: str) -> dict[str, Any]:
@@ -1248,7 +1352,7 @@ async def deep_review(case_id: str) -> dict[str, Any]:
     This is an expensive, opt-in operation triggered by an analyst clicking
     "Deep Review" on a specific case in the Review Queue.
     """
-    from agents import conduct_debate
+    from vf_logistics.agents import conduct_debate
 
     store = get_store()
     case = await store.get_case(case_id)

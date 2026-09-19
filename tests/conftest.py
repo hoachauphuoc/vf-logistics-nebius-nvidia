@@ -198,7 +198,7 @@ def mock_tavily() -> Generator[MagicMock, None, None]:
 def app_client() -> Generator[Any, None, None]:
     """Flask test client for API endpoint tests."""
     # Import here to avoid import-time side effects
-    import main
+    from vf_logistics import app as main
 
     main.app.config["TESTING"] = True
     with main.app.test_client() as client:

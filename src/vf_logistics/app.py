@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import auth after dotenv so IAP_ENABLED is read correctly
-from auth import (
+from vf_logistics.auth import (
     require_auth,
     require_viewer,
     require_reviewer,
@@ -33,14 +33,14 @@ from auth import (
     get_auth_context,
 )
 
-import document_store
-import governance
-import orchestrator
-import simulator
-import tools
-import config as model_config
-from store import store_status
-from observability import (
+from vf_logistics import document_store
+from vf_logistics import governance
+from vf_logistics import orchestrator
+from vf_logistics import simulator
+from vf_logistics import tools
+from vf_logistics import config as model_config
+from vf_logistics.store import store_status
+from vf_logistics.observability import (
     configure_logging,
     get_logger,
     get_metrics,
@@ -52,7 +52,7 @@ from observability import (
     METRIC_AUTH_FAILURES,
 )
 
-from agents import (
+from vf_logistics.agents import (
     analyze_shipment,
     batch_analyze,
     screen_shipment,
@@ -66,7 +66,11 @@ from agents import (
     get_document_agent_info
 )
 
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+import pathlib as _pathlib
+
+app = Flask(__name__,
+            static_folder=str(_pathlib.Path(__file__).parent / "static"),
+            static_url_path="/static")
 
 # Rate limiting — protects AI-invoking and external API endpoints from abuse
 from flask_limiter import Limiter
@@ -496,7 +500,7 @@ def list_audit():
         action = request.args.get("action") or None
         status = request.args.get("status") or None
 
-        from store import get_store
+        from vf_logistics.store import get_store
 
         items, next_cursor = _on_worker(
             get_store().query_audit(
@@ -520,7 +524,7 @@ def list_events():
         cursor = request.args.get("cursor")
         limit = min(int(request.args.get("limit", 80)), 200)
 
-        from store import get_store
+        from vf_logistics.store import get_store
 
         items, next_cursor = _on_worker(
             get_store().query_events(cursor=cursor, limit=limit)
@@ -618,7 +622,7 @@ def event_document():
         )
 
         if result.get("accepted") and orchestrator.WORKER_MODE != "poll":
-            from store import get_store
+            from vf_logistics.store import get_store
 
             case = _on_worker(get_store().get_case(result["case_id"]))
             if case:
@@ -774,12 +778,24 @@ def governance_agent():
         return _safe_error(e)
 
 
+@app.route("/api/v1/governance/drift", methods=["GET"])
+@require_viewer
+def governance_drift():
+    """Return drift detection details for the governance banner."""
+    try:
+        readiness = _on_worker(governance.agent_readiness())
+        drift = readiness.get("drift") or {"material": False, "reasons": []}
+        return jsonify(drift)
+    except Exception as e:
+        return _safe_error(e)
+
+
 @app.route("/api/v1/governance/boundaries", methods=["GET"])
 @require_viewer
 def governance_boundaries():
     """Full boundary history, including SUPERSEDED versions."""
     try:
-        from store import get_store
+        from vf_logistics.store import get_store
 
         return jsonify({
             "boundaries": _on_worker(get_store().list_boundaries(20)),
@@ -827,7 +843,7 @@ def verify_entity():
     Returns: {verified: bool, confidence: str, results: [{title, url, snippet}], summary: str}
     """
     try:
-        import tavily_client
+        from vf_logistics import tavily_client
         import asyncio
 
         body = request.get_json(silent=True) or {}
@@ -885,12 +901,56 @@ def verify_entity():
         return _safe_error(e)
 
 
+@app.route("/api/v1/governance/tavily-scan", methods=["POST"])
+@require_governance_admin
+def governance_tavily_scan():
+    """Search for recent sanctions or regulatory updates relevant to current watchlists."""
+    try:
+        from vf_logistics import tavily_client
+        import asyncio
+        from vf_logistics.store import get_store
+
+        store = get_store()
+        body = request.get_json(silent=True) or {}
+        custom_queries = body.get("queries", [])
+
+        default_queries = [
+            "logistics sanctions updates latest 2026",
+            "OFAC SDN list new additions logistics shipping",
+            "trade compliance enforcement actions recent",
+        ]
+        queries = custom_queries[:5] if custom_queries else default_queries
+
+        loop = asyncio.new_event_loop()
+        all_results = []
+        for q in queries:
+            results = loop.run_until_complete(tavily_client.search(q, max_results=3))
+            all_results.extend(results)
+        loop.close()
+
+        alerts = []
+        for r in all_results:
+            title = r.get("title", "")
+            content = r.get("content", "")[:400]
+            url = r.get("url", "")
+            alerts.append({"title": title, "snippet": content, "url": url})
+
+        return jsonify({
+            "scan_count": len(queries),
+            "alerts": alerts,
+            "alert_count": len(alerts),
+            "summary": f"Scanned {len(queries)} queries, found {len(alerts)} results",
+        })
+    except Exception as e:
+        return _safe_error(e)
+
+
 @app.route("/api/v1/governance/prefilter-rules", methods=["GET"])
 @require_viewer
 def get_prefilter_rules():
     """Return current SQL pre-filter rules (whitelist, blacklist, safe routes, threshold)."""
     try:
-        import verifier
+        from vf_logistics import verifier
         return jsonify(verifier.get_prefilter_rules())
     except Exception as e:
         return _safe_error(e)
@@ -911,8 +971,8 @@ def update_prefilter_rules():
     }
     """
     try:
-        import verifier
-        from store import get_store, new_id, utcnow
+        from vf_logistics import verifier
+        from vf_logistics.store import get_store, new_id, utcnow
         
         body = request.get_json(silent=True) or {}
         author = str(body.get("author") or "").strip()
@@ -1015,7 +1075,7 @@ def review_document(case_id: str):
     try:
         from flask import Response
 
-        from store import get_store
+        from vf_logistics.store import get_store
 
         case = _on_worker(get_store().get_case(case_id))
         if not case:
@@ -1132,7 +1192,7 @@ def event_storage():
 
         if result.get("accepted") and not result.get("blocked") \
                 and orchestrator.WORKER_MODE != "poll":
-            from store import get_store
+            from vf_logistics.store import get_store
 
             case = _on_worker(get_store().get_case(result["case_id"]))
             if case:
@@ -1173,7 +1233,7 @@ def bucket_sweep():
 def orchestrator_reset():
     """Clear all cases, events and audit records so a demo starts clean."""
     try:
-        from store import get_store
+        from vf_logistics.store import get_store
 
         removed = _on_worker(get_store().reset())
         return jsonify({"cleared": removed})
@@ -1192,7 +1252,7 @@ def admin_backfill_rollups():
     up cases are skipped.
     """
     try:
-        from store import get_store
+        from vf_logistics.store import get_store
 
         result = _on_worker(get_store().backfill_rollups())
         return jsonify(result)
@@ -1205,7 +1265,7 @@ def admin_backfill_rollups():
 def orchestrator_case(case_id: str):
     """Single case with its full agent hop history and action receipts."""
     try:
-        from store import get_store
+        from vf_logistics.store import get_store
 
         case = _on_worker(get_store().get_case(case_id))
         if not case:

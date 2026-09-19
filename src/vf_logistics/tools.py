@@ -17,8 +17,8 @@ from typing import Any
 
 import httpx
 
-import executor_client
-from store import get_store, new_id, utcnow
+from vf_logistics import executor_client
+from vf_logistics.store import get_store, new_id, utcnow
 
 # Optional outbound webhook (Slack / Teams / Google Chat / any HTTP endpoint).
 # Left unset in the demo: the notify action then records the payload it would

@@ -13,7 +13,7 @@ from unittest.mock import patch
 # ────────────────────────────────────────────────────────────────
 # 1. auth.py
 # ────────────────────────────────────────────────────────────────
-from auth import Role, ROLE_HIERARCHY, AuthContext, _get_user_roles
+from vf_logistics.auth import Role, ROLE_HIERARCHY, AuthContext, _get_user_roles
 
 
 class TestRoleHierarchy(unittest.TestCase):
@@ -75,7 +75,7 @@ class TestGetUserRoles(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 # 2. config.py
 # ────────────────────────────────────────────────────────────────
-from config import get_model, set_model, pricing_for, get_all_models, PRICING
+from vf_logistics.config import get_model, set_model, pricing_for, get_all_models, PRICING
 
 
 class TestConfig(unittest.TestCase):
@@ -121,7 +121,7 @@ class TestConfig(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 # 3. untrusted.py
 # ────────────────────────────────────────────────────────────────
-from untrusted import (
+from vf_logistics.untrusted import (
     screen_text, sanitise_shipment, strip_invisible,
     SHIPMENT_SCHEMA, FORBIDDEN_FIELDS, MAX_FIELD_CHARS,
 )
@@ -197,7 +197,7 @@ class TestStripInvisible(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 # 4. shipper_registry.py
 # ────────────────────────────────────────────────────────────────
-from shipper_registry import lookup, enrich, _norm_company, _norm_tax_id
+from vf_logistics.shipper_registry import lookup, enrich, _norm_company, _norm_tax_id
 
 
 class TestShipperRegistry(unittest.TestCase):
@@ -241,7 +241,7 @@ class TestShipperRegistry(unittest.TestCase):
 # 5. schemas.py
 # ────────────────────────────────────────────────────────────────
 from pydantic import ValidationError
-from schemas import ReviewDecisionRequest, ReviewAction
+from vf_logistics.schemas import ReviewDecisionRequest, ReviewAction
 
 
 class TestSchemas(unittest.TestCase):
@@ -270,7 +270,7 @@ class TestSchemas(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 # 6. simulator.py
 # ────────────────────────────────────────────────────────────────
-from simulator import scripted_shipments, bulk_shipments
+from vf_logistics.simulator import scripted_shipments, bulk_shipments
 
 
 class TestSimulator(unittest.TestCase):
@@ -314,7 +314,7 @@ class TestSimulator(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 # 7. agents/_common.py
 # ────────────────────────────────────────────────────────────────
-from agents._common import parse_model_json, envelope
+from vf_logistics.agents._common import parse_model_json, envelope
 
 
 class TestParseModelJson(unittest.TestCase):
@@ -384,7 +384,7 @@ class TestEnvelope(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 # 8. document_render.py
 # ────────────────────────────────────────────────────────────────
-from document_render import render_bill_of_lading
+from vf_logistics.document_render import render_bill_of_lading
 
 
 class TestDocumentRender(unittest.TestCase):

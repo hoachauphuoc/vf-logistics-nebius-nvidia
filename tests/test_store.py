@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from store import (
+from vf_logistics.store import (
     MemoryStore,
     OptimisticLockError,
     AuditImmutabilityError,
