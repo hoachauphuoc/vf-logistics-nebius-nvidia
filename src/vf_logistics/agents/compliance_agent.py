@@ -1,4 +1,4 @@
-﻿"""
+"""
 VF Logistics Compliance Screening Agent - NVIDIA Nemotron 3 Nano, via Nebius Token Factory
 Verifies shipments against sanctions lists, trade regulations, and compliance rules.
 
@@ -12,10 +12,10 @@ Hackathon: Nebius x NVIDIA Global AI Hackathon
 
 from typing import Any
 
-import nebius_client
-import tavily_client
+from vf_logistics import nebius_client
+from vf_logistics import tavily_client
 from ._common import Timer, envelope, parse_model_json
-import config as model_config
+from vf_logistics import config as model_config
 
 def get_model_id():
     return model_config.get_model()

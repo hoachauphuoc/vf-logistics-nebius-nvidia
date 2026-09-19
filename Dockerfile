@@ -30,6 +30,7 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src
 ENV PORT=8080
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -40,8 +41,9 @@ RUN groupadd --gid 1000 appgroup && \
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy application code (use .dockerignore to exclude unnecessary files)
-COPY --chown=appuser:appgroup . .
+# Copy application code
+COPY --chown=appuser:appgroup src/ src/
+COPY --chown=appuser:appgroup pyproject.toml .
 
 # Switch to non-root user
 USER appuser
@@ -67,4 +69,4 @@ CMD exec gunicorn \
     --access-logfile - \
     --error-logfile - \
     --capture-output \
-    main:app
+    vf_logistics.app:app

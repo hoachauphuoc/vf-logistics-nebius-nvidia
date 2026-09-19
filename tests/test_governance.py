@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from governance import (
+from vf_logistics.governance import (
     check,
     proposed_boundary,
     publish_boundary,
@@ -98,7 +98,7 @@ class TestFailClosedBehavior:
 
     def test_agent_suspended_without_boundary(self):
         """Agent readiness is SUSPENDED without boundary."""
-        with patch("governance.get_store") as mock_store:
+        with patch("vf_logistics.governance.get_store") as mock_store:
             mock_store.return_value.active_boundary = AsyncMock(return_value=None)
             mock_store.return_value.list_cases = AsyncMock(return_value=[])
 

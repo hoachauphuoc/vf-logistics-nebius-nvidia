@@ -17,8 +17,8 @@ import json
 import os
 from typing import Any
 
-import nebius_client
-import tavily_client
+from vf_logistics import nebius_client
+from vf_logistics import tavily_client
 from ._common import Timer, utcnow
 
 MODEL_ID = os.getenv("DEBATE_MODEL", "nvidia/nemotron-3-super-120b-a12b")

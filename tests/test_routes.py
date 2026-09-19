@@ -10,7 +10,7 @@ import json
 import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from main import app
+from vf_logistics.app import app
 
 
 class FlaskTestBase(unittest.TestCase):

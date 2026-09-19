@@ -577,10 +577,27 @@ gcloud run services delete vf-fraud-detection-nebius --region asia-southeast1
 ## Reproducible testing
 
 ```bash
+# Unit + integration tests (197 tests)
+python -m pytest tests/ -v
+
+# Document upload tests
 python scripts/test_documents.py        # uploads all seven sample docs
 python scripts/test_documents.py 3      # three passes, reports any disagreement
 python scripts/check_registry.py        # 11 checks on the counterparty book
 ```
+
+### Test coverage
+
+| Suite | Count | What it covers |
+|-------|-------|----------------|
+| Pure logic | 61 | auth, config, schemas, simulator, untrusted, agents._common |
+| Orchestrator | 17 | State machine, tool execution, agent envelopes |
+| Routes | 22 | Security headers, CORS, auth, validation, pagination |
+| Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
+| Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
+| Governance | 20 | Boundaries, drift detection, fail-closed |
+| Observability | 14 | Logging, metrics, request context |
+| Week 3 features | 13 | Learning loop, Tavily enrichment, new endpoints |
 
 These scripts only assert on case state (`AUTO_CLEARED`, `HELD_FOR_REVIEW`,
 `ESCALATED`, `PENDING_HUMAN`) and JSON shape, not on which model produced a

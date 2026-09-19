@@ -21,9 +21,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import nebius_client
+from vf_logistics import nebius_client
 from ._common import Timer, envelope, parse_model_json
-import config as model_config
+from vf_logistics import config as model_config
 
 def get_model_id():
     return model_config.get_vision_model()

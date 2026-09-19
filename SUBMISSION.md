@@ -96,15 +96,34 @@ All four models are reached through the same OpenAI-compatible client
 response envelope records the model that produced it, and the dashboard's
 per-case trace shows it on each hop.
 
-### A real Tavily call
+### A real Tavily call -- 5 integration points
 
-The compliance agent used to rely entirely on the model's training-time
-knowledge of sanctions lists. `tavily_client.search()` now runs a live web
-search for the shipper and receiver names (`"<name>" sanctions OR fraud OR
-"shell company"`) before every screening call, and the results are folded
-into the model's context as labelled, untrusted evidence. A missing key or a
-Tavily outage degrades to the pre-Tavily behaviour rather than blocking the
-case — this is a functional runtime dependency, not a decorative one.
+Tavily is woven throughout the pipeline, not just compliance:
+
+1. **Compliance screening** -- `compliance_agent.py` searches shipper and receiver
+   names for sanctions, fraud, and shell company indicators before every screening
+   call. Results are injected as labelled, untrusted evidence into the LLM context.
+
+2. **Investigation enrichment** -- `investigation_agent.py` searches for the
+   specific fraud pattern identified (e.g. "under-invoicing Vietnam logistics") and
+   cross-references shipper + receiver as a pair to find business relationship
+   evidence before Nemotron Super generates its deep analysis.
+
+3. **Route validation** -- `orchestrator.py` runs a parallel Tavily search for
+   shipping route disruptions ("port congestion", "sanctions", "shipping lane
+   disruption") alongside the fraud and compliance agents. Route intelligence is
+   attached to the case for downstream agents.
+
+4. **Governance watchlist scanner** -- `/api/v1/governance/tavily-scan` endpoint
+   searches for recent sanctions updates, OFAC SDN additions, and trade compliance
+   enforcement actions. Surfaces new regulatory changes on the Governance page.
+
+5. **Multi-agent debate** -- `debate_agent.py` exposes `search_tavily` as a tool
+   that Nemotron Super can invoke during function-calling debate rounds. Super
+   decides at runtime whether to search -- it's a genuine tool call, not scripted.
+
+A missing API key or a Tavily outage degrades each integration to pre-Tavily
+behaviour rather than blocking the pipeline.
 
 ### Governance: the part most agent systems skip
 
@@ -243,8 +262,29 @@ task-dependent rather than a fixed rule.
 **The execution gate is more important than the model.** A judge will
 remember "you can publish a policy that constrains what the agent does"
 longer than which model scored a shipment 78. Governance is the
-differentiator; the model is the commodity — true regardless of which
+differentiator; the model is the commodity -- true regardless of which
 provider's models are underneath.
+
+**Nemotron Nano vs Super: observable differences in structured output.**
+Nano (8B) reliably produces clean JSON for fraud detection and compliance
+screening -- the most frequent calls. Super (49B) is notably better at
+multi-step reasoning in investigation and debate, but occasionally wraps
+JSON in markdown fences that need stripping. Both models respect
+`response_format={"type":"json_object"}` but Super sometimes includes
+commentary outside the JSON block. Our `parse_model_json()` handles both.
+
+**Token Factory pricing is developer-friendly but hard to predict.** The
+per-token pricing ($0.06/$0.30 per million for Nano input/output) is clear,
+but predicting total cost for a pipeline of variable-length prompts is
+non-trivial. A cost dashboard (showing real-time spend per agent) is
+essential for any production deployment -- we built one.
+
+**What we'd build next with Nebius.** (1) Fine-tune Nano on our
+fraud-detection domain to improve structured output quality. (2) Deploy
+Nemotron Ultra for the debate agent when complex multi-hop reasoning is
+needed. (3) Use Nebius Serverless inference for auto-scaling during peak
+shipment volumes. (4) Explore Nebius GPU clusters for batch processing
+historical fraud cases with investigation agent.
 
 ---
 
@@ -307,11 +347,11 @@ openai-sdk, python, flask, gunicorn, asyncio, javascript, html5, docker
 **Which model provider(s) did you use?** → **Nebius Token Factory**, hosting
 **NVIDIA Nemotron 3 Nano**, **NVIDIA Nemotron 3 Super**, and **MiniCPM-V-4.5**
 
-**Which bonus integrations did you use?** → **Tavily** — a real, runtime
-search call in the compliance agent, verifiable via `GET /agents`, the
-per-case trace UI (compliance hop shows a "LIVE TAVILY SEARCH USED" badge
-with result links), or the raw case document (`external_search_used` /
-`external_search_results`)
+**Which bonus integrations did you use?** -> **Tavily** -- 5 real, runtime
+search integrations: compliance screening, investigation enrichment, route
+validation, governance watchlist scanner, and multi-agent debate tool calling.
+Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
+(`external_search_used` / `external_search_results`).
 
 > Both the Nebius and Tavily calls are verifiable on the live service:
 > `GET /agents` reports the model per agent, and every compliance response
@@ -325,14 +365,20 @@ with result links), or the raw case document (`external_search_used` /
 | Item | Status |
 |---|---|
 | Demo video, up to 3 minutes | pending -- upload to YouTube and paste URL here |
-| Public code repository | done — https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
+| Public code repository | done -- https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
 | Hosted project URL | done -- https://vf-logistics-f7rcctz26a-as.a.run.app |
-| Runtime call to Nebius Token Factory | done — all four agents |
-| NVIDIA open model used | done — Nemotron 3 Nano + Super |
-| Functional Tavily runtime call | done — compliance agent |
+| Runtime call to Nebius Token Factory | done -- all four agents |
+| NVIDIA open model used | done -- Nemotron 3 Nano + Super |
+| Functional Tavily runtime call | done -- 5 integration points |
+| Automated test suite | 197 tests passing (pytest) |
+| CI pipeline | GitHub Actions (lint + typecheck + test + coverage) |
+| Auto-debate on score disputes | done -- triggers without human intervention |
+| Human feedback learning loop | done -- shipper clearance rate adjusts risk |
+| Adversarial demo scenarios | 3 one-click demos in DevOps |
+| Cost dashboard | real-time token spend + rules savings |
 
 If the repository is private, share it per the hackathon's judging
 instructions.

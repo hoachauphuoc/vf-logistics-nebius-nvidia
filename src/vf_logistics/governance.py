@@ -37,8 +37,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import tools
-from store import get_store, new_id, utcnow
+from vf_logistics import tools
+from vf_logistics.store import get_store, new_id, utcnow
 
 # Actions that change the world and therefore require delegated authority.
 PROTECTED_ACTIONS = {

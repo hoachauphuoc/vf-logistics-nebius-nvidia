@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from observability import (
+from vf_logistics.observability import (
     StructuredFormatter,
     Metrics,
     get_metrics,

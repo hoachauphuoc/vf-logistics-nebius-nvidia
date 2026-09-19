@@ -856,7 +856,7 @@ class FirestoreStore:
         history rather than silently reading 0 for pre-migration cases.
         Idempotent: a case that already has `_agent_calls` is left alone.
         """
-        import config as model_config  # local import: store.py has no other
+        from vf_logistics import config as model_config  # local import: store.py has no other
 
         def _run() -> dict[str, int]:
             updated = 0
