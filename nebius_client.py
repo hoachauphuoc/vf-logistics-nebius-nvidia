@@ -68,6 +68,32 @@ async def complete_json(
     return text, input_tokens, output_tokens
 
 
+async def complete_with_tools(
+    *,
+    model: str,
+    messages: list[dict],
+    tools: list[dict],
+    temperature: float = 0.3,
+):
+    """
+    Chat completion with function calling (tool use) support.
+
+    Used by the debate agent where Nemotron Super reviews Nano's assessment
+    and can call tools like request_nano_reevaluation or search_tavily.
+
+    Returns the raw ChatCompletion response so the caller can access
+    tool_calls on the assistant message.
+    """
+    client = get_client()
+    response = await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        tools=tools,
+        temperature=temperature,
+    )
+    return response
+
+
 async def complete_vision_json(
     *,
     model: str,

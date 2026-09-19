@@ -18,6 +18,7 @@ Hackathon: Nebius x NVIDIA Global AI Hackathon
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import nebius_client
@@ -131,20 +132,22 @@ async def extract_shipment(
 def _to_image(document_bytes: bytes, mime: str) -> tuple[bytes, str]:
     """
     MiniCPM-V-4.5, like most vision models on Token Factory, takes an image,
-    not a PDF. PDFs are rasterised to a PNG of their first page with PyMuPDF;
-    images pass through unchanged.
+    not a PDF. PDFs are rasterised to a PNG of their first page with pypdfium2
+    (Apache 2.0 / BSD-3 licensed); images pass through unchanged.
     """
     if mime != "application/pdf":
         return document_bytes, mime
 
-    import pymupdf
+    import pypdfium2 as pdfium
 
-    pdf = pymupdf.open(stream=document_bytes, filetype="pdf")
-    page = pdf.load_page(0)
-    pix = page.get_pixmap(dpi=200)
-    png_bytes = pix.tobytes("png")
-    pdf.close()
-    return png_bytes, "image/png"
+    pdf = pdfium.PdfDocument(document_bytes)
+    page = pdf[0]
+    bitmap = page.render(scale=200 / 72)  # 200 DPI
+    pil_image = bitmap.to_pil()
+    import io
+    buf = io.BytesIO()
+    pil_image.save(buf, format="PNG")
+    return buf.getvalue(), "image/png"
 
 
 def get_agent_info() -> dict[str, Any]:

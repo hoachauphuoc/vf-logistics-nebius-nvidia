@@ -146,6 +146,11 @@ async def screen_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
         legacy_key="screening_result",
         shipment_id=shipment_data.get("shipment_id"),
         external_search_used=bool(tavily_results),
+        # Titles/urls only (no content body) so the case trace can show what
+        # was actually searched without bloating the stored document.
+        external_search_results=[
+            {"title": r["title"], "url": r["url"]} for r in tavily_results[:5]
+        ],
     )
 
 

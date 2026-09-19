@@ -61,6 +61,97 @@ LANE_BASELINES_USD: dict[tuple[str, str], float] = {
 
 DEFAULT_LANE_BASELINE_USD = 1_800.0
 
+# --------------------------------------------------------------------------
+# SQL Pre-processing Rules: Whitelist / Blacklist / Low-value auto-clear
+#
+# These rules run BEFORE any AI agent is called to optimize cost:
+# - Whitelist: VIP customers auto-cleared instantly (risk_floor = 0)
+# - Blacklist: Known bad actors auto-rejected (risk_floor = 100)
+# - Low-value: Small domestic shipments auto-cleared (risk_floor = 0)
+#
+# This "Cost-Aware Hybrid Architecture" handles ~70% of volume with zero
+# token cost, reserving AI for the 30% "grey area" that needs reasoning.
+# --------------------------------------------------------------------------
+
+# VIP customers with excellent history - auto-clear without AI.
+#
+# Both `shipper_company` and `shipper_tax_id` are self-reported fields on an
+# untrusted shipment record - neither is authenticated. A company name is
+# public knowledge, so matching on it alone (or on either field independently,
+# as this used to do) means anyone who can type a known name gets the same
+# treatment as the real VIP. shipper_registry.py already established the
+# right doctrine for exactly this problem: identity is matched on tax ID
+# *and* company name together, and a claim that gets one right but not the
+# other is treated as worse than a claim that matches neither - it means the
+# name or number was deliberately reused, not merely absent.
+#
+# Entries with a tax_id on file are the "verified" tier: a shipment naming
+# that company must also state that exact tax_id, or the mismatch itself
+# becomes a CRITICAL finding (WHITELIST_IDENTITY_MISMATCH) rather than a
+# silent pass-through. Entries with no tax_id on file yet ("" below) are the
+# weaker "name-only" tier - matching still happens, but check_whitelist()
+# cannot detect impersonation on an identifier it doesn't have, and validate()
+# still runs the full deterministic battery (freight ratio, value density,
+# dual-use HS, high-risk destination, mandatory fields) before this tier is
+# allowed to skip AI, precisely because the identity claim alone is weak.
+VIP_REGISTRY: list[dict[str, str]] = [
+    {"company": "vf logistics", "tax_id": ""},
+    {"company": "vinamilk joint stock company", "tax_id": "0100107518"},
+    {"company": "fpt corporation", "tax_id": "0101245486"},
+    {"company": "vietjet air", "tax_id": "0102120939"},
+    {"company": "masan group corporation", "tax_id": "0303728041"},
+    {"company": "the gioi di dong", "tax_id": "0101384485"},
+    {"company": "hoa phat group", "tax_id": ""},
+    {"company": "petrovietnam", "tax_id": ""},
+    {"company": "viettel group", "tax_id": ""},
+    {"company": "vingroup", "tax_id": ""},
+    {"company": "samsung vietnam", "tax_id": "0101256055"},
+    {"company": "intel vietnam", "tax_id": ""},
+    {"company": "nike vietnam", "tax_id": ""},
+    {"company": "adidas vietnam", "tax_id": ""},
+]
+
+# Known bad actors - auto-reject without AI
+BLACKLIST_COMPANIES: set[str] = {
+    "shell trading ltd",
+    "global import export llc",
+    "phoenix logistics inc",
+    "dragon shipping co",
+    "golden star trading",
+    "abc freight forwarders",
+    "quick ship solutions",
+    "infinite logistics group",
+}
+
+BLACKLIST_TAX_IDS: set[str] = {
+    "9999999999",  # Known fraudulent
+    "0000000001",  # Invalid placeholder
+    "1234567890",  # Test/fake ID often used in fraud
+}
+
+# Safe domestic routes for low-value auto-clear
+DOMESTIC_SAFE_ROUTES: set[tuple[str, str]] = {
+    ("ho chi minh city", "hanoi"),
+    ("hanoi", "ho chi minh city"),
+    ("ho chi minh city", "da nang"),
+    ("da nang", "ho chi minh city"),
+    ("hanoi", "da nang"),
+    ("da nang", "hanoi"),
+    ("ho chi minh city", "can tho"),
+    ("hanoi", "hai phong"),
+    ("ho chi minh city", "binh duong"),
+    ("ho chi minh city", "dong nai"),
+}
+
+# Low-value threshold for auto-clear (USD)
+LOW_VALUE_THRESHOLD_USD = 100.0
+
+
+def _normalize(text: Any) -> str:
+    """Normalize text for matching: lowercase, strip, remove extra spaces."""
+    return " ".join(str(text or "").lower().strip().split())
+
+
 # HS prefixes with dual-use or export-control sensitivity relevant to this
 # corridor. Not exhaustive, and deliberately conservative: a false positive
 # costs a human review, a false negative costs an export-control violation.
@@ -143,6 +234,143 @@ def lane_baseline(shipment: dict[str, Any]) -> tuple[float, str]:
 # Each returns a finding dict or None. `floor` is the minimum risk score this
 # single fact justifies on its own.
 # --------------------------------------------------------------------------
+
+def check_whitelist(shipment: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Resolve a claimed shipper identity against the VIP registry.
+
+    Returns one of three outcomes:
+    - None: neither the company nor the tax_id matches any VIP entry.
+    - WHITELIST_MATCH (severity CLEAR, skip_ai): the company matches, and
+      either there is no tax_id on file to check (name-only tier) or the
+      stated tax_id agrees with the one on file (verified tier).
+    - WHITELIST_IDENTITY_MISMATCH (severity CRITICAL, skip_ai,
+      auto_reject_by_rules): the company and tax_id each resolve to a VIP
+      entry, but not to *each other*. This is not treated as "unknown" -
+      per shipper_registry.py's doctrine, a half-right identity claim means
+      the name or number was deliberately reused, which is worse than a
+      claim that matches nothing.
+    """
+    company = _normalize(shipment.get("shipper_company"))
+    tax_id = str(shipment.get("shipper_tax_id") or "").strip()
+
+    by_company = {e["company"]: e["tax_id"] for e in VIP_REGISTRY}
+    by_taxid = {e["tax_id"]: e["company"] for e in VIP_REGISTRY if e["tax_id"]}
+
+    company_taxid = by_company.get(company) if company in by_company else None
+    taxid_company = by_taxid.get(tax_id) if tax_id in by_taxid else None
+
+    if company_taxid is None and taxid_company is None:
+        return None
+
+    mismatch_reason = None
+    if company_taxid and tax_id and tax_id != company_taxid:
+        mismatch_reason = (
+            f"Shipper company '{company}' is a VIP account on record with tax ID "
+            f"'{company_taxid}', but this shipment states tax ID '{tax_id}'."
+        )
+    elif taxid_company and company and company != taxid_company:
+        mismatch_reason = (
+            f"Tax ID '{tax_id}' is on file for VIP account '{taxid_company}', but "
+            f"this shipment names the shipper as '{company}'."
+        )
+
+    if mismatch_reason:
+        return {
+            "code": "WHITELIST_IDENTITY_MISMATCH",
+            "severity": "CRITICAL",
+            "floor": 95,
+            "detail": mismatch_reason,
+            "auto_reject_by_rules": True,
+            "skip_ai": True,
+        }
+
+    verified = bool(company_taxid) and tax_id == company_taxid
+    matched_on = company or tax_id
+    return {
+        "code": "WHITELIST_MATCH",
+        "severity": "CLEAR",
+        "floor": 0,
+        "detail": (
+            f"Shipper '{matched_on}' is on the VIP whitelist "
+            + ("(verified: company and tax ID agree)." if verified
+               else "(name-only match; no tax ID on file to corroborate).")
+        ),
+        "auto_clear_by_rules": True,
+        "skip_ai": True,
+        "identity_verified": verified,
+    }
+
+
+def check_blacklist(shipment: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Check if shipper is on the internal blacklist.
+    
+    Returns a "BLACKLIST_MATCH" finding with floor=100, blocking immediately.
+    """
+    company = _normalize(shipment.get("shipper_company"))
+    tax_id = str(shipment.get("shipper_tax_id") or "").strip()
+    
+    if company in BLACKLIST_COMPANIES:
+        return {
+            "code": "BLACKLIST_MATCH",
+            "severity": "CRITICAL",
+            "floor": 100,
+            "detail": f"Shipper company '{company}' is on the internal blacklist. Auto-rejected by rules.",
+            "auto_reject_by_rules": True,
+            "skip_ai": True,
+        }
+    
+    if tax_id in BLACKLIST_TAX_IDS:
+        return {
+            "code": "BLACKLIST_TAX_ID",
+            "severity": "CRITICAL",
+            "floor": 100,
+            "detail": f"Shipper tax ID '{tax_id}' is on the internal blacklist. Auto-rejected by rules.",
+            "auto_reject_by_rules": True,
+            "skip_ai": True,
+        }
+    
+    return None
+
+
+def check_low_value_domestic(shipment: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Auto-clear low-value domestic shipments without AI.
+    
+    Criteria:
+    - Declared value < $100 USD
+    - Domestic safe route (e.g., HCMC <-> Hanoi)
+    - No dual-use HS codes
+    """
+    value = _num(shipment.get("declared_value"))
+    if value is None or value >= LOW_VALUE_THRESHOLD_USD:
+        return None
+    
+    origin = _normalize(shipment.get("origin"))
+    dest = _normalize(shipment.get("destination"))
+    route_key = (origin, dest)
+    
+    # Check if it's a safe domestic route
+    if route_key not in DOMESTIC_SAFE_ROUTES:
+        return None
+    
+    # Check for dual-use HS codes (still need AI review)
+    hs_code = str(shipment.get("hs_code") or "").strip()
+    if hs_code:
+        digits = re.sub(r"\D", "", hs_code)
+        if len(digits) >= 4 and digits[:4] in DUAL_USE_HS_PREFIXES:
+            return None  # Dual-use items need AI review regardless of value
+    
+    return {
+        "code": "LOW_VALUE_DOMESTIC",
+        "severity": "CLEAR",
+        "floor": 0,
+        "detail": f"Low-value domestic shipment (${value:.0f} USD, {origin} → {dest}). Auto-cleared by rules.",
+        "auto_clear_by_rules": True,
+        "skip_ai": True,
+    }
+
 
 def check_freight_ratio(shipment: dict[str, Any]) -> dict[str, Any] | None:
     cost = _num(shipment.get("shipping_cost"))
@@ -431,9 +659,31 @@ def check_exposure_claim(
 # Public API
 # --------------------------------------------------------------------------
 
+# NOTE: There used to be a `prefilter()` function here that checked
+# whitelist/blacklist/low-value in isolation, before any of the other
+# deterministic checks. It was removed because it created a total bypass:
+# a whitelist match alone would skip freight-ratio, value-density, dual-use
+# HS, high-risk-destination, and mandatory-field checks, not just the AI
+# call. The orchestrator now drives its fast-path decision off validate()
+# below, whose skip_ai flag only fires when a clearance signal (whitelist,
+# low-value domestic) is present AND no other HIGH/CRITICAL finding
+# contradicts it. Do not reintroduce a narrower short-circuit that checks
+# clearance signals without also running the rest of this battery.
+
+
 def validate(shipment: dict[str, Any]) -> dict[str, Any]:
     """Run every deterministic check and return findings plus the risk floor."""
     findings: list[dict[str, Any]] = []
+    
+    # Run pre-filter checks first (whitelist/blacklist/low-value)
+    prefilter_checks = [
+        check_whitelist(shipment),
+        check_blacklist(shipment),
+        check_low_value_domestic(shipment),
+    ]
+    for check in prefilter_checks:
+        if check:
+            findings.append(check)
 
     for single in (check_freight_ratio(shipment), check_value_density(shipment)):
         if single:
@@ -444,7 +694,22 @@ def validate(shipment: dict[str, Any]) -> dict[str, Any]:
     findings.extend(check_routing(shipment))
     findings.extend(check_counterparty(shipment))
 
-    floor = max((f.get("floor", 0) for f in findings), default=0)
+    # Determine if auto-clear/reject by rules
+    skip_ai_findings = [f for f in findings if f.get("skip_ai")]
+    auto_clear_by_rules = any(f.get("auto_clear_by_rules") for f in findings)
+    auto_reject_by_rules = any(f.get("auto_reject_by_rules") for f in findings)
+    
+    # Calculate floor (blacklist = 100, whitelist/low-value = 0)
+    if auto_reject_by_rules:
+        floor = 100
+    elif auto_clear_by_rules and not any(
+        f["severity"] in ("HIGH", "CRITICAL") 
+        for f in findings 
+        if not f.get("auto_clear_by_rules")
+    ):
+        floor = 0
+    else:
+        floor = max((f.get("floor", 0) for f in findings if not f.get("skip_ai")), default=0)
 
     # Corroboration matters: several independent mid-severity facts together are
     # worse than any one of them alone.
@@ -459,7 +724,16 @@ def validate(shipment: dict[str, Any]) -> dict[str, Any]:
         "findings": findings,
         "finding_count": len(findings),
         "high_severity_count": high_count,
+        "skip_ai": bool(skip_ai_findings) and not any(
+            f["severity"] in ("HIGH", "CRITICAL") 
+            for f in findings 
+            if not f.get("skip_ai")
+        ),
+        "auto_clear_by_rules": auto_clear_by_rules,
+        "auto_reject_by_rules": auto_reject_by_rules,
+        "cleared_by": "rules" if (auto_clear_by_rules or auto_reject_by_rules) else None,
         "checks_run": [
+            "whitelist", "blacklist", "low_value_domestic",
             "freight_ratio", "value_density", "mandatory_fields",
             "hs_code", "routing", "counterparty",
         ],
@@ -507,3 +781,109 @@ def reconcile(model_risk: Any, validation: dict[str, Any]) -> dict[str, Any]:
             [f["detail"] for f in validation.get("findings", [])] if vetoed else []
         ),
     }
+
+
+# --------------------------------------------------------------------------
+# Pre-filter Rules API: Get and Update SQL pre-processing rules
+# --------------------------------------------------------------------------
+
+def get_prefilter_rules() -> dict[str, Any]:
+    """Return current SQL pre-filter rules for UI display."""
+    return {
+        "vip_registry": sorted(VIP_REGISTRY, key=lambda e: e["company"]),
+        "blacklist_companies": sorted(BLACKLIST_COMPANIES),
+        "blacklist_tax_ids": sorted(BLACKLIST_TAX_IDS),
+        "safe_routes": [
+            {"origin": o, "destination": d} 
+            for o, d in sorted(DOMESTIC_SAFE_ROUTES)
+        ],
+        "low_value_threshold_usd": LOW_VALUE_THRESHOLD_USD,
+    }
+
+
+def update_prefilter_rules(rules: dict[str, Any]) -> dict[str, Any]:
+    """
+    Update SQL pre-filter rules from UI.
+    
+    Modifies the module-level sets/values so changes take effect immediately.
+    Returns the updated rules for confirmation.
+    """
+    global VIP_REGISTRY
+    global BLACKLIST_COMPANIES, BLACKLIST_TAX_IDS
+    global DOMESTIC_SAFE_ROUTES, LOW_VALUE_THRESHOLD_USD
+    
+    errors = []
+    
+    # Validate and update the VIP registry (paired company + tax_id entries).
+    # A tax_id is optional (name-only tier) but company is required, since an
+    # entry with neither is meaningless. Duplicate companies are collapsed to
+    # the last one supplied.
+    if "vip_registry" in rules:
+        items = rules["vip_registry"]
+        if isinstance(items, list):
+            new_registry: dict[str, str] = {}
+            bad_entries = False
+            for entry in items:
+                if not isinstance(entry, dict) or not entry.get("company"):
+                    bad_entries = True
+                    continue
+                company = _normalize(entry.get("company"))
+                tax_id = str(entry.get("tax_id") or "").strip()
+                if company:
+                    new_registry[company] = tax_id
+            if bad_entries:
+                errors.append("vip_registry entries must each have a non-empty 'company'")
+            else:
+                VIP_REGISTRY = [
+                    {"company": c, "tax_id": t} for c, t in new_registry.items()
+                ]
+        else:
+            errors.append("vip_registry must be a list of {company, tax_id}")
+    
+    # Validate and update blacklist companies
+    if "blacklist_companies" in rules:
+        items = rules["blacklist_companies"]
+        if isinstance(items, list):
+            BLACKLIST_COMPANIES = {_normalize(c) for c in items if c}
+        else:
+            errors.append("blacklist_companies must be a list")
+    
+    # Validate and update blacklist tax IDs
+    if "blacklist_tax_ids" in rules:
+        items = rules["blacklist_tax_ids"]
+        if isinstance(items, list):
+            BLACKLIST_TAX_IDS = {str(t).strip() for t in items if t}
+        else:
+            errors.append("blacklist_tax_ids must be a list")
+    
+    # Validate and update safe routes
+    if "safe_routes" in rules:
+        routes = rules["safe_routes"]
+        if isinstance(routes, list):
+            new_routes = set()
+            for r in routes:
+                if isinstance(r, dict) and "origin" in r and "destination" in r:
+                    new_routes.add((
+                        _normalize(r["origin"]),
+                        _normalize(r["destination"])
+                    ))
+            DOMESTIC_SAFE_ROUTES = new_routes
+        else:
+            errors.append("safe_routes must be a list of {origin, destination}")
+    
+    # Validate and update low-value threshold
+    if "low_value_threshold_usd" in rules:
+        val = rules["low_value_threshold_usd"]
+        try:
+            threshold = float(val)
+            if threshold >= 0:
+                LOW_VALUE_THRESHOLD_USD = threshold
+            else:
+                errors.append("low_value_threshold_usd must be non-negative")
+        except (TypeError, ValueError):
+            errors.append("low_value_threshold_usd must be a number")
+    
+    if errors:
+        return {"ok": False, "errors": errors}
+    
+    return {"ok": True, "rules": get_prefilter_rules()}

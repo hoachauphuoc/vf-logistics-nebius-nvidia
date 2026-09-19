@@ -1,30 +1,70 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+# =============================================================================
+# Stage 1: Builder - compile dependencies
+# =============================================================================
+FROM python:3.11-slim AS builder
 
-# Set working directory
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only dependency files for better layer caching
+COPY requirements.lock .
+
+# Install dependencies into a virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.lock
+
+# =============================================================================
+# Stage 2: Runtime - minimal production image
+# =============================================================================
+FROM python:3.11-slim AS runtime
+
 WORKDIR /app
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Create non-root user for security
+RUN groupadd --gid 1000 appgroup && \
+    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy application code (use .dockerignore to exclude unnecessary files)
+COPY --chown=appuser:appgroup . .
 
-# Copy application code
-COPY . .
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8080
 
+# Health check for Cloud Run
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
+
 # Run with gunicorn for production
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
+# - workers: 1 (Cloud Run scales horizontally, not vertically)
+# - threads: 8 (handle concurrent requests within the instance)
+# - timeout: 300 (5 minutes for long document processing, not 0/infinite)
+# - graceful-timeout: 30 (allow in-flight requests to complete on shutdown)
+CMD exec gunicorn \
+    --bind :$PORT \
+    --workers 1 \
+    --threads 8 \
+    --timeout 300 \
+    --graceful-timeout 30 \
+    --access-logfile - \
+    --error-logfile - \
+    --capture-output \
+    main:app

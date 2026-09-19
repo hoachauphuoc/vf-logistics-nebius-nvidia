@@ -12,15 +12,17 @@ google-cloud-storage>=2.10.0
 flask>=2.3.0
 gunicorn>=21.2.0
 flask-cors>=4.0.0
+flask-limiter>=3.5.0
 
 # Utilities
 python-dotenv>=1.0.0
 pypdf>=4.0.0
 httpx>=0.24.0
 
-# PyMuPDF rasterises the first page of an uploaded PDF to PNG before it is sent
+# pypdfium2 rasterises the first page of an uploaded PDF to PNG before it is sent
 # to the vision model - Token Factory's vision models take images, not PDFs.
-pymupdf>=1.24.0
+# pypdfium2 uses Apache 2.0/BSD-3 license (Google's PDFium), no AGPL concerns.
+pypdfium2>=4.30.0
 
 # fpdf2 renders event-sourced shipments into a bill of lading so every case has
 # paperwork a human can review, not only the ones uploaded as a document.

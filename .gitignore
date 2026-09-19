@@ -39,3 +39,9 @@ build/
 
 # Scratch probes. Anything named tmp_* is a throwaway and must never be committed.
 tmp_*
+
+# IDE / tool-specific
+.snowflake/
+
+# Test evidence (local artifacts, regenerated on each run)
+tests/evidence/
