@@ -1041,11 +1041,26 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             if not origin or not dest:
                 return []
             q = f"{origin} {dest} shipping route disruption OR port congestion OR sanctions"
-            return await tavily_client.search(q, max_results=3)
+            # Cached, and this is the one search where that needs no argument. The query
+            # carries a country pair and nothing else -- no entity, no shipment, no value
+            # -- so two shipments on the same lane are asking a question with one answer.
+            # Measured on a 20-case run: 20 searches resolved to 6 distinct lanes, one of
+            # them repeated 15 times.
+            return await tavily_client.search(
+                q,
+                max_results=3,
+                cache_ttl_seconds=tavily_client.ROUTE_CACHE_TTL_SECONDS,
+            )
 
         fraud_resp, compliance_resp, route_results = await asyncio.gather(
             analyze_shipment(case["shipment"]),
-            screen_shipment(case["shipment"]),
+            # The floor is passed only so compliance can decide whether its
+            # adverse-media lookups may be served from cache: at or above the
+            # auto-clear threshold the case is going to a human either way, and the
+            # reviewer should be reading a live search. It does not influence scoring.
+            screen_shipment(
+                case["shipment"], risk_floor=validation.get("risk_floor"),
+            ),
             _route_search(case["shipment"]),
         )
 

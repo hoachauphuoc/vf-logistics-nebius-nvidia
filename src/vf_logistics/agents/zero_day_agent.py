@@ -59,6 +59,14 @@ MAX_TOOL_ROUNDS = 2
 # the deterministic check already has.
 NEWS_WINDOW_DAYS = int(os.getenv("ZERO_DAY_NEWS_DAYS", "45"))
 
+# How many transhipment hubs make a route worth searching about.
+#
+# Two, matching verifier.py's MULTIPLE_DIVERSION_HUBS finding, which is the component
+# that already owns this judgement. Configurable because a trade lane where one hub is
+# genuinely unusual is a real deployment -- but the default has to suit the common one,
+# and for a Vietnamese exporter a single call at Singapore or Hong Kong is routine.
+MIN_DIVERSION_HUBS = int(os.getenv("ZERO_DAY_MIN_DIVERSION_HUBS", "2"))
+
 
 def get_model_id() -> str:
     return DEFAULT_MODEL or model_config.get_model()
@@ -187,13 +195,30 @@ def should_screen(
     if destination in verifier.HIGH_RISK_DESTINATIONS:
         reasons.append(f"destination {destination}")
 
-    haystack = " ".join(str(shipment.get(f) or "").lower() for f in (
-        "route_details", "transit_points", "destination",
+    # Transhipment hubs, counted the way verifier.py counts them.
+    #
+    # THIS GATE USED TO ADMIT ALMOST EVERYTHING, and the cause was two disagreements
+    # with the verifier over the same list. Measured on a 20-case run, 14 of 16
+    # eligible cases were screened, 13 of them on this indicator alone.
+    #
+    # First, `destination` was in the haystack. A destination is not a diversion. The
+    # seeded traffic ships Vietnam to PSA Singapore, the single most ordinary freight
+    # movement in the region, and the gate reported it as "routed via singapore" --
+    # a reason string that was not describing what had happened.
+    #
+    # Second, one hub was enough. verifier.py:974-984 requires TWO before it raises a
+    # finding, and names that finding MULTIPLE_DIVERSION_HUBS: passing through one
+    # major port is freight, passing through several is a pattern. The list's own
+    # comment says these hubs are "commonly used to obscure final destination", which
+    # describes a chain, not a single call. So the gate now agrees with the component
+    # that already owns this judgement rather than applying a looser rule of its own
+    # and spending up to four Nemotron completions on the difference.
+    transit = " ".join(str(shipment.get(f) or "").lower() for f in (
+        "transit_points", "route_details",
     ))
-    for hub in verifier.DIVERSION_HUBS:
-        if hub in haystack:
-            reasons.append(f"routed via {hub}")
-            break
+    hubs = sorted(h for h in verifier.DIVERSION_HUBS if h in transit)
+    if len(hubs) >= MIN_DIVERSION_HUBS:
+        reasons.append(f"routed via {len(hubs)} transhipment hubs: {', '.join(hubs)}")
 
     # A counterparty we have no history with is the case where public evidence is
     # the only evidence available.

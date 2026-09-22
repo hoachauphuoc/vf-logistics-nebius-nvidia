@@ -10,6 +10,7 @@ Track: Best Apps and Agents
 Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
+import os
 from typing import Any
 
 from vf_logistics import nebius_client
@@ -76,9 +77,45 @@ sanctions or fraud hit found there should raise sanctions_hits/risk_factors.
 """
 
 
-async def screen_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
+# The floor at or above which the adverse-media cache is bypassed and the lookup is
+# always live.
+#
+# Read from the same environment variable the orchestrator reads rather than imported
+# from it, because orchestrator imports this module and the reverse would be a cycle.
+# The default matches FRAUD_CLEAR_BELOW's 40 deliberately: at or above that floor the
+# case cannot auto-clear, so it is going to a human or to investigation either way,
+# and a fresh search is cheap against the cost of that decision. A reviewer reading
+# the evidence for a held shipment should be looking at a live lookup.
+#
+# This is a conservatism, not a control. Tavily is NOT the sanctions check -- that is
+# validation.sanctions_screening, a separate deterministic path against the official
+# list, and the risk floor itself comes from code-resident findings. A stale entry here
+# delays an adverse-media signal, a news article rather than a sanction.
+CACHE_BYPASS_FLOOR_AT = int(os.getenv("FRAUD_CLEAR_BELOW", "40"))
+
+
+def _bypass_cache(risk_floor: int | None) -> bool:
+    """
+    True when this case should pay for a live lookup.
+
+    An unknown floor (None) uses the cache. That is the manual screening endpoint,
+    where there is no case and therefore no floor -- and an operator screening an
+    entity by hand is not making a release decision.
+    """
+    return risk_floor is not None and risk_floor >= CACHE_BYPASS_FLOOR_AT
+
+
+async def screen_shipment(
+    shipment_data: dict[str, Any],
+    *,
+    risk_floor: int | None = None,
+) -> dict[str, Any]:
     """
     Screen a shipment for compliance issues.
+
+    `risk_floor` is the deterministic floor from verifier.validate(), used only to
+    decide whether the adverse-media lookups may be served from cache. Keyword-only
+    with a None default so the manual endpoint and existing tests are unaffected.
     """
     screening_text = f"""
     Shipment ID: {shipment_data.get('shipment_id', 'N/A')}
@@ -108,13 +145,52 @@ async def screen_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
     
     shipper_name = shipment_data.get("shipper_name", "")
     receiver_name = shipment_data.get("receiver_name", "")
-    tavily_results = await tavily_client.search(
-        f'"{shipper_name}" sanctions OR fraud OR "shell company"'
-    ) if shipper_name else []
-    tavily_results += await tavily_client.search(
-        f'"{receiver_name}" sanctions'
-    ) if receiver_name else []
-    external_findings = tavily_client.format_findings(tavily_results)
+
+    # Cached unless this case is already heading somewhere that deserves fresh
+    # evidence. See CACHE_BYPASS_FLOOR_AT for the reasoning; a bypass is expressed as
+    # a zero TTL so there is one code path, not two.
+    ttl = 0.0 if _bypass_cache(risk_floor) else tavily_client.ENTITY_CACHE_TTL_SECONDS
+
+    tavily_results: list[dict[str, Any]] = []
+    statuses: list[str] = []
+    cache_hits = 0
+    searches = 0
+    if shipper_name:
+        results, status, hit = await tavily_client.search_cached(
+            f'"{shipper_name}" sanctions OR fraud OR "shell company"',
+            ttl_seconds=ttl,
+        )
+        tavily_results += results
+        statuses.append(status)
+        searches += 1
+        cache_hits += 1 if hit else 0
+    if receiver_name:
+        results, status, hit = await tavily_client.search_cached(
+            f'"{receiver_name}" sanctions',
+            ttl_seconds=ttl,
+        )
+        tavily_results += results
+        statuses.append(status)
+        searches += 1
+        cache_hits += 1 if hit else 0
+
+    # The status is now carried into the prompt, which it previously was not.
+    #
+    # This call site used tavily_client.search(), the fail-soft variant that discards
+    # the status, and then handed the bare list to format_findings() -- which defaults
+    # to status=OK. So a timeout, a 429 or a missing API key produced empty results
+    # that were rendered to the model as "search ran and returned nothing". That is
+    # precisely the collapse tavily_client's own docstring describes being fixed:
+    # "we searched for adverse media on this company and found none" and "the search
+    # did not happen" are opposite facts, and reading the second as the first clears a
+    # shipment nobody checked. The zero-day agent already used search_with_status for
+    # this reason; compliance did not.
+    #
+    # Worst status wins. With two searches, one succeeding is not enough -- if the
+    # receiver lookup failed, the model must not be told the pair came back clean.
+    failed = next((s for s in statuses if s in tavily_client.FAILED_STATUSES), None)
+    search_status = failed or (statuses[0] if statuses else tavily_client.OK)
+    external_findings = tavily_client.format_findings(tavily_results, search_status)
 
     with Timer() as timer:
         user_text = (
@@ -152,6 +228,17 @@ async def screen_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
         external_search_results=[
             {"title": r["title"], "url": r["url"]} for r in tavily_results[:5]
         ],
+        # The status, now that it is no longer discarded. `external_search_used` alone
+        # cannot distinguish "searched, found nothing" from "search failed" -- both
+        # give False -- and a reviewer needs to know which.
+        external_search_status=search_status,
+        # How much of this evidence was reused rather than fetched. A released shipment
+        # whose adverse-media check was served from a 40-minute-old entry is a
+        # different audit record from one checked live, and dropping the distinction
+        # would let the trail imply the stronger of the two.
+        external_search_count=searches,
+        external_search_cache_hits=cache_hits,
+        external_search_live=searches - cache_hits,
     )
 
 
