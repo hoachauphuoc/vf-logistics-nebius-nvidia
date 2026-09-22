@@ -657,6 +657,14 @@ async def _record_step(
     if "external_search_used" in response:
         step["external_search_used"] = response["external_search_used"]
         step["external_search_results"] = response.get("external_search_results", [])
+    for field in (
+        "external_search_status",
+        "external_search_count",
+        "external_search_cache_hits",
+        "external_search_live",
+    ):
+        if field in response:
+            step[field] = response[field]
     case["steps"].append(step)
 
     # Denormalized rollups, kept in sync with every step so a global
@@ -667,6 +675,30 @@ async def _record_step(
     case["_agent_calls"] = case.get("_agent_calls", 0) + 1
     case["_input_tokens"] = case.get("_input_tokens", 0) + input_tokens
     case["_output_tokens"] = case.get("_output_tokens", 0) + output_tokens
+
+    # Tavily searches, rolled up the same way and for the same reason the tokens are.
+    #
+    # Measured: 90-106 searches across 20 cases, 4.5-5.3 each, against $0.068 of model
+    # spend. At the free tier's 1,000 credits a month that is 188-222 cases -- so the
+    # external search, not the model, is what limits throughput, and it appeared in no
+    # figure anywhere. `estimated_cost_usd` is Nebius only.
+    #
+    # Three counters rather than two derived from each other. Attempts, cache hits and
+    # billable requests are genuinely independent: a cache hit costs nothing, and so
+    # does a request that never left the process because no API key was configured.
+    # Deriving billable as attempts-minus-hits made a deployment with no key report a
+    # full bill for zero requests.
+    case["_tavily_searches"] = (
+        case.get("_tavily_searches", 0) + int(response.get("external_search_count") or 0)
+    )
+    case["_tavily_cached"] = (
+        case.get("_tavily_cached", 0)
+        + int(response.get("external_search_cache_hits") or 0)
+    )
+    case["_tavily_billable"] = (
+        case.get("_tavily_billable", 0)
+        + int(response.get("external_search_live") or 0)
+    )
     if isinstance(latency_ms, int):
         case["_sum_latency_ms"] = case.get("_sum_latency_ms", 0) + latency_ms
     # One pricing implementation, called from here rather than repeated.
@@ -1039,20 +1071,21 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             origin = shipment.get("origin_country") or shipment.get("origin", "")
             dest = shipment.get("destination_country") or shipment.get("destination", "")
             if not origin or not dest:
-                return []
+                return [], tavily_client.NOT_ATTEMPTED, False
             q = f"{origin} {dest} shipping route disruption OR port congestion OR sanctions"
             # Cached, and this is the one search where that needs no argument. The query
             # carries a country pair and nothing else -- no entity, no shipment, no value
             # -- so two shipments on the same lane are asking a question with one answer.
             # Measured on a 20-case run: 20 searches resolved to 6 distinct lanes, one of
             # them repeated 15 times.
-            return await tavily_client.search(
+            results, status, hit = await tavily_client.search_cached(
                 q,
                 max_results=3,
-                cache_ttl_seconds=tavily_client.ROUTE_CACHE_TTL_SECONDS,
+                ttl_seconds=tavily_client.ROUTE_CACHE_TTL_SECONDS,
             )
+            return results, status, hit
 
-        fraud_resp, compliance_resp, route_results = await asyncio.gather(
+        fraud_resp, compliance_resp, route_outcome = await asyncio.gather(
             analyze_shipment(case["shipment"]),
             # The floor is passed only so compliance can decide whether its
             # adverse-media lookups may be served from cache: at or above the
@@ -1063,6 +1096,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             ),
             _route_search(case["shipment"]),
         )
+        route_results, route_status, route_cached = route_outcome
 
         # The two checks the deterministic battery cannot make, run after the
         # first pair because both depend on `validation`: the HS check needs to
@@ -1119,6 +1153,14 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                         "urls": search.get("urls") or [],
                         "at": utcnow(),
                     })
+                    # Counted into the same rollup the compliance searches feed, so
+                    # the per-case total is the whole bill rather than one agent's
+                    # share. Not cached: this agent exists to catch what a stale list
+                    # missed, so reusing a stale search would defeat it. Billable only
+                    # when the request actually reached the API.
+                    case["_tavily_searches"] = case.get("_tavily_searches", 0) + 1
+                    if search.get("status") in tavily_client.BILLABLE_STATUSES:
+                        case["_tavily_billable"] = case.get("_tavily_billable", 0) + 1
             except Exception as exc:
                 log.warning("Zero-day screening failed for %s: %s", case_id, exc)
                 # Same reasoning as the HS path above: the gate said this shipment
@@ -1144,12 +1186,30 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
 
         # Attach route intelligence to case for downstream agents
         if route_results:
-            case["route_intelligence"] = tavily_client.format_findings(route_results)
+            case["route_intelligence"] = tavily_client.format_findings(
+                route_results, route_status,
+            )
             case.setdefault("tavily_searches", []).append({
                 "type": "route_validation",
+                "status": route_status,
                 "results": len(route_results),
+                "cached": route_cached,
                 "at": utcnow(),
             })
+
+        # Counted from the status rather than from re-checking the shipment fields.
+        #
+        # The earlier version re-tested origin/destination presence here, duplicating
+        # `_route_search`'s own guard, and counted a credit whenever both were present --
+        # including when the request never left the process because no API key was
+        # configured, or when it timed out. The status is the only thing that knows
+        # which of those happened, and it was being discarded.
+        if route_status != tavily_client.NOT_ATTEMPTED:
+            case["_tavily_searches"] = case.get("_tavily_searches", 0) + 1
+            if route_cached:
+                case["_tavily_cached"] = case.get("_tavily_cached", 0) + 1
+            elif route_status in tavily_client.BILLABLE_STATUSES:
+                case["_tavily_billable"] = case.get("_tavily_billable", 0) + 1
 
         fraud_result = await _record_step(case, "fraud_detection", fraud_resp)
         compliance_result = await _record_step(case, "compliance", compliance_resp)

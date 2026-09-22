@@ -61,12 +61,125 @@ def get_vision_model() -> str:
     """Get the current vision model ID (document intake)."""
     return _vision_model_id
 
-def set_model(model: str) -> bool:
-    """Set the text model ID. Returns False if model is not in PRICING."""
+# How much dearer a model may be than the current one before the switch needs saying so.
+#
+# `set_model()` validated against PRICING and nothing else, so every priced model was
+# interchangeable by one authenticated POST -- including Ultra. That would land on
+# fraud_detection and compliance, the two agents that run on EVERY case, as a runtime
+# change with no deploy and nothing recorded. The tenant spend ceiling would eventually
+# notice, hours and a lot of money later, because that check is soft and cached 5s.
+#
+# The arithmetic behind 5.0, on the blended input+output rate:
+#
+#     Nano   0.06 + 0.24 = 0.30   the default, so 1.0x
+#     Super  0.30 + 0.90 = 1.20   4.0x   -- permitted
+#     MiniCPM 0.658 + 1.11 = 1.77  5.9x  -- refused (and a vision model here is a
+#                                            mistake regardless)
+#     Ultra  1.00 + 3.00 = 4.00  13.3x   -- refused
+#
+# So the line falls between Super and Ultra, which is the useful place for it. Super on
+# every case is a reasonable cost/quality trade an operator should be able to make from
+# the console; Ultra on every case is a 13x bill that should require saying so out loud.
+MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE = float(
+    os.getenv("MODEL_SWITCH_MAX_RATE_MULTIPLE", "5.0")
+)
+
+
+class CostlierModel(Exception):
+    """
+    Raised when a switch would raise the per-token rate beyond the allowed multiple.
+
+    Carries the numbers so the caller can put them in the refusal rather than making
+    the operator go and look them up.
+    """
+
+    def __init__(self, model: str, current: str, multiple: float, limit: float):
+        self.model = model
+        self.current = current
+        self.multiple = multiple
+        self.limit = limit
+        super().__init__(
+            f"{model} costs {multiple:.1f}x the current model ({current}) per token, "
+            f"above the {limit:.1f}x limit for an unconfirmed switch"
+        )
+
+
+def cheapest_model() -> str:
+    """
+    The lowest blended rate in the table, used as the fixed baseline for a switch.
+
+    A fixed baseline rather than the incumbent, because a relative comparison ratchets.
+    Measured against the real rates: Nano -> Super is 4.0x and permitted, then
+    Super -> Ultra is only 4.00/1.20 = 3.3x and also permitted -- so two ordinary
+    requests put Ultra on fraud detection and compliance with no confirmation asked for
+    at any point. Each step looked reasonable; the destination was not.
+    """
+    return min(PRICING, key=lambda m: PRICING[m]["input"] + PRICING[m]["output"])
+
+
+def rate_multiple(model: str, against: str | None = None) -> float:
+    """
+    How many times dearer `model` is than `against`, on a blended input+output basis.
+
+    Defaults to the CHEAPEST priced model rather than the current one; see
+    cheapest_model() for why. Pass `against` explicitly to compare two models directly.
+
+    Blended rather than input-only because the two rates do not scale together: Ultra
+    is 16.7x Nano on input and 12.5x on output, and picking either alone would
+    misreport the switch. Weighted 1:1, which is close to the measured mix -- 198,840
+    input against 137,307 output tokens on a 20-case run.
+    """
+    baseline = PRICING.get(against or cheapest_model())
+    if baseline is None:
+        baseline = PRICING[cheapest_model()]
+    target = PRICING.get(model)
+    if target is None:
+        return float("inf")
+    base = (baseline["input"] + baseline["output"]) or 1e-9
+    return (target["input"] + target["output"]) / base
+
+
+def set_model(model: str, *, allow_costlier: bool = False) -> bool:
+    """
+    Set the text model ID. Returns False if model is not in PRICING.
+
+    Raises CostlierModel when the switch would put the per-token rate beyond
+    MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE of the cheapest available model and
+    `allow_costlier` is not set. A refusal is not a judgement that the switch is wrong
+    -- it is a requirement that it be deliberate, because this model is used by the two
+    agents that run on every case and the change takes effect on the next shipment with
+    nothing recorded.
+
+    The check is inside the lock with the assignment. Outside it, two concurrent
+    switches could both read the old rate, both pass, and the second could land a model
+    the first would have made ineligible.
+    """
     global _model_id
     if model not in PRICING:
         return False
+
+    # Absolute, not relative to the incumbent. See cheapest_model().
+    multiple = rate_multiple(model)
     with _lock:
+        if multiple > MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE and not allow_costlier:
+            log.error(
+                "MODEL SWITCH REFUSED model=%s current=%s multiple=%.1fx limit=%.1fx "
+                "-- this model is used by fraud detection and compliance, which run on "
+                "every shipment. Pass allow_costlier to confirm.",
+                model, _model_id, multiple, MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE,
+            )
+            raise CostlierModel(
+                model, _model_id, multiple, MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE,
+            )
+
+        if multiple > rate_multiple(_model_id):
+            # Logged even when permitted. A switch that raises the bill should be
+            # findable afterwards, and the audit trail does not cover configuration.
+            log.warning(
+                "MODEL SWITCH model=%s current=%s multiple=%.1fx confirmed=%s",
+                model, _model_id, multiple, allow_costlier,
+            )
+
         _model_id = model
     return True
 

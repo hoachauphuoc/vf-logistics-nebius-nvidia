@@ -35,6 +35,7 @@ its whole life.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Any, Literal
@@ -57,14 +58,90 @@ HTTP_ERROR = "http_error"
 TRANSPORT_ERROR = "transport_error"
 BAD_RESPONSE = "bad_response"
 
+# No search was attempted, because there was nothing to search for -- a shipment with
+# no counterparty name on it. Distinct from OK for the same reason every other status
+# here is: "we found nothing adverse" and "we did not look" are opposite facts, and the
+# second must never render as the first.
+NOT_ATTEMPTED = "not_attempted"
+
 # Every status that means the search did not happen. A caller must not read any of
 # these as "nothing adverse found".
 FAILED_STATUSES = frozenset({
     NO_API_KEY, TIMEOUT, RATE_LIMITED, HTTP_ERROR, TRANSPORT_ERROR, BAD_RESPONSE,
+    # Included deliberately, though neither is an outage. A blank query and an absent
+    # counterparty both mean no adverse-media check was performed, which is the only
+    # thing this set is used to decide.
+    EMPTY_QUERY, NOT_ATTEMPTED,
 })
+
+# Statuses where a request actually reached the API and therefore cost a credit.
+#
+# An empty OK result is billable -- the search ran. Everything else in FAILED_STATUSES
+# either never left the process (no key, blank query, nothing to search) or never got a
+# response, and counting those as spend makes the credit figure wrong in the direction
+# that matters: a deployment with no TAVILY_API_KEY would report a full bill for zero
+# requests.
+BILLABLE_STATUSES = frozenset({OK})
 
 CONTENT_MAX_CHARS = 500
 REQUEST_TIMEOUT_SECONDS = 10.0
+
+
+# ---------------------------------------------------------------------------
+# HTTP client
+# ---------------------------------------------------------------------------
+#
+# One client, not one per search. Every call built its own `httpx.AsyncClient` and
+# therefore its own connection pool, so each of the 3+ searches on a case's critical
+# path paid for a fresh TCP handshake and a fresh TLS negotiation to the same host.
+#
+# Created lazily and per event loop. `store.py` runs work on a separate worker loop, and
+# an httpx client bound to a loop that has closed raises on its next use -- so the loop
+# is part of the key rather than assuming one process means one loop.
+_CLIENTS: dict[int, httpx.AsyncClient] = {}
+
+
+def _client() -> httpx.AsyncClient:
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        # No running loop: the caller is about to fail anyway, but returning a
+        # throwaway client keeps the failure theirs rather than ours.
+        return httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
+
+    # The loop is checked as well as the client. `id()` is a reusable address, so a
+    # new loop can land on a dead loop's key, and `is_closed` on the CLIENT says
+    # nothing about whether its LOOP is gone -- the stale client passes the guard and
+    # then raises RuntimeError("Event loop is closed"), which is not an httpx.HTTPError
+    # and so is not caught by the handlers around the request.
+    #
+    # Not reachable in the deployed service, which runs one immortal worker loop, but
+    # it is reachable from tests that call asyncio.run() repeatedly.
+    existing = _CLIENTS.get(loop_id)
+    if existing is not None and not existing.is_closed:
+        try:
+            if not asyncio.get_running_loop().is_closed():
+                return existing
+        except RuntimeError:
+            pass
+        _CLIENTS.pop(loop_id, None)
+    created = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
+    _CLIENTS[loop_id] = created
+    return created
+
+
+async def aclose() -> None:
+    """
+    Close the pooled clients.
+
+    Not wired into a shutdown hook: Cloud Run's container is killed rather than asked
+    to wind down, and a socket left open at SIGKILL costs nothing. This exists so a
+    test or a script can close cleanly without a ResourceWarning.
+    """
+    for client in list(_CLIENTS.values()):
+        if not client.is_closed:
+            await client.aclose()
+    _CLIENTS.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -95,9 +172,11 @@ _CACHE: dict[tuple, tuple[float, list[dict[str, Any]], str]] = {}
 # the cheaper policy is enough for a cache whose hit rate comes from bursts.
 CACHE_MAX_ENTRIES = 512
 
-# Counters, read by the billing surface. Tavily spend does not appear in
-# `estimated_cost_usd` -- that figure is Nebius only -- yet the credit ceiling is what
-# actually limits throughput, so the count has to be observable somewhere.
+# Process-local counters, for diagnosis rather than billing.
+#
+# The billing figure is the per-case `_tavily_searches` rollup, which survives a
+# restart and is tenant-scoped; these do neither. They answer "is the cache working at
+# all" when a TTL is being tuned, and nothing reads them in production.
 _STATS = {"hits": 0, "misses": 0, "stores": 0, "evictions": 0}
 
 
@@ -153,20 +232,33 @@ def _cache_put(key: tuple, ttl_seconds: float, results: list[dict[str, Any]], st
 
 
 def cache_stats() -> dict[str, int]:
-    """Hit/miss counters plus the live entry count, for the billing surface."""
+    """
+    Hit/miss counters plus the live entry count.
+
+    Diagnostic, not billing. Note that when caching is off neither counter moves, so
+    `hits + misses` is not total search volume -- the billable figure is the per-case
+    `_tavily_searches` rollup.
+    """
     return {**_STATS, "entries": len(_CACHE)}
 
 
 def reset_cache() -> None:
     """
-    Drop every entry and zero the counters.
+    Drop every entry, zero the counters, and forget the pooled HTTP clients.
 
-    Exists for tests, and for an operator who has a reason to force fresh lookups --
-    a sanctions list refresh being the obvious one.
+    Exists for tests, and for an operator who has a reason to force fresh lookups -- a
+    sanctions list refresh being the obvious one.
+
+    The pooled clients are dropped too, and that matters for tests specifically: a test
+    that patches `httpx.AsyncClient` gets nothing if a client built before the patch is
+    still cached, and the symptom is a test that silently exercises the real transport.
+    Dropped rather than closed, because closing another loop's client from here is not
+    safe; the sockets are collected with the loop.
     """
     _CACHE.clear()
     for k in _STATS:
         _STATS[k] = 0
+    _CLIENTS.clear()
 
 
 def _ttl_from_env(name: str, default: float) -> float:
@@ -316,12 +408,14 @@ async def _search(
         payload["days"] = bounded_days
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            response = await client.post(
-                TAVILY_URL,
-                headers={"Authorization": f"Bearer {key}"},
-                json=payload,
-            )
+        # The pooled client is NOT closed here. `async with` on a shared client would
+        # close it after the first search and leave every later call on this loop
+        # holding a dead pool.
+        response = await _client().post(
+            TAVILY_URL,
+            headers={"Authorization": f"Bearer {key}"},
+            json=payload,
+        )
     except httpx.TimeoutException:
         return [], TIMEOUT, False
     except httpx.HTTPError:
@@ -386,11 +480,29 @@ def format_findings(results: list[dict[str, Any]], status: str = OK) -> str:
     an absence of findings. A model handed "no findings" will reason as though the
     company came back clean, which is the exact confusion this module was fixed to
     remove.
+
+    A PARTIAL FAILURE RENDERS BOTH THE WARNING AND THE RESULTS. Where several searches
+    were combined and one failed, the caller passes the failed status along with the
+    results it did get, and those have to be shown. Returning only the warning destroyed
+    real evidence: a shipper lookup timing out while the receiver lookup returned a
+    genuine adverse-media hit produced a prompt with the warning and nothing else, while
+    the case record still listed the receiver URLs the model was never shown.
     """
-    if status in FAILED_STATUSES:
+    if status == NOT_ATTEMPTED:
         return (
-            f"WEB SEARCH DID NOT RUN ({status}). This is not a clean result: no "
-            "adverse-media check was performed on these entities."
+            "NO WEB SEARCH WAS ATTEMPTED: the record carries no counterparty name to "
+            "search for. This is not a clean result."
+        )
+    if status in FAILED_STATUSES:
+        warning = (
+            f"WEB SEARCH DID NOT RUN, OR RAN ONLY IN PART ({status}). Anything below is "
+            "incomplete, and the absence of a finding is not evidence of absence: no "
+            "complete adverse-media check was performed on these entities."
+        )
+        if not results:
+            return warning
+        return warning + "\n" + "\n".join(
+            f"  - {r['title']}: {r['content']} ({r['url']})" for r in results
         )
     if not results:
         return "No external web search findings (search ran and returned nothing)."

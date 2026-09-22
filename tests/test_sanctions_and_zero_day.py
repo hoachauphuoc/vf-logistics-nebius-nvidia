@@ -315,8 +315,13 @@ class ZeroDayGateTests(unittest.TestCase):
         )
         run, reason = zd.should_screen(shipment, verifier.validate(shipment))
         self.assertTrue(run)
-        self.assertIn("jebel ali", reason)
+        # Canonical PLACES, not matched strings. "jebel ali", "dubai" and "uae" are
+        # three names for one location in DIVERSION_HUBS, and counting them separately
+        # made a single Emirati port read as two hubs -- tripping a rule whose own name
+        # says MULTIPLE. verifier.distinct_hubs() collapses them to `uae`.
+        self.assertIn("uae", reason)
         self.assertIn("singapore", reason)
+        self.assertIn("2 transhipment hubs", reason)
 
     def test_a_single_transhipment_hub_does_not_trigger_screening(self):
         """
@@ -566,7 +571,7 @@ class TavilyStatusTests(unittest.TestCase):
 
         text = tavily_client.format_findings([], tavily_client.RATE_LIMITED)
         self.assertIn("DID NOT RUN", text)
-        self.assertIn("not a clean result", text)
+        self.assertIn("not evidence of absence", text)
 
     def test_an_empty_but_successful_search_is_distinguishable(self):
         from vf_logistics import tavily_client

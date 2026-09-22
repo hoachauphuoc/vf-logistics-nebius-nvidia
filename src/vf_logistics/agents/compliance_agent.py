@@ -102,6 +102,23 @@ sanctions or fraud hit found there should raise sanctions_hits/risk_factors.
 CACHE_BYPASS_FLOOR_AT = int(os.getenv("FRAUD_CLEAR_BELOW", "40"))
 
 
+# Placeholder values that are not counterparty names.
+#
+# A transcribed document routinely carries "N/A" or "not stated" where a name should
+# be, and those strings are truthy. Searching for '"N/A" sanctions' spends a credit to
+# learn nothing, on every such record. zero_day_agent.entities_to_check() already
+# filtered these; this call site did not.
+_PLACEHOLDER_NAMES = {
+    "", "n/a", "na", "none", "not stated", "not provided", "unknown", "-",
+}
+
+
+def _searchable_name(value: Any) -> str:
+    """The name if it is one, otherwise the empty string."""
+    text = str(value or "").strip()
+    return "" if text.lower() in _PLACEHOLDER_NAMES else text
+
+
 def _bypass_cache(risk_floor: int | None) -> bool:
     """
     True when this case should pay for a live lookup.
@@ -109,8 +126,18 @@ def _bypass_cache(risk_floor: int | None) -> bool:
     An unknown floor (None) uses the cache. That is the manual screening endpoint,
     where there is no case and therefore no floor -- and an operator screening an
     entity by hand is not making a release decision.
+
+    Coerced rather than compared directly: the floor arrives from a case document that
+    has been through JSON, so it can be a float, and a string is cheap to survive.
     """
-    return risk_floor is not None and risk_floor >= CACHE_BYPASS_FLOOR_AT
+    if risk_floor is None:
+        return False
+    try:
+        return float(risk_floor) >= CACHE_BYPASS_FLOOR_AT
+    except (TypeError, ValueError):
+        # Unreadable floor: treat as elevated. A live search costs a credit; guessing
+        # "low" would serve cached evidence to a case whose risk is unknown.
+        return True
 
 
 async def screen_shipment(
@@ -151,8 +178,8 @@ async def screen_shipment(
     - Transit Points: {shipment_data.get('transit_points', 'N/A')}
     """
     
-    shipper_name = shipment_data.get("shipper_name", "")
-    receiver_name = shipment_data.get("receiver_name", "")
+    shipper_name = _searchable_name(shipment_data.get("shipper_name"))
+    receiver_name = _searchable_name(shipment_data.get("receiver_name"))
 
     # Cached unless this case is already heading somewhere that deserves fresh
     # evidence. See CACHE_BYPASS_FLOOR_AT for the reasoning; a bypass is expressed as
@@ -162,25 +189,26 @@ async def screen_shipment(
     tavily_results: list[dict[str, Any]] = []
     statuses: list[str] = []
     cache_hits = 0
-    searches = 0
-    if shipper_name:
+    billable = 0
+    attempted = 0
+    for name, template in (
+        (shipper_name, '"{}" sanctions OR fraud OR "shell company"'),
+        (receiver_name, '"{}" sanctions'),
+    ):
+        if not name:
+            continue
         results, status, hit = await tavily_client.search_cached(
-            f'"{shipper_name}" sanctions OR fraud OR "shell company"',
-            ttl_seconds=ttl,
+            template.format(name), ttl_seconds=ttl,
         )
         tavily_results += results
         statuses.append(status)
-        searches += 1
+        attempted += 1
         cache_hits += 1 if hit else 0
-    if receiver_name:
-        results, status, hit = await tavily_client.search_cached(
-            f'"{receiver_name}" sanctions',
-            ttl_seconds=ttl,
-        )
-        tavily_results += results
-        statuses.append(status)
-        searches += 1
-        cache_hits += 1 if hit else 0
+        # Only a request that reached the API costs a credit. A cache hit did not, and
+        # neither did a missing key or a timeout -- counting those made a deployment
+        # with no TAVILY_API_KEY report a full bill for zero requests.
+        if not hit and status in tavily_client.BILLABLE_STATUSES:
+            billable += 1
 
     # The status is now carried into the prompt, which it previously was not.
     #
@@ -196,8 +224,13 @@ async def screen_shipment(
     #
     # Worst status wins. With two searches, one succeeding is not enough -- if the
     # receiver lookup failed, the model must not be told the pair came back clean.
+    # NOT_ATTEMPTED when there were no names at all, because OK there would render as
+    # "search ran and returned nothing" about a search that never happened.
     failed = next((s for s in statuses if s in tavily_client.FAILED_STATUSES), None)
-    search_status = failed or (statuses[0] if statuses else tavily_client.OK)
+    if not statuses:
+        search_status = tavily_client.NOT_ATTEMPTED
+    else:
+        search_status = failed or statuses[0]
     external_findings = tavily_client.format_findings(tavily_results, search_status)
 
     with Timer() as timer:
@@ -241,13 +274,12 @@ async def screen_shipment(
         # cannot distinguish "searched, found nothing" from "search failed" -- both
         # give False -- and a reviewer needs to know which.
         external_search_status=search_status,
-        # How much of this evidence was reused rather than fetched. A released shipment
-        # whose adverse-media check was served from a 40-minute-old entry is a
-        # different audit record from one checked live, and dropping the distinction
-        # would let the trail imply the stronger of the two.
-        external_search_count=searches,
+        # How much of this evidence was reused rather than fetched, and how much of it
+        # actually cost a credit. A cache hit and a failed request both cost nothing, so
+        # a plain attempt count would over-report the bill.
+        external_search_count=attempted,
         external_search_cache_hits=cache_hits,
-        external_search_live=searches - cache_hits,
+        external_search_live=billable,
     )
 
 

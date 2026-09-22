@@ -46,6 +46,13 @@ AGGREGATED_FIELDS = [
     "_agent_calls",
     "_estimated_cost_usd",
     "_sum_latency_ms",
+    # Tavily, metered separately because it is billed in credits rather than dollars
+    # and is the tighter ceiling: at a measured 4.5-5.3 searches per case, the free
+    # tier's 1,000 a month runs out after roughly 200 cases while the same traffic
+    # costs about seven cents of Nemotron.
+    "_tavily_searches",
+    "_tavily_cached",
+    "_tavily_billable",
 ]
 
 

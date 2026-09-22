@@ -451,6 +451,9 @@ class MemoryStore:
             output_tokens = 0
             cost = 0.0
             latency_sum = 0
+            tavily = 0
+            tavily_cached = 0
+            tavily_billable = 0
             for c in self._cases.values():
                 if c.get("is_marker") or not _owned_by(c, scope):
                     continue
@@ -461,12 +464,28 @@ class MemoryStore:
                 output_tokens += c.get("_output_tokens", 0)
                 cost += c.get("_estimated_cost_usd", 0.0)
                 latency_sum += c.get("_sum_latency_ms", 0)
+                tavily += c.get("_tavily_searches", 0)
+                tavily_cached += c.get("_tavily_cached", 0)
+                tavily_billable += c.get("_tavily_billable", 0)
             return {
                 "agent_calls": calls,
                 "total_input_tokens": input_tokens,
                 "total_output_tokens": output_tokens,
                 "estimated_cost_usd": round(cost, 6),
                 "avg_latency_ms": int(latency_sum / calls) if calls else 0,
+                # Tavily is metered separately from the model spend because it is
+                # billed in credits, not dollars, and it is the tighter of the two
+                # ceilings: measured at 4.5-5.3 searches per case, the free tier's
+                # 1,000 credits a month runs out after roughly 200 cases, while the
+                # same traffic costs about seven cents of Nemotron.
+                #
+                # `billable` is summed rather than derived. A cache hit costs nothing
+                # and so does a request that never left the process, so
+                # attempts-minus-hits over-reports -- a deployment with no API key would
+                # show a full bill for zero requests.
+                "tavily_searches": tavily,
+                "tavily_cached": tavily_cached,
+                "tavily_billable": tavily_billable,
             }
 
     async def count_by_cleared_by(
@@ -1029,19 +1048,29 @@ class FirestoreStore:
         billing figure that depended on which backend answered would be worse than
         no figure.
 
-        REQUIRES FIVE COMPOSITE INDEXES, one per aggregation:
+        REQUIRES EIGHT COMPOSITE INDEXES, one per aggregation:
 
             (_tenant_id ASC, created_at ASC, _input_tokens ASC)
             (_tenant_id ASC, created_at ASC, _output_tokens ASC)
             (_tenant_id ASC, created_at ASC, _agent_calls ASC)
             (_tenant_id ASC, created_at ASC, _estimated_cost_usd ASC)
             (_tenant_id ASC, created_at ASC, _sum_latency_ms ASC)
+            (_tenant_id ASC, created_at ASC, _tavily_searches ASC)
+            (_tenant_id ASC, created_at ASC, _tavily_cached ASC)
+            (_tenant_id ASC, created_at ASC, _tavily_billable ASC)
 
         An index on (_tenant_id, created_at) alone is NOT enough, which was learned
         the hard way: Firestore requires the AGGREGATED field to be in the index as
         well as the filtered ones, so the first attempt failed with
         FAILED_PRECONDITION naming `_input_tokens` -- the first of the five sums to
         run. Create them with infra/monitoring/create_billing_indexes.py.
+
+        The count is a standing trap: it grows with every new aggregation, and the
+        failure arrives only on the first windowed request for the new field. The two
+        Tavily sums are the most recent example. tests/test_billing_period.py extracts
+        every summed field name from this method by pattern and asserts each one has a
+        matching index definition, so adding an aggregation without an index fails in
+        CI rather than in an invoice.
 
         None of them are needed for the unbounded call, so an existing deployment
         keeps working until the first windowed request -- which means a missing index
@@ -1069,15 +1098,24 @@ class FirestoreStore:
             agg_calls = base.sum("_agent_calls").get()
             agg_cost = base.sum("_estimated_cost_usd").get()
             agg_latency = base.sum("_sum_latency_ms").get()
+            agg_tavily = base.sum("_tavily_searches").get()
+            agg_tavily_cached = base.sum("_tavily_cached").get()
+            agg_tavily_billable = base.sum("_tavily_billable").get()
 
             calls = agg_calls[0][0].value or 0
             latency_sum = agg_latency[0][0].value or 0
+            tavily = int(agg_tavily[0][0].value or 0)
+            tavily_cached = int(agg_tavily_cached[0][0].value or 0)
+            tavily_billable = int(agg_tavily_billable[0][0].value or 0)
             return {
                 "agent_calls": calls,
                 "total_input_tokens": agg_input[0][0].value or 0,
                 "total_output_tokens": agg_output[0][0].value or 0,
                 "estimated_cost_usd": round(agg_cost[0][0].value or 0.0, 6),
                 "avg_latency_ms": int(latency_sum / calls) if calls else 0,
+                "tavily_searches": tavily,
+                "tavily_cached": tavily_cached,
+                "tavily_billable": tavily_billable,
             }
 
         return await asyncio.to_thread(_q)
