@@ -22,8 +22,8 @@
 <div id="shot">
   <h1>VF Logistics &mdash; Fraud Detection an Operator Can Delegate To</h1>
   <div class="sub">
-    All Things Agentic 2026 &middot; Track: <b>The Taskmaster</b> &middot;
-    <b>Gemini 3.5 Flash + Flash-Lite</b> on Vertex AI &middot; <b>Cloud Run</b> asia-southeast1 &middot;
+    <b>NVIDIA Nemotron on Nebius Token Factory</b> &middot; OpenAI-compatible transport &middot;
+    <b>Cloud Run</b> asia-southeast1 &middot; Google Cloud for infrastructure only &middot;
     an agent finding is a <b>claim</b> until something deterministic agrees with it
   </div>
 
@@ -35,9 +35,9 @@
       <linearGradient id="gAgent" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#1d2b52"/><stop offset="1" stop-color="#172244"/>
       </linearGradient>
-      <linearGradient id="gGem" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#4285f4"/><stop offset="0.55" stop-color="#34a853"/>
-        <stop offset="1" stop-color="#fbbc05"/>
+      <linearGradient id="gNeb" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4f7cff"/><stop offset="0.55" stop-color="#76b900"/>
+        <stop offset="1" stop-color="#9ad600"/>
       </linearGradient>
       <linearGradient id="gGov" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#2a2414"/><stop offset="1" stop-color="#1c1a12"/>
@@ -49,7 +49,7 @@
         <path d="M0,1 L10,5.5 L0,10 z" fill="#5b6b93"/>
       </marker>
       <marker id="arwB" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
-        <path d="M0,1 L10,5.5 L0,10 z" fill="#4285f4"/>
+        <path d="M0,1 L10,5.5 L0,10 z" fill="#76b900"/>
       </marker>
       <marker id="arwY" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
         <path d="M0,1 L10,5.5 L0,10 z" fill="#fbbc05"/>
@@ -68,25 +68,26 @@
     <text x="38" y="116" fill="#e8edf9" font-size="13" font-weight="600">Document upload</text>
     <text x="38" y="135" fill="#8f9dbd" font-size="11.5">bill of lading / invoice, PDF or scan</text>
     <text x="38" y="163" fill="#e8edf9" font-size="13" font-weight="600">Cloud Storage stage</text>
-    <text x="38" y="182" fill="#8f9dbd" font-size="11.5">batch drop, ingested on tick</text>
-    <text x="38" y="199" fill="#6f7d9c" font-size="11">idempotent per shipment_id</text>
+    <text x="38" y="182" fill="#8f9dbd" font-size="11.5">object-finalize push, or batch sweep</text>
+    <text x="38" y="199" fill="#6f7d9c" font-size="11">push arrives over authenticated HTTP</text>
 
     <rect x="16" y="222" width="260" height="92" rx="13"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="249" fill="#96a2c0" font-size="11" letter-spacing="1.4">OPERATOR UI</text>
-    <text x="38" y="274" fill="#e8edf9" font-size="13" font-weight="600">Web dashboard</text>
-    <text x="38" y="293" fill="#8f9dbd" font-size="11.5">static/index.html &middot; no build step</text>
-    <text x="38" y="308" fill="#6f7d9c" font-size="11">ops board &middot; review queue &middot; governance</text>
+    <text x="38" y="249" fill="#96a2c0" font-size="11" letter-spacing="1.4">OPERATOR CONSOLE</text>
+    <text x="38" y="274" fill="#e8edf9" font-size="13" font-weight="600">Next.js &middot; vf-console</text>
+    <text x="38" y="293" fill="#8f9dbd" font-size="11.5">HMAC session login &middot; 12h cookie</text>
+    <text x="38" y="308" fill="#6f7d9c" font-size="11">proxy allow-list, per method</text>
 
     <rect x="16" y="330" width="260" height="180" rx="13"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="357" fill="#96a2c0" font-size="11" letter-spacing="1.4">IAM &middot; ANALYSIS IDENTITY</text>
-    <text x="38" y="383" fill="#c3ccdf" font-size="12">roles/aiplatform.user</text>
-    <text x="38" y="405" fill="#c3ccdf" font-size="12">roles/datastore.user</text>
-    <text x="38" y="427" fill="#c3ccdf" font-size="12">roles/storage.objectAdmin</text>
-    <text x="38" y="453" fill="#ea6a5e" font-size="12">no pubsub.publisher</text>
-    <text x="38" y="472" fill="#8f9dbd" font-size="11">this identity can reason about a shipment</text>
-    <text x="38" y="489" fill="#8f9dbd" font-size="11">but cannot move one</text>
+    <text x="38" y="357" fill="#96a2c0" font-size="11" letter-spacing="1.4">IDENTITY &middot; ANALYSIS SIDE</text>
+    <text x="38" y="383" fill="#c3ccdf" font-size="12">roles/datastore.user</text>
+    <text x="38" y="405" fill="#c3ccdf" font-size="12">roles/storage.objectAdmin</text>
+    <text x="38" y="427" fill="#ea6a5e" font-size="12">no pubsub.publisher</text>
+    <text x="38" y="449" fill="#8f9dbd" font-size="11">it can reason about a shipment,</text>
+    <text x="38" y="465" fill="#8f9dbd" font-size="11">and cannot announce a decision</text>
+    <text x="38" y="487" fill="#c3ccdf" font-size="11">the key authorises &middot; the session</text>
+    <text x="38" y="503" fill="#c3ccdf" font-size="11">says who acted, never what they may do</text>
 
     <path d="M276,111 L324,111" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
     <path d="M276,268 L300,268 L300,145 L324,145" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
@@ -95,13 +96,13 @@
     <rect x="324" y="16" width="576" height="494" rx="15"
           fill="url(#gRun)" stroke="#3a4d7d" stroke-width="1.8"/>
     <text x="346" y="43" fill="#8fb4ff" font-size="11" letter-spacing="1.4">CLOUD RUN &middot; asia-southeast1 &middot; REASONING SERVICE</text>
-    <text x="346" y="67" fill="#e8edf9" font-size="16" font-weight="700">vf-fraud-detection</text>
-    <text x="346" y="87" fill="#8f9dbd" font-size="11.5">WORKER_MODE=ondemand &middot; min-instances=0 &middot; scales to zero</text>
+    <text x="346" y="67" fill="#e8edf9" font-size="16" font-weight="700">vf-logistics</text>
+    <text x="346" y="87" fill="#8f9dbd" font-size="11.5">WORKER_MODE=ondemand &middot; min-instances=0 &middot; no background loop</text>
 
     <rect x="346" y="100" width="532" height="68" rx="10"
           fill="#101a36" stroke="#2c3a5e" stroke-width="1.3"/>
-    <text x="366" y="124" fill="#e8edf9" font-size="13" font-weight="600">gunicorn &rarr; Flask (main.py) &nbsp;+&nbsp; orchestrator.py worker</text>
-    <text x="366" y="144" fill="#8f9dbd" font-size="11.5">lease-based claim &middot; one step per tick &middot; state persisted before the next step</text>
+    <text x="366" y="124" fill="#e8edf9" font-size="13" font-weight="600">gunicorn &rarr; Flask &nbsp;+&nbsp; orchestrator driven by request handlers</text>
+    <text x="366" y="144" fill="#8f9dbd" font-size="11.5">a claim is a lease, not a lock &middot; 180s &middot; a dead holder's case is re-offered</text>
     <text x="366" y="161" fill="#6f7d9c" font-size="11">5s / 10s / 20s backoff &rarr; DEAD_LETTER after 3 attempts</text>
 
     <path d="M612,168 L612,190" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
@@ -112,79 +113,112 @@
     <text x="366" y="240" fill="#e8edf9" font-size="12.5" font-weight="600">untrusted.py</text>
     <text x="458" y="240" fill="#93a1c1" font-size="11.5">schema whitelist &middot; rejects risk_score / decision / state</text>
     <text x="366" y="263" fill="#e8edf9" font-size="12.5" font-weight="600">model_armor.py</text>
-    <text x="468" y="263" fill="#93a1c1" font-size="11.5">400-char windows &middot; 120 overlap &middot; 14 patterns</text>
+    <text x="468" y="263" fill="#93a1c1" font-size="11.5">400-char windows &middot; 120 overlap &middot; us-central1</text>
     <text x="366" y="278" fill="#8d7bb8" font-size="11">a transcription may fill fields, never verdict fields</text>
 
     <path d="M612,282 L612,304" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
 
     <rect x="346" y="308" width="532" height="164" rx="10"
           fill="#0f1a34" stroke="#2c3a5e" stroke-width="1.3"/>
-    <text x="366" y="330" fill="#8fb4ff" font-size="11" letter-spacing="1.2">AGENT LAYER &middot; google-genai SDK (async) &middot; strict JSON out</text>
+    <text x="366" y="330" fill="#8fb4ff" font-size="11" letter-spacing="1.2">AGENT LAYER &middot; openai.AsyncOpenAI &middot; seven agents call a model</text>
 
-    <rect x="362" y="340" width="500" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="362" y="340" width="4" height="28" rx="2" fill="#4285f4"/>
-    <text x="378" y="359" fill="#e8edf9" font-size="12" font-weight="600">document_intake</text>
-    <text x="492" y="359" fill="#93a1c1" font-size="11">multimodal PDF &middot; temperature 0.0 &middot; missing stays missing</text>
+    <!-- agent column 1 -->
+    <rect x="362" y="340" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="362" y="340" width="4" height="28" rx="2" fill="#9ad600"/>
+    <text x="376" y="358" fill="#e8edf9" font-size="11.5" font-weight="600">document_intake</text>
+    <text x="482" y="358" fill="#93a1c1" font-size="10">MiniCPM-V vision</text>
 
-    <rect x="362" y="374" width="500" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="362" y="374" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
     <rect x="362" y="374" width="4" height="28" rx="2" fill="#ea4335"/>
-    <text x="378" y="393" fill="#e8edf9" font-size="12" font-weight="600">fraud_detection</text>
-    <text x="492" y="393" fill="#93a1c1" font-size="11">7 fraud families &middot; risk 0&ndash;100 &middot; temperature 0.1</text>
+    <text x="376" y="392" fill="#e8edf9" font-size="11.5" font-weight="600">fraud_detection</text>
+    <text x="482" y="392" fill="#93a1c1" font-size="10">Nano &middot; risk 0&ndash;100</text>
 
-    <rect x="362" y="408" width="500" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="362" y="408" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
     <rect x="362" y="408" width="4" height="28" rx="2" fill="#fbbc05"/>
-    <text x="378" y="427" fill="#e8edf9" font-size="12" font-weight="600">compliance</text>
-    <text x="492" y="427" fill="#93a1c1" font-size="11">OFAC / UN / EU &middot; AML &middot; runs parallel to fraud_detection</text>
+    <text x="376" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">compliance</text>
+    <text x="482" y="426" fill="#93a1c1" font-size="10">Nano &middot; OFAC / UN / EU</text>
 
-    <rect x="362" y="442" width="500" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="362" y="442" width="4" height="28" rx="2" fill="#34a853"/>
-    <text x="378" y="461" fill="#e8edf9" font-size="12" font-weight="600">investigation</text>
-    <text x="492" y="461" fill="#93a1c1" font-size="11">Flash-Lite &middot; extended thinking &middot; thinking_budget = 8000</text>
+    <rect x="362" y="442" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="362" y="442" width="4" height="28" rx="2" fill="#4285f4"/>
+    <text x="376" y="460" fill="#e8edf9" font-size="11.5" font-weight="600">hs_classifier</text>
+    <text x="482" y="460" fill="#93a1c1" font-size="10">Nano &middot; HS heading</text>
+
+    <!-- agent column 2 -->
+    <rect x="618" y="340" width="244" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="618" y="340" width="4" height="28" rx="2" fill="#ff8a3d"/>
+    <text x="632" y="358" fill="#e8edf9" font-size="11.5" font-weight="600">zero_day</text>
+    <text x="712" y="358" fill="#93a1c1" font-size="10">Nano &middot; gated by code</text>
+
+    <rect x="618" y="374" width="244" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="618" y="374" width="4" height="28" rx="2" fill="#b39ddb"/>
+    <text x="632" y="392" fill="#e8edf9" font-size="11.5" font-weight="600">auto_debate</text>
+    <text x="712" y="392" fill="#93a1c1" font-size="10">Super &middot; confirm / dispute</text>
+
+    <rect x="618" y="408" width="244" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
+    <rect x="618" y="408" width="4" height="28" rx="2" fill="#34a853"/>
+    <text x="632" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">investigation</text>
+    <text x="712" y="426" fill="#93a1c1" font-size="10">Super &middot; escalation case</text>
+
+    <rect x="618" y="442" width="244" height="28" rx="7" fill="#12192f" stroke="#33405f" stroke-width="1.1" stroke-dasharray="3 3"/>
+    <text x="632" y="455" fill="#93a1c1" font-size="10">also in &ldquo;Cost by agent&rdquo;, no model:</text>
+    <text x="632" y="467" fill="#6f7d9c" font-size="10">sql_prefilter &middot; model_armor &middot; debate</text>
 
     <rect x="346" y="478" width="532" height="30" rx="8"
           fill="#132a22" stroke="#34a853" stroke-width="1.4"/>
     <text x="366" y="498" fill="#7fd6a0" font-size="12" font-weight="700">verifier.py</text>
-    <text x="444" y="498" fill="#a8d8bd" font-size="11">no model consulted &middot; effective_risk = max(model_risk, deterministic floor)</text>
+    <text x="444" y="498" fill="#a8d8bd" font-size="11">no model consulted &middot; effective_risk = max(model risk, floor)</text>
 
-    <!-- ==================== VERTEX AI ==================== -->
-    <path d="M900,392 L940,392" stroke="#4285f4" stroke-width="2.4" fill="none" marker-end="url(#arwB)"/>
+    <!-- ==================== NEBIUS TOKEN FACTORY ==================== -->
+    <path d="M900,392 L940,392" stroke="#76b900" stroke-width="2.4" fill="none" marker-end="url(#arwB)"/>
 
     <rect x="940" y="308" width="504" height="202" rx="14"
-          fill="#101a36" stroke="#4285f4" stroke-width="1.8"/>
-    <text x="962" y="335" fill="#8fb4ff" font-size="11" letter-spacing="1.3">VERTEX AI &middot; vertexai=True</text>
+          fill="#101a36" stroke="#76b900" stroke-width="1.8"/>
+    <text x="962" y="331" fill="#9ad600" font-size="11" letter-spacing="1.3">NEBIUS TOKEN FACTORY &middot; api.tokenfactory.nebius.com/v1/</text>
 
-    <rect x="962" y="350" width="228" height="60" rx="10" fill="url(#gGem)"/>
-    <text x="1076" y="371" fill="#0b1020" font-size="14" font-weight="800" text-anchor="middle">Gemini 3.5 Flash</text>
-    <text x="1076" y="388" fill="#0b1020" font-size="10" font-weight="600" text-anchor="middle">document · fraud · compliance</text>
-    <text x="1076" y="403" fill="#0b1020" font-size="10" font-weight="600" text-anchor="middle">+ Flash-Lite (investigation)</text>
+    <rect x="962" y="342" width="6" height="94" rx="3" fill="url(#gNeb)"/>
 
-    <text x="1214" y="368" fill="#93a1c1" font-size="11.5">location: <tspan fill="#e8edf9">global</tspan></text>
-    <text x="1214" y="389" fill="#6f7d9c" font-size="11">regional endpoints return 404</text>
+    <text x="980" y="357" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Nano 30B</text>
+    <text x="1166" y="357" fill="#93a1c1" font-size="11">$0.06 / $0.24</text>
+    <text x="1262" y="357" fill="#6f7d9c" font-size="10.5">fraud, compliance, HS</text>
 
-    <text x="962" y="437" fill="#93a1c1" font-size="11.5">response_mime_type: <tspan fill="#e8edf9">application/json</tspan> &mdash; a prose reply is a bug, not a variant</text>
-    <text x="962" y="461" fill="#93a1c1" font-size="11.5">model id pinned in code, not in an env var</text>
-    <text x="962" y="480" fill="#6f7d9c" font-size="11">a careless deploy cannot silently downgrade the model</text>
-    <text x="962" y="499" fill="#6f7d9c" font-size="11">every hop records its own latency and model id on the case</text>
+    <text x="980" y="380" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Super 120B</text>
+    <text x="1166" y="380" fill="#93a1c1" font-size="11">$0.30 / $0.90</text>
+    <text x="1262" y="380" fill="#6f7d9c" font-size="10.5">investigation, debate</text>
+
+    <text x="980" y="403" fill="#8f9dbd" font-size="11.5" font-weight="600">Nemotron 3 Ultra 550B</text>
+    <text x="1166" y="403" fill="#93a1c1" font-size="11">$1.00 / $3.00</text>
+    <text x="1262" y="403" fill="#6f7d9c" font-size="10.5">registered, opt-in only</text>
+
+    <text x="980" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">MiniCPM-V 4.5 vision</text>
+    <text x="1166" y="426" fill="#93a1c1" font-size="11">$0.658 / $1.11</text>
+    <text x="1262" y="426" fill="#6f7d9c" font-size="10.5">document intake</text>
+
+    <text x="962" y="452" fill="#6f7d9c" font-size="10.5">USD per million tokens, input / output</text>
+
+    <text x="962" y="474" fill="#93a1c1" font-size="11.5">response_format json_object &mdash; a prose reply is a bug, not a variant</text>
+    <text x="962" y="492" fill="#93a1c1" font-size="11.5">an unknown model id prices at Nano and logs ERROR &mdash; it under-reports</text>
+    <text x="962" y="505" fill="#6f7d9c" font-size="11">per-tenant spend ceiling is checked before the call, not after</text>
 
     <!-- ==================== FIELD NOTES ==================== -->
-    <rect x="940" y="16" width="504" height="270" rx="14"
+    <rect x="940" y="16" width="504" height="280" rx="14"
           fill="#131a30" stroke="#3a4d7d" stroke-width="1.5"/>
-    <text x="962" y="43" fill="#8fb4ff" font-size="11" letter-spacing="1.4">FIELD NOTES &mdash; WHAT THE BUILD ACTUALLY TAUGHT US</text>
+    <text x="962" y="41" fill="#8fb4ff" font-size="11" letter-spacing="1.4">FIELD NOTES &mdash; WHAT THE BUILD ACTUALLY TAUGHT US</text>
 
-    <text x="962" y="70" fill="#e8edf9" font-size="12.5" font-weight="600">Scanning a whole document hides the injection</text>
-    <text x="962" y="88" fill="#93a1c1" font-size="11">One planted line inside a four-page bill of lading scores below</text>
-    <text x="962" y="104" fill="#93a1c1" font-size="11">threshold when the page is scored whole. Windowing at 400 chars</text>
-    <text x="962" y="120" fill="#93a1c1" font-size="11">with 120 overlap keeps the signal from being diluted.</text>
+    <text x="962" y="66" fill="#e8edf9" font-size="12.5" font-weight="600">Scanning a whole document hides the injection</text>
+    <text x="962" y="84" fill="#93a1c1" font-size="11">One planted line inside a four-page bill of lading scores below</text>
+    <text x="962" y="100" fill="#93a1c1" font-size="11">threshold when scored whole. Windowing keeps the signal undiluted.</text>
 
-    <text x="962" y="148" fill="#e8edf9" font-size="12.5" font-weight="600">Two numbers are never read from a document</text>
-    <text x="962" y="166" fill="#93a1c1" font-size="11">avg_route_cost and shipper_tx_count decide whether a price looks</text>
-    <text x="962" y="182" fill="#93a1c1" font-size="11">wrong, so they come from our own records. A document that could</text>
-    <text x="962" y="198" fill="#93a1c1" font-size="11">supply its own baseline could clear itself.</text>
+    <text x="962" y="128" fill="#e8edf9" font-size="12.5" font-weight="600">Two numbers are never read from a document</text>
+    <text x="962" y="146" fill="#93a1c1" font-size="11">avg_route_cost and shipper_tx_count decide whether a price looks</text>
+    <text x="962" y="162" fill="#93a1c1" font-size="11">wrong. A document supplying its own baseline could clear itself.</text>
 
-    <text x="962" y="226" fill="#e8edf9" font-size="12.5" font-weight="600">The risk floor is deliberately one-way</text>
-    <text x="962" y="244" fill="#93a1c1" font-size="11">An agent may raise risk and never lower it below the floor: a wrong</text>
-    <text x="962" y="260" fill="#93a1c1" font-size="11">exoneration releases contraband, a wrong escalation costs a</text>
-    <text x="962" y="276" fill="#93a1c1" font-size="11">reviewer ten minutes. Those two errors are not worth the same.</text>
+    <text x="962" y="190" fill="#e8edf9" font-size="12.5" font-weight="600">The risk floor is deliberately one-way</text>
+    <text x="962" y="208" fill="#93a1c1" font-size="11">A wrong exoneration releases contraband; a wrong escalation costs a</text>
+    <text x="962" y="224" fill="#93a1c1" font-size="11">reviewer ten minutes. Those two errors are not worth the same.</text>
+
+    <text x="962" y="252" fill="#e8edf9" font-size="12.5" font-weight="600">A lock guards writes, not side effects</text>
+    <text x="962" y="270" fill="#93a1c1" font-size="11">By the time the version check fired, hold_shipment had already run</text>
+    <text x="962" y="286" fill="#93a1c1" font-size="11">against cargo a reviewer released. The chain now re-reads each step.</text>
 
     <!-- ==================== DELEGATED AUTHORITY ==================== -->
     <path d="M470,510 L470,534" stroke="#fbbc05" stroke-width="2" fill="none" marker-end="url(#arwY)"/>
@@ -199,16 +233,16 @@
     <text x="60" y="617" fill="#93a1c1" font-size="11.5">published by a named human, machine-readable JSON</text>
     <text x="60" y="636" fill="#93a1c1" font-size="11.5">allowed_actions &middot; auto_clear_max_risk &middot; cargo value caps</text>
     <text x="60" y="655" fill="#93a1c1" font-size="11.5">re-publishing supersedes the version before it</text>
-    <text x="60" y="676" fill="#c9a227" font-size="11">authority is granted by publication, not earned by reasoning well</text>
+    <text x="60" y="676" fill="#c9a227" font-size="11">authority is granted by publication, not by reasoning well</text>
 
     <path d="M450,630 L478,630" stroke="#fbbc05" stroke-width="2" fill="none" marker-end="url(#arwY)"/>
 
     <rect x="478" y="574" width="400" height="112" rx="10" fill="#191a2c" stroke="#4a4530" stroke-width="1.2"/>
     <text x="498" y="597" fill="#e8edf9" font-size="13" font-weight="700">Execution Gate &mdash; fail closed</text>
-    <text x="498" y="617" fill="#93a1c1" font-size="11.5">no active boundary &rArr; state <tspan fill="#ea6a5e">SUSPENDED</tspan></text>
-    <text x="498" y="636" fill="#93a1c1" font-size="11.5">analysis keeps running, every protected action is refused</text>
-    <text x="498" y="655" fill="#93a1c1" font-size="11.5">the boundary version is stamped on each executed action</text>
-    <text x="498" y="676" fill="#c9a227" font-size="11">a past decision replays against the policy in force at the time</text>
+    <text x="498" y="617" fill="#93a1c1" font-size="11.5">no active boundary &rArr; every protected action refused</text>
+    <text x="498" y="636" fill="#93a1c1" font-size="11.5">a denial turns the whole outcome into a proposal, and breaks</text>
+    <text x="498" y="655" fill="#93a1c1" font-size="11.5">injection_detected and forbidden_field are never waivable</text>
+    <text x="498" y="676" fill="#c9a227" font-size="11">draft_sar may draft and may never file</text>
 
     <!-- ==================== EXECUTION IDENTITY ==================== -->
     <path d="M900,604 L940,604" stroke="#34a853" stroke-width="2.2" fill="none" marker-end="url(#arwG)"/>
@@ -218,7 +252,7 @@
     <text x="962" y="561" fill="#7fd6a0" font-size="11" letter-spacing="1.3">CLOUD RUN &middot; EXECUTION IDENTITY</text>
     <text x="962" y="584" fill="#e8edf9" font-size="15" font-weight="700">vf-executor</text>
     <text x="1064" y="584" fill="#8f9dbd" font-size="11.5">reachable only through the execution gate</text>
-    <text x="962" y="603" fill="#ea6a5e" font-size="11.5">no aiplatform.user &mdash; this identity can act, and never sees a model</text>
+    <text x="962" y="603" fill="#ea6a5e" font-size="11.5">this identity can act, and never sees a model</text>
 
     <rect x="962" y="614" width="460" height="76" rx="9" fill="#101f19" stroke="#2a4b39" stroke-width="1.1"/>
     <text x="982" y="634" fill="#a8d8bd" font-size="11" letter-spacing="1">PROTECTED ACTIONS &middot; tools.py</text>
@@ -231,23 +265,26 @@
     <rect x="16" y="724" width="468" height="102" rx="12"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
     <text x="38" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">FIRESTORE &middot; native mode</text>
-    <text x="38" y="774" fill="#c3ccdf" font-size="12">cases &middot; events &middot; audit_log &middot; boundaries &middot; reviews</text>
-    <text x="38" y="795" fill="#8f9dbd" font-size="11.5">a case survives the instance that was working on it</text>
-    <text x="38" y="814" fill="#6f7d9c" font-size="11">no composite index setup, so nothing to forget at deploy time</text>
+    <text x="38" y="772" fill="#c3ccdf" font-size="12">cases &middot; events &middot; audit_log &middot; delegation_boundaries &middot; prefilter_rules</text>
+    <text x="38" y="791" fill="#8f9dbd" font-size="11.5">_tenant_id on every write &middot; a foreign read returns nothing, not 403</text>
+    <text x="38" y="808" fill="#8f9dbd" font-size="11">21 composite indexes, each leading with _tenant_id</text>
+    <text x="38" y="822" fill="#6f7d9c" font-size="11">PITR 7 days &middot; daily + weekly backups &middot; delete protection on</text>
 
     <rect x="504" y="724" width="468" height="102" rx="12"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
     <text x="526" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">CLOUD STORAGE</text>
-    <text x="526" y="774" fill="#c3ccdf" font-size="12">vf-shipping-documents &mdash; original PDF per case</text>
-    <text x="526" y="795" fill="#8f9dbd" font-size="11.5">streamed back to the reviewer byte for byte</text>
-    <text x="526" y="814" fill="#6f7d9c" font-size="11">approving a hold on a transcription you cannot see is not a review</text>
+    <text x="526" y="772" fill="#c3ccdf" font-size="12">the uploaded original, streamed back byte for byte</text>
+    <text x="526" y="791" fill="#c3ccdf" font-size="12">and a generated bill of lading for event-sourced cases</text>
+    <text x="526" y="808" fill="#8f9dbd" font-size="11">flagged generated, so a reconstruction is never shown as an original</text>
+    <text x="526" y="822" fill="#6f7d9c" font-size="11">the archive prefix is skipped on ingest, or the pipeline eats its output</text>
 
     <rect x="992" y="724" width="452" height="102" rx="12"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
     <text x="1014" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">PUB/SUB &middot; outbound</text>
-    <text x="1014" y="774" fill="#c3ccdf" font-size="12">case-decisions &rarr; ERP / WMS / billing</text>
-    <text x="1014" y="795" fill="#8f9dbd" font-size="11.5">only terminal decisions fan out downstream</text>
-    <text x="1014" y="814" fill="#6f7d9c" font-size="11">published by the executor, never by the reasoning service</text>
+    <text x="1014" y="772" fill="#c3ccdf" font-size="12">case-decisions &rarr; ERP / WMS / billing</text>
+    <text x="1014" y="791" fill="#8f9dbd" font-size="11.5">only terminal decisions fan out downstream</text>
+    <text x="1014" y="808" fill="#8f9dbd" font-size="11">published last, so a refused action cannot be announced first</text>
+    <text x="1014" y="822" fill="#6f7d9c" font-size="11">published by the executor, never by the reasoning service</text>
 
     <path d="M200,704 L200,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
     <path d="M700,704 L700,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
@@ -258,7 +295,7 @@
           fill="#1a2340" stroke="#4285f4" stroke-width="1.6"/>
     <text x="38" y="876" fill="#8fb4ff" font-size="11" letter-spacing="1.3">HUMAN &mdash; ONLY FOR CASES THE BOUNDARY DOES NOT COVER</text>
     <text x="38" y="899" fill="#e8edf9" font-size="13" font-weight="600">The review queue shows the original document beside the findings</text>
-    <text x="38" y="920" fill="#93a1c1" font-size="11.5">release &middot; hold &middot; block &mdash; reviewer name and boundary version recorded on the case</text>
+    <text x="38" y="920" fill="#93a1c1" font-size="11.5">release &middot; hold &middot; block &mdash; the signed session names the reviewer on the case</text>
 
     <rect x="736" y="850" width="708" height="84" rx="12"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
@@ -270,8 +307,11 @@
   </svg>
 
   <div class="hint">
-    Every box is deployed and exercised in the demo &mdash; nothing here is roadmap.
-    <b>The load-bearing idea:</b> the agent decides what is true, and a published boundary decides what it is allowed to do about it.
+    Drawn from the code, not from the module docstrings &mdash; <b>orchestrator.py</b> still
+    describes a sequential <b>FRAUD_SCORED &rarr; COMPLIANCE_SCREENED</b> pair that exists nowhere
+    else; fraud and compliance in fact run concurrently into <b>SPECIALISTS_DONE</b>.
+    <b>The load-bearing idea:</b> the agent decides what is true, the verifier decides what is
+    proven, and a published boundary decides what may be done about it.
   </div>
 </div>
 </body>
