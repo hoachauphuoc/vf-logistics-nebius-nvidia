@@ -1,0 +1,9 @@
+description: >-
+  A tenant hit its model spend ceiling and further model calls were refused.
+  Matches the stable prefix logged by budget.assert_within_budget() in
+  src/vf_logistics/budget.py -- do not reword that log line without updating
+  this filter.
+filter: >-
+  resource.type="cloud_run_revision"
+  AND resource.labels.service_name="vf-logistics"
+  AND "TENANT SPEND CEILING REACHED"
