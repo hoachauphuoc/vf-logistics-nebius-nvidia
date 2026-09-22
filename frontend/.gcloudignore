@@ -1,0 +1,21 @@
+# Files not uploaded when deploying this directory to Cloud Run.
+#
+# The Node buildpack runs `npm ci` and `npm run build` inside Cloud Build, so
+# both node_modules/ and .next/ are produced there and uploading local copies
+# only makes the build slower -- node_modules is roughly 496 MB across 35,000
+# files.
+#
+# .env.production is deliberately NOT ignored: NEXT_PUBLIC_DEMO_MODE is inlined
+# at build time, so the build needs that file to produce a console that talks to
+# the real API instead of rendering fixtures.
+
+.gcloudignore
+.git
+.gitignore
+
+node_modules/
+.next/
+out/
+
+.env.local
+.env*.local

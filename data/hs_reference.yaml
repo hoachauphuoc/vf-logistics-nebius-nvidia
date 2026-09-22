@@ -1,0 +1,333 @@
+# HS heading reference for the dual-use classification check.
+#
+# Why this file exists
+# --------------------
+# Measured, not assumed. The first chain-of-thought run of the classifier failed
+# on three of its first four cases, and the model's own reasoning showed why:
+#
+#   EVADE-002  description "electronic integrated circuits", declared 8543
+#              model: "the description directly matches heading 8543, which
+#                      covers electronic integrated circuits"   <- false
+#   EVADE-003  description "electronic integrated circuits and microassemblies",
+#              declared 8473
+#              model: "which are classified under heading 8473"  <- false
+#   EVADE-001  description "gas turbine components including hot section parts",
+#              declared 8483
+#              model: "classified as parts of machines under 8483"  <- false
+#
+# In each case the reasoning procedure ran correctly and the conclusion was
+# confabulated, because the model has no reliable memory of what these headings
+# contain. Worse, it anchors: told the declared heading is 8543, it asserts that
+# 8543 covers whatever it was handed. Prompting cannot fix a missing fact, and
+# no amount of better reasoning instruction will either. The fact has to be in
+# the prompt.
+#
+# So this is the reference a customs officer would have open on the desk.
+#
+# The interpretative rule that does most of the work
+# -------------------------------------------------
+# Most of the substitutions in data/hs_pairs.yaml work by moving goods into a
+# residual heading -- one worded "not specified or included elsewhere in this
+# Chapter". A residual heading cannot take goods that a specific heading names;
+# the most specific description prevails. That single principle decides 8542 over
+# 8543, 8542 over 8473, 8479 over 8421, 8458 over 8466 and 8504 over 8548. The
+# `residual` flag below is therefore load-bearing, not decoration.
+#
+# Sourcing and licensing
+# ----------------------
+# Heading numbers and the goods they cover are factual reference data. The
+# `covers` and `excludes` text is written for this dataset rather than copied
+# from the WCO Harmonized System nomenclature, whose text WCO asserts copyright
+# over. Verify against the US HTS (USITC) or the EU Combined Nomenclature, both
+# of which republish the headings, and against Regulation 2021/821 Annex I for
+# EU dual-use scope.
+#
+# `provenance: model_knowledge` marks every entry here: these are written from
+# general knowledge of the nomenclature, at 4-digit heading level, and are
+# accurate enough to break the anchoring failure above. They are NOT a compliance
+# grade control list. An entry promoted to `provenance: verified_source` must
+# carry the citation it was checked against.
+#
+# Scope, stated plainly
+# ---------------------
+# 25 headings across chapters 28, 84, 85 and 90 -- the ten in
+# verifier.DUAL_USE_HS_PREFIXES, the benign headings a declarant substitutes for
+# them, and the headings the benign controls declare. The full nomenclature runs
+# to roughly 5,600 six-digit subheadings. A candidate set of 25 makes the
+# evaluation easier than production would be, and that has to be read alongside
+# any number produced with it. The fifteen benign controls are what stop the
+# small candidate set turning into a free pass: a model that flags everything
+# still fails on them.
+
+version: 1
+level: heading_4_digit
+provenance_default: model_knowledge
+
+interpretative_principles:
+  - id: specificity
+    rule: >
+      A heading that names the goods beats a heading that merely could contain
+      them. Where one heading is worded "not specified or included elsewhere in
+      this Chapter", it cannot take goods another heading in that chapter names
+      explicitly.
+  - id: residual_last_resort
+    rule: >
+      Before you accept a heading marked RESIDUAL, read back over the other
+      headings in the same chapter and check whether any of them names these
+      goods. If one does, that heading wins and the residual one is wrong. A
+      residual heading is the last resort, never the convenient one.
+  - id: parts_vs_whole
+    rule: >
+      A complete machine is not "parts". Declaring an assembled machine tool
+      under a parts heading, or an assembled module as its component list, does
+      not move the goods -- classify what is actually shipped when assembled.
+  - id: material_vs_apparatus
+    rule: >
+      Shipping a controlled material inside an instrument does not reclassify
+      the material as the instrument. Ask which of the two is the article being
+      supplied.
+  - id: function_over_packaging
+    rule: >
+      Similar crates, enclosures and voltage ratings are not evidence of similar
+      classification. Classify by what the article does.
+
+headings:
+
+  # ---- Chapter 28: inorganic chemicals ----
+  - hs: "2843"
+    chapter: "28"
+    covers: "colloidal precious metals; inorganic and organic compounds of precious metals; amalgams of precious metals"
+    residual: false
+    dual_use: false
+
+  - hs: "2844"
+    chapter: "28"
+    covers: "radioactive chemical elements, radioactive isotopes, their compounds, and mixtures and residues containing them -- including sealed sources"
+    residual: false
+    dual_use: true
+    control_basis: "nuclear material"
+    excludes:
+      - hs: "9022"
+        why: >
+          9022 is the radiography or radiotherapy apparatus. A sealed source
+          supplied as the article is the radioactive material itself and stays
+          in 2844 even when it arrives in a shielded holder.
+
+  # ---- Chapter 84: machinery ----
+  - hs: "8411"
+    chapter: "84"
+    covers: "turbojets, turbopropellers and other gas turbines, and parts thereof including hot section components"
+    residual: false
+    dual_use: true
+    control_basis: "propulsion and power generation; aerospace and missile applications"
+    excludes:
+      - hs: "8414"
+        why: >
+          8414 machinery moves air or gas without combustion. A gas turbine adds
+          energy by burning fuel, and its compressor stage does not make the
+          engine a compressor.
+      - hs: "8483"
+        why: >
+          Turbine rotors, shafts and hot section parts are parts of the engine
+          and belong with 8411. 8483 is for transmission elements of general
+          application.
+
+  - hs: "8414"
+    chapter: "84"
+    covers: "air or vacuum pumps, air or gas compressors, fans, and ventilating or recycling hoods"
+    residual: false
+    dual_use: false
+
+  - hs: "8421"
+    chapter: "84"
+    covers: "centrifuges including centrifugal dryers; filtering or purifying machinery for liquids or gases"
+    residual: false
+    dual_use: false
+    excludes:
+      - hs: "8479"
+        why: >
+          Isotope separation equipment is named in 8479. A centrifuge built for
+          an enrichment cascade -- maraging steel or high strength aluminium
+          rotors, cascade piping -- is isotope separation equipment, not the
+          separating and filtering machinery of 8421.
+
+  - hs: "8458"
+    chapter: "84"
+    covers: "lathes, including turning centres, for removing metal -- material is cut away as chips"
+    residual: false
+    dual_use: true
+    control_basis: "precision machining capability; tolerance thresholds apply"
+    excludes:
+      - hs: "8462"
+        why: >
+          8462 works metal by forging, bending, folding, shearing or punching --
+          forming, with no material removed. Turning removes metal as chips.
+      - hs: "8466"
+        why: >
+          8466 is parts and accessories. A complete numerically controlled lathe
+          is not parts, however the invoice describes it.
+
+  - hs: "8462"
+    chapter: "84"
+    covers: "machine tools for working metal by forging, hammering, bending, folding, straightening, shearing or punching -- forming operations that reshape metal without cutting any of it away"
+    residual: false
+    dual_use: false
+
+  - hs: "8466"
+    chapter: "84"
+    covers: "parts and accessories suitable for use solely or principally with the machine tools of headings 8456 to 8465, including tool holders and work holders"
+    residual: false
+    dual_use: false
+
+  - hs: "8471"
+    chapter: "84"
+    covers: "automatic data processing machines and units thereof, including servers and compute nodes"
+    residual: false
+    dual_use: true
+    control_basis: "high performance computing; aggregate compute thresholds"
+    excludes:
+      - hs: "8528"
+        why: >
+          8528 is display equipment. A rack mounted compute node is not a
+          monitor, whatever it is crated alongside.
+
+  - hs: "8473"
+    chapter: "84"
+    covers: "parts and accessories for the machines of headings 8470 to 8472, such as docking stations, keyboards and enclosures"
+    residual: false
+    dual_use: false
+    excludes:
+      - hs: "8542"
+        why: >
+          An integrated circuit is named in 8542 and does not become a generic
+          data processing accessory by being fitted to a card.
+
+  - hs: "8479"
+    chapter: "84"
+    covers: "machines and mechanical appliances having individual functions, not specified elsewhere in chapter 84 -- isotope separation equipment is named here"
+    residual: true
+    dual_use: true
+    control_basis: "nuclear fuel cycle; isotope separation is explicitly controlled"
+
+  - hs: "8483"
+    chapter: "84"
+    covers: "transmission shafts, cranks, bearing housings, plain shaft bearings, gears and gearing, ball or roller screws, gear boxes and clutches"
+    residual: false
+    dual_use: false
+
+  # ---- Chapter 85: electrical ----
+  - hs: "8504"
+    chapter: "85"
+    covers: "electrical transformers, static converters such as rectifiers and high voltage power supplies, and inductors"
+    residual: false
+    dual_use: true
+    control_basis: "high voltage power conversion used in enrichment and directed energy applications"
+    excludes:
+      - hs: "8536"
+        why: >
+          8536 switches and protects a circuit. It does not convert or transform
+          power, which is what a static converter or high voltage supply does.
+      - hs: "8548"
+        why: >
+          8548 is residual electrical parts. A transformer or static converter is
+          named in 8504 and cannot fall to the residual heading.
+
+  - hs: "8528"
+    chapter: "85"
+    covers: "monitors and projectors not incorporating television reception apparatus, and television reception apparatus"
+    residual: false
+    dual_use: false
+
+  - hs: "8536"
+    chapter: "85"
+    covers: "electrical apparatus for switching or protecting electrical circuits at not more than 1000 volts -- switches, relays, fuses, circuit breakers, connectors"
+    residual: false
+    dual_use: false
+
+  - hs: "8542"
+    chapter: "85"
+    covers: "electronic integrated circuits, including processors, controllers, memories and microassemblies"
+    residual: false
+    dual_use: true
+    control_basis: "advanced computing and microelectronics; performance thresholds apply"
+
+  - hs: "8543"
+    chapter: "85"
+    covers: "electrical machines and apparatus having individual functions, not specified elsewhere in chapter 85"
+    residual: true
+    dual_use: false
+    excludes:
+      - hs: "8542"
+        why: >
+          This is the substitution to watch. 8543 is residual, so it cannot take
+          an electronic integrated circuit, which 8542 names. Mounting the die on
+          a board does not change that.
+
+  - hs: "8548"
+    chapter: "85"
+    covers: "electrical parts of machinery or apparatus, not specified elsewhere in chapter 85"
+    residual: true
+    dual_use: false
+
+  # ---- Chapter 90: instruments ----
+  - hs: "9014"
+    chapter: "90"
+    covers: "direction finding compasses and other navigational instruments and appliances, including inertial measurement and guidance units"
+    residual: false
+    dual_use: true
+    control_basis: "inertial navigation and guidance applications"
+    excludes:
+      - hs: "9015"
+        why: >
+          9015 surveys the ground from a known position. 9014 determines heading
+          or attitude for navigation, which is where an IMU belongs even when it
+          is described as a survey aid.
+
+  - hs: "9015"
+    chapter: "90"
+    covers: "surveying, hydrographic, oceanographic, hydrological, meteorological and geophysical instruments, excluding compasses; rangefinders"
+    residual: false
+    dual_use: false
+
+  - hs: "9022"
+    chapter: "90"
+    covers: "apparatus based on the use of X-rays or of alpha, beta, gamma or other ionising radiations, including radiography and radiotherapy equipment"
+    residual: false
+    dual_use: false
+
+  - hs: "9025"
+    chapter: "90"
+    covers: "hydrometers, thermometers, pyrometers, barometers, hygrometers and psychrometers"
+    residual: false
+    dual_use: false
+
+  - hs: "9026"
+    chapter: "90"
+    covers: "instruments for measuring or checking the flow, level, pressure or other variables of liquids or gases, excluding the instruments of 9014, 9015, 9028 and 9032"
+    residual: false
+    dual_use: true
+    control_basis: "process control for chemical and nuclear facilities"
+    excludes:
+      - hs: "9025"
+        why: >
+          9025 is the named list -- thermometers, barometers, hygrometers.
+          Pressure, flow and level instrumentation is 9026 even though both are
+          called gauges in the yard.
+
+  - hs: "9030"
+    chapter: "90"
+    covers: "oscilloscopes, spectrum analysers and other instruments for measuring or checking electrical quantities"
+    residual: false
+    dual_use: true
+    control_basis: "test equipment for electronics and RF development, including weapons electronics"
+    excludes:
+      - hs: "9031"
+        why: >
+          9031 is residual within chapter 90. An instrument measuring an
+          electrical quantity is named in 9030 and cannot fall to it.
+
+  - hs: "9031"
+    chapter: "90"
+    covers: "measuring or checking instruments, appliances and machines, not specified elsewhere in chapter 90 -- coordinate measuring machines, surface plates, profile projectors"
+    residual: true
+    dual_use: false

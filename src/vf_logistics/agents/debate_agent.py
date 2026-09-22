@@ -351,12 +351,22 @@ async def conduct_debate(
         "input_tokens": total_input_tokens,
         "output_tokens": total_output_tokens,
         "at": utcnow(),
+        # The context Super was given to review. Carried out so the case trace
+        # can show what the Senior Auditor actually saw, the same way the
+        # single-call agents surface their prompt via envelope().
+        "prompt": _truncate_context(context),
         "result": {
             "debate_trace": debate_trace,
             "verdict": final_verdict,
             "rounds_used": len(set(t.get("round", 0) for t in debate_trace)),
         },
     }
+
+
+def _truncate_context(text: str, limit: int = 4000) -> str:
+    if not text or len(text) <= limit:
+        return text or ""
+    return f"{text[:limit]}\n...[truncated, {len(text) - limit} more chars]"
 
 
 async def _execute_tool(
@@ -420,16 +430,33 @@ async def _tavily_search(query: str, depth: str) -> dict[str, Any]:
     """Execute Tavily search for additional context."""
     if not query.strip():
         return {"error": "Empty query", "results": []}
-    
+
+    # `depth` now reaches the API. It previously did not: the tool schema
+    # advertised a basic/advanced enum to Super, and this function quietly
+    # translated the choice into a result count while the client hardcoded
+    # "basic". A model told it has a control it does not have reasons on that
+    # basis, so the schema and the request now agree.
+    depth = depth if depth in ("basic", "advanced") else "basic"
     max_results = 5 if depth == "advanced" else 3
-    
+
     try:
-        results = await tavily_client.search(query, max_results=max_results)
-        return {
+        results, status = await tavily_client.search_with_status(
+            query, max_results=max_results, search_depth=depth,
+        )
+        out = {
             "query": query,
             "depth": depth,
+            "status": status,
             "result_count": len(results),
             "results": results[:max_results],
         }
+        if status in tavily_client.FAILED_STATUSES:
+            # Named in the tool result so Super sees that the search failed
+            # rather than inferring a clean company from an empty list.
+            out["error"] = (
+                f"search did not run ({status}); absence of findings here is not "
+                "evidence of absence"
+            )
+        return out
     except Exception as e:
         return {"error": str(e), "query": query, "results": []}

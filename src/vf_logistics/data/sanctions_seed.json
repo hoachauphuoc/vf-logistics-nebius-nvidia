@@ -1,0 +1,154 @@
+{
+  "//": [
+    "BUNDLED FALLBACK INDEX -- NOT A COMPLIANCE-GRADE SANCTIONS LIST.",
+    "",
+    "This exists so a container that cannot reach GCS still screens against",
+    "something rather than answering CLEAN to everything. It is deliberately",
+    "small and its entity ids are synthetic.",
+    "",
+    "The real index is built by scripts/refresh_sanctions.py from OpenSanctions",
+    "and written to the GCS object named by SANCTIONS_INDEX_BUCKET /",
+    "SANCTIONS_INDEX_OBJECT. sanctions.load() prefers that and falls back here,",
+    "recording in load_error() that it did so -- a fallback that looked like a",
+    "successful load would be worse than a failure.",
+    "",
+    "Licensing: OpenSanctions bulk data is CC-BY-NC 4.0, which prohibits",
+    "commercial use. Swap to OFAC SDN (US Government, public domain) before",
+    "selling this. sanctions/sources/ is plugin-shaped so that is one new file,",
+    "not a rewrite.",
+    "",
+    "Continuity: the first three entities mirror verifier.BLACKLIST_COMPANIES so",
+    "the code-resident list and the screening index agree rather than disagreeing",
+    "about the same company. The alias variants on each are the actual evasion",
+    "technique -- a declarant does not need the name spelled correctly, only close",
+    "enough to pass a customs officer and far enough to miss an exact-match filter."
+  ],
+  "meta": {
+    "version": 0,
+    "synced_at": null,
+    "source": "bundled_seed",
+    "note": "fallback only; synced_at is null so age_days() reports unknown rather than fresh"
+  },
+  "entities": [
+    {
+      "entity_id": "SEED-0001",
+      "name": "Shell Trading Ltd",
+      "aliases": ["Shell Trading Limited", "Shel Trading Ltd", "Shell Tradng Ltd", "SheII Trading Ltd"],
+      "identifiers": ["9999999999"],
+      "programs": ["SEED-DEMO"],
+      "topics": ["sanction"],
+      "countries": ["ae"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0002",
+      "name": "Global Import Export LLC",
+      "aliases": ["Global Import-Export L.L.C.", "Global Imports Exports LLC", "Globa1 Import Export LLC"],
+      "identifiers": ["0000000001"],
+      "programs": ["SEED-DEMO"],
+      "topics": ["sanction"],
+      "countries": ["tr"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0003",
+      "name": "Phoenix Logistics Inc",
+      "aliases": ["Phoenix Logistic Inc", "Pheonix Logistics Inc", "Phoenix Logistics Incorporated"],
+      "identifiers": ["1234567890"],
+      "programs": ["SEED-DEMO"],
+      "topics": ["sanction"],
+      "countries": ["hk"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0004",
+      "name": "Crescent Marine Services FZE",
+      "aliases": ["Cresent Marine Services FZE", "Crescent Marine Service FZE", "Kreshent Marine Services"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-SHIPPING"],
+      "topics": ["sanction"],
+      "countries": ["ae"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0005",
+      "name": "Anadolu Teknik Makina Sanayi",
+      "aliases": ["Anadolu Teknik Makina", "Anatolu Teknik Makina Sanayi", "Anadolu Technic Makina"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-EXPORT"],
+      "topics": ["export.control"],
+      "countries": ["tr"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0006",
+      "name": "Pearl River Precision Instruments",
+      "aliases": ["Pearl River Precision Instrument", "Pearlriver Precision Instruments", "Zhujiang Precision Instruments"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-EXPORT"],
+      "topics": ["export.control"],
+      "countries": ["hk"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0007",
+      "name": "Straits Commodity Partners",
+      "aliases": ["Straits Commodities Partners", "Straight Commodity Partners", "Straits Commodity Partner"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO"],
+      "topics": ["sanction.linked"],
+      "countries": ["sg"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0008",
+      "name": "Nurlan Abdulov",
+      "aliases": ["Nurlan Abdulof", "N. Abdulov", "Nurlan Abdulow"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-PERSON"],
+      "topics": ["sanction"],
+      "countries": ["by"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0009",
+      "name": "Bosphorus Freight Forwarding",
+      "aliases": ["Bosporus Freight Forwarding", "Bosphorous Freight Forwarding"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-SHIPPING"],
+      "topics": ["sanction.linked"],
+      "countries": ["tr"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0010",
+      "name": "Jebel Ali Transit Holdings",
+      "aliases": ["Jebal Ali Transit Holdings", "Jebel Ali Transit Holding"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO"],
+      "topics": ["sanction"],
+      "countries": ["ae"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0011",
+      "name": "Kowloon Advanced Components",
+      "aliases": ["Kowloon Advance Components", "Kow loon Advanced Components"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-EXPORT"],
+      "topics": ["export.control"],
+      "countries": ["hk"],
+      "source": "bundled_seed"
+    },
+    {
+      "entity_id": "SEED-0012",
+      "name": "Marmara Endustriyel Tedarik",
+      "aliases": ["Marmara Endustriel Tedarik", "Marmara Industrial Tedarik"],
+      "identifiers": [],
+      "programs": ["SEED-DEMO-EXPORT"],
+      "topics": ["debarment"],
+      "countries": ["tr"],
+      "source": "bundled_seed"
+    }
+  ]
+}

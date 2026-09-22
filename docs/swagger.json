@@ -1,0 +1,1181 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "VF Logistics Trade Compliance API",
+    "version": "1.0.0",
+    "summary": "Automated trade-compliance auditing for ERP and TMS systems.",
+    "description": "Submit a shipment, receive a compliance verdict with the evidence behind it.\n\n### How a verdict is reached\n\nTwo layers decide, and the split matters when you read a result. Deterministic checks -- arithmetic on freight ratios and value density, plus lookups against sanctions and dual-use lists -- set a **risk floor**. A language model then assesses the shipment for patterns the checks cannot express, such as a cargo description written to disguise a controlled tariff heading.\n\nThe model can raise risk above the floor. It can never lower it. `risk_floor` and `model_risk` are both returned so you can see which layer drove the outcome.\n\n### When a model reply is unusable\n\nIf a model times out or returns a response that fails its schema after retries, the audit does not fail and does not guess. The shipment is routed to human review with `requires_human_review` set and `review_reason` naming which agent failed. You will never receive `CLEARED` on the strength of a check that did not run.\n\n### Retries and idempotency\n\nSend `client_reference` on every submission. If your request times out and you retry, the original audit is returned with `idempotent_replay: true` and no tokens are spent twice.\n\n### Sanctions data freshness\n\n`lineage.sanctions_list_age_days` reports how old the screened list is. The list refreshes weekly, so this can legitimately read up to 7. Treat it as part of the result, not as a footnote.",
+    "contact": {
+      "name": "VF Logistics Compliance Engineering"
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "compliance",
+      "description": "Submit shipments and read verdicts"
+    }
+  ],
+  "paths": {
+    "/api/v1/compliance/audit": {
+      "post": {
+        "tags": [
+          "compliance"
+        ],
+        "operationId": "createComplianceAudit",
+        "summary": "Audit a shipment",
+        "description": "Runs the full pipeline and returns a verdict.\n\nOnly `shipment_id` is required. Every other field is optional, and this is deliberate rather than lax: a shipment missing its cargo description or HS code is precisely what the system exists to flag, and rejecting it at the door would turn a detection into a silence. Send what your system holds; absences become findings.\n\nPass `?async=true` for volume. The call then returns 202 immediately and the verdict is POSTed to `webhook_url`.",
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Return 202 and deliver the verdict by webhook."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComplianceAuditRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Audit complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceAuditResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted; verdict follows by webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceAuditAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Caller lacks the operator role"
+          },
+          "422": {
+            "description": "Request failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/compliance/audit/{audit_id}": {
+      "get": {
+        "tags": [
+          "compliance"
+        ],
+        "operationId": "getComplianceAudit",
+        "summary": "Fetch one audit",
+        "description": "Poll this after an async submission.",
+        "parameters": [
+          {
+            "name": "audit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The audit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceAuditResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No such audit"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/compliance/reports": {
+      "get": {
+        "tags": [
+          "compliance"
+        ],
+        "operationId": "listComplianceAudits",
+        "summary": "List completed audits",
+        "description": "Cursor paginated. Pass the `next_cursor` from the previous page rather than an offset -- audits land continuously, and an offset silently skips or repeats rows when new ones arrive between your pages.",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "next_cursor from the previous page."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CLEARED",
+                "HELD_FOR_REVIEW",
+                "BLOCKED",
+                "PENDING_HUMAN",
+                "ERROR"
+              ]
+            }
+          },
+          {
+            "name": "min_risk",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "description": "Only audits at or above this effective risk."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of audits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceReportsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    },
+    "/api/v1/billing/usage": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "operationId": "getTenantUsage",
+        "summary": "Billable usage for the calling tenant",
+        "description": "The tenant is taken from the authenticated identity, not from a parameter, so one customer cannot read another's usage by changing a query string.\n\n`cleared_by_rules` against `cleared_by_ai` is the number worth watching. A shipment the deterministic checks settle consumes no model tokens at all, so the ratio is what decides the marginal cost of serving an account -- traffic the rules resolve is nearly free, traffic that reaches the models is not.",
+        "responses": {
+          "200": {
+            "description": "Usage totals for the calling tenant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantUsageResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ComplianceAuditRequest": {
+        "additionalProperties": true,
+        "description": "A shipment submitted for audit by an ERP or TMS.\n\n`client_reference` is the integrator's own identifier and makes the endpoint\nidempotent. It is not decoration: Module 4 retries a failed model call, and\nan ERP whose HTTP request timed out will retry the whole POST. Without a\ndedupe key that produces two audits, two sets of tokens billed, and two\npossibly different verdicts for one shipment.",
+        "properties": {
+          "shipment_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Shipment Id",
+            "type": "string"
+          },
+          "client_reference": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Your own id for this submission. Re-POSTing it returns the original audit instead of running a second one.",
+            "title": "Client Reference"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Destination"
+          },
+          "shipper_company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shipper Company"
+          },
+          "shipper_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shipper Name"
+          },
+          "shipper_country": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shipper Country"
+          },
+          "shipper_tax_id": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shipper Tax Id"
+          },
+          "receiver_company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Receiver Company"
+          },
+          "receiver_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Receiver Name"
+          },
+          "receiver_country": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Receiver Country"
+          },
+          "consignee_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Consignee Name"
+          },
+          "cargo_description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cargo Description"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hs Code"
+          },
+          "declared_value": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Declared Value"
+          },
+          "freight_cost": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freight Cost"
+          },
+          "shipping_cost": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shipping Cost"
+          },
+          "weight_kg": {
+            "anyOf": [
+              {
+                "maximum": 1000000,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Weight Kg"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Currency"
+          },
+          "route_details": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Route Details"
+          },
+          "transit_points": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Transit Points"
+          },
+          "shipper_tx_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Completed shipments with this shipper, from your own records. Absent means unverified, which raises a finding.",
+            "title": "Shipper Tx Count"
+          },
+          "avg_route_cost": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Your historical average freight cost for this lane, in USD.",
+            "title": "Avg Route Cost"
+          },
+          "webhook_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Delivered to when the audit completes, for async submissions",
+            "title": "Webhook Url"
+          }
+        },
+        "required": [
+          "shipment_id"
+        ],
+        "title": "ComplianceAuditRequest",
+        "type": "object"
+      },
+      "AuditFinding": {
+        "additionalProperties": true,
+        "description": "One deterministic or model-derived finding behind a verdict.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "floor": {
+            "default": 0,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Floor",
+            "type": "integer"
+          },
+          "source_entity_ids": {
+            "description": "Sanctions list record ids that produced this finding, when any",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Entity Ids",
+            "type": "array"
+          },
+          "evidence_urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Public news citations behind an adverse-media finding. null and [] mean different things and must not be collapsed: null is 'no search result was recorded for this finding', [] is 'a search ran and returned nothing'. A consumer that treats both as 'no adverse media' reports a search that never happened as a clean result.",
+            "title": "Evidence Urls"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "detail"
+        ],
+        "title": "AuditFinding",
+        "type": "object"
+      },
+      "AuditLineage": {
+        "description": "The provenance of a verdict.\n\nA customs authority asking \"why was this flagged\" cannot be answered with\n\"the AI said so\". Every field here exists to make the answer checkable: which\nlist record matched, when that list was pulled, which model version ran, and\nthe hash of the exact prompt it ran on.",
+        "properties": {
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "prompt_hashes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "agent name -> SHA-256 of the system prompt that produced its reply",
+            "title": "Prompt Hashes",
+            "type": "object"
+          },
+          "model_versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "agent name -> model id",
+            "title": "Model Versions",
+            "type": "object"
+          },
+          "sanctions_synced_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When the sanctions list this verdict screened against was pulled",
+            "title": "Sanctions Synced At"
+          },
+          "sanctions_list_age_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Age of that list in days. Present so a consumer can see staleness rather than assume currency; a weekly refresh means up to 7 days.",
+            "title": "Sanctions List Age Days"
+          },
+          "ruleset_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ruleset Version"
+          }
+        },
+        "required": [
+          "audit_id"
+        ],
+        "title": "AuditLineage",
+        "type": "object"
+      },
+      "AuditOutcome": {
+        "description": "Terminal outcomes exposed to an integrator.\n\nNarrower than CaseState on purpose: the internal state machine has ten states\nincluding intermediate ones, and an ERP should not have to know that\nSPECIALISTS_DONE exists or handle it changing. CLEARED / HELD / BLOCKED /\nERROR is the whole vocabulary a customer system needs to branch on.",
+        "enum": [
+          "CLEARED",
+          "HELD_FOR_REVIEW",
+          "BLOCKED",
+          "PENDING_HUMAN",
+          "ERROR"
+        ],
+        "title": "AuditOutcome",
+        "type": "string"
+      },
+      "AuditUsage": {
+        "description": "Token and cost accounting for one audit, for usage-based billing.",
+        "properties": {
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "default": 0.0,
+            "title": "Estimated Cost Usd",
+            "type": "number"
+          },
+          "agent_calls": {
+            "default": 0,
+            "title": "Agent Calls",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Latency Ms"
+          }
+        },
+        "title": "AuditUsage",
+        "type": "object"
+      },
+      "ComplianceAuditResponse": {
+        "additionalProperties": true,
+        "description": "The verdict, plus everything needed to defend it.",
+        "properties": {
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "shipment_id": {
+            "title": "Shipment Id",
+            "type": "string"
+          },
+          "client_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Reference"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AuditOutcome"
+          },
+          "effective_risk": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Effective Risk",
+            "type": "number"
+          },
+          "model_risk": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the model alone scored, before the deterministic floor",
+            "title": "Model Risk"
+          },
+          "risk_floor": {
+            "description": "Minimum risk set by deterministic checks. The model cannot lower this, only raise it.",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Risk Floor",
+            "type": "number"
+          },
+          "score_disputed": {
+            "default": false,
+            "description": "The model and the deterministic floor disagreed by 15 points or more",
+            "title": "Score Disputed",
+            "type": "boolean"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/AuditFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "requires_human_review": {
+            "default": false,
+            "title": "Requires Human Review",
+            "type": "boolean"
+          },
+          "review_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Review Reason"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/AuditLineage"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AuditUsage"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completed At"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "description": "True when this returns a previously computed audit because client_reference had been seen before. No tokens were spent.",
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "audit_id",
+          "case_id",
+          "shipment_id",
+          "outcome",
+          "effective_risk",
+          "risk_floor",
+          "lineage",
+          "usage",
+          "created_at"
+        ],
+        "title": "ComplianceAuditResponse",
+        "type": "object"
+      },
+      "ComplianceAuditAccepted": {
+        "description": "202 for an async submission; the verdict arrives by webhook.",
+        "properties": {
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "shipment_id": {
+            "title": "Shipment Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "accepted",
+            "title": "Status",
+            "type": "string"
+          },
+          "poll_url": {
+            "title": "Poll Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audit_id",
+          "case_id",
+          "shipment_id",
+          "poll_url"
+        ],
+        "title": "ComplianceAuditAccepted",
+        "type": "object"
+      },
+      "ComplianceReportsResponse": {
+        "description": "A page of completed audits.\n\nCursor pagination rather than offset, matching store.query_cases(): an offset\nsilently skips or repeats rows when new audits land between pages, and audits\nland continuously.",
+        "properties": {
+          "audits": {
+            "items": {
+              "$ref": "#/components/schemas/ComplianceAuditResponse"
+            },
+            "title": "Audits",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "audits"
+        ],
+        "title": "ComplianceReportsResponse",
+        "type": "object"
+      },
+      "TenantUsageResponse": {
+        "description": "Billable usage for one tenant.\n\n`cleared_by_rules` against `cleared_by_ai` is the field pair worth reading. A\nshipment the deterministic checks settle consumes no model tokens at all, so\nthe ratio -- not the absolute call count -- is what decides the marginal cost of\nserving an account. Two customers with identical volumes can differ by an order\nof magnitude in what they cost to serve, and this is where that shows.\n\n`estimated_cost_usd` is named an estimate on purpose. It is computed from token\ncounts at the per-model rates in config.pricing_for(), which tracks the\npublished rate card but is not the invoice: it excludes Tavily searches, egress,\nand the Cloud Run time the deterministic checks consume.",
+        "properties": {
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "agent_calls": {
+            "minimum": 0,
+            "title": "Agent Calls",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "minimum": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "minimum": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "minimum": 0,
+            "title": "Estimated Cost Usd",
+            "type": "number"
+          },
+          "cost_per_call_usd": {
+            "minimum": 0,
+            "title": "Cost Per Call Usd",
+            "type": "number"
+          },
+          "auto_cleared": {
+            "minimum": 0,
+            "title": "Auto Cleared",
+            "type": "integer"
+          },
+          "cleared_by_rules": {
+            "minimum": 0,
+            "title": "Cleared By Rules",
+            "type": "integer"
+          },
+          "cleared_by_ai": {
+            "minimum": 0,
+            "title": "Cleared By Ai",
+            "type": "integer"
+          },
+          "avg_latency_ms": {
+            "minimum": 0,
+            "title": "Avg Latency Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "agent_calls",
+          "input_tokens",
+          "output_tokens",
+          "estimated_cost_usd",
+          "cost_per_call_usd",
+          "auto_cleared",
+          "cleared_by_rules",
+          "cleared_by_ai",
+          "avg_latency_ms"
+        ],
+        "title": "TenantUsageResponse",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "Standard error response schema.",
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ValidationErrorDetail": {
+        "description": "Detail for a single validation error.",
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "ValidationErrorDetail",
+        "type": "object"
+      },
+      "ValidationErrorResponse": {
+        "description": "Schema for validation error responses (422).",
+        "properties": {
+          "error": {
+            "default": "Validation error",
+            "title": "Error",
+            "type": "string"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationErrorDetail"
+            },
+            "title": "Details",
+            "type": "array"
+          }
+        },
+        "required": [
+          "details"
+        ],
+        "title": "ValidationErrorResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "iapAssertion": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Goog-IAP-JWT-Assertion",
+        "description": "Set by Google Identity-Aware Proxy. Integrators authenticate to IAP with a service account; this header is not something you construct yourself."
+      }
+    }
+  },
+  "security": [
+    {
+      "iapAssertion": []
+    }
+  ]
+}

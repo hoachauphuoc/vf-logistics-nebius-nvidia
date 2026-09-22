@@ -1,0 +1,19 @@
+# Terraform state and provider plugins. Nothing here is committed.
+#
+# State in particular: this configuration is not applied, so there is no state to
+# share, and if it ever is applied the state belongs in a GCS backend rather than
+# in the repository -- it records resource IDs and can contain values that should
+# not be in version control.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Local variable files. terraform.tfvars would carry the domain and any IP or
+# country lists, which are deployment facts rather than code.
+*.tfvars
+*.tfvars.json
+!example.tfvars

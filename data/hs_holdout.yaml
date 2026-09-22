@@ -1,0 +1,200 @@
+# Held-out validation set for the HS classification check.
+#
+# Why a second file
+# -----------------
+# data/hs_pairs.yaml stopped being a clean measuring instrument the moment it was
+# used to diagnose failures. The sequence was: cot_strict scored 92.9% on it,
+# the three failures were inspected, and two of them led to edits in
+# data/hs_reference.yaml -- 8462 gained "without cutting any of it away", 8458
+# gained "cut away as chips", and the RESIDUAL marker was rewritten to instruct a
+# read-back over the chapter. Those edits are generic rather than answer-fitted,
+# but they were still made with the failing cases in view. Re-running the same 30
+# cases after them measures the patch, not the method.
+#
+# So this file exists to be measured on once the method is settled, and the
+# number it produces is the one worth quoting.
+#
+# What makes it held out
+# ----------------------
+# 1. Every substitution below is new. None of the twelve (controlled <- declared)
+#    combinations appears in hs_pairs.yaml, and none appears among the `excludes`
+#    notes in hs_reference.yaml. The headings are the same 25 -- they have to be,
+#    since the reference has to cover the declared heading for the architecture to
+#    apply at all -- but which heading is substituted for which is unseen.
+#
+# 2. The descriptions are commercial cargo text with the obfuscation already
+#    applied. hs_pairs.yaml uses the bare nomenclature wording for
+#    `controlled_goods` ("electronic integrated circuits"), which is the easiest
+#    possible input: the goods are named in the same words the reference uses.
+#    Nothing here is phrased that way. This set is harder on purpose.
+#
+# 3. The twelve benign controls are new descriptions on the same declared
+#    headings the evasive cases use. A model that learned to distrust 8548 or
+#    9031 on sight fails them.
+#
+# Labels come from construction: the evasive cases were written by choosing a
+# controlled heading first and then describing goods that belong to it, so the
+# label is a property of how the row was built rather than a judgement anyone
+# made about it afterwards.
+#
+# Sourcing note as in hs_pairs.yaml: heading numbers are factual reference data;
+# the prose is written for this dataset and is not WCO nomenclature text. Verify
+# against US HTS or the EU Combined Nomenclature, and Regulation 2021/821
+# Annex I for dual-use scope.
+
+version: 1
+derived_from: null
+note: >
+  Declared headings are all non-dual-use in hs_reference.yaml, which is what
+  makes each row an evasion rather than a lateral move between two controlled
+  headings.
+
+pairs:
+  - controlled_hs: "8471"
+    controlled_goods: "automatic data processing machines"
+    cargo_description: "Eight-way accelerator server nodes, dual socket, 2TB RAM, populated and burn-in tested, 42 units"
+    control_basis: "high performance computing; aggregate compute thresholds"
+    benign_hs: "8473"
+    obfuscation: "component_split"
+    why_plausible: >
+      A complete server is declared as though it were an accessory for one. The
+      parts heading is genuinely adjacent, which is what makes it reachable.
+
+  - controlled_hs: "8542"
+    controlled_goods: "electronic integrated circuits"
+    cargo_description: "Silicon logic dies, 5nm process, tray packed, 3000 pieces, for downstream board assembly"
+    control_basis: "advanced computing and microelectronics; performance thresholds apply"
+    benign_hs: "8548"
+    obfuscation: "circumlocution"
+    why_plausible: >
+      Calling a die a component for later assembly invites the residual electrical
+      parts heading, dropping the word circuit entirely.
+
+  - controlled_hs: "8504"
+    controlled_goods: "static converters and high voltage power supplies"
+    cargo_description: "Adjustable direct current supply, 0 to 60 kV at 20 mA, oil-filled tank, rack frame mounted"
+    control_basis: "high voltage power conversion used in enrichment and directed energy applications"
+    benign_hs: "8543"
+    obfuscation: "none"
+    why_plausible: >
+      8543 is residual within chapter 85 and takes almost any electrical
+      apparatus that the declarant does not want named.
+
+  - controlled_hs: "9026"
+    controlled_goods: "instruments for measuring flow, level, pressure or other variables of liquids or gases"
+    cargo_description: "Differential pressure transmitters, 4-20 mA loop output, 0-250 bar, for coolant loop monitoring, 40 units"
+    control_basis: "process control for chemical and nuclear facilities"
+    benign_hs: "9031"
+    obfuscation: "none"
+    why_plausible: >
+      A transmitter is a checking instrument in ordinary speech, and 9031 is the
+      residual heading for exactly that phrase.
+
+  - controlled_hs: "9014"
+    controlled_goods: "direction finding compasses and other navigational instruments"
+    cargo_description: "Fibre-optic gyro inertial measurement units, three axis, 0.01 deg/hr bias stability, 12 units"
+    control_basis: "inertial navigation and guidance applications"
+    benign_hs: "9031"
+    obfuscation: "synonym"
+    why_plausible: >
+      An IMU described by its sensing technology rather than its navigation
+      function reads as generic instrumentation.
+
+  - controlled_hs: "8479"
+    controlled_goods: "machines having individual functions, including isotope separation equipment"
+    cargo_description: "Rotor and bellows assemblies for separation cascade, high-strength aluminium, balanced to 1500 Hz"
+    control_basis: "nuclear fuel cycle; isotope separation is explicitly controlled"
+    benign_hs: "8414"
+    obfuscation: "component_split"
+    why_plausible: >
+      Cascade rotors shipped as rotating assemblies invite an air-moving
+      machinery heading, and the word centrifuge never has to appear.
+
+  - controlled_hs: "9030"
+    controlled_goods: "oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities"
+    cargo_description: "Portable spectrum analyser, 9 kHz to 44 GHz, with directional antenna kit, for site survey work"
+    control_basis: "test equipment for electronics and RF development, including weapons electronics"
+    benign_hs: "9015"
+    obfuscation: "circumlocution"
+    why_plausible: >
+      Adding "for site survey work" reframes RF test equipment as surveying
+      apparatus without misstating anything on its face.
+
+  - controlled_hs: "2844"
+    controlled_goods: "radioactive isotopes and compounds, including sealed sources"
+    cargo_description: "Nucleonic level gauge assembly incorporating Caesium-137 source, 200 mCi, with scintillation detector"
+    control_basis: "nuclear material"
+    benign_hs: "9031"
+    obfuscation: "none"
+    why_plausible: >
+      Declaring the gauge rather than the source inside it is the same move as
+      the 9022 substitution, aimed at a different heading.
+
+  - controlled_hs: "8458"
+    controlled_goods: "numerically controlled lathes for removing metal"
+    cargo_description: "Precision spindle assembly with hardened gearbox, ball screw slides, turret and control head, complete"
+    control_basis: "precision machining capability; tolerance thresholds apply"
+    benign_hs: "8483"
+    obfuscation: "component_split"
+    why_plausible: >
+      Listing the drivetrain of a turning centre points at the transmission
+      elements heading while the complete machine is what ships.
+
+  - controlled_hs: "8542"
+    controlled_goods: "electronic integrated circuits"
+    cargo_description: "Field-programmable gate array devices, BGA package, 900k logic cells, 500 units"
+    control_basis: "advanced computing and microelectronics; performance thresholds apply"
+    benign_hs: "8536"
+    obfuscation: "synonym"
+    why_plausible: >
+      Naming the package and the programmability rather than the circuit invites
+      a switching-apparatus reading for what is plainly an integrated circuit.
+
+  - controlled_hs: "8471"
+    controlled_goods: "automatic data processing machines"
+    cargo_description: "Liquid-cooled compute appliance, 4U chassis, eight accelerators, operating system pre-imaged, 16 units"
+    control_basis: "high performance computing; aggregate compute thresholds"
+    benign_hs: "8543"
+    obfuscation: "synonym"
+    why_plausible: >
+      "Appliance" is doing the work. It is a server, but the word points at
+      generic electrical apparatus.
+
+  - controlled_hs: "8411"
+    controlled_goods: "gas turbine components including hot section parts"
+    cargo_description: "Forged nickel-alloy aerofoil blanks with internal cooling passages, first-stage set, machined"
+    control_basis: "propulsion and power generation; aerospace and missile applications"
+    benign_hs: "8462"
+    obfuscation: "circumlocution"
+    why_plausible: >
+      Emphasising the forging operation points at a metal-forming machinery
+      heading. Internal cooling passages are what give it away as turbine
+      blading.
+
+# Benign controls on the same declared headings the evasive rows use, so a model
+# cannot pass by learning to distrust 8548, 9031, 8543 or 8473 on sight.
+benign_controls:
+  - hs_code: "8473"
+    cargo_description: "Laptop carry cases, port replicators and spare power bricks, retail packaged, 400 units"
+  - hs_code: "8548"
+    cargo_description: "Assorted cable glands, ferrules and earth bonding straps for panel wiring, mixed sizes"
+  - hs_code: "8543"
+    cargo_description: "Ultrasonic humidifier units for greenhouse climate control, 240V, 30 units"
+  - hs_code: "9031"
+    cargo_description: "Optical profile projector for gear tooth inspection, 20x magnification"
+  - hs_code: "9031"
+    cargo_description: "Rockwell bench hardness testers with calibration test blocks, 6 units"
+  - hs_code: "8414"
+    cargo_description: "Centrifugal blowers for grain drying, 7.5 kW, direct drive, 12 units"
+  - hs_code: "9015"
+    cargo_description: "Handheld GNSS receivers for cadastral survey, sub-metre accuracy, with range poles"
+  - hs_code: "8483"
+    cargo_description: "Helical gear reducers, 1:20 ratio, foot mounted, 30 units"
+  - hs_code: "8536"
+    cargo_description: "Panel-mount emergency stop switches and contactor blocks, 500 units"
+  - hs_code: "8462"
+    cargo_description: "Hydraulic swaging press for hose fittings, 12 ton, bench mounted"
+  - hs_code: "8421"
+    cargo_description: "Bag filter housings with polyester filter socks for workshop dust extraction, 60 sets"
+  - hs_code: "9022"
+    cargo_description: "Veterinary dental X-ray unit, portable, with digital sensor plate"

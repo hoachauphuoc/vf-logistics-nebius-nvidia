@@ -104,16 +104,28 @@ def proposed_boundary(reason: str = "Initial delegation proposal") -> dict[str, 
 
 
 async def publish_boundary(
-    permissions: dict[str, Any], author: str, note: str
+    permissions: dict[str, Any], author: str, note: str,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Make a boundary official.
 
     This is the only function in the codebase that grants an agent authority,
     and it takes a human's name as a required argument for that reason.
+
+    `permissions` must be a non-empty mapping. Publishing None or {} used to be
+    accepted and silently produced an ACTIVE boundary granting whatever the
+    caller's fallback supplied, which is the opposite of a safe default for the
+    one function that hands out authority.
     """
+    if not isinstance(permissions, dict) or not permissions:
+        raise ValueError(
+            "permissions must be a non-empty object. To remove the agent's "
+            "authority use revoke_boundary() instead."
+        )
+
     store = get_store()
-    current = await store.active_boundary()
+    current = await store.active_boundary(tenant_id=tenant_id)
 
     version = (current.get("version", 0) + 1) if current else 1
     boundary = {
@@ -131,9 +143,9 @@ async def publish_boundary(
         current["status"] = "SUPERSEDED"
         current["superseded_at"] = utcnow()
         current["superseded_by"] = boundary["boundary_id"]
-        await store.put_boundary(current)
+        await store.put_boundary(current, tenant_id=tenant_id)
 
-    await store.put_boundary(boundary)
+    await store.put_boundary(boundary, tenant_id=tenant_id)
     await store.add_audit({
         "audit_id": new_id("audit"),
         "case_id": "-",
@@ -147,13 +159,65 @@ async def publish_boundary(
             "superseded": boundary["supersedes"],
         },
         "at": utcnow(),
-    })
+    }, tenant_id=tenant_id)
     return boundary
 
 
-async def agent_readiness() -> dict[str, Any]:
+async def revoke_boundary(
+    author: str, note: str, tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Withdraw the agent's authority, leaving no active boundary behind.
+
+    The counterpart to publish_boundary: after this returns there is nothing
+    for agent_readiness() to operate under, so it reports SUSPENDED and the
+    execution gate denies every protected action. This is the mechanism the
+    governance kill switch uses; it is deliberately a separate function from
+    publish_boundary rather than "publish an empty boundary", so that revoking
+    can never be mistaken for granting.
+    """
+    store = get_store()
+    current = await store.active_boundary(tenant_id=tenant_id)
+
+    if not current:
+        return {
+            "revoked": False,
+            "reason": "No active boundary to revoke; the agent is already suspended.",
+            "boundary": None,
+        }
+
+    current["status"] = "REVOKED"
+    current["revoked_at"] = utcnow()
+    current["revoked_by"] = author
+    current["revocation_note"] = note
+    await store.put_boundary(current, tenant_id=tenant_id)
+
+    await store.add_audit({
+        "audit_id": new_id("audit"),
+        "case_id": "-",
+        "action": "revoke_delegation_boundary",
+        "status": "done",
+        "detail": {
+            "boundary_id": current.get("boundary_id"),
+            "version": current.get("version"),
+            "revoked_by": author,
+            "note": note,
+        },
+        "at": utcnow(),
+    }, tenant_id=tenant_id)
+    return {
+        "revoked": True,
+        "reason": (
+            f"{current.get('boundary_id')} revoked by {author}. The agent is "
+            "suspended and cannot execute protected actions."
+        ),
+        "boundary": current,
+    }
+
+
+async def agent_readiness(tenant_id: str | None = None) -> dict[str, Any]:
     """READY only against an active published boundary. Otherwise SUSPENDED."""
-    boundary = await get_store().active_boundary()
+    boundary = await get_store().active_boundary(tenant_id=tenant_id)
     if not boundary:
         return {
             "state": "SUSPENDED",
@@ -164,7 +228,7 @@ async def agent_readiness() -> dict[str, Any]:
             "boundary": None,
         }
 
-    drift = await drift_check(boundary)
+    drift = await drift_check(boundary, tenant_id=tenant_id)
     if drift["material"]:
         return {
             "state": "SUSPENDED",
@@ -198,7 +262,9 @@ DRIFT_MAX_VETO_RATE = float(os.getenv("DRIFT_MAX_VETO_RATE", "0.60"))
 DRIFT_MAX_INJECTION_RATE = float(os.getenv("DRIFT_MAX_INJECTION_RATE", "0.20"))
 
 
-async def drift_check(boundary: dict[str, Any]) -> dict[str, Any]:
+async def drift_check(
+    boundary: dict[str, Any], tenant_id: str | None = None,
+) -> dict[str, Any]:
     """
     Compare recent behaviour against what the boundary was published for.
 
@@ -216,7 +282,7 @@ async def drift_check(boundary: dict[str, Any]) -> dict[str, Any]:
     keep exercising authority granted for circumstances that no longer apply.
     """
     cases = [
-        c for c in await get_store().list_cases(60)
+        c for c in await get_store().list_cases(60, tenant_id=tenant_id)
         if not c.get("is_marker") and c.get("state") != "OBJECT_PROCESSED"
     ]
 
@@ -234,6 +300,9 @@ async def drift_check(boundary: dict[str, Any]) -> dict[str, Any]:
             "material": False,
             "reason": f"only {sample} recent case(s); below the {DRIFT_MIN_SAMPLE} "
                       "needed to judge drift.",
+            # Same key set as the main return below. Omitting `reasons` here
+            # forced every consumer to handle two shapes for one function.
+            "reasons": [],
             "metrics": metrics,
         }
 
@@ -271,7 +340,12 @@ async def drift_check(boundary: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "material": bool(reasons),
+        # `reason` is the joined prose agent_readiness() interpolates into its
+        # explanation; `reasons` is the same content unjoined so a UI can render
+        # one item per cause. Both are returned because the two consumers want
+        # different shapes and a single key silently gave one of them nothing.
         "reason": " ".join(reasons) or "within expected behaviour.",
+        "reasons": reasons,
         "metrics": metrics,
     }
 
@@ -425,6 +499,98 @@ def _check_release(
 
 
 # --------------------------------------------------------------------------
+# Policy simulation
+# --------------------------------------------------------------------------
+
+async def simulate_boundary(
+    candidate_permissions: dict[str, Any],
+    action: str = "release_shipment",
+    sample: int = 40,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Replay recent cases against a candidate boundary without publishing it.
+
+    A delegation boundary is abstract until someone can see what it would have
+    done. This answers the only question a policy author actually has -- "if I
+    tighten this, what stops being automatic?" -- by evaluating `check()` twice
+    per case, once under the active boundary and once under the candidate, and
+    reporting the cases whose outcome differs.
+
+    Safe to call freely: `check()` is pure, so nothing is written, no boundary is
+    published, and no action is executed. The candidate is wrapped in a
+    throwaway boundary envelope carrying version None, which is why the
+    per-case results report the decision rather than a version.
+    """
+    if not isinstance(candidate_permissions, dict) or not candidate_permissions:
+        raise ValueError("candidate permissions must be a non-empty object")
+
+    store = get_store()
+    current = await store.active_boundary(tenant_id=tenant_id)
+    cases = [
+        c for c in await store.list_cases(sample, tenant_id=tenant_id)
+        if not c.get("is_marker") and c.get("state") != "OBJECT_PROCESSED"
+    ]
+
+    candidate = {
+        "boundary_id": "BOUNDARY-candidate",
+        "version": None,
+        "status": "SIMULATED",
+        "permissions": candidate_permissions,
+    }
+
+    flipped: list[dict[str, Any]] = []
+    counts = {
+        "unchanged_allow": 0,
+        "unchanged_deny": 0,
+        "now_denied": 0,
+        "now_allowed": 0,
+    }
+
+    for case in cases:
+        before = check(action, case, current)
+        after = check(action, case, candidate)
+
+        if before["allowed"] == after["allowed"]:
+            counts["unchanged_allow" if after["allowed"] else "unchanged_deny"] += 1
+            continue
+
+        counts["now_allowed" if after["allowed"] else "now_denied"] += 1
+        flipped.append({
+            "case_id": case.get("case_id"),
+            "shipment_id": case.get("shipment_id"),
+            "state": case.get("state"),
+            "risk_score": case.get("risk_score"),
+            "declared_value": (case.get("shipment") or {}).get("declared_value"),
+            "hs_code": (case.get("shipment") or {}).get("hs_code"),
+            "destination": (case.get("shipment") or {}).get("destination"),
+            "was": "ALLOWED" if before["allowed"] else "DENIED",
+            "becomes": "ALLOWED" if after["allowed"] else "DENIED",
+            "before_reason": before["reason"],
+            "after_reason": after["reason"],
+        })
+
+    direction = (
+        "tighter" if counts["now_denied"] and not counts["now_allowed"]
+        else "looser" if counts["now_allowed"] and not counts["now_denied"]
+        else "mixed" if (counts["now_denied"] and counts["now_allowed"])
+        else "no change"
+    )
+
+    return {
+        "action": action,
+        "cases_evaluated": len(cases),
+        "active_boundary": (current or {}).get("boundary_id"),
+        "counts": counts,
+        "flipped_count": len(flipped),
+        "direction": direction,
+        # Capped so a large sample cannot return an unbounded payload; the
+        # counts above still reflect every case evaluated.
+        "flipped": flipped[:20],
+    }
+
+
+# --------------------------------------------------------------------------
 # Agent gateway
 # --------------------------------------------------------------------------
 
@@ -439,7 +605,8 @@ _ACTION_IMPLS = {
 
 
 async def execute(
-    action: str, case: dict[str, Any], /, **kwargs: Any
+    action: str, case: dict[str, Any], /, *, tenant_id: str | None = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """
     The only path from the workflow to a real-world action.
@@ -450,7 +617,7 @@ async def execute(
     """
     # Readiness rather than the raw boundary: an agent suspended for material
     # drift holds a perfectly valid boundary and still must not act on it.
-    readiness = await agent_readiness()
+    readiness = await agent_readiness(tenant_id=tenant_id)
     boundary = readiness.get("boundary")
 
     if readiness["state"] != "READY":
@@ -479,14 +646,14 @@ async def execute(
             },
             "at": utcnow(),
         }
-        await get_store().add_audit(receipt)
+        await get_store().add_audit(receipt, tenant_id=tenant_id)
         return receipt
 
     impl = _ACTION_IMPLS.get(action)
     if impl is None:
         raise ValueError(f"unknown action {action}")
 
-    receipt = await impl(case["case_id"], **kwargs)
+    receipt = await impl(case["case_id"], tenant_id=tenant_id, **kwargs)
     receipt.setdefault("detail", {})["boundary_version"] = verdict.get("boundary_version")
     receipt["gate_reason"] = verdict["reason"]
     return receipt

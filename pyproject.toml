@@ -37,13 +37,32 @@ dependencies = [
     "gunicorn>=21.2.0,<23.0.0",
     "flask-cors>=4.0.0,<5.0.0",
 
+    # Rate limiting on the B2B endpoints. Declared here because app.py imports
+    # flask_limiter at module scope, so an image built without it fails to boot
+    # rather than degrading -- it was pinned in requirements.lock but missing
+    # from this list, which meant regenerating the lock would silently drop it.
+    "flask-limiter>=3.5.0,<4.0.0",
+
     # Utilities
     "python-dotenv>=1.0.0,<2.0.0",
     "pypdf>=4.0.0,<5.0.0",
     "httpx>=0.24.0,<1.0.0",
 
+    # hs_reference.py and hs_cot.py read data/hs_reference.yaml at import time to
+    # build the HS heading table that goes into the classifier prompt. A hard
+    # import with no fallback, so this is a runtime dependency and not a dev one.
+    "pyyaml>=6.0,<7.0",
+
     # PDF rasterisation (Apache 2.0 / BSD-3 licensed)
     "pypdfium2>=4.30.0,<6.0.0",
+
+    # Pillow is a direct dependency even though nothing in src/ imports PIL by
+    # name: document_agent._to_image() reaches it through pypdfium2's
+    # bitmap.to_pil() when rasterising an uploaded PDF. pypdfium2 does not
+    # require Pillow itself, so without this line Pillow arrives only as an
+    # fpdf2 transitive -- and PDF upload would break the moment fpdf2 is
+    # changed or removed, while image upload carried on working.
+    "pillow>=10.0.0,<14.0.0",
 
     # Bill of lading generation
     "fpdf2>=2.7.0,<3.0.0",

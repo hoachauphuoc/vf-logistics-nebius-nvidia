@@ -577,7 +577,7 @@ gcloud run services delete vf-fraud-detection-nebius --region asia-southeast1
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests (197 tests)
+# Unit + integration tests (226 tests)
 python -m pytest tests/ -v
 
 # Document upload tests
@@ -597,7 +597,11 @@ python scripts/check_registry.py        # 11 checks on the counterparty book
 | Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
 | Governance | 20 | Boundaries, drift detection, fail-closed |
 | Observability | 14 | Logging, metrics, request context |
-| Week 3 features | 13 | Learning loop, Tavily enrichment, new endpoints |
+| Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
+
+The hardening suite drives real request handlers and real code paths rather
+than asserting that routes are registered. An earlier version of it did the
+latter and passed while the features underneath were broken.
 
 These scripts only assert on case state (`AUTO_CLEARED`, `HELD_FOR_REVIEW`,
 `ESCALATED`, `PENDING_HUMAN`) and JSON shape, not on which model produced a

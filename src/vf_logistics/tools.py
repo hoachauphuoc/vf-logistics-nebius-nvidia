@@ -31,7 +31,8 @@ PROJECT_ID = os.getenv("PROJECT_ID", "project-93ded24f-21c3-4f1b-a7d")
 
 
 async def _audit(
-    case_id: str, action: str, detail: dict[str, Any], status: str = "done"
+    case_id: str, action: str, detail: dict[str, Any], status: str = "done",
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     entry = {
         "audit_id": new_id("audit"),
@@ -41,7 +42,12 @@ async def _audit(
         "detail": detail,
         "at": utcnow(),
     }
-    await get_store().add_audit(entry)
+    # Scoped so an action receipt lands in the tenant whose case it describes.
+    # Every tool below funnels through here, which is why this is the one place
+    # the tenant has to arrive -- an unscoped receipt would put one customer's
+    # release or SAR draft into another customer's audit trail, and the audit
+    # trail is the artefact a customs authority reads.
+    await get_store().add_audit(entry, tenant_id=tenant_id)
     return entry
 
 
@@ -49,7 +55,9 @@ async def _audit(
 # Shipment disposition
 # --------------------------------------------------------------------------
 
-async def release_shipment(case_id: str, shipment_id: str, reason: str) -> dict[str, Any]:
+async def release_shipment(
+    case_id: str, shipment_id: str, reason: str, tenant_id: str | None = None,
+) -> dict[str, Any]:
     """Clear the shipment to continue to delivery."""
     return await _audit(
         case_id,
@@ -59,10 +67,13 @@ async def release_shipment(case_id: str, shipment_id: str, reason: str) -> dict[
             "reason": reason,
             "disposition": "RELEASED_FOR_DELIVERY",
         },
+        tenant_id=tenant_id,
     )
 
 
-async def hold_shipment(case_id: str, shipment_id: str, reason: str) -> dict[str, Any]:
+async def hold_shipment(
+    case_id: str, shipment_id: str, reason: str, tenant_id: str | None = None,
+) -> dict[str, Any]:
     """Freeze the shipment so it cannot move while under investigation."""
     return await _audit(
         case_id,
@@ -72,15 +83,19 @@ async def hold_shipment(case_id: str, shipment_id: str, reason: str) -> dict[str
             "reason": reason,
             "disposition": "HELD_DO_NOT_SHIP",
         },
+        tenant_id=tenant_id,
     )
 
 
-async def assign_analyst(case_id: str, queue: str, priority: str) -> dict[str, Any]:
+async def assign_analyst(
+    case_id: str, queue: str, priority: str, tenant_id: str | None = None,
+) -> dict[str, Any]:
     """Route the case into a human review queue with a priority."""
     return await _audit(
         case_id,
         "assign_analyst",
         {"queue": queue, "priority": priority, "sla_hours": 24 if priority == "HIGH" else 72},
+        tenant_id=tenant_id,
     )
 
 
@@ -89,7 +104,8 @@ async def assign_analyst(case_id: str, queue: str, priority: str) -> dict[str, A
 # --------------------------------------------------------------------------
 
 async def draft_sar(
-    case_id: str, shipment_id: str, narrative: str, exposure: str
+    case_id: str, shipment_id: str, narrative: str, exposure: str,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Draft a Suspicious Activity Report from the investigation narrative.
@@ -107,6 +123,7 @@ async def draft_sar(
             "estimated_exposure": exposure,
             "requires_human_signoff": True,
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -115,7 +132,8 @@ async def draft_sar(
 # --------------------------------------------------------------------------
 
 async def notify_webhook(
-    case_id: str, title: str, body: str, severity: str
+    case_id: str, title: str, body: str, severity: str,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """POST the alert to the configured webhook, if one is configured."""
     payload = {
@@ -132,6 +150,7 @@ async def notify_webhook(
             "notify_webhook",
             {**payload, "note": "NOTIFY_WEBHOOK_URL not set; payload recorded only"},
             status="skipped",
+            tenant_id=tenant_id,
         )
 
     try:
@@ -142,10 +161,12 @@ async def notify_webhook(
             "notify_webhook",
             {**payload, "http_status": resp.status_code},
             status="done" if resp.is_success else "failed",
+            tenant_id=tenant_id,
         )
     except Exception as exc:  # noqa: BLE001 - a failed alert must not kill the case
         return await _audit(
-            case_id, "notify_webhook", {**payload, "error": str(exc)}, status="failed"
+            case_id, "notify_webhook", {**payload, "error": str(exc)},
+            status="failed", tenant_id=tenant_id,
         )
 
 
@@ -153,7 +174,9 @@ async def notify_webhook(
 # Publish the decision for downstream systems
 # --------------------------------------------------------------------------
 
-async def publish_decision(case_id: str, decision: dict[str, Any]) -> dict[str, Any]:
+async def publish_decision(
+    case_id: str, decision: dict[str, Any], tenant_id: str | None = None,
+) -> dict[str, Any]:
     """
     Emit the final decision to Pub/Sub so ERP / WMS / billing can react.
 
@@ -172,20 +195,21 @@ async def publish_decision(case_id: str, decision: dict[str, Any]) -> dict[str, 
 
     if executor_client.configured():
         outcome = await executor_client.request_protected_action(
-            "publish_decision", case_id, body
+            "publish_decision", case_id, body, tenant_id=tenant_id,
         )
         return await _audit(
             case_id,
             "publish_decision",
             {**body, "via": "executor identity", "executor": outcome},
             status=outcome.get("status", "failed"),
+            tenant_id=tenant_id,
         )
 
-    return await publish_decision_direct(case_id, body)
+    return await publish_decision_direct(case_id, body, tenant_id=tenant_id)
 
 
 async def publish_decision_direct(
-    case_id: str, body: dict[str, Any]
+    case_id: str, body: dict[str, Any], tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Publish with the ambient identity.
@@ -206,7 +230,8 @@ async def publish_decision_direct(
 
         message_id = await asyncio.to_thread(_publish)
         return await _audit(
-            case_id, "publish_decision", {**body, "message_id": message_id}
+            case_id, "publish_decision", {**body, "message_id": message_id},
+            tenant_id=tenant_id,
         )
     except Exception as exc:  # noqa: BLE001
         return await _audit(
@@ -214,4 +239,5 @@ async def publish_decision_direct(
             "publish_decision",
             {**body, "error": f"{type(exc).__name__}: {exc}"},
             status="failed",
+            tenant_id=tenant_id,
         )

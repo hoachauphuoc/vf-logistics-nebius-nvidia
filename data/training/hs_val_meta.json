@@ -1,0 +1,3198 @@
+[
+  {
+    "pair_id": "B10",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Cream‑skimming centrifuge, stainless steel body, operates continuously at 500 L/h.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8421",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8421.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "LED monitor – 27 inch – 1920x1080 – supplied in retail box.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "synonym",
+    "cargo_description": "Precision forged alloy blades and nozzles destined for high‑temperature industrial rotating equipment.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "27 inch LED monitor, 1920x1080, boxed ready for retail shelves.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Solution of colloidal silver, 2000 ml, designated for catalyst coating processes.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B01",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Steel transmission shafts, Ø27 mm, length 500 mm, straight, 45 per sack",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8483",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8483.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Network‑enabled diagnostics upload performance logs to central server for predictive maintenance scheduling.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "synonym",
+    "cargo_description": "A batch of fifteen compact axial flow drives intended for retrofit projects.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "B10",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Stainless steel cream separator centrifuge, plug‑in module, 500 L/h rating.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8421",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8421.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P03",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "synonym",
+    "cargo_description": "Voltage regulator chips supplied in tape‑and‑reel format, total spools twenty‑four.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8473",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits and microassemblies, which fall under 8542, not the declared 8473.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P05",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9030",
+    "obfuscation": "component_split",
+    "cargo_description": "Twelve precision coaxial cable sets with SMA connectors for signal routing tasks.",
+    "declared_hs": "9031",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9031",
+      "suggested_hs": "9030",
+      "confidence": 0.92,
+      "reasoning": "Goods described are oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities, which fall under 9030, not the declared 9031.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "misspelling",
+    "cargo_description": "Bundle of automatics dataprocessin machinne revC includes documentation two copies",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B12",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "One wall-mounted dental X-ray kit with lead apron for dose management.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9022",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9022.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "synonym",
+    "cargo_description": "A batch of twelve external DVD writers, USB‑3.0 interface, M‑Disc support, black enclosure.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Carbon‑steel housings enclosing piezoelectric elements that sense gas flow rates in industrial ducts.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive tracer gas Kr-85, lượng 0.2 m³, contained in stainless steel cylinders.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "component_split",
+    "cargo_description": "Encoder feedback kits providing resolution of 0.001 mm per pulse.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "component_split",
+    "cargo_description": "Aluminum compressor housing sections, CNC‑milled, surface finish Ra 1.6 µm, lot size 48 units.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "misspelling",
+    "cargo_description": "Shipment includes automatics data prossesor machins type S‑4 qty eight with cables",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic cleaning system, 40 kHz, twenty litres, effective for removing oxide layers from aluminum parts.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B03",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Set of laptop docking stations, dual monitor support, 4 units per set, boxed with foam.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8473",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8473.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Monitor – LED – 27 inch – 1920x1080 – retail packaged.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Americium‑241 oxide smoke detector components, 37 kBq activity, packaged in hermetically sealed housings.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Laboratory mercury thermometers, calibrated ice‑point and steam‑point, 100 mm stem, 220 units.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "misspelling",
+    "cargo_description": "Package holds two differntial pressure sensors with digital output, IP67 enclosure.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "synonym",
+    "cargo_description": "Lot includes six variable‑pitch drive units designed for maritime patrol applications.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "component_split",
+    "cargo_description": "Multi‑port distribution manifolds, check valve assemblies, backflow preventer devices",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Monitor, LED technology, 27 inch, 1920x1080, boxed for retail sale.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "component_split",
+    "cargo_description": "Nylon 6,6 chips 18 kg, polyester staple fiber 12 kg, acrylic tow 10 kg",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Silicon wafers subjected to ion implantation forming conductive pathways utilized in RFID tag antennas for inventory tracking.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "component_split",
+    "cargo_description": "Ethylene glycol, inhibitor added, freezing point –12 °C, transported in tanker trucks.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Exhaust nozzle tip coated with alumina-titania, improving erosion resistance, shipped in batches of 30.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "component_split",
+    "cargo_description": "Urea formaldehyde resin, solid pellets, melt flow index 12 g/10 min, packed in 20 kg bags.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Mass flow sensor (cảm biến质量 lưu lượng) – silicon chip, I2C interface, batch of 8",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "misspelling",
+    "cargo_description": "Assortment of 4 machnie units w indivdual functs & izotop separatron.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Bundle of nine gass‑turbine blade roots together with hott sektin root retainers.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "misspelling",
+    "cargo_description": "Five machins assemblages containing individuel funtcnz and isotop seperatr kits.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Nickel‑coated rods detecting minute shifts in gas composition within laboratory exhaust manifolds.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Precision‑engineered propulsion cores featuring single‑crystal nickel blades, directional solidification processes, and protective oxide layers.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B08",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "hydraulic press brake, 100‑ton, for sheet metal folding, mounted on steel frame",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8462",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8462.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Load includes three barrels of cesuim chloride crystals, each barrel marked with hazard symbols.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "synonym",
+    "cargo_description": "Twenty‑four low‑noise vibration dampers, elastomeric mounts, installed on equipment bases.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Mercury thermometers, lab calibrated, red spirit alternative not included, 180 units.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P03",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "misspelling",
+    "cargo_description": "Electronc intrgrated circuts packed in foam trays, 3 pallets delivered.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8473",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits and microassemblies, which fall under 8542, not the declared 8473.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "component_split",
+    "cargo_description": "High‑purity silicon wafers, 200 mm diameter, 50 units, packed in anti‑static trays.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B01",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Steel transmission shafts, Ø50 mm, length 1500 mm, threaded M10, 8 per pallet",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8483",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8483.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive thorium-232 dioxide powder lượng 3 kg dùng để sản xuất thorium fuel pellets",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "component_split",
+    "cargo_description": "A lot of rubber vibration isolators, durometer 60 Shore A, load rating 10 kg",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Mercury thermometers, calibrated boiling point, 0‑100 °C, 190 units in foam.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Batch of three gasturbien housings painted grey, weighing 2.5 tonnes total.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Four drums holdin iodine-125 implant seeds in titanium casings w/ foam",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B03",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Carton of replacement keyboards, 15 units per box, compatible with major laptop brands.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8473",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8473.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "component_split",
+    "cargo_description": "Lot contains industrial PLC racks, I/O expansion cards, communication modules, backup power supplies, and DIN rail clips.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P05",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9030",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Twenty‑four portable cases include battery packs, carrying handles and built‑in calibration sources.",
+    "declared_hs": "9031",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9031",
+      "suggested_hs": "9030",
+      "confidence": 0.92,
+      "reasoning": "Goods described are oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities, which fall under 9030, not the declared 9031.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "misspelling",
+    "cargo_description": "Set of twelve machiene parts, individuel functns, izotope sepratr assemblies.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "synonym",
+    "cargo_description": "Thermal shield assemblies fabricated from nickel‑based superalloys for aerospace propulsion systems.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Interstage spacer fabricated from Ti-6Al-4V, providing dimensional stability, supplied as 30-unit bundles.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Colloidal silver suspension, 2 L, to support catalyst development trials.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive carbon-14 labeled glucose solution lượng 250 ml dùng trong nghiên cứu sinh học",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Axial flow compression devices utilizing multi‑stage alloy blades and hardened steel shafts for sustained high‑speed operation.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Bundle of twenty‑five turbopropellr exhaust pipes, stainless, flanged ends.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "mixed_language",
+    "cargo_description": "9 bộ máy tách izotop công nghiệp, kèm theo bảng điều khiển và cảm biến",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "component_split",
+    "cargo_description": "Electropolished manifold blocks, swivel joint adapters, quick‑release clamps",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "component_split",
+    "cargo_description": "Group includes embedded controller boards, real‑time clocks, temperature sensors, LED indicators, and mounting hardware.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P03",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "misspelling",
+    "cargo_description": "Shipment comprising electroinic integretd circuits, packaged in corrugated fiberboard.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8473",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits and microassemblies, which fall under 8542, not the declared 8473.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "component_split",
+    "cargo_description": "Silicon dioxide insulating layers, 1 µm thickness, 200 mm wafers, 50 pieces.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "synonym",
+    "cargo_description": "Container stows twenty‑four precision‑machined power shafts with splined couplings.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "mixed_language",
+    "cargo_description": "6 units cỗ máy CNC lathe, for stainless steel machining, placed in ISO containers.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Computer monitor – LED – 27″ – 1920x1080 – each in retail carton.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Crate of fourteen gass turbien compressor wheels accompanied by hott sectin surge discs.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P05",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9030",
+    "obfuscation": "misspelling",
+    "cargo_description": "Package contains twenty osciloscope demo boards with pre-loaded firmware.",
+    "declared_hs": "9031",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9031",
+      "suggested_hs": "9030",
+      "confidence": 0.92,
+      "reasoning": "Goods described are oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities, which fall under 9030, not the declared 9031.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Silicon die sets with embedded heat spreaders improving thermal dissipation in LED lighting drivers for street fixtures.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive zirconium-93 oxychloride crystals批量 250 g được đóng gói trong túi nilon",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radium-226 dial paint, lượng 50 g, encapsulated in epoxy resin for historical artifacts.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "synonym",
+    "cargo_description": "Seventeen heat‑exchanger bundles, finned copper tubes, rated for corrosive gas service.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "synonym",
+    "cargo_description": "Five 2‑liter glass vials filled with luminescent phosphor powder, hermetically capped.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Case includes eighteen gass‑turbin componenits along with hott sectun brackets.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "LED display, 27″, Full HD 1920x1080, each unit in retail box.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B01",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Pillow block bearings, bore 38 mm, outer diameter 85 mm, 10 per box",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8483",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8483.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P05",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9030",
+    "obfuscation": "component_split",
+    "cargo_description": "Sixteen linear voltage regulator ICs providing adjustable outputs from 1.2 V to 15 V.",
+    "declared_hs": "9031",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9031",
+      "suggested_hs": "9030",
+      "confidence": 0.92,
+      "reasoning": "Goods described are oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities, which fall under 9030, not the declared 9031.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "synonym",
+    "cargo_description": "Twelve lead‑lined containers holding solidified scintillator crystals, 500 g each.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Ceramic discs vibrating at resonant frequencies to infer gas density within sealed chambers.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Pressure relief valve with sensor (van giảm áp có cảm biến) – spring‑loaded, certified, lot of 5",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "component_split",
+    "cargo_description": "Shipment includes assorted printed circuit boards, solid‑state drives, voltage regulators, heat sinks, and connector assemblies.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B08",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Industrial hydraulic press brake, 100‑ton, for sheet metal folding, offering repeatable accuracy",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8462",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8462.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "component_split",
+    "cargo_description": "Sodium silicate solution, modulus 2.4, viscosity 150 cP, contained in 1000 L IBC totes.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "synonym",
+    "cargo_description": "Fifty kilograms of memory chip arrays sealed in vacuum-formed plastic pouches.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "B10",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Stainless steel cream separator centrifuge, suitable for 500 L/h dairy streams.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8421",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8421.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Epoxy‑encapsulated silicon components offering electrostatic discharge protection for sensitive sensor interfaces in wearable tech.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Ceramic sensors capturing transient pressure spikes in steam pipelines during start‑up sequences.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Twelve kits each having gamma-ray check sourc Cd-109 pellets w/ manual",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Efficient energy conversion devices blending composite fan blades with metallic hub assemblies for reduced weight.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic tank, 40 kHz sonication, 20‑liter capacity, provides efficient cleaning of workshop oxygen sensors.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "LED screen, twenty‑seven inches, Full HD 1920x1080, retail boxed.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "component_split",
+    "cargo_description": "Epoxy molding compound, low‑viscosity, 5 kg containers, suitable for semiconductor encapsulation.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B08",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Heavy‑duty hydraulic press brake, 100‑ton, for sheet metal folding, suitable for automotive panels",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8462",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8462.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "component_split",
+    "cargo_description": "Electrical wiring harnesses, shielded twisted pair, gauge 22 AWG, length 5 m per branch, connectors MIL‑DTL‑38999, roll of 8.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Turbine cooling air passages, 40 pcs, bộ phận được gia công CNC精密",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Monitor – LED – 27″ – 1920x1080 – each unit in retail packaging.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "misspelling",
+    "cargo_description": "Carton packed with four manomter units, analogue display, range 0‑5 psi.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Bench‑top ultrasonic bath, 40 kHz, 20 L, provides effective cleaning of workshop fixtures and tools.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "component_split",
+    "cargo_description": "Nickel alloy nozzle guide vanes, investment cast, diameter tolerance ±0.05 mm, supplied in crates of 25.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "component_split",
+    "cargo_description": "Lubrication system manifolds, brass fittings, pressure gauge 0–10 bar.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Laboratory mercury thermometers, ±0.2 °C accuracy, 150 mm stem, 180 pcs.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Stainless steel filter cartridges capturing particulate contaminants before they enter the separation cascade.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "synonym",
+    "cargo_description": ": Ultra‑fine powder blend, homogenous morphology, stored under nitrogen atmosphere",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic cleaning equipment, 40 kHz, 20 liter volume, used for removing rust inhibitors from steel components.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Crate containing eleven gasturbin sensor packs, wired, calibrated.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic tank, 40 kHz sonication, twenty litres, assists in cleaning workshop threads before coating application.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "mixed_language",
+    "cargo_description": "15 máy tách isotop công suất 500W, kèm theo bộ nguồn 24V",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "component_split",
+    "cargo_description": "Electrical conduit tubing, PVC, 20 mm diameter, supplied in 5‑meter lengths.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B10",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Cream separation system, stainless centrifuge, capacity up to 500 L per hour.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8421",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8421.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive ytterbium-169 oxide granules lượng 800 g dùng trong nhiệt luyện quá trình",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P03",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "misspelling",
+    "cargo_description": "Box of electrnic integreted circut assemblies, each assembly tested at 100 MHz.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8473",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits and microassemblies, which fall under 8542, not the declared 8473.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B01",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Steel transmission shafts, Ø33 mm, length 700 mm, keyway 6 mm, 26 per sack",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8483",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8483.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "component_split",
+    "cargo_description": "Aluminum‑silicon alloy turbine inlet lips, die cast, stacked 12 per layer, gross 4.8 kg.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "component_split",
+    "cargo_description": "Two brass sensor bodies fitted with silicone O-ring seals",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Colloidal silver solution, 2 L volume, suitable for industrial catalyst development.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "misspelling",
+    "cargo_description": "Parcel shipped automatc data prossesor machins partnum ZZ‑99 four boxes sealed",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B03",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Carton of replacement keyboards, includes mouse pad, 18 units per carton, eco-friendly ink.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8473",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8473.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "circumlocution",
+    "cargo_description": "High‑temperature rotary actuators employing directional solidified nickel alloys and thermal barrier coatings on hot sections.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic bath, 40 kHz, twenty litres, assists in cleaning workshop fuel injectors before flow testing.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "component_split",
+    "cargo_description": "Spare parts kit, includes extra bearings, seals, and O‑rings for maintenance.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Glass hydrometers with calibrated scales, 0‑1.0 sg resolution, packed 50 per inner box, 8 boxes.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Load contains five gass turbine exhaust nozzles plus hott sectin after‑treatment catalysts.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "component_split",
+    "cargo_description": "Set offers aerospace avionics racks, flight data recorders, inertial measurement units, power distribution boxes, and shielded wiring.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "synonym",
+    "cargo_description": "Axial flow stator vanes, precision balanced, intended for replacement in power plant turbines.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Carbon‑fiber reinforced housings containing precision machined nozzles for separating light isotopes via laser ablation.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Load consists of 1800 pcs of microcontroller ICs, PIC16F877A, wrapped in foam and tagged linh kiện vi xử lý.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "synonym",
+    "cargo_description": "Eleven acoustic resonance sensors, piezoelectric crystals, frequency range 10 kHz–1 MHz.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive technetium-99m pertechnetate saline injection lượng 5 ml dùng trong chẩn đoán hình ảnh",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Monitor, LED, 27″, 1920x1080, each unit placed in retail‑grade box.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic unit, 40 kHz, twenty litres, ideal for cleaning workshop valves and fittings prior to testing.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "component_split",
+    "cargo_description": "Yttrium stabilized zirconia beads 3 kg, gadolinium oxysulfide phosphor 500 g, europium doped glass frit 250 g",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Shipment includes 2800 pcs of LED driver ICs, TLC5940, packed in cartons noted driver đèn LED tích hợp.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Industrial colloidal silver solution, 2 litres, for catalyst support material preparation.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "misspelling",
+    "cargo_description": "Lot includes machnie assemblies with individ dual functs & izotop sepration.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "synonym",
+    "cargo_description": "Assortment of plug‑and‑play probes enabling quick swap during maintenance shutdowns.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Combustion chamber liners, 200 kg, 零件規格符合ASTM A286",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Programmable logic controller coordinates feed rates and spindle RPM for optimal chip formation.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B12",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Wall-mounted dental X-ray system, complete with lead apron and mounting hardware.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9022",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9022.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Embedded firmware resides in non volatile memory chips enabling boot sequence initiation upon power up.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "synonym",
+    "cargo_description": "Fifty-five units of voltage reference dies interleaved with absorbent silica gel packets.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "misspelling",
+    "cargo_description": "Palletized load of thirty gass turbien housings bundled with hott sectin insulation blankets.",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B08",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Industrial hydraulic press brake, 100‑ton, for sheet metal folding, featuring adjustable stroke",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8462",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8462.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B12",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Wall-fixed dental radiographic X-ray system, lead apron supplied as standard accessory.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9022",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9022.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Colloidal silver concentrate, 2 litres total, for catalytic material production.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "mixed_language",
+    "cargo_description": "货物清单: automatic data processing machines, mỗi kiện 5 máy tự động",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B10",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Stainless steel cream separator centrifuge, easy clean design, 500 L/h rating.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8421",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8421.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Actinium-225 targeted therapy reagent, số lượng 1 vial, kept under cryogenic conditions.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "component_split",
+    "cargo_description": "Glycerin USP 99.5% 30 L, propylene glycol industrial grade 20 L, ethylene glycol antifreeze 15 L",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "misspelling",
+    "cargo_description": "Container holds automatc data procesing machinz model V7‑T nine pallets",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic tank, 40 kHz frequency, 20 L volume, used for cleaning workshop clutch plates and pressure plates.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "synonym",
+    "cargo_description": "Nine 250 ml ampoules of viscous gel, sealed with crimp‑fit closures.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "synonym",
+    "cargo_description": "Precision turret turning equipment enhanced with laser measurement for micron‑level accuracy.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "B04",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "LED computer screen, 27 inch, 1920x1080, boxed for retail.",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8528",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8528.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B12",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Dental X-ray apparatus mounted to wall, lead apron supplied for radiation shielding.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9022",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9022.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive lanthanum-138 carbonate powder lượng 4 kg dùng trong nghiên cứu vật lý hạt",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Colloidal silver solution, 2 L, formulated for catalyst electrophoretic deposition.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Batch consists of twenty kilograms of iodin iodide pellets placed inside lead shielding.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Parcel includes 2200 pcs of oscillator ICs, TCXO‑10MHz, packed in cartons labeled 振荡器集成电路.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "synonym",
+    "cargo_description": ": Functionalized nanocomposite dispersion, pH stabilized, dispensed in glass bottles",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "synonym",
+    "cargo_description": "Twenty-five reels of flex-circuit substrate strips wound on anti-static spools.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P03",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "synonym",
+    "cargo_description": "Clock generator dies encapsulated in silicone gel, quantity three hundred units.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8473",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits and microassemblies, which fall under 8542, not the declared 8473.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Nine barrels filled wit liquid scintillator cocktail containin H-3 tracer",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P08",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8458",
+    "obfuscation": "component_split",
+    "cargo_description": "Documentation package, printed manuals, safety data sheets, CE conformity declarations.",
+    "declared_hs": "8462",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8462",
+      "suggested_hs": "8458",
+      "confidence": 0.92,
+      "reasoning": "Goods described are numerically controlled lathes for removing metal, which fall under 8458, not the declared 8462.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Temperature compensated pressure transmitter (bộ truyền áp bù nhiệt) – output 0‑5 V, lot size 10",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic cleaner with 40 kHz output and 20 L tank, intended for removing coolant residues from metal components.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P01",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Turbine shaft couplings, 6 pcs, các bộ phận truyền lực lớn",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8483",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are gas turbine components including hot section parts, which fall under 8411, not the declared 8483.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P06",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9026",
+    "obfuscation": "component_split",
+    "cargo_description": "Ten stainless steel capillary tubes, inner diameter 0.5 mm, length 30 cm",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9025",
+      "suggested_hs": "9026",
+      "confidence": 0.92,
+      "reasoning": "Goods described are instruments for measuring flow, level, pressure or other variables of liquids or gases, which fall under 9026, not the declared 9025.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "B01",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Pillow block bearings, bore 30 mm, width 55 mm, grease fitting, 18 per sack",
+    "declared_hs": "8483",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8483",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8483.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B03",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Set of laptop docking stations, USB-C PD 65W, 2 units per set, packaged in blister pack.",
+    "declared_hs": "8473",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8473",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8473.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P04",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8471",
+    "obfuscation": "misspelling",
+    "cargo_description": "Bundle features automatics dataprocessin machins part #A7‑B3 eight items bundled",
+    "declared_hs": "8528",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8528",
+      "suggested_hs": "8471",
+      "confidence": 0.92,
+      "reasoning": "Goods described are automatic data processing machines, which fall under 8471, not the declared 8528.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic cleaning bath rated at 40 kHz, holding 20 litres, used in electronics assembly workshops for flux cleaning.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Nine pallets loaded wit mixed radionuclid waste bags marked hazard",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "P12",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "misspelling",
+    "cargo_description": "Thirty units of battery-powered radionuclide check sourc Fi-55 sources",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9022",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive isotopes and compounds, including sealed sources, which fall under 2844, not the declared 9022.",
+      "obfuscation_observed": "misspelling"
+    }
+  },
+  {
+    "pair_id": "B12",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Wall-mounted dental X-ray apparatus, lead apron attached via Velcro straps.",
+    "declared_hs": "9022",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9022",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9022.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "synonym",
+    "cargo_description": "Eleven inline scrubber towers, polymer lining, flow rates adjustable from 0.5 to 5 m³/h.",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "synonym"
+    }
+  },
+  {
+    "pair_id": "P05",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "9030",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Twenty oscilloscope display modules, LCD 7‑inch, màn hình hiển thị số",
+    "declared_hs": "9031",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "9031",
+      "suggested_hs": "9030",
+      "confidence": 0.92,
+      "reasoning": "Goods described are oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities, which fall under 9030, not the declared 9031.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "P02",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8542",
+    "obfuscation": "circumlocution",
+    "cargo_description": "Silicon based hybrid modules combining optical emitters and detectors for fiber‑optic link termination in data centers.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8543",
+      "suggested_hs": "8542",
+      "confidence": 0.92,
+      "reasoning": "Goods described are electronic integrated circuits, which fall under 8542, not the declared 8543.",
+      "obfuscation_observed": "circumlocution"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "High‑purity colloidal silver suspension, 2 L, for catalytic reaction studies.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Laboratory mercury thermometers, NIST certified, –10 °C to 110 °C, 190 units.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B11",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Colloidal silver concentrate, 2 litres, for catalyst ligand exchange studies.",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "2843",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 2843.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "B02",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Ultrasonic cleaning bath with 40 kHz output and a 20‑liter chamber, used for degreasing valve bodies in service workshops.",
+    "declared_hs": "8543",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "8543",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 8543.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P00",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8411",
+    "obfuscation": "component_split",
+    "cargo_description": "Exhaust diffuser cones, fabricated stainless steel, half‑angle 15°, length 0.6 m, flange ASME B16.5, qty 25.",
+    "declared_hs": "8414",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8414",
+      "suggested_hs": "8411",
+      "confidence": 0.92,
+      "reasoning": "Goods described are turbojets, turbopropellers and other gas turbines, which fall under 8411, not the declared 8414.",
+      "obfuscation_observed": "component_split"
+    }
+  },
+  {
+    "pair_id": "P11",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "2844",
+    "obfuscation": "mixed_language",
+    "cargo_description": "Radioactive potassium-40 chloride solution lượng 10 lít sử dụng trong kiểm tra môi trường",
+    "declared_hs": "2843",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "2843",
+      "suggested_hs": "2844",
+      "confidence": 0.92,
+      "reasoning": "Goods described are radioactive chemical elements and isotopes and their compounds, which fall under 2844, not the declared 2843.",
+      "obfuscation_observed": "mixed_language"
+    }
+  },
+  {
+    "pair_id": "B06",
+    "split": "train",
+    "label_consistent": true,
+    "expected_hs": null,
+    "obfuscation": "none",
+    "cargo_description": "Glass hydrometers, calibrated for milk, 0‑40 % fat, supplied in batches of 15.",
+    "declared_hs": "9025",
+    "_target": {
+      "consistent": true,
+      "declared_hs": "9025",
+      "suggested_hs": null,
+      "confidence": 0.95,
+      "reasoning": "Description matches the scope of heading 9025.",
+      "obfuscation_observed": "none"
+    }
+  },
+  {
+    "pair_id": "P10",
+    "split": "train",
+    "label_consistent": false,
+    "expected_hs": "8479",
+    "obfuscation": "mixed_language",
+    "cargo_description": "7 pcs izotop separator, 包含 电源 模块 和 通信 接口",
+    "declared_hs": "8421",
+    "_target": {
+      "consistent": false,
+      "declared_hs": "8421",
+      "suggested_hs": "8479",
+      "confidence": 0.92,
+      "reasoning": "Goods described are machines having individual functions, including isotope separation equipment, which fall under 8479, not the declared 8421.",
+      "obfuscation_observed": "mixed_language"
+    }
+  }
+]

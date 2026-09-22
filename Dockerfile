@@ -44,6 +44,16 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY --chown=appuser:appgroup src/ src/
 
+# hs_reference.py resolves data/hs_reference.yaml relative to the repo root
+# (parents[2] of the module file), so it must sit next to src/ and not inside it.
+# It is read at import time with no fallback, so omitting it makes the container
+# fail to boot rather than degrade.
+#
+# Named explicitly rather than copying data/: the other three files in that
+# directory are test and benchmark fixtures, one of which is 1.4 MB, and none is
+# read at runtime.
+COPY --chown=appuser:appgroup data/hs_reference.yaml data/hs_reference.yaml
+
 # Switch to non-root user
 USER appuser
 
@@ -59,12 +69,24 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # - threads: 8 (handle concurrent requests within the instance)
 # - timeout: 300 (5 minutes for long document processing, not 0/infinite)
 # - graceful-timeout: 30 (allow in-flight requests to complete on shutdown)
+#
+# The three limit-request flags bound what an attacker can make gunicorn parse
+# before the application sees the request at all. Body size is capped separately
+# by MAX_CONTENT_LENGTH in app.py, which Werkzeug enforces from Content-Length;
+# these cover the request line and headers, which that ceiling does not.
+# - limit-request-line: 8190 is gunicorn's default; stated rather than implied
+#   because a URL is the one part of a request we never need to be long.
+# - limit-request-fields / field_size: a flood of headers, or one enormous one,
+#   is parsed before routing and so before any rate limit can refuse it.
 CMD exec gunicorn \
     --bind :$PORT \
     --workers 1 \
     --threads 8 \
     --timeout 300 \
     --graceful-timeout 30 \
+    --limit-request-line 8190 \
+    --limit-request-fields 100 \
+    --limit-request-field_size 16380 \
     --access-logfile - \
     --error-logfile - \
     --capture-output \

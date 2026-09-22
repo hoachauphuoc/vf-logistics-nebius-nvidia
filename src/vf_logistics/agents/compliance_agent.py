@@ -144,6 +144,7 @@ async def screen_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         legacy_key="screening_result",
+        prompt=user_text,
         shipment_id=shipment_data.get("shipment_id"),
         external_search_used=bool(tavily_results),
         # Titles/urls only (no content body) so the case trace can show what

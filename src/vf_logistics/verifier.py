@@ -31,7 +31,10 @@ of a wrong escalation is a human spending ten minutes on a clean shipment.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, replace
 from typing import Any
+
+from vf_logistics import hs_reference
 
 # --------------------------------------------------------------------------
 # Code-resident reference data
@@ -147,6 +150,114 @@ DOMESTIC_SAFE_ROUTES: set[tuple[str, str]] = {
 LOW_VALUE_THRESHOLD_USD = 100.0
 
 
+# --------------------------------------------------------------------------
+# The rule set as a value, rather than as five module globals
+# --------------------------------------------------------------------------
+#
+# The five names above are the bundled *defaults*. They used to also be the live
+# configuration, rebound in place by update_prefilter_rules() with `global`. That
+# made a single-tenant assumption load-bearing in the worst possible place: one
+# customer editing their blacklist changed what every other customer's shipments
+# were screened against, and the change was invisible -- no audit record on the
+# affected tenants, no diff, just a different verdict on the next shipment.
+#
+# Threading a `tenant_id` parameter down to the check functions could not fix
+# that, because the values were not reachable from a parameter. So the rule set
+# becomes a value that is passed in, and the per-tenant copy lives in the store.
+# `defaults()` rebuilds it from the constants above, which stay as the seed a
+# tenant starts from.
+#
+# Deliberately frozen. A check function receiving a mutable rule set could edit
+# it, and then whether a shipment cleared would depend on which checks had
+# already run against the same object.
+
+@dataclass(frozen=True)
+class PrefilterRules:
+    """The pre-AI screening configuration for one tenant."""
+
+    vip_registry: tuple[tuple[str, str], ...]
+    blacklist_companies: frozenset[str]
+    blacklist_tax_ids: frozenset[str]
+    safe_routes: frozenset[tuple[str, str]]
+    low_value_threshold_usd: float
+
+    @classmethod
+    def defaults(cls) -> "PrefilterRules":
+        """The bundled rule set, which a tenant with no stored rules gets."""
+        return cls(
+            vip_registry=tuple(
+                (e["company"], e["tax_id"]) for e in VIP_REGISTRY
+            ),
+            blacklist_companies=frozenset(BLACKLIST_COMPANIES),
+            blacklist_tax_ids=frozenset(BLACKLIST_TAX_IDS),
+            safe_routes=frozenset(DOMESTIC_SAFE_ROUTES),
+            low_value_threshold_usd=LOW_VALUE_THRESHOLD_USD,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """The wire/storage shape. Sorted so a diff between two versions reads."""
+        return {
+            "vip_registry": [
+                {"company": c, "tax_id": t} for c, t in sorted(self.vip_registry)
+            ],
+            "blacklist_companies": sorted(self.blacklist_companies),
+            "blacklist_tax_ids": sorted(self.blacklist_tax_ids),
+            "safe_routes": [
+                {"origin": o, "destination": d} for o, d in sorted(self.safe_routes)
+            ],
+            "low_value_threshold_usd": self.low_value_threshold_usd,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "PrefilterRules":
+        """
+        Rebuild from stored form, falling back to a default per missing key.
+
+        Per key rather than all-or-nothing: a stored document written before a
+        key existed should not silently reset the four keys it does have.
+        """
+        if not data:
+            return cls.defaults()
+        base = cls.defaults()
+        registry = data.get("vip_registry")
+        routes = data.get("safe_routes")
+        return cls(
+            vip_registry=(
+                tuple(
+                    (_normalize(e.get("company")), str(e.get("tax_id") or "").strip())
+                    for e in registry
+                    if isinstance(e, dict) and e.get("company")
+                )
+                if isinstance(registry, list)
+                else base.vip_registry
+            ),
+            blacklist_companies=(
+                frozenset(_normalize(c) for c in data["blacklist_companies"] if c)
+                if isinstance(data.get("blacklist_companies"), list)
+                else base.blacklist_companies
+            ),
+            blacklist_tax_ids=(
+                frozenset(str(t).strip() for t in data["blacklist_tax_ids"] if t)
+                if isinstance(data.get("blacklist_tax_ids"), list)
+                else base.blacklist_tax_ids
+            ),
+            safe_routes=(
+                frozenset(
+                    (_normalize(r.get("origin")), _normalize(r.get("destination")))
+                    for r in routes
+                    if isinstance(r, dict) and "origin" in r and "destination" in r
+                )
+                if isinstance(routes, list)
+                else base.safe_routes
+            ),
+            low_value_threshold_usd=(
+                float(data["low_value_threshold_usd"])
+                if isinstance(data.get("low_value_threshold_usd"), (int, float))
+                else base.low_value_threshold_usd
+            ),
+        )
+
+
 def _normalize(text: Any) -> str:
     """Normalize text for matching: lowercase, strip, remove extra spaces."""
     return " ".join(str(text or "").lower().strip().split())
@@ -235,7 +346,9 @@ def lane_baseline(shipment: dict[str, Any]) -> tuple[float, str]:
 # single fact justifies on its own.
 # --------------------------------------------------------------------------
 
-def check_whitelist(shipment: dict[str, Any]) -> dict[str, Any] | None:
+def check_whitelist(
+    shipment: dict[str, Any], rules: PrefilterRules | None = None,
+) -> dict[str, Any] | None:
     """
     Resolve a claimed shipper identity against the VIP registry.
 
@@ -251,11 +364,12 @@ def check_whitelist(shipment: dict[str, Any]) -> dict[str, Any] | None:
       the name or number was deliberately reused, which is worse than a
       claim that matches nothing.
     """
+    rules = rules or PrefilterRules.defaults()
     company = _normalize(shipment.get("shipper_company"))
     tax_id = str(shipment.get("shipper_tax_id") or "").strip()
 
-    by_company = {e["company"]: e["tax_id"] for e in VIP_REGISTRY}
-    by_taxid = {e["tax_id"]: e["company"] for e in VIP_REGISTRY if e["tax_id"]}
+    by_company = dict(rules.vip_registry)
+    by_taxid = {t: c for c, t in rules.vip_registry if t}
 
     company_taxid = by_company.get(company) if company in by_company else None
     taxid_company = by_taxid.get(tax_id) if tax_id in by_taxid else None
@@ -302,16 +416,19 @@ def check_whitelist(shipment: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def check_blacklist(shipment: dict[str, Any]) -> dict[str, Any] | None:
+def check_blacklist(
+    shipment: dict[str, Any], rules: PrefilterRules | None = None,
+) -> dict[str, Any] | None:
     """
     Check if shipper is on the internal blacklist.
     
     Returns a "BLACKLIST_MATCH" finding with floor=100, blocking immediately.
     """
+    rules = rules or PrefilterRules.defaults()
     company = _normalize(shipment.get("shipper_company"))
     tax_id = str(shipment.get("shipper_tax_id") or "").strip()
     
-    if company in BLACKLIST_COMPANIES:
+    if company in rules.blacklist_companies:
         return {
             "code": "BLACKLIST_MATCH",
             "severity": "CRITICAL",
@@ -321,7 +438,7 @@ def check_blacklist(shipment: dict[str, Any]) -> dict[str, Any] | None:
             "skip_ai": True,
         }
     
-    if tax_id in BLACKLIST_TAX_IDS:
+    if tax_id in rules.blacklist_tax_ids:
         return {
             "code": "BLACKLIST_TAX_ID",
             "severity": "CRITICAL",
@@ -334,7 +451,9 @@ def check_blacklist(shipment: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def check_low_value_domestic(shipment: dict[str, Any]) -> dict[str, Any] | None:
+def check_low_value_domestic(
+    shipment: dict[str, Any], rules: PrefilterRules | None = None,
+) -> dict[str, Any] | None:
     """
     Auto-clear low-value domestic shipments without AI.
     
@@ -343,8 +462,9 @@ def check_low_value_domestic(shipment: dict[str, Any]) -> dict[str, Any] | None:
     - Domestic safe route (e.g., HCMC <-> Hanoi)
     - No dual-use HS codes
     """
+    rules = rules or PrefilterRules.defaults()
     value = _num(shipment.get("declared_value"))
-    if value is None or value >= LOW_VALUE_THRESHOLD_USD:
+    if value is None or value >= rules.low_value_threshold_usd:
         return None
     
     origin = _normalize(shipment.get("origin"))
@@ -352,7 +472,7 @@ def check_low_value_domestic(shipment: dict[str, Any]) -> dict[str, Any] | None:
     route_key = (origin, dest)
     
     # Check if it's a safe domestic route
-    if route_key not in DOMESTIC_SAFE_ROUTES:
+    if route_key not in rules.safe_routes:
         return None
     
     # Check for dual-use HS codes (still need AI review)
@@ -372,7 +492,10 @@ def check_low_value_domestic(shipment: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def check_freight_ratio(shipment: dict[str, Any]) -> dict[str, Any] | None:
+def check_freight_ratio(
+    shipment: dict[str, Any], rules: PrefilterRules | None = None,
+) -> dict[str, Any] | None:
+    rules = rules or PrefilterRules.defaults()
     cost = _num(shipment.get("shipping_cost"))
     if cost is None or cost <= 0:
         return {
@@ -381,6 +504,27 @@ def check_freight_ratio(shipment: dict[str, Any]) -> dict[str, Any] | None:
             "floor": 60,
             "detail": "No freight charge on the record; pricing cannot be validated.",
         }
+
+    # Below the low-value threshold the lane baseline is the wrong yardstick, and
+    # using it anyway made a documented cost-control path unreachable.
+    #
+    # lane_baseline() returns what it costs to move a commercial consignment on the
+    # lane -- hundreds of dollars on a domestic Vietnamese route. A 99 dollar parcel
+    # ships for a few dollars, so every such shipment came out under 25% of the
+    # baseline, which is CRITICAL, which defeats skip_ai. Sweeping freight from 1
+    # to 50 dollars on a 99 dollar consignment produced FREIGHT_ANOMALY at every
+    # single value: LOW_VALUE_DOMESTIC could never actually skip the models, so
+    # every parcel paid for two model calls to reach the answer arithmetic had
+    # already given.
+    #
+    # Not a threshold to tune -- a category error. A parcel is not an underpriced
+    # container. FREIGHT_MISSING above still applies at any scale, because an absent
+    # freight charge is a data-quality problem rather than a pricing one, and the
+    # exposure this forgoes is bounded by the same threshold that already permits
+    # auto-clear.
+    value = _num(shipment.get("declared_value"))
+    if value is not None and value < rules.low_value_threshold_usd:
+        return None
 
     baseline, source = lane_baseline(shipment)
     ratio = cost / baseline
@@ -499,6 +643,318 @@ def check_hs_code(shipment: dict[str, Any]) -> list[dict[str, Any]]:
             "measured": {"hs_prefix": prefix},
         })
     return findings
+
+
+# Model judgement sits one step below a code-resident list match, on purpose.
+# DUAL_USE_HS_CODE floors at 85 because it is a lookup: the declared prefix
+# either is in the dict or is not. HS_DESCRIPTION_MISMATCH_DUAL_USE floors at 80
+# because it is a semantic call about what the goods are. A reviewer reading the
+# number alone can therefore tell which kind of evidence drove the case.
+HS_MISMATCH_DUAL_USE_FLOOR = 80
+HS_MISMATCH_FLOOR = 40
+HS_MISMATCH_MIN_CONFIDENCE = 0.7
+
+
+def check_hs_description_consistency(
+    shipment: dict[str, Any],
+    hs_verdict: dict[str, Any] | None,
+    *,
+    min_confidence: float = HS_MISMATCH_MIN_CONFIDENCE,
+) -> list[dict[str, Any]]:
+    """
+    Turn an HS classifier verdict into a finding, upward only.
+
+    This is the check check_hs_code() cannot be: it reads cargo_description,
+    which the rest of this module touches exactly once, as a presence test. The
+    declarant chooses the code, so comparing the declared code against a list of
+    sensitive prefixes cannot catch a declarant who wrote a benign code over
+    controlled goods. Deciding whether the prose matches the heading is a
+    judgement, so it is made by a model -- and then handled here, under the same
+    rules as every other finding.
+
+    The function takes the verdict rather than calling the model, which keeps it
+    pure and synchronous like its neighbours, and keeps the model call where it
+    belongs: in the orchestrator, alongside the other agents, where its tokens
+    are accounted for.
+
+    What a model is allowed to do here
+    ----------------------------------
+    Raise risk, never lower it. A "consistent" verdict produces no finding at
+    all, so a model that is mistaken, overconfident or manipulated into blessing
+    a shipment changes nothing -- the deterministic floor still stands and the
+    case proceeds exactly as it would have without the check. Only a mismatch
+    can move anything, and it can only move it up. That asymmetry is the whole
+    safety argument, and it is why this returns findings instead of a score.
+
+    An unavailable answer is recorded rather than dropped. A model outage that
+    quietly produced no finding would be indistinguishable from a model that
+    looked and found nothing, and those two must not read the same to a human.
+    """
+    verdict = (hs_verdict or {}).get("verdict")
+    declared = re.sub(r"\D", "", str(shipment.get("hs_code") or ""))[:4]
+
+    if not hs_verdict or verdict is None:
+        return []
+
+    if verdict in ("unknown", "error"):
+        return [{
+            "code": "HS_DESCRIPTION_CHECK_UNAVAILABLE",
+            "severity": "INFO",
+            "floor": 0,
+            "detail": (
+                "The HS description consistency check did not return a usable "
+                f"answer ({hs_verdict.get('reasoning') or 'no detail'}). The goods "
+                "description has NOT been compared against the declared heading."
+            ),
+        }]
+
+    if verdict == "consistent":
+        # Deliberately nothing. A model cannot clear a shipment here.
+        return []
+
+    suggested = hs_verdict.get("suggested_hs")
+    confidence = float(hs_verdict.get("confidence") or 0.0)
+    reasoning = str(hs_verdict.get("reasoning") or "").strip()
+    obfuscation = hs_verdict.get("obfuscation")
+
+    if confidence < min_confidence:
+        return [{
+            "code": "HS_DESCRIPTION_MISMATCH_LOW_CONFIDENCE",
+            "severity": "LOW",
+            "floor": 0,
+            "detail": (
+                f"Possible HS misclassification, below the {min_confidence:.0%} "
+                f"confidence needed to act on: {reasoning or 'no reasoning given'}"
+            ),
+            "measured": {"declared_hs": declared, "suggested_hs": suggested,
+                         "confidence": confidence},
+        }]
+
+    basis = hs_reference.control_basis(suggested)
+    dual_use = hs_reference.is_dual_use(suggested)
+
+    detail = (
+        f"Cargo description does not match declared HS {declared or 'unknown'}; "
+        f"the goods appear to belong to {suggested or 'another heading'}. {reasoning}"
+    )
+    if basis:
+        detail += f" Heading {suggested} is export-control sensitive: {basis}."
+    if obfuscation and obfuscation != "none":
+        detail += f" Description shows signs of {obfuscation.replace('_', ' ')}."
+
+    return [{
+        "code": "HS_DESCRIPTION_MISMATCH_DUAL_USE" if dual_use else "HS_DESCRIPTION_MISMATCH",
+        "severity": "CRITICAL" if dual_use else "MEDIUM",
+        "floor": HS_MISMATCH_DUAL_USE_FLOOR if dual_use else HS_MISMATCH_FLOOR,
+        "detail": detail,
+        "measured": {
+            "declared_hs": declared,
+            "suggested_hs": suggested,
+            "suggested_is_dual_use": dual_use,
+            "confidence": confidence,
+            "obfuscation": obfuscation,
+        },
+    }]
+
+
+def check_sanctions_screening(
+    shipment: dict[str, Any],
+    screening: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Turn a sanctions index lookup into findings.
+
+    This is a deterministic lookup, not a judgement, so unlike
+    check_hs_description_consistency() it does its own work rather than taking a
+    model's verdict. `screening` is injectable so callers already holding a result
+    -- and tests -- do not repeat the lookup.
+
+    Three outcomes, and the difference between the last two is the whole point:
+
+      HIT         a designated party is on the shipment. floor 100 and
+                  auto_reject_by_rules, the same treatment as the code-resident
+                  blacklist, because a designation is not a risk signal to weigh
+                  against others.
+
+      UNAVAILABLE the list could not be read. A HIGH finding that blocks
+                  auto-clear, because "we screened and found nothing" and "we did
+                  not screen" are opposite facts and must not read the same. An
+                  empty index would otherwise clear every shipment while
+                  producing paperwork saying a check was performed -- which is
+                  worse than having no check at all.
+
+      CLEAN       no finding, but the snapshot is still recorded on the case so a
+                  reviewer can see which list version was screened and how old it
+                  was.
+
+    source_entity_ids goes into `measured` because lineage.source_entity_ids()
+    reads it from there. That field is what turns "flagged as high risk" into
+    "matched OFAC SDN entry 12345", which is the difference between an answer a
+    customs authority accepts and an assertion it does not.
+    """
+    if screening is None:
+        from vf_logistics import sanctions
+
+        screening = sanctions.screen_shipment(shipment)
+
+    status = screening.get("status")
+
+    if status == "UNAVAILABLE":
+        return [{
+            "code": "SANCTIONS_SCREENING_UNAVAILABLE",
+            "severity": "HIGH",
+            "floor": 60,
+            "detail": (
+                "The sanctions list could not be read, so no screening was "
+                f"performed on this shipment ({screening.get('reason') or 'no detail'}). "
+                "The absence of a match below is not a clearance."
+            ),
+            "measured": {"screening_status": "UNAVAILABLE"},
+        }]
+
+    matches = screening.get("matches") or []
+    if not matches:
+        return []
+
+    snapshot = screening.get("snapshot") or {}
+    worst = "MEDIUM"
+    for order in ("CRITICAL", "HIGH", "MEDIUM"):
+        if any(m.get("risk_level") == order for m in matches):
+            worst = order
+            break
+
+    roles = sorted({str(m.get("role")) for m in matches})
+    named = "; ".join(
+        f"{m.get('role')} \"{m.get('matched_value')}\" matches "
+        f"{m.get('entity_name')} ({m.get('entity_id')}, "
+        f"{', '.join(m.get('programs') or []) or 'no programme stated'})"
+        for m in matches[:4]
+    )
+
+    detail = f"Sanctions screening matched {len(matches)} record(s): {named}."
+    age = snapshot.get("age_days")
+    if age is not None:
+        detail += f" Screened against {snapshot.get('source')} list published {age} day(s) ago."
+
+    return [{
+        "code": "SANCTIONS_MATCH",
+        "severity": "CRITICAL" if worst == "CRITICAL" else "HIGH",
+        "floor": 100 if worst == "CRITICAL" else 85,
+        # A full designation is not a score to weigh; it is a prohibition. Only
+        # the CRITICAL tier auto-rejects -- an export-control listing or a
+        # sanction.linked association is serious but is a human's call.
+        "auto_reject_by_rules": worst == "CRITICAL",
+        "detail": detail,
+        "measured": {
+            "screening_status": "HIT",
+            "match_count": len(matches),
+            "roles": roles,
+            "worst_risk_level": worst,
+            "source_entity_ids": sorted({
+                str(m.get("entity_id")) for m in matches
+            }),
+            "programs": sorted({
+                p for m in matches for p in (m.get("programs") or [])
+            }),
+            "sanctions_list_version": snapshot.get("version"),
+            "sanctions_synced_at": snapshot.get("synced_at"),
+            "sanctions_list_age_days": age,
+        },
+    }]
+
+
+def check_zero_day(
+    shipment: dict[str, Any],
+    zero_day: dict[str, Any] | None,
+    *,
+    min_confidence: float = 0.7,
+) -> list[dict[str, Any]]:
+    """
+    Turn a zero-day adverse-media verdict into a finding, upward only.
+
+    Floors below the sanctions-match tiers on purpose. A news report is weaker
+    evidence than a designation: SANCTIONS_MATCH at 100 or 85 rests on a
+    government listing, this rests on a model's reading of press coverage, and the
+    number a reviewer sees should say which kind of evidence drove the case.
+
+    A "no risk found" verdict produces nothing at all, so a model that is mistaken
+    or manipulated into blessing a counterparty changes nothing -- the
+    deterministic floor still stands. That asymmetry is the entire safety
+    argument, the same one behind check_hs_description_consistency().
+
+    The searched/unknown cases are recorded rather than dropped. tavily_client
+    returns an empty list for a missing API key, a timeout and a genuinely empty
+    result alike, so silence about a failed search would be indistinguishable from
+    a counterparty that came back clean.
+    """
+    if not zero_day:
+        return []
+
+    verdict = zero_day.get("verdict")
+
+    if verdict == "unknown":
+        return [{
+            "code": "ZERO_DAY_CHECK_UNAVAILABLE",
+            "severity": "LOW",
+            "floor": 0,
+            "detail": (
+                "Adverse-media screening returned no usable verdict "
+                f"({zero_day.get('reasoning') or 'no detail'}). The counterparties "
+                "have NOT been checked against recent news."
+            ),
+            "measured": {"zero_day_status": "unknown"},
+        }]
+
+    if verdict == "no_risk_found" and not zero_day.get("searched"):
+        # The model concluded nothing was found, but nothing was searched. Not a
+        # clearance, and not silent either.
+        return [{
+            "code": "ZERO_DAY_SEARCH_DID_NOT_RUN",
+            "severity": "MEDIUM",
+            "floor": 40,
+            "detail": (
+                "Adverse-media screening reported no findings but no search "
+                "actually ran, so absence of evidence here is not evidence of "
+                "absence."
+            ),
+            "measured": {"zero_day_status": "not_searched"},
+        }]
+
+    if verdict != "risk_found":
+        return []
+
+    confidence = float(zero_day.get("confidence") or 0.0)
+    reasoning = str(zero_day.get("reasoning") or "").strip()
+    urls = [str(u) for u in (zero_day.get("evidence_urls") or [])[:6]]
+
+    if confidence < min_confidence:
+        return [{
+            "code": "ZERO_DAY_ADVERSE_MEDIA_LOW_CONFIDENCE",
+            "severity": "LOW",
+            "floor": 0,
+            "detail": (
+                f"Possible adverse media, below the {min_confidence:.0%} "
+                f"confidence needed to act on: {reasoning or 'no reasoning given'}"
+            ),
+            "measured": {"confidence": confidence, "evidence_urls": urls},
+        }]
+
+    return [{
+        "code": "ZERO_DAY_ADVERSE_MEDIA",
+        "severity": "HIGH",
+        "floor": 70,
+        "detail": (
+            "Recent adverse coverage on a counterparty absent from the official "
+            f"sanctions list: {reasoning}"
+            + (f" Sources: {', '.join(urls)}" if urls else "")
+        ),
+        "measured": {
+            "zero_day_status": "risk_found",
+            "confidence": confidence,
+            "evidence_urls": urls,
+            "entities_checked": zero_day.get("entities_checked") or [],
+        },
+    }]
 
 
 def check_routing(shipment: dict[str, Any]) -> list[dict[str, Any]]:
@@ -671,21 +1127,57 @@ def check_exposure_claim(
 # clearance signals without also running the rest of this battery.
 
 
-def validate(shipment: dict[str, Any]) -> dict[str, Any]:
-    """Run every deterministic check and return findings plus the risk floor."""
+def validate(
+    shipment: dict[str, Any],
+    hs_verdict: dict[str, Any] | None = None,
+    sanctions_screening: dict[str, Any] | None = None,
+    screen_sanctions: bool = True,
+    zero_day: dict[str, Any] | None = None,
+    rules: PrefilterRules | None = None,
+) -> dict[str, Any]:
+    """
+    Run every deterministic check and return findings plus the risk floor.
+
+    `hs_verdict` is the optional output of the HS classification agent, passed as
+    data rather than fetched, so this function stays synchronous and free. When
+    supplied it takes part in the ordinary floor and corroboration arithmetic
+    instead of being merged in afterwards -- one code path computes the floor, so
+    there is no second path to drift out of agreement with it.
+
+    `sanctions_screening` is the sanctions index lookup. Unlike hs_verdict it is
+    computed here when absent, because it is a deterministic lookup rather than a
+    model call. It is not quite free: the first call in a container's life reads
+    the index from GCS or from the bundled seed, which is I/O, and this module's
+    header claims there is none. The claim holds for every subsequent call --
+    sanctions.load() caches for SANCTIONS_RELOAD_SECONDS and the check is then a
+    dict lookup -- and the alternative was worse. Requiring every caller to inject
+    a screening result means a caller who forgot gets a clean-looking validation
+    from a check that never ran, and that mistake is invisible.
+
+    Pass `screen_sanctions=False` only to isolate the other checks in a test.
+
+    The floor is computed twice, with and without the model's finding, and
+    `hs_floor_effect` records the difference. That is not diagnostics: it is how
+    the claim that a model can raise risk but never lower it gets checked on every
+    call rather than argued in a comment.
+    """
     findings: list[dict[str, Any]] = []
+    # Defaulted here, once, rather than in each check: four checks defaulting
+    # independently could disagree if the default ever stops being a pure
+    # function of the module constants.
+    rules = rules or PrefilterRules.defaults()
     
     # Run pre-filter checks first (whitelist/blacklist/low-value)
     prefilter_checks = [
-        check_whitelist(shipment),
-        check_blacklist(shipment),
-        check_low_value_domestic(shipment),
+        check_whitelist(shipment, rules),
+        check_blacklist(shipment, rules),
+        check_low_value_domestic(shipment, rules),
     ]
     for check in prefilter_checks:
         if check:
             findings.append(check)
 
-    for single in (check_freight_ratio(shipment), check_value_density(shipment)):
+    for single in (check_freight_ratio(shipment, rules), check_value_density(shipment)):
         if single:
             findings.append(single)
 
@@ -694,17 +1186,89 @@ def validate(shipment: dict[str, Any]) -> dict[str, Any]:
     findings.extend(check_routing(shipment))
     findings.extend(check_counterparty(shipment))
 
+    # Deterministic, so it counts as part of the baseline rather than as a model
+    # contribution -- it is included before the deterministic_only snapshot below.
+    screening: dict[str, Any] | None = sanctions_screening
+    if screening is None and screen_sanctions:
+        from vf_logistics import sanctions as sanctions_index
+
+        screening = sanctions_index.screen_shipment(shipment)
+    if screening is not None:
+        findings.extend(check_sanctions_screening(shipment, screening))
+
+    deterministic_only = list(findings)
+    hs_findings = check_hs_description_consistency(shipment, hs_verdict)
+    findings.extend(hs_findings)
+    model_findings = list(hs_findings)
+    zero_day_findings = check_zero_day(shipment, zero_day)
+    findings.extend(zero_day_findings)
+    model_findings.extend(zero_day_findings)
+
     # Determine if auto-clear/reject by rules
     skip_ai_findings = [f for f in findings if f.get("skip_ai")]
-    auto_clear_by_rules = any(f.get("auto_clear_by_rules") for f in findings)
-    auto_reject_by_rules = any(f.get("auto_reject_by_rules") for f in findings)
-    
-    # Calculate floor (blacklist = 100, whitelist/low-value = 0)
-    if auto_reject_by_rules:
+
+    floor, high_count, auto_clear_by_rules, auto_reject_by_rules = _floor_for(findings)
+
+    # The same arithmetic on the deterministic findings alone. If adding the
+    # model's finding ever moved the floor down, that is a bug in
+    # check_hs_description_consistency() and must surface as a loud failure
+    # rather than as a quietly discounted shipment.
+    base_floor, base_high, _, _ = _floor_for(deterministic_only)
+    if floor < base_floor:
+        raise AssertionError(
+            "model-derived finding lowered the risk floor "
+            f"({base_floor} -> {floor}); a model must only ever raise it"
+        )
+
+    return {
+        "risk_floor": floor,
+        "findings": findings,
+        "finding_count": len(findings),
+        "high_severity_count": high_count,
+        "skip_ai": bool(skip_ai_findings) and not any(
+            f["severity"] in ("HIGH", "CRITICAL") 
+            for f in findings 
+            if not f.get("skip_ai")
+        ),
+        "auto_clear_by_rules": auto_clear_by_rules,
+        "auto_reject_by_rules": auto_reject_by_rules,
+        "cleared_by": "rules" if (auto_clear_by_rules or auto_reject_by_rules) else None,
+        "hs_description_checked": hs_verdict is not None,
+        "zero_day_checked": zero_day is not None,
+        "sanctions_screening": (screening or {}).get("status"),
+        "sanctions_snapshot": (screening or {}).get("snapshot") or {},
+        "hs_floor_effect": {
+            "floor_without_model": base_floor,
+            "floor_with_model": floor,
+            "raised_by": floor - base_floor,
+            "high_severity_without_model": base_high,
+            "findings_added": [f["code"] for f in model_findings],
+        },
+        "checks_run": [
+            "whitelist", "blacklist", "low_value_domestic",
+            "freight_ratio", "value_density", "mandatory_fields",
+            "hs_code", "routing", "counterparty",
+        ]
+        + (["sanctions_screening"] if screening is not None else [])
+        + (["hs_description_consistency"] if hs_verdict is not None else [])
+        + (["zero_day_adverse_media"] if zero_day is not None else []),
+    }
+
+
+def _floor_for(findings: list[dict[str, Any]]) -> tuple[int, int, bool, bool]:
+    """
+    The floor arithmetic, factored out so it can be run on two finding sets.
+
+    Returns (floor, high_severity_count, auto_clear, auto_reject).
+    """
+    auto_clear = any(f.get("auto_clear_by_rules") for f in findings)
+    auto_reject = any(f.get("auto_reject_by_rules") for f in findings)
+
+    if auto_reject:
         floor = 100
-    elif auto_clear_by_rules and not any(
-        f["severity"] in ("HIGH", "CRITICAL") 
-        for f in findings 
+    elif auto_clear and not any(
+        f["severity"] in ("HIGH", "CRITICAL")
+        for f in findings
         if not f.get("auto_clear_by_rules")
     ):
         floor = 0
@@ -719,25 +1283,7 @@ def validate(shipment: dict[str, Any]) -> dict[str, Any]:
     elif high_count == 2:
         floor = max(floor, 80)
 
-    return {
-        "risk_floor": min(floor, 100),
-        "findings": findings,
-        "finding_count": len(findings),
-        "high_severity_count": high_count,
-        "skip_ai": bool(skip_ai_findings) and not any(
-            f["severity"] in ("HIGH", "CRITICAL") 
-            for f in findings 
-            if not f.get("skip_ai")
-        ),
-        "auto_clear_by_rules": auto_clear_by_rules,
-        "auto_reject_by_rules": auto_reject_by_rules,
-        "cleared_by": "rules" if (auto_clear_by_rules or auto_reject_by_rules) else None,
-        "checks_run": [
-            "whitelist", "blacklist", "low_value_domestic",
-            "freight_ratio", "value_density", "mandatory_fields",
-            "hs_code", "routing", "counterparty",
-        ],
-    }
+    return min(floor, 100), high_count, auto_clear, auto_reject
 
 
 def reconcile(model_risk: Any, validation: dict[str, Any]) -> dict[str, Any]:
@@ -784,106 +1330,159 @@ def reconcile(model_risk: Any, validation: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------
-# Pre-filter Rules API: Get and Update SQL pre-processing rules
+# Pre-filter Rules API
 # --------------------------------------------------------------------------
-
-def get_prefilter_rules() -> dict[str, Any]:
-    """Return current SQL pre-filter rules for UI display."""
-    return {
-        "vip_registry": sorted(VIP_REGISTRY, key=lambda e: e["company"]),
-        "blacklist_companies": sorted(BLACKLIST_COMPANIES),
-        "blacklist_tax_ids": sorted(BLACKLIST_TAX_IDS),
-        "safe_routes": [
-            {"origin": o, "destination": d} 
-            for o, d in sorted(DOMESTIC_SAFE_ROUTES)
-        ],
-        "low_value_threshold_usd": LOW_VALUE_THRESHOLD_USD,
-    }
+#
+# Pure functions over a PrefilterRules value. Neither one touches module state,
+# which is the whole change: update_prefilter_rules() used to rebind the five
+# globals with `global`, so the last tenant to save their rules decided what
+# every tenant's shipments were screened against until the next container start.
+#
+# Persistence is the caller's job (app.py reads and writes the per-tenant copy
+# through the store). Keeping it out of here means the rule arithmetic stays
+# synchronous and testable without a store, and there is no import cycle.
 
 
-def update_prefilter_rules(rules: dict[str, Any]) -> dict[str, Any]:
+def serialise_prefilter_rules(rules: PrefilterRules | None = None) -> dict[str, Any]:
+    """The rule set in wire form, for display and for storage."""
+    return (rules or PrefilterRules.defaults()).to_dict()
+
+
+def apply_prefilter_update(
+    current: PrefilterRules, patch: dict[str, Any]
+) -> tuple[PrefilterRules | None, list[str]]:
     """
-    Update SQL pre-filter rules from UI.
-    
-    Modifies the module-level sets/values so changes take effect immediately.
-    Returns the updated rules for confirmation.
+    Validate a partial rule update and return the new rule set.
+
+    Returns `(rules, [])` on success and `(None, errors)` on failure. All or
+    nothing on purpose: the previous version applied each valid key as it went
+    and returned the errors afterwards, so a request with one bad key left the
+    tenant with a half-applied rule set and an error response that looked like
+    nothing had happened.
+
+    A key that is absent from `patch` is left as it was, which is what makes the
+    governance screen able to edit one list without resubmitting the other four.
     """
-    global VIP_REGISTRY
-    global BLACKLIST_COMPANIES, BLACKLIST_TAX_IDS
-    global DOMESTIC_SAFE_ROUTES, LOW_VALUE_THRESHOLD_USD
-    
-    errors = []
-    
-    # Validate and update the VIP registry (paired company + tax_id entries).
-    # A tax_id is optional (name-only tier) but company is required, since an
-    # entry with neither is meaningless. Duplicate companies are collapsed to
-    # the last one supplied.
-    if "vip_registry" in rules:
-        items = rules["vip_registry"]
-        if isinstance(items, list):
-            new_registry: dict[str, str] = {}
-            bad_entries = False
+    errors: list[str] = []
+    fields: dict[str, Any] = {}
+
+    if "vip_registry" in patch:
+        items = patch["vip_registry"]
+        if not isinstance(items, list):
+            errors.append("vip_registry must be a list of {company, tax_id}")
+        else:
+            # A dict collapses duplicate companies to the last one supplied,
+            # which is the documented behaviour and stops one company holding
+            # two different tax IDs -- the state check_whitelist() reads as an
+            # identity mismatch against itself.
+            registry: dict[str, str] = {}
             for entry in items:
                 if not isinstance(entry, dict) or not entry.get("company"):
-                    bad_entries = True
-                    continue
+                    errors.append(
+                        "vip_registry entries must each have a non-empty 'company'"
+                    )
+                    break
                 company = _normalize(entry.get("company"))
-                tax_id = str(entry.get("tax_id") or "").strip()
                 if company:
-                    new_registry[company] = tax_id
-            if bad_entries:
-                errors.append("vip_registry entries must each have a non-empty 'company'")
+                    registry[company] = str(entry.get("tax_id") or "").strip()
             else:
-                VIP_REGISTRY = [
-                    {"company": c, "tax_id": t} for c, t in new_registry.items()
-                ]
-        else:
-            errors.append("vip_registry must be a list of {company, tax_id}")
-    
-    # Validate and update blacklist companies
-    if "blacklist_companies" in rules:
-        items = rules["blacklist_companies"]
+                fields["vip_registry"] = tuple(registry.items())
+
+    if "blacklist_companies" in patch:
+        items = patch["blacklist_companies"]
         if isinstance(items, list):
-            BLACKLIST_COMPANIES = {_normalize(c) for c in items if c}
+            fields["blacklist_companies"] = frozenset(
+                _normalize(c) for c in items if c
+            )
         else:
             errors.append("blacklist_companies must be a list")
-    
-    # Validate and update blacklist tax IDs
-    if "blacklist_tax_ids" in rules:
-        items = rules["blacklist_tax_ids"]
+
+    if "blacklist_tax_ids" in patch:
+        items = patch["blacklist_tax_ids"]
         if isinstance(items, list):
-            BLACKLIST_TAX_IDS = {str(t).strip() for t in items if t}
+            fields["blacklist_tax_ids"] = frozenset(
+                str(t).strip() for t in items if t
+            )
         else:
             errors.append("blacklist_tax_ids must be a list")
-    
-    # Validate and update safe routes
-    if "safe_routes" in rules:
-        routes = rules["safe_routes"]
+
+    if "safe_routes" in patch:
+        routes = patch["safe_routes"]
         if isinstance(routes, list):
-            new_routes = set()
-            for r in routes:
-                if isinstance(r, dict) and "origin" in r and "destination" in r:
-                    new_routes.add((
-                        _normalize(r["origin"]),
-                        _normalize(r["destination"])
-                    ))
-            DOMESTIC_SAFE_ROUTES = new_routes
+            fields["safe_routes"] = frozenset(
+                (_normalize(r["origin"]), _normalize(r["destination"]))
+                for r in routes
+                if isinstance(r, dict) and "origin" in r and "destination" in r
+            )
         else:
             errors.append("safe_routes must be a list of {origin, destination}")
-    
-    # Validate and update low-value threshold
-    if "low_value_threshold_usd" in rules:
-        val = rules["low_value_threshold_usd"]
+
+    if "low_value_threshold_usd" in patch:
         try:
-            threshold = float(val)
-            if threshold >= 0:
-                LOW_VALUE_THRESHOLD_USD = threshold
-            else:
-                errors.append("low_value_threshold_usd must be non-negative")
+            threshold = float(patch["low_value_threshold_usd"])
         except (TypeError, ValueError):
             errors.append("low_value_threshold_usd must be a number")
-    
+        else:
+            if threshold < 0:
+                errors.append("low_value_threshold_usd must be non-negative")
+            else:
+                fields["low_value_threshold_usd"] = threshold
+
     if errors:
-        return {"ok": False, "errors": errors}
-    
-    return {"ok": True, "rules": get_prefilter_rules()}
+        return None, errors
+
+    return replace(current, **fields), []
+
+
+def prefilter_diff(
+    before: PrefilterRules, after: PrefilterRules
+) -> dict[str, Any]:
+    """
+    What a rule update actually changed.
+
+    Recorded in the audit entry rather than just the submitted payload. The
+    payload says what was asked for; this says what moved -- and for a control
+    that decides which shipments skip screening entirely, "the blacklist lost an
+    entry" is the fact an auditor needs, not "someone POSTed a list".
+    """
+    diff: dict[str, Any] = {}
+
+    added = set(after.blacklist_companies) - set(before.blacklist_companies)
+    removed = set(before.blacklist_companies) - set(after.blacklist_companies)
+    if added or removed:
+        diff["blacklist_companies"] = {
+            "added": sorted(added), "removed": sorted(removed),
+        }
+
+    added = set(after.blacklist_tax_ids) - set(before.blacklist_tax_ids)
+    removed = set(before.blacklist_tax_ids) - set(after.blacklist_tax_ids)
+    if added or removed:
+        diff["blacklist_tax_ids"] = {
+            "added": sorted(added), "removed": sorted(removed),
+        }
+
+    added = set(after.vip_registry) - set(before.vip_registry)
+    removed = set(before.vip_registry) - set(after.vip_registry)
+    if added or removed:
+        diff["vip_registry"] = {
+            "added": [{"company": c, "tax_id": t} for c, t in sorted(added)],
+            "removed": [{"company": c, "tax_id": t} for c, t in sorted(removed)],
+        }
+
+    added = set(after.safe_routes) - set(before.safe_routes)
+    removed = set(before.safe_routes) - set(after.safe_routes)
+    if added or removed:
+        diff["safe_routes"] = {
+            "added": [{"origin": o, "destination": d} for o, d in sorted(added)],
+            "removed": [{"origin": o, "destination": d} for o, d in sorted(removed)],
+        }
+
+    if before.low_value_threshold_usd != after.low_value_threshold_usd:
+        diff["low_value_threshold_usd"] = {
+            "from": before.low_value_threshold_usd,
+            "to": after.low_value_threshold_usd,
+        }
+
+    return diff
+
+

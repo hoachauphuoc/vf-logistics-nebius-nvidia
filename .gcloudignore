@@ -1,0 +1,49 @@
+# Files not uploaded to Cloud Build by `gcloud run deploy --source .`
+#
+# Without this file gcloud generates one that pulls in the ROOT .gitignore via
+# #!include, and nothing else. Nested ignore files are not read -- so
+# frontend/.gitignore, which excludes 496 MB of node_modules across 35,000
+# files, has no effect on the upload. The console is a separate Cloud Run
+# service built from frontend/ with its own .gcloudignore, so none of it belongs
+# in the backend's build context.
+
+.gcloudignore
+.git
+.gitignore
+
+# Honour the root ignore rules (venv, __pycache__, .env, coverage).
+#!include:.gitignore
+
+# The console. Deployed separately from frontend/.
+frontend/
+
+# Benchmark and coverage artefacts. benchmark_report_cases.json alone is 848 KB
+# of per-case detail that the runtime never reads.
+artifacts/
+benchmark_report*.json
+.coverage
+.pytest_cache/
+
+# Not used at runtime. The Dockerfile copies only src/ and
+# data/hs_reference.yaml.
+tests/
+scripts/
+sample_docs/
+docs/
+infra/
+.github/
+.snowflake/
+venv/
+*.md
+!README.md
+
+# Everything under the top-level data/ except the one file the runtime reads.
+#
+# The leading slash is load-bearing. gcloud's ignore matcher does not anchor
+# `data/*` to this directory the way git does -- it matched src/vf_logistics/data/
+# as well and dropped sanctions_seed.json from the image, which does not fail the
+# build. It makes sanctions.load() return None, which makes every screening come
+# back SANCTIONS_SCREENING_UNAVAILABLE, so shipments that should be BLOCKED on a
+# designation get routed to a human instead.
+/data/*
+!/data/hs_reference.yaml

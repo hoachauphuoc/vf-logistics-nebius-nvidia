@@ -136,6 +136,7 @@ async def analyze_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         legacy_key="analysis",
+        prompt=user_text,
         shipment_id=shipment_data.get("shipment_id"),
     )
 

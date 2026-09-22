@@ -7,6 +7,7 @@ rate limiting, request validation, and pagination.
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
 
@@ -41,6 +42,49 @@ class TestSecurityHeaders(FlaskTestBase):
     def test_api_returns_security_headers(self):
         r = self.client.get("/api/v1/config")
         self.assertEqual(r.headers.get("X-Frame-Options"), "DENY")
+
+
+class TestPrimaryUi(FlaskTestBase):
+    """
+    Where `/` sends a browser.
+
+    The console and the API are separate Cloud Run services, so making the
+    console primary means pointing at it rather than serving it. Both directions
+    are asserted: without CONSOLE_URL the behaviour must be exactly what it was,
+    because a deployment that has not been given one must not break.
+    """
+
+    def test_root_serves_the_bundled_dashboard_without_a_console_url(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CONSOLE_URL", None)
+            r = self.client.get("/")
+        self.assertEqual(200, r.status_code)
+        self.assertIn(b"<html", r.data.lower())
+
+    def test_root_redirects_to_the_console_when_configured(self):
+        with patch.dict(os.environ, {"CONSOLE_URL": "https://console.example"}):
+            r = self.client.get("/")
+        self.assertEqual(302, r.status_code)
+        self.assertEqual("https://console.example", r.headers["Location"])
+
+    def test_the_redirect_is_temporary(self):
+        """
+        301 is cached by browsers indefinitely, so a wrong or retired CONSOLE_URL
+        would be unrecoverable for anyone who had already visited.
+        """
+        with patch.dict(os.environ, {"CONSOLE_URL": "https://console.example"}):
+            r = self.client.get("/")
+        self.assertNotEqual(301, r.status_code)
+
+    def test_legacy_dashboard_stays_reachable_even_with_a_console_url(self):
+        """
+        The bundled dashboard is the thing to open when the console itself is the
+        suspect, so it must not depend on the console being healthy.
+        """
+        with patch.dict(os.environ, {"CONSOLE_URL": "https://console.example"}):
+            r = self.client.get("/legacy")
+        self.assertEqual(200, r.status_code)
+        self.assertIn(b"<html", r.data.lower())
 
 
 class TestCORS(FlaskTestBase):
@@ -108,10 +152,44 @@ class TestRequestValidation(FlaskTestBase):
         )
         self.assertIn(r.status_code, [400, 422])
 
-    def test_prefilter_rules_put_requires_author(self):
+    def test_prefilter_rules_put_ignores_a_body_supplied_author(self):
+        """
+        The author on a rule change is the authenticated identity, never a body
+        field.
+
+        This replaces an earlier test that asserted a missing `author` in the body
+        was a 400. That contract was the problem rather than the behaviour worth
+        protecting: pre-filter rules decide which shipments skip screening
+        entirely, so an audit record naming whoever the caller typed is worth
+        exactly as much as their honesty. The assertion now is that a supplied
+        author does not reach the record.
+        """
+        recorded: dict[str, object] = {}
+
+        async def _capture(_self, entry, tenant_id=None):
+            if entry.get("action") == "update_prefilter_rules":
+                recorded.update(entry["detail"])
+
+        with patch("vf_logistics.store.MemoryStore.add_audit", new=_capture):
+            r = self.client.put(
+                "/api/v1/governance/prefilter-rules",
+                json={"blacklist_companies": ["acme"], "author": "not-me@evil.com"},
+                content_type="application/json",
+            )
+
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("author", recorded)
+        self.assertNotEqual(
+            recorded["author"],
+            "not-me@evil.com",
+            "a body-supplied author reached the audit record",
+        )
+
+    def test_prefilter_rules_put_rejects_an_invalid_list(self):
+        """A bad value is a 400, and the valid keys alongside it are not applied."""
         r = self.client.put(
             "/api/v1/governance/prefilter-rules",
-            json={"vip_registry": []},
+            json={"blacklist_companies": "not-a-list"},
             content_type="application/json",
         )
         self.assertIn(r.status_code, [400, 422])
