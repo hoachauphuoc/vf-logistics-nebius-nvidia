@@ -290,38 +290,39 @@ class TestBackendParity(unittest.TestCase):
 
     def test_firestore_documents_the_index_requirement(self):
         """
-        The range filter plus each aggregation needs its own composite index --
-        (_tenant_id, created_at, <aggregated field>) -- because Firestore requires the
-        summed field to be indexed too. An index on the two filtered fields alone is
-        not enough, which is how this was found: the query failed with
-        FAILED_PRECONDITION naming `_input_tokens`.
+        The requirement must be written down where the query is, and it must state the
+        RULE rather than a list.
 
-        None of the five are needed for the unbounded call, so a missing one surfaces
-        only on the first windowed request -- which is when an invoice is being cut.
-        The requirement must be written down where the query is, and it must say five
-        rather than one.
+        This test used to assert that each of the five aggregated fields was named in
+        the docstring, on the reasoning that "nobody creates four and assumes they are
+        done". Enumerating them there turned out to be the weaker guarantee: the list
+        was accurate and the *rule* beside it was wrong -- it said the unbounded call
+        needed no indexes, which is false, and the Tavily sums shipped with only the
+        windowed shape because of it. The unbounded GET /billing/usage then returned 500
+        in production.
+
+        So the enumeration moved to
+        test_the_index_definitions_cover_both_query_shapes, which checks the real
+        index definitions against the real aggregations instead of against prose. What
+        is checked here is that the two shapes are both described.
         """
         from vf_logistics.store import FirestoreStore
 
         doc = inspect.getdoc(FirestoreStore.sum_rollups) or ""
         self.assertIn("index", doc.lower())
         self.assertIn("created_at", doc)
-        # Every aggregated field must be named, so nobody creates four and assumes
-        # they are done.
-        for field in (
-            "_input_tokens",
-            "_output_tokens",
-            "_agent_calls",
-            "_estimated_cost_usd",
-            "_sum_latency_ms",
-        ):
-            self.assertIn(field, doc, f"{field} is not named in the index list")
+        self.assertIn(
+            "(_tenant_id ASC, <field> ASC)", doc,
+            "the unbounded index shape must be documented; omitting it is the mistake "
+            "that put a 500 on the console's billing page",
+        )
+        self.assertIn("(_tenant_id ASC, created_at ASC, <field> ASC)", doc)
 
     def test_the_index_script_covers_every_aggregation(self):
         """
-        The script and the query must not drift. If a sixth aggregation is added to
-        sum_rollups without a matching index, the windowed call starts failing at
-        invoice time -- so the two lists are compared here rather than trusted.
+        The script and the query must not drift. If another aggregation is added to
+        sum_rollups without a matching index, billing starts failing -- so the two lists
+        are compared here rather than trusted.
         """
         import re
         from pathlib import Path
@@ -343,6 +344,53 @@ class TestBackendParity(unittest.TestCase):
                 script,
                 f"{field} is aggregated but has no index in create_billing_indexes.py",
             )
+
+    def test_the_index_definitions_cover_both_query_shapes(self):
+        """
+        Two indexes per aggregated field, and this is the test that was missing.
+
+        The windowed query filters (_tenant_id, created_at); the unbounded one filters
+        only _tenant_id. An index prefix has to match the query's filters, so the
+        three-field index does NOT satisfy the unbounded query. The Tavily sums were
+        added with only the windowed shape: every windowed test passed and the
+        UNBOUNDED GET /billing/usage returned 500 in production, naming
+        (_tenant_id, _tavily_searches). The windowed path was the tested one; the
+        unbounded path was the one every console page calls.
+        """
+        import json
+        import re
+        from pathlib import Path
+
+        from vf_logistics.store import FirestoreStore
+
+        definitions = json.loads(
+            (
+                Path(__file__).resolve().parents[1] / "infra" / "firestore.indexes.json"
+            ).read_text(encoding="utf-8")
+        )
+        indexes = definitions.get("indexes", definitions)
+
+        shapes = {
+            tuple(f["fieldPath"] for f in idx.get("fields", []))
+            for idx in indexes
+            if idx.get("collectionGroup") == "cases"
+        }
+
+        source = inspect.getsource(FirestoreStore.sum_rollups)
+        aggregated = sorted(set(re.findall(r'base\.sum\("([^"]+)"\)', source)))
+        self.assertTrue(aggregated, "no sum() aggregations found; the regex is stale")
+
+        for field in aggregated:
+            with self.subTest(field=field):
+                self.assertIn(
+                    ("_tenant_id", field), shapes,
+                    f"{field} has no UNBOUNDED index (_tenant_id, {field}) -- "
+                    f"GET /billing/usage with no period will 500",
+                )
+                self.assertIn(
+                    ("_tenant_id", "created_at", field), shapes,
+                    f"{field} has no WINDOWED index (_tenant_id, created_at, {field})",
+                )
 
 
 class TestVisionCallIsMetered(unittest.TestCase):

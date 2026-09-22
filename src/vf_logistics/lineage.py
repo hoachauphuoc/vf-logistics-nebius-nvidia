@@ -310,4 +310,17 @@ async def tenant_usage(
         "cleared_by_ai": cleared.get("ai", 0),
         "counts_are_lifetime": True,
         "avg_latency_ms": rollups.get("avg_latency_ms", 0),
+        # Tavily, reported beside the model spend because it is the tighter ceiling and
+        # was invisible. `estimated_cost_usd` above is Nebius only, and measured at
+        # 4.5-5.3 searches per case the free tier's 1,000 credits a month run out after
+        # roughly 200 cases -- while the same traffic costs about seven cents of
+        # Nemotron. A dashboard showing only the dollars shows the looser constraint.
+        #
+        # Three numbers, not one. `searches` is what the pipeline attempted, `cached` is
+        # what a TTL served for free, and `billable` is what actually reached the API --
+        # which is neither of the other two, because a request that never left the
+        # process (no API key, a timeout) also costs nothing.
+        "tavily_searches": int(rollups.get("tavily_searches") or 0),
+        "tavily_cached": int(rollups.get("tavily_cached") or 0),
+        "tavily_billable": int(rollups.get("tavily_billable") or 0),
     }

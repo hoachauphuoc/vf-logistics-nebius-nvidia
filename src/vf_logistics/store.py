@@ -1048,33 +1048,33 @@ class FirestoreStore:
         billing figure that depended on which backend answered would be worse than
         no figure.
 
-        REQUIRES EIGHT COMPOSITE INDEXES, one per aggregation:
+        REQUIRES TWO COMPOSITE INDEXES PER AGGREGATED FIELD, not one:
 
-            (_tenant_id ASC, created_at ASC, _input_tokens ASC)
-            (_tenant_id ASC, created_at ASC, _output_tokens ASC)
-            (_tenant_id ASC, created_at ASC, _agent_calls ASC)
-            (_tenant_id ASC, created_at ASC, _estimated_cost_usd ASC)
-            (_tenant_id ASC, created_at ASC, _sum_latency_ms ASC)
-            (_tenant_id ASC, created_at ASC, _tavily_searches ASC)
-            (_tenant_id ASC, created_at ASC, _tavily_cached ASC)
-            (_tenant_id ASC, created_at ASC, _tavily_billable ASC)
+            unbounded   (_tenant_id ASC, <field> ASC)
+            windowed    (_tenant_id ASC, created_at ASC, <field> ASC)
 
-        An index on (_tenant_id, created_at) alone is NOT enough, which was learned
-        the hard way: Firestore requires the AGGREGATED field to be in the index as
-        well as the filtered ones, so the first attempt failed with
-        FAILED_PRECONDITION naming `_input_tokens` -- the first of the five sums to
-        run. Create them with infra/monitoring/create_billing_indexes.py.
+        Firestore needs the aggregated field in the index alongside the filtered ones,
+        and an index prefix has to match the query's filters -- so the three-field index
+        does NOT satisfy the unbounded query, which never constrains `created_at`. With
+        eight aggregations that is sixteen indexes. Create them with
+        infra/monitoring/create_billing_indexes.py.
 
-        The count is a standing trap: it grows with every new aggregation, and the
-        failure arrives only on the first windowed request for the new field. The two
-        Tavily sums are the most recent example. tests/test_billing_period.py extracts
-        every summed field name from this method by pattern and asserts each one has a
-        matching index definition, so adding an aggregation without an index fails in
-        CI rather than in an invoice.
+        THIS DOCSTRING PREVIOUSLY SAID THE OPPOSITE, and the correction is the useful
+        part. It read: "None of them are needed for the unbounded call, so an existing
+        deployment keeps working until the first windowed request." The first clause is
+        false. The unbounded call needs the two-field indexes; they already existed from
+        when unbounded billing was built, so nothing broke and the false statement went
+        unchallenged.
 
-        None of them are needed for the unbounded call, so an existing deployment
-        keeps working until the first windowed request -- which means a missing index
-        surfaces exactly when an invoice is being cut. Create them before then.
+        Adding the Tavily sums proved it. The windowed indexes were created, every
+        windowed test passed, and the *unbounded* GET /billing/usage returned 500 in
+        production with "The query requires an index" naming
+        (_tenant_id, _tavily_searches). The windowed path was the one covered by tests
+        and the unbounded path was the one every console page calls.
+
+        tests/test_billing_period.py extracts every summed field name from this method
+        by pattern and asserts each has BOTH index shapes defined, so a new aggregation
+        cannot repeat this.
         """
         scope = tenant.resolve(tenant_id)
 
