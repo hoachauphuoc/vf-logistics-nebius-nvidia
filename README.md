@@ -589,6 +589,60 @@ gcloud run services delete vf-console   --region asia-southeast1
 
 ---
 
+## Signing in
+
+**Most of the console needs no account.** The board, every case trace, the audit trail
+and the cost figures are all readable anonymously — `VF_PUBLIC_READS=true` on the console
+and `ANONYMOUS_ROLE=viewer` on the backend govern that, and the split is on the **HTTP
+method**, not a path list, so reads are public and writes never are. If you are here to
+assess the system, you can ignore this section entirely.
+
+Signing in is required for exactly one thing: **recording a review decision.** The audit
+trail names the account that made each call, and that attribution is the point — it is
+what makes a released shipment traceable to a person rather than to "the reviewer field
+in the request body", which is what it used to be.
+
+### The demo reviewer account
+
+| | |
+|---|---|
+| Sign-in page | `/login` on the console |
+| Address | `judge@vf-logistics.demo` |
+| Password | Secret Manager, `VF_JUDGE_PASSWORD` — not in this repo and not in any log |
+
+Read the password for your own deployment with:
+
+```bash
+gcloud secrets versions access latest \
+  --secret=VF_JUDGE_PASSWORD --project=<your-project>
+```
+
+For a submission review the same password is supplied in the private
+testing-instructions field, so a judge never has to touch `gcloud`.
+
+### Creating your own operator
+
+There is no self-service sign-up. Accounts live in `VF_OPERATORS` as
+`email:iterations:salt:hash` records (PBKDF2-SHA256), semicolon-separated:
+
+```bash
+node frontend/scripts/make-operator.mjs you@example.com --out ./secrets
+```
+
+That writes the generated password to a **file** rather than printing it, so it does not
+land in a shell history or a terminal transcript. Append the record to `VF_OPERATORS` and
+redeploy the console:
+
+```bash
+gcloud run services update vf-console --region asia-southeast1 \
+  --update-secrets VF_OPERATORS=VF_OPERATORS:latest
+```
+
+`VF_SESSION_SECRET` must be at least 32 characters; a shorter value is treated as absent,
+and in production a missing one takes the console **offline** rather than leaving it open.
+
+---
+
 ## Reproducible testing
 
 ```bash
