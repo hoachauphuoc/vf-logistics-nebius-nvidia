@@ -220,19 +220,22 @@ def should_screen(
     # First, `destination` was in the haystack. A destination is not a diversion. The
     # seeded traffic ships Vietnam to PSA Singapore, the single most ordinary freight
     # movement in the region, and the gate reported it as "routed via singapore" --
-    # a reason string that was not describing what had happened.
+    # a reason string that was not describing what had happened. Excluding the field is
+    # not enough on its own, because `route_details` restates the destination in prose,
+    # so the destination VALUE is passed to distinct_hubs() for removal.
     #
-    # Second, one hub was enough. verifier.py:974-984 requires TWO before it raises a
-    # finding, and names that finding MULTIPLE_DIVERSION_HUBS: passing through one
-    # major port is freight, passing through several is a pattern. The list's own
-    # comment says these hubs are "commonly used to obscure final destination", which
-    # describes a chain, not a single call. So the gate now agrees with the component
-    # that already owns this judgement rather than applying a looser rule of its own
-    # and spending up to four Nemotron completions on the difference.
-    transit = " ".join(str(shipment.get(f) or "").lower() for f in (
+    # Second, one hub was enough. verifier.py requires TWO before it raises a finding,
+    # and names that finding MULTIPLE_DIVERSION_HUBS: passing through one major port is
+    # freight, passing through several is a pattern.
+    #
+    # Both now go through verifier.distinct_hubs(), which counts PLACES rather than
+    # matched strings. `DIVERSION_HUBS` holds three nested names for one location --
+    # "jebel ali", "dubai", "uae" -- so substring counting made a single Emirati port
+    # read as two hubs and trip a rule whose name says MULTIPLE.
+    transit = " ".join(str(shipment.get(f) or "") for f in (
         "transit_points", "route_details",
     ))
-    hubs = sorted(h for h in verifier.DIVERSION_HUBS if h in transit)
+    hubs = sorted(verifier.distinct_hubs(transit, exclude=shipment.get("destination")))
     if len(hubs) >= MIN_DIVERSION_HUBS:
         reasons.append(f"routed via {len(hubs)} transhipment hubs: {', '.join(hubs)}")
 

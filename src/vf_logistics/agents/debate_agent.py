@@ -27,7 +27,24 @@ from ._common import Timer, utcnow
 # a short structured judgement. Still 3.7x the largest observed reply.
 MAX_OUTPUT_TOKENS = 1500
 
-MODEL_ID = os.getenv("DEBATE_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+# Nemotron 3 Ultra, the one place in the pipeline it earns its rate.
+#
+# Ultra is 1.00/3.00 per million against Super's 0.30/0.90 -- 3.3x -- and it is
+# deliberately NOT used on fraud_detection or compliance, which run on every case. The
+# reason there is architectural rather than financial: verifier.py computes a
+# deterministic risk floor, and an agent may raise risk but never lower it below that
+# floor, so a stronger model cannot move the outcome in the direction that matters.
+#
+# The debate is the exception. It runs only when `score_disputed` is set -- measured at
+# 2 calls across 20 cases -- and what it produces is not a score that the floor will
+# override, it is a reasoned CONFIRM/DISAGREE on whether the floor and the model can be
+# reconciled without a person. That judgement is the outcome. At this volume the whole
+# switch costs about $0.007 per 20 cases.
+#
+# Worth being honest that this is a quality bet, not a measured improvement: nothing
+# here yet demonstrates Ultra resolves more disputes than Super. scripts/compare_debate_models.py
+# measures exactly that, and DEBATE_MODEL reverses the decision without a deploy.
+MODEL_ID = os.getenv("DEBATE_MODEL", "nvidia/Nemotron-3-Ultra-550b-a55b")
 
 
 DEBATE_TOOLS = [

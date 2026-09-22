@@ -52,6 +52,10 @@ class RecordingClient:
 
     calls = 0
 
+    # The client is pooled and reused across searches now, so `_client()` checks this
+    # before handing one back. A stub without it raises AttributeError.
+    is_closed = False
+
     def __init__(self, *_a, **_kw):
         pass
 

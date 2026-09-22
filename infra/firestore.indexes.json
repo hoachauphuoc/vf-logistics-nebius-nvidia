@@ -16,9 +16,18 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "state", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -26,8 +35,14 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -35,9 +50,18 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "client_reference", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "client_reference",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -45,9 +69,18 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "state", "order": "ASCENDING" },
-        { "fieldPath": "cleared_by", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "cleared_by",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -69,40 +102,70 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "_input_tokens", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_input_tokens",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "_output_tokens", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_output_tokens",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "_agent_calls", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_agent_calls",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "_estimated_cost_usd", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_estimated_cost_usd",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "_sum_latency_ms", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_sum_latency_ms",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -126,45 +189,90 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "ASCENDING" },
-        { "fieldPath": "_input_tokens", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_input_tokens",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "ASCENDING" },
-        { "fieldPath": "_output_tokens", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_output_tokens",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "ASCENDING" },
-        { "fieldPath": "_agent_calls", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_agent_calls",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "ASCENDING" },
-        { "fieldPath": "_estimated_cost_usd", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_estimated_cost_usd",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "ASCENDING" },
-        { "fieldPath": "_sum_latency_ms", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_sum_latency_ms",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -172,8 +280,14 @@
       "collectionGroup": "events",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -181,35 +295,68 @@
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "case_id", "order": "ASCENDING" },
-        { "fieldPath": "at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "case_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "action", "order": "ASCENDING" },
-        { "fieldPath": "at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "at", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -217,8 +364,14 @@
       "collectionGroup": "delegation_boundaries",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -226,8 +379,68 @@
       "collectionGroup": "delegation_boundaries",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
-        { "fieldPath": "version", "order": "DESCENDING" }
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "version",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_tavily_searches",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_tavily_cached",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "_tenant_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "_tavily_billable",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

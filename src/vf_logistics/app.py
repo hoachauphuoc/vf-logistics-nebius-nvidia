@@ -1024,12 +1024,38 @@ def set_model_config():
     
     if not new_model:
         return jsonify({"error": "model is required"}), 400
-    
-    if model_config.set_model(new_model):
+
+    # A dearer model needs saying so. This setting drives fraud detection and
+    # compliance, which run on every shipment, and the change takes effect on the next
+    # one -- so "did someone put Ultra on the hot path" should be a question with an
+    # answer rather than a discovery at the end of the month.
+    confirmed = bool(data.get("confirm_higher_cost") or data.get("allow_costlier"))
+    try:
+        switched = model_config.set_model(new_model, allow_costlier=confirmed)
+    except model_config.CostlierModel as exc:
+        # 409 rather than 400: the request is well-formed and the model is real. What is
+        # missing is the confirmation, and the body says exactly what to send.
+        return jsonify({
+            "error": str(exc),
+            "model": exc.model,
+            "current_model": exc.current,
+            "rate_multiple": round(exc.multiple, 2),
+            "limit": exc.limit,
+            "confirm_with": {"model": exc.model, "confirm_higher_cost": True},
+            "note": (
+                "This model is used by fraud detection and compliance, which run on "
+                "every shipment. Re-send with confirm_higher_cost to proceed."
+            ),
+        }), 409
+
+    if switched:
         return jsonify({
             "success": True,
             "model": new_model,
-            "pricing": model_config.get_pricing()
+            "pricing": model_config.get_pricing(),
+            "rate_multiple_vs_previous": round(
+                model_config.rate_multiple(new_model), 2
+            ),
         })
     
     return jsonify({

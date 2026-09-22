@@ -85,6 +85,10 @@ class TavilyHttpTests(unittest.TestCase):
             kw["transport"] = _transport(handler)
             return real_client(*args, **kw)
 
+        # The client is pooled per event loop now, so one built before this patch
+        # would be reused and the MockTransport never reached -- a test that silently
+        # exercises the real network instead of the handler below.
+        tavily_client.reset_cache()
         with patch.object(tavily_client.httpx, "AsyncClient", factory):
             return _run(tavily_client.search_with_status("query", **kwargs))
 

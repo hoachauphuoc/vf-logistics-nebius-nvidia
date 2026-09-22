@@ -116,12 +116,21 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
         tavily_queries.append(f'"{shipper}" fraud OR sanctions OR shell company')
 
     all_results = []
+    statuses: list[str] = []
     for q in tavily_queries:
-        all_results.extend(await tavily_client.search(q, max_results=3))
+        results, status = await tavily_client.search_with_status(q, max_results=3)
+        all_results.extend(results)
+        statuses.append(status)
+    failed = next((s for s in statuses if s in tavily_client.FAILED_STATUSES), None)
+    search_status = failed or (statuses[0] if statuses else tavily_client.OK)
     if all_results:
         tavily_context = (
             "\n\n<<<BEGIN EXTERNAL WEB SEARCH FINDINGS (Tavily)>>>\n"
-            + tavily_client.format_findings(all_results)
+            # Status carried through for the same reason it now is in
+            # compliance_agent: format_findings() defaults to OK, so a timeout or a
+            # 429 rendered as "search ran and returned nothing" -- an outage read as
+            # a clean result.
+            + tavily_client.format_findings(all_results, search_status)
             + "\n<<<END EXTERNAL WEB SEARCH FINDINGS>>>\n"
         )
 
@@ -151,7 +160,23 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
     )
     out["thinking_enabled"] = True
     out["external_search_used"] = len(all_results) > 0
-    out["external_search_results"] = len(all_results)
+    # A LIST of {title, url}, matching compliance_agent.
+    #
+    # This was `len(all_results)`, an int, under the same field name the compliance
+    # step fills with a list -- and the case trace renders that field by mapping over
+    # it, so `(3).length` was undefined, the branch was skipped, and an investigation's
+    # search evidence silently never appeared. Two agents disagreeing about the type of
+    # one field is the kind of defect that shows up as an empty panel rather than an
+    # error.
+    out["external_search_results"] = [
+        {"title": r["title"], "url": r["url"]} for r in all_results[:5]
+    ]
+    out["external_search_status"] = search_status
+    out["external_search_count"] = len(tavily_queries)
+    # Not cached: this agent runs only on escalated cases, where the evidence behind a
+    # decision that is already going to a human should be fetched live.
+    out["external_search_cache_hits"] = 0
+    out["external_search_live"] = len(tavily_queries)
     return out
 
 

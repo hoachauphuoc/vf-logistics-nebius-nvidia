@@ -291,6 +291,48 @@ DIVERSION_HUBS = {
     "singapore", "kaohsiung", "busan",
 }
 
+# The same hubs, mapped to the PLACE each one names.
+#
+# Three of the entries above are nested names for one location: Jebel Ali is a port in
+# Dubai, which is in the UAE. Counting them as separate hubs made a single port call
+# read as two or three, and both consumers of this list count hubs to decide something:
+# MULTIPLE_DIVERSION_HUBS below raises the risk floor to 70 on two, and
+# zero_day_agent.should_screen() spends up to four Nemotron completions on two.
+#
+# Measured against the real generator inputs: "Jebel Ali, UAE" yielded
+# ['jebel ali', 'uae'] and "Dubai, UAE" yielded ['dubai', 'uae'], so a shipment through
+# one Emirati port tripped a rule whose own name says MULTIPLE. Canonicalising collapses
+# each to `uae` and the count becomes one.
+HUB_ALIASES = {
+    "jebel ali": "uae",
+    "dubai": "uae",
+    "uae": "uae",
+    "port klang": "port klang",
+    "hong kong": "hong kong",
+    "singapore": "singapore",
+    "kaohsiung": "kaohsiung",
+    "busan": "busan",
+}
+
+
+def distinct_hubs(text: str, exclude: str = "") -> set[str]:
+    """
+    The set of distinct transhipment PLACES named in `text`.
+
+    `exclude` removes a value before matching, and it exists because route text
+    restates the destination: `route_details` is written as
+    "<origin> to <hub>, onward carriage to <final>", so a shipment whose final
+    destination is Busan picked up `busan` as a hub. A destination is where the cargo is
+    going, not evidence it is being concealed -- and Busan, Singapore and Hong Kong are
+    all ordinary destinations that also appear on this list.
+    """
+    haystack = str(text or "").lower()
+    if exclude:
+        haystack = haystack.replace(str(exclude).lower(), " ")
+    return {
+        HUB_ALIASES[alias] for alias in DIVERSION_HUBS if alias in haystack
+    }
+
 MISSING_MARKERS = {"", "not stated", "n/a", "na", "none", "not provided", "unknown", "-"}
 
 
@@ -971,7 +1013,7 @@ def check_routing(shipment: dict[str, Any]) -> list[dict[str, Any]]:
             "detail": f"Destination '{dest}' is on the enhanced due diligence list.",
         })
 
-    hubs = [h for h in DIVERSION_HUBS if h in transit]
+    hubs = sorted(distinct_hubs(transit, exclude=dest))
     if len(hubs) >= 2:
         findings.append({
             "code": "MULTIPLE_DIVERSION_HUBS",
