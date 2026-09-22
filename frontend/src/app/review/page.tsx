@@ -463,6 +463,28 @@ function ReviewPanel({
           <HelpDot id="review.decision" />
         </div>
 
+        {/* Signed out: explain, do not offer.
+            Reads are public on this deployment, so somebody can reach this panel
+            with no session. Rendering the buttons anyway would mean their first
+            information about the login is a 401 on a release they thought they had
+            recorded -- and for a shipment release, believing you acted when you did
+            not is the worst possible failure. `isLoading` is excluded so the panel
+            does not flicker through this state on every load. */}
+        {!identity.isLoading && !identity.data ? (
+          <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
+            <p className="text-[12px] leading-relaxed text-dim">
+              You are viewing this queue read-only. Recording a decision needs a
+              signed-in account, because the audit trail names the person who
+              decided rather than the service that called the API.
+            </p>
+            <a
+              href={`/login?next=${encodeURIComponent("/review")}`}
+              className="mt-2.5 inline-flex h-8 items-center rounded-md border border-white/15 px-3 text-[12px] text-white/90 transition-colors hover:border-white/30"
+            >
+              Sign in to record a decision
+            </a>
+          </div>
+        ) : (
         <div className="mt-3 space-y-3">
           <div>
             <Label className="text-[11.5px] text-dim">Recorded as</Label>
@@ -544,6 +566,7 @@ function ReviewPanel({
             </Button>
           </div>
         </div>
+        )}
       </div>
 
       {detail?.debate != null && (

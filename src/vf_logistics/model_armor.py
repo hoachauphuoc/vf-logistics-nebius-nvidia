@@ -30,6 +30,8 @@ from typing import Any
 
 import httpx
 
+from vf_logistics import untrusted
+
 PROJECT_ID = os.getenv("PROJECT_ID", "project-93ded24f-21c3-4f1b-a7d")
 LOCATION = os.getenv("MODEL_ARMOR_LOCATION", "asia-southeast1")
 TEMPLATE = os.getenv("MODEL_ARMOR_TEMPLATE", "vf-document-intake").strip()
@@ -148,6 +150,24 @@ async def screen(text: str, stage: str) -> dict[str, Any]:
     `stage` records where in the pipeline the screen happened, because
     "screened before the model ran" and "screened after transcription" are
     materially different assurances and the case should say which it got.
+
+    TWO LAYERS, AND ONLY ONE OF THEM BLOCKS
+
+    A deterministic pass over `untrusted.INJECTION_PATTERNS` runs first. It is free,
+    needs no network, and closes a specific gap: an injection sitting in document
+    prose that the extractor does not carry into any structured field is invisible to
+    the field-level `untrusted.screen_text()` call later in the pipeline. Today only
+    Model Armor stands between that text and a human, so if Model Armor is
+    unreachable, nothing catches it at all.
+
+    It is ADVISORY on purpose -- it sets `requires_human`, never `blocked`. Those
+    patterns were written for extracted field values and are used that way elsewhere;
+    they have not been validated against full commercial prose, and two of them would
+    plausibly fire on it. `(system|assistant|developer)\\s*(...)?\\s*:` matches a bare
+    "System:", which is an ordinary form label on a booking document, and
+    "pre-approved" is ordinary commercial language. Refusing a real shipment on a
+    form label is a worse failure than screening it a moment later, so the block
+    decision stays with the detector built for the job.
     """
     verdict: dict[str, Any] = {
         "provider": "google-cloud-model-armor",
@@ -160,6 +180,10 @@ async def screen(text: str, stage: str) -> dict[str, Any]:
         "confidence": None,
         "detail": None,
         "windows_screened": 0,
+        # Which layer produced the outcome. Named so a verdict can be read without
+        # knowing the module's internal ordering.
+        "gate": None,
+        "deterministic": None,
     }
 
     if not TEMPLATE:
@@ -170,6 +194,19 @@ async def screen(text: str, stage: str) -> dict[str, Any]:
         verdict["available"] = True
         verdict["detail"] = "no text to screen"
         return verdict
+
+    # Layer one: deterministic, free, advisory.
+    patterns = untrusted.screen_text(text)
+    if patterns.get("findings"):
+        kinds = sorted({str(f.get("type")) for f in patterns["findings"] if f.get("type")})
+        verdict["deterministic"] = {
+            "matched": True,
+            "types": kinds,
+            "count": len(patterns["findings"]),
+        }
+        # Flagged for a person whatever Model Armor goes on to say, including when it
+        # cannot be reached. That independence is the whole point of this layer.
+        verdict["requires_human"] = True
 
     token = await asyncio.to_thread(_access_token)
     if not token:
@@ -197,6 +234,7 @@ async def screen(text: str, stage: str) -> dict[str, Any]:
 
         if outcome.get("match_state") == "MATCH_FOUND":
             verdict["blocked"] = True
+            verdict["gate"] = "model-armor"
             verdict["match_state"] = "MATCH_FOUND"
             verdict["confidence"] = outcome.get("confidence")
             verdict["detail"] = (
@@ -219,10 +257,18 @@ async def screen(text: str, stage: str) -> dict[str, Any]:
         return verdict
 
     verdict["match_state"] = "NO_MATCH_FOUND"
+    verdict["gate"] = "model-armor"
     verdict["detail"] = (
         f"no prompt injection detected across {verdict['windows_screened']} "
         f"window(s)"
         + (f"; {len(errors)} window(s) errored" if errors else "")
+        + (
+            "; deterministic patterns matched "
+            + ", ".join(verdict["deterministic"]["types"])
+            + " and the case is flagged for a person"
+            if verdict.get("deterministic")
+            else ""
+        )
     )
     return verdict
 

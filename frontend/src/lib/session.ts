@@ -95,6 +95,37 @@ export function loginRequired(): boolean {
   return process.env.NODE_ENV === "production" || secret() !== null;
 }
 
+/**
+ * Whether anonymous visitors may READ the console without signing in.
+ *
+ * Writes are never covered by this. It governs GET only, which is the same line
+ * the backend already draws: auth.py's `anonymous_role()` docstring describes the
+ * intended posture as "reads are public, writes need a key", and calls refusing
+ * anonymous reads the stronger setting that is deliberately not the default.
+ *
+ * WHY IT EXISTS
+ *
+ * The console's own login wall is absolute -- proxy.ts turns away every request
+ * without a session. That is right for a paying customer and wrong for a
+ * hackathon judge, who may open the URL once and never sign in. With the wall up
+ * and the backend refusing anonymous reads, the deployed service rendered a page
+ * that loaded and was empty: `/` answered 200 while every XHR behind it answered
+ * 401. A judge reads that as broken, not as protected.
+ *
+ * DEFAULTS TO FALSE, and the default is the point. A deployment that forgets this
+ * variable is locked, not open. Turning it on is a deliberate act with a stated
+ * reason, and the reason here is the judging window ending 15 December 2026.
+ *
+ * ONE CONSEQUENCE, ACCEPTED KNOWINGLY: an anonymous GET still carries VF_API_KEY
+ * upstream, so an anonymous reader sees `review/queue` and `billing/usage`, both
+ * of which sit above `viewer` on the backend. That is wanted here -- the review
+ * queue and the cost figure are the demo -- and it is exactly why this must be
+ * off before a paying customer's data is in the store.
+ */
+export function publicReads(): boolean {
+  return (process.env.VF_PUBLIC_READS ?? "").trim().toLowerCase() === "true";
+}
+
 async function key(rawSecret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",

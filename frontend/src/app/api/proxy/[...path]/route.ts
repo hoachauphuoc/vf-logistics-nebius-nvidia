@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { flaskBase } from "@/lib/config";
-import { COOKIE_NAME, loginRequired, verifySession } from "@/lib/session";
+import {
+  COOKIE_NAME,
+  loginRequired,
+  publicReads,
+  verifySession,
+} from "@/lib/session";
 
 /**
  * Proxy to the Flask API.
@@ -341,7 +346,10 @@ export async function GET(
   if (!matchRead(joined)) return notProxied(joined, "GET");
 
   const { token, value } = await session(request);
-  if (loginRequired() && !value) return notAuthenticated();
+  // Reads may be public. The token is still forwarded when there IS one, so a
+  // signed-in reader's requests stay attributable even though an anonymous
+  // reader's are not.
+  if (loginRequired() && !publicReads() && !value) return notAuthenticated();
 
   return forward(request, joined, "GET", token);
 }
@@ -356,6 +364,8 @@ export async function POST(
   if (!matchWrite(joined, ALLOWED_POST)) return notProxied(joined, "POST");
 
   const { token, value } = await session(request);
+  // Deliberately NOT relaxed by publicReads(). Every route below either moves
+  // cargo, changes the rules that decide what auto-clears, or spends money.
   if (loginRequired() && !value) return notAuthenticated();
 
   return forward(request, joined, "POST", token);

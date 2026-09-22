@@ -203,6 +203,13 @@ tenant.assert_isolation_is_enforceable()
 # an anonymous POST clear 307 cases. This one does not consult MULTI_TENANT.
 auth.assert_write_access_is_guarded()
 
+# Not a guard -- this one only complains. An unpriced model is an accounting defect,
+# so it is reported at import where somebody will see it rather than being allowed to
+# surface a month later as an unexplained gap between the invoice and the usage.
+# NEMOTRON_MODEL and VISION_MODEL are read from the environment without passing
+# through set_model(), which is the only place that checks PRICING.
+model_config.warn_on_unpriced_selection()
+
 
 def _tenant() -> str | None:
     """
