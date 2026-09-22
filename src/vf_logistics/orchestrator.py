@@ -1087,10 +1087,10 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
 
         fraud_resp, compliance_resp, route_outcome = await asyncio.gather(
             analyze_shipment(case["shipment"]),
-            # The floor is passed only so compliance can decide whether its
-            # adverse-media lookups may be served from cache: at or above the
-            # auto-clear threshold the case is going to a human either way, and the
-            # reviewer should be reading a live search. It does not influence scoring.
+            # The floor is passed but no longer acts on anything: it fed a cache
+            # bypass that measurement removed, because it fired on 91% of traffic and
+            # so disabled the cache it was protecting. Kept at the call site so the
+            # decision is cheap to revisit. It never influenced scoring.
             screen_shipment(
                 case["shipment"], risk_floor=validation.get("risk_floor"),
             ),
