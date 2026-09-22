@@ -502,5 +502,75 @@ class TestReviewerAttribution(unittest.TestCase):
         self.assertEqual(who, "batch-job")
 
 
+class TestBothAuditRowsNameThePerson(unittest.TestCase):
+    """
+    human_decide writes TWO audit records on purpose -- a thin one saying a named
+    human chose an action, and a lineage record saying what evidence was in front of
+    them. Both must carry the name.
+
+    Found in production: the thin row had no `actor` field at all. The reviewer was
+    inside `detail.reviewer`, one level deeper than the column the audit list reads,
+    so the row rendered with a blank actor -- on the single row type whose entire
+    purpose is to say who decided.
+    """
+
+    def setUp(self):
+        import vf_logistics.store as store_mod
+
+        from vf_logistics.store import MemoryStore
+
+        self.store_mod = store_mod
+        self.store = MemoryStore()
+        store_mod._store = self.store
+
+    def tearDown(self):
+        self.store_mod._store = None
+
+    def test_the_thin_row_carries_the_actor(self):
+        import asyncio
+
+        from vf_logistics import orchestrator
+
+        async def scenario():
+            case = await orchestrator.ingest_shipment(
+                {
+                    "shipment_id": "SHP-AUDIT-1",
+                    "origin": "Ho Chi Minh City, Vietnam",
+                    "destination": "PSA Singapore, Singapore",
+                    "weight_kg": 1200,
+                    "declared_value": 40000,
+                    "shipping_cost": 1800,
+                    "cargo_description": "cotton fabric rolls",
+                    "status": "pending",
+                },
+                source="event",
+            )
+            # request_info keeps the case where it is, so this exercises the audit
+            # write without needing the case to reach a terminal state.
+            case["state"] = "PENDING_HUMAN"
+            await self.store.put_case(case)
+
+            await orchestrator.human_decide(
+                case["case_id"],
+                "request_info",
+                PERSON,
+                "need the packing list",
+            )
+            return await self.store.list_audit(20)
+
+        rows = asyncio.run(scenario())
+        human_rows = [r for r in rows if str(r.get("action", "")).startswith("human_")]
+        self.assertTrue(human_rows, "no human_* audit row was written")
+
+        for row in human_rows:
+            with self.subTest(action=row.get("action")):
+                self.assertEqual(
+                    row.get("actor"),
+                    PERSON,
+                    "every human audit row must name the person at the top level, "
+                    "not only inside detail",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

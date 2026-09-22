@@ -1646,6 +1646,12 @@ async def human_decide(
         "case_id": case_id,
         "action": f"human_{action}",
         "status": "done",
+        # Named at the top level as well as inside `detail`, because the audit
+        # list reads `actor` and this row was rendering with a blank one -- on the
+        # single row type whose whole purpose is to say who decided. The name was
+        # present in detail.reviewer all along, one level too deep for the column
+        # that a customs officer actually looks at.
+        "actor": reviewer,
         "detail": review,
         "at": utcnow(),
     }, tenant_id=tenant_id)
