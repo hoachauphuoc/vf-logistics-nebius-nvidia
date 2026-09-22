@@ -530,16 +530,47 @@ on this codebase. The first two are the ones we would fix first.
    `document_agent.py` that cost real debugging time before we realised it was expected
    rather than a bug. A one-line note in the vision-model docs would have saved that.
 
-5. **Rate limit headers** \u2014 Token Factory returns 429 on rate limit but does not
+5. **Prefix caching exists on the backend but cannot be billed for, and there is no way
+   to tell whether it hit.** The inference docs list "KV Cache" and "Context Caching"
+   under optimisations, and the observability page exposes a **KV-cache hit rate**
+   distinguishing local from external hits — so prefix caching is real and running. But
+   the `Pricing` schema returned by `GET /v1/models?verbose=true` has six dimensions
+   (`prompt`, `completion`, `image`, `price_per_video_second`, `request`,
+   `price_per_minute`) and **none for cached input**, so there is no field in which a
+   discounted cached rate could be expressed. `prompt_tokens_details.cached_tokens` is in
+   the OpenAPI schema but carries only a title, no description, and comes back `null` on
+   every chat completion we observed.
+
+   The consequence here is concrete and we chose to eat it. Our HS-classification agent
+   sends a 1,376-token static nomenclature extract on every call — essentially 100% of
+   that agent's input, since the variable part is one cargo description. We measured what
+   the block buys before considering trimming it: base Nemotron Nano reaches **40.0%**
+   recall on deliberately evasive misclassification cases, naive few-shot prompting makes
+   it **worse at 26.7%**, and the same model with this reference block reaches **91.7%**.
+   The block is the capability, not overhead, so it stays — and we pay full `prompt` rate
+   for an identical prefix 16 times per 20-case run. Either a documented cached-input rate
+   or a populated `cached_tokens` would let a builder reason about this instead of
+   guessing.
+
+   Related and cheap to fix: **`max_tokens` defaults to 8192 when omitted**, which *is*
+   documented but easy to miss, and it cost us real money before we found it. Two calls
+   on a measured run returned exactly 8,192 output tokens and both failed to parse — one
+   was a degenerate repetition loop emitting `{}, {}, {}, ...` for 38.6 seconds at
+   `$0.007873`, which was 29% of that agent's entire spend for the run. `finish_reason:
+   "length"` is documented and is what let us tell "the model emitted invalid JSON" from
+   "the reply was cut off". Surfacing the 8192 default more prominently — or defaulting
+   to the model's context limit rather than a fixed number — would have saved the hunt.
+
+6. **Rate limit headers** \u2014 Token Factory returns 429 on rate limit but does not
    include `Retry-After` or `X-RateLimit-*`. For a production service that has to back
    off gracefully, knowing *when* to retry is the difference between a backoff and a
    guess.
 
-6. **Streaming for long completions** \u2014 the investigation agent's detailed reports
+7. **Streaming for long completions** \u2014 the investigation agent's detailed reports
    take 8\u201312 seconds. Streaming would improve perceived latency for a human reviewer
    waiting on a decision.
 
-7. **Batch API** \u2014 for offline scoring of historical shipments (backtesting a new
+8. **Batch API** \u2014 for offline scoring of historical shipments (backtesting a new
    risk model against last year's freight), a batch endpoint at a lower per-token cost
    would make the difference between running it and not.
 
