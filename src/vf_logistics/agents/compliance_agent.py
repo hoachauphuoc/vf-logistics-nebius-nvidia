@@ -18,6 +18,14 @@ from vf_logistics import tavily_client
 from ._common import Timer, envelope, parse_model_json
 from vf_logistics import config as model_config
 
+# Output ceiling. 6,000 against a measured legitimate maximum of 1,940 output
+# tokens, median 1,208.
+#
+# This agent produced one of the two runaway calls on the 20-case run: 8,192 output
+# tokens, 45.2 seconds, and a parse_error. See nebius_client._ceiling -- the ceiling
+# bounds what a runaway costs, it does not stop the case going to a human.
+MAX_OUTPUT_TOKENS = 6000
+
 def get_model_id():
     return model_config.get_model()
 
@@ -207,6 +215,7 @@ async def screen_shipment(
             system_prompt=COMPLIANCE_PROMPT,
             user_text=user_text,
             temperature=0.1,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)
@@ -261,6 +270,7 @@ async def screen_entity(entity_data: dict[str, Any]) -> dict[str, Any]:
             system_prompt=COMPLIANCE_PROMPT,
             user_text=f"Screen this entity for sanctions and compliance:\n{entity_text}",
             temperature=0.1,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)

@@ -47,6 +47,22 @@ from vf_logistics import config as model_config
 from vf_logistics import nebius_client, tavily_client, verifier
 from ._common import Timer, envelope, parse_model_json
 
+# Output ceiling PER ROUND. 15,500 against a measured legitimate maximum of 5,011
+# output tokens across a whole multi-round screen.
+#
+# Generous on purpose: this agent already fails to produce a usable verdict often
+# enough to have a forced-verdict fallback, and a truncated round would add to that
+# rather than save anything.
+MAX_OUTPUT_TOKENS = 15500
+
+# The forced-verdict call's ceiling, deliberately far tighter than a tool round's.
+#
+# That call supplies no tools and asks only for the JSON verdict, so length there is
+# not work. It also fires often: this agent's own docstring records 73 of 93 cases
+# reaching it with no usable verdict from the tool rounds, so it is the single most
+# repeated call in the agent and the one most worth bounding.
+MAX_VERDICT_TOKENS = 2000
+
 DEFAULT_MODEL = os.getenv("ZERO_DAY_MODEL", "").strip()
 
 # Two rounds, against the debate agent's four. One round to search, one to read
@@ -335,6 +351,7 @@ async def screen_zero_day(
             response = await nebius_client.complete_with_tools(
                 model=model_id, messages=messages, tools=TOOLS,
                 temperature=temperature,
+                max_tokens=MAX_OUTPUT_TOKENS,
             )
             used_in, used_out = nebius_client._usage(response)
             input_tokens += used_in
@@ -417,6 +434,11 @@ async def screen_zero_day(
                 }],
                 tools=None,
                 temperature=temperature,
+                # Tighter than the tool rounds. This call is asked for a verdict and
+                # nothing else -- no search, no reasoning chain -- so a long reply here
+                # is a runaway rather than work. The measured legitimate verdict is
+                # well under a thousand tokens.
+                max_tokens=MAX_VERDICT_TOKENS,
             )
             used_in, used_out = nebius_client._usage(forced)
             input_tokens += used_in

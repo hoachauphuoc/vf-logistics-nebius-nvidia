@@ -166,8 +166,77 @@ def _usage(response) -> tuple[int, int]:
     return input_t, output_t
 
 
+def _note_truncation(label: str, response: Any, max_tokens: int | None) -> None:
+    """
+    Log loudly when a reply was cut off at the output ceiling.
+
+    `finish_reason: "length"` is Token Factory's documented truncation signal, and it
+    is the difference between two failures that look identical downstream. A truncated
+    JSON object does not parse, so `parse_model_json` reports "model reply was not
+    valid JSON" -- which reads as a model quality problem when the actual cause is that
+    the reply was longer than the ceiling allowed. One calls for a prompt change, the
+    other for a larger number.
+
+    Worth logging even though the ceilings have generous headroom, because this is how
+    a ceiling that is too tight announces itself. Measured on a 20-case run before any
+    ceiling existed, two calls returned exactly 8,192 output tokens and both failed to
+    parse -- 8,192 being the provider's own default when `max_tokens` is omitted, not a
+    model limit. Without this log, the same event under an explicit ceiling would look
+    like the model got worse.
+    """
+    try:
+        reason = response.choices[0].finish_reason
+    except (AttributeError, IndexError):
+        return
+    if reason != "length":
+        return
+    log.error(
+        "OUTPUT TRUNCATED AT CEILING %s finish_reason=length max_tokens=%s -- the "
+        "reply was cut off, so any JSON in it is incomplete and will be reported as a "
+        "parse failure. Raise the ceiling if this is legitimate output; investigate a "
+        "runaway if it is not.",
+        label, max_tokens if max_tokens is not None else "8192 (provider default)",
+    )
+
+
+def _ceiling(max_tokens: int | None) -> dict[str, int]:
+    """
+    Render `max_tokens` as kwargs, omitting it entirely when unset.
+
+    Omitted rather than passed as None so an unset ceiling produces exactly the
+    request this client sent before the parameter existed -- the provider default.
+
+    WHY A CEILING EXISTS AT ALL, and it is containment rather than thrift.
+
+    Measured on a 20-case production run: two calls returned exactly 8,192 output
+    tokens, and both were `parse_error`. They account for two of the only three parse
+    errors on the whole board. The investigation one ended
+    `', {}, {}, {}, {}, {}, {}, {}, {},\\n...[truncated, 28364 more chars]'` -- a
+    degenerate repetition loop emitting empty objects until it hit the provider's own
+    limit, 38.6 seconds and $0.007873 for a single call that produced nothing usable,
+    or 29% of all investigation spend on that run. The compliance one burned 45.2
+    seconds the same way.
+
+    A ceiling does NOT fix that. A truncated JSON object is still invalid JSON, so the
+    case still routes to a human -- which it already does today. What the ceiling
+    changes is the price of the failure: bounded output tokens, bounded latency, and a
+    runaway that stops in seconds instead of three quarters of a minute.
+
+    The values are therefore set with headroom over the largest LEGITIMATE output each
+    agent has produced, not near its average. Too tight a ceiling would convert working
+    calls into parse errors, and a human review costs incomparably more than the tokens
+    it saved.
+    """
+    return {} if max_tokens is None else {"max_tokens": int(max_tokens)}
+
+
 async def complete_json(
-    *, model: str, system_prompt: str, user_text: str, temperature: float = 0.1
+    *,
+    model: str,
+    system_prompt: str,
+    user_text: str,
+    temperature: float = 0.1,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     """
     One text-only, JSON-mode chat completion.
@@ -186,9 +255,11 @@ async def complete_json(
             ],
             temperature=temperature,
             response_format={"type": "json_object"},
+            **_ceiling(max_tokens),
         )
 
     response = await _with_retry(f"complete_json[{model}]", _call)
+    _note_truncation(f"complete_json[{model}]", response, max_tokens)
     text = response.choices[0].message.content or ""
     input_tokens, output_tokens = _usage(response)
     return text, input_tokens, output_tokens
@@ -200,6 +271,7 @@ async def complete_with_tools(
     messages: list[dict],
     tools: list[dict],
     temperature: float = 0.3,
+    max_tokens: int | None = None,
 ):
     """
     Chat completion with function calling (tool use) support.
@@ -218,9 +290,12 @@ async def complete_with_tools(
             messages=messages,
             tools=tools,
             temperature=temperature,
+            **_ceiling(max_tokens),
         )
 
-    return await _with_retry(f"complete_with_tools[{model}]", _call)
+    response = await _with_retry(f"complete_with_tools[{model}]", _call)
+    _note_truncation(f"complete_with_tools[{model}]", response, max_tokens)
+    return response
 
 
 async def complete_vision_json(
@@ -231,6 +306,7 @@ async def complete_vision_json(
     mime_type: str,
     user_text: str,
     temperature: float = 0.0,
+    max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
     """
     One multimodal (image/PDF-page + text), JSON-mode chat completion.
@@ -257,9 +333,11 @@ async def complete_vision_json(
             ],
             temperature=temperature,
             response_format={"type": "json_object"},
+            **_ceiling(max_tokens),
         )
 
     response = await _with_retry(f"complete_vision_json[{model}]", _call)
+    _note_truncation(f"complete_vision_json[{model}]", response, max_tokens)
     text = response.choices[0].message.content or ""
     input_tokens, output_tokens = _usage(response)
     return text, input_tokens, output_tokens

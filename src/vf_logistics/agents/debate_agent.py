@@ -21,6 +21,12 @@ from vf_logistics import nebius_client
 from vf_logistics import tavily_client
 from ._common import Timer, utcnow
 
+# Output ceiling per round. 1,500 against a measured maximum of 403 output tokens.
+#
+# Low because this agent mostly emits tool calls rather than prose, and its verdict is
+# a short structured judgement. Still 3.7x the largest observed reply.
+MAX_OUTPUT_TOKENS = 1500
+
 MODEL_ID = os.getenv("DEBATE_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 
 
@@ -242,6 +248,7 @@ async def conduct_debate(
                 messages=messages,
                 tools=DEBATE_TOOLS,
                 temperature=0.3,
+                max_tokens=MAX_OUTPUT_TOKENS,
             )
             
             input_tokens, output_tokens = nebius_client._usage(response)

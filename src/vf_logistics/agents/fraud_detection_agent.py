@@ -12,6 +12,11 @@ from vf_logistics import nebius_client
 from ._common import Timer, envelope, parse_model_json
 from vf_logistics import config as model_config
 
+# Output ceiling. 3,500 against a measured legitimate maximum of 1,057 output
+# tokens, median 780 -- the tightest-behaved agent in the pipeline. See
+# nebius_client._ceiling for why a ceiling exists at all.
+MAX_OUTPUT_TOKENS = 3500
+
 def get_model_id():
     return model_config.get_model()
 
@@ -123,6 +128,9 @@ async def analyze_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
             system_prompt=FRAUD_DETECTION_PROMPT,
             user_text=user_text,
             temperature=0.1,  # Low temperature for consistent analysis
+            # 3,500 against a measured legitimate maximum of 1,057 output tokens.
+            # Headroom, not a budget: see nebius_client._ceiling.
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)
