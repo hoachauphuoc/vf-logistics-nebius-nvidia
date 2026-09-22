@@ -114,9 +114,11 @@ Tavily is woven throughout the pipeline, not just compliance:
    disruption") alongside the fraud and compliance agents. Route intelligence is
    attached to the case for downstream agents.
 
-4. **Governance watchlist scanner** -- `/api/v1/governance/tavily-scan` endpoint
-   searches for recent sanctions updates, OFAC SDN additions, and trade compliance
-   enforcement actions. Surfaces new regulatory changes on the Governance page.
+4. **Governance watchlist scanner** -- the *Scan for sanctions updates* button on
+   the Governance page calls `/api/v1/governance/tavily-scan`, which searches for
+   recent sanctions additions, OFAC SDN changes, and trade enforcement actions.
+   The point is that the code-resident lists on that page can be reviewed against
+   what actually changed, rather than only against what a model remembers.
 
 5. **Multi-agent debate** -- `debate_agent.py` exposes `search_tavily` as a tool
    that Nemotron Super can invoke during function-calling debate rounds. Super
@@ -124,6 +126,18 @@ Tavily is woven throughout the pipeline, not just compliance:
 
 A missing API key or a Tavily outage degrades each integration to pre-Tavily
 behaviour rather than blocking the pipeline.
+
+### Verify the defence layer yourself
+
+The strongest guardrail in the system used to be invisible: 14 injection
+patterns plus 15 classes of invisible Unicode, applied to every document before
+a model sees it, with nothing in the UI to exercise them. The **Red Team panel**
+in DevOps now exposes `/api/v1/security/screen`, which runs the exact functions
+the document pipeline runs -- `untrusted.screen_text()` and Model Armor -- over
+any text you paste. Preset attacks cover override attempts, role injection,
+score manipulation, clearance assertion, output hijacking, tag injection and
+hidden characters; a clean control sample is included to show the screen does
+not simply block everything. Nothing is simulated or replayed.
 
 ### Governance: the part most agent systems skip
 
@@ -373,11 +387,15 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 | Runtime call to Nebius Token Factory | done -- all four agents |
 | NVIDIA open model used | done -- Nemotron 3 Nano + Super |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 197 tests passing (pytest) |
+| Automated test suite | 226 tests passing (pytest) |
 | CI pipeline | GitHub Actions (lint + typecheck + test + coverage) |
-| Auto-debate on score disputes | done -- triggers without human intervention |
-| Human feedback learning loop | done -- shipper clearance rate adjusts risk |
+| Auto-debate on score disputes | done -- fires without human intervention |
+| Human feedback learning loop | done -- derived from reviewed cases, survives restart |
 | Adversarial demo scenarios | 3 one-click demos in DevOps |
+| Red Team panel | paste any attack, see the real screen verdict |
+| Governance kill switch | `/api/v1/governance/revoke` -- agent goes SUSPENDED |
+| Policy dry run | preview which cases a boundary would flip before publishing |
+| Per-hop model I/O | exact prompt, raw response, tokens and cost per agent call |
 | Cost dashboard | real-time token spend + rules savings |
 
 If the repository is private, share it per the hackathon's judging

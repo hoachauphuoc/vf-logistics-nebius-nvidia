@@ -18,12 +18,24 @@ Hackathon: Nebius x NVIDIA Global AI Hackathon
 
 from __future__ import annotations
 
+import io
 import os
 from typing import Any
 
 from vf_logistics import nebius_client
 from ._common import Timer, envelope, parse_model_json
 from vf_logistics import config as model_config
+
+
+class DocumentConversionError(RuntimeError):
+    """
+    An upload could not be turned into an image for the vision model.
+
+    Distinct from a transcription failure, because the model never ran. Carried
+    as its own type so the caller can report the reason: a rasteriser missing
+    from the deployment and a corrupt PDF need different fixes, and both used to
+    arrive as an opaque 500 with neither reason visible.
+    """
 
 def get_model_id():
     return model_config.get_vision_model()
@@ -85,6 +97,11 @@ SUPPORTED_MIME = {
     ".webp": "image/webp",
 }
 
+# Only the first page of a PDF is rasterised (see _to_image). Kept as a named
+# constant so the transcription note and the tests quote the same number rather
+# than two literals that can drift apart.
+PDF_PAGES_READ = 1
+
 
 def mime_for(filename: str) -> str | None:
     ext = os.path.splitext(filename or "")[1].lower()
@@ -101,7 +118,26 @@ async def extract_shipment(
     be handed straight to the orchestrator.
     """
     mime = mime_type or mime_for(filename) or "application/pdf"
-    image_bytes, image_mime = _to_image(document_bytes, mime)
+
+    try:
+        image_bytes, image_mime, page_count = _to_image(document_bytes, mime)
+    except DocumentConversionError as exc:
+        # Returned as an error envelope rather than raised. ingest_document
+        # turns a parse_error envelope into an `accepted: false` response
+        # carrying the reason, which is recorded and shown to the uploader; an
+        # exception escaping here would surface as a 500 with no reason at all.
+        return envelope(
+            agent="document_intake",
+            model=get_model_id(),
+            result=None,
+            error=str(exc),
+            raw="",
+            latency_ms=0,
+            legacy_key="extraction",
+            prompt=None,
+            source_filename=filename,
+            source_mime=mime,
+        )
 
     with Timer() as timer:
         text, input_tokens, output_tokens = await nebius_client.complete_vision_json(
@@ -114,6 +150,9 @@ async def extract_shipment(
         )
 
     parsed, error = parse_model_json(text)
+    if page_count > PDF_PAGES_READ:
+        _note_unread_pages(parsed, page_count)
+
     return envelope(
         agent="document_intake",
         model=get_model_id(),
@@ -124,30 +163,117 @@ async def extract_shipment(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         legacy_key="extraction",
+        # For the caller, not for the persisted step: ingest_shipment stores a
+        # fixed subset of this envelope, so these are read by ingest_document
+        # and written onto the case's provenance instead. Reported as numbers
+        # because the note in extraction_notes is prose, and prose in a
+        # free-text list is not something a query or a test can assert on.
+        source_pages=page_count,
+        source_pages_read=min(page_count, PDF_PAGES_READ),
+        # The document bytes are the real input here; the text instruction is
+        # short and fixed, so recording it alone would be misleading.
+        prompt=(
+            "Transcribe this shipping document into the required JSON record. "
+            f"[+ {len(image_bytes)} bytes of {image_mime} image data]"
+        ),
         source_filename=filename,
         source_mime=mime,
     )
 
 
-def _to_image(document_bytes: bytes, mime: str) -> tuple[bytes, str]:
+def _to_image(document_bytes: bytes, mime: str) -> tuple[bytes, str, int]:
     """
     MiniCPM-V-4.5, like most vision models on Token Factory, takes an image,
     not a PDF. PDFs are rasterised to a PNG of their first page with pypdfium2
     (Apache 2.0 / BSD-3 licensed); images pass through unchanged.
+
+    Returns the image bytes, the image's MIME type, and how many pages the
+    source had -- 1 for anything that was already an image. The page count is
+    returned rather than discarded because only the first page is rendered, and
+    a caller that cannot see how many pages went unread has no way to stop
+    reporting a partial transcription as a complete one.
     """
     if mime != "application/pdf":
-        return document_bytes, mime
+        return document_bytes, mime, 1
 
-    import pypdfium2 as pdfium
+    try:
+        import pypdfium2 as pdfium
 
-    pdf = pdfium.PdfDocument(document_bytes)
-    page = pdf[0]
-    bitmap = page.render(scale=200 / 72)  # 200 DPI
-    pil_image = bitmap.to_pil()
-    import io
-    buf = io.BytesIO()
-    pil_image.save(buf, format="PNG")
-    return buf.getvalue(), "image/png"
+        # Imported explicitly even though it is used only through pypdfium2's
+        # bitmap.to_pil() below. pypdfium2 does not depend on Pillow, so
+        # to_pil() is the one call in this file that can fail purely because of
+        # what the image was built with -- naming the import makes that
+        # dependency visible to the dependency files and to this guard, instead
+        # of leaving it to be inferred from a method call.
+        from PIL import Image  # noqa: F401
+    except ImportError as exc:
+        raise DocumentConversionError(
+            "PDF upload requires pypdfium2 and Pillow, which are not installed "
+            "in this deployment. Image uploads (.png, .jpg, .jpeg, .webp) are "
+            "unaffected."
+        ) from exc
+
+    try:
+        pdf = pdfium.PdfDocument(document_bytes)
+        page_count = len(pdf)
+        if page_count < 1:
+            raise DocumentConversionError("the PDF contains no pages")
+        bitmap = pdf[0].render(scale=200 / 72)  # 200 DPI
+        buf = io.BytesIO()
+        bitmap.to_pil().save(buf, format="PNG")
+    except DocumentConversionError:
+        raise
+    except Exception as exc:
+        # A password-protected, truncated or malformed PDF lands here. Reported
+        # as a conversion failure so it reads as "this file could not be
+        # opened" rather than as a transcription the model got wrong.
+        raise DocumentConversionError(
+            f"could not read the PDF ({type(exc).__name__}: {exc})"
+        ) from exc
+
+    return buf.getvalue(), "image/png", page_count
+
+
+def _note_unread_pages(parsed: dict[str, Any] | None, page_count: int) -> None:
+    """
+    Record on the transcription that pages went unread.
+
+    Only page 1 is rasterised, so a multi-page packet is transcribed from its
+    first page alone. EXTRACTION_PROMPT specifies extraction_notes as the
+    channel for anything missing and downstream agents treat those notes as
+    evidence, so an unrecorded dropped page presents a partial reading as a
+    complete one -- the same failure the prompt forbids when it bans inventing
+    an absent tax ID.
+
+    Prepended, not appended: sanitise_shipment truncates the list to 20 entries,
+    and missing input outranks the twentieth legibility remark for the place
+    that survives. Mutates in place because the caller passes `parsed` straight
+    to envelope().
+    """
+    if not isinstance(parsed, dict):
+        return
+
+    notes = parsed.get("extraction_notes")
+    if isinstance(notes, list):
+        existing = list(notes)
+    elif isinstance(notes, str) and notes.strip():
+        # Some replies return a single note as a bare string rather than a list.
+        existing = [notes]
+    else:
+        existing = []
+
+    unread = page_count - PDF_PAGES_READ
+    # Only the noun is pluralised. The verb stays singular because the subject
+    # is "Any detail", not the page count -- "any detail on the remaining 2
+    # pages is absent" is correct, and agreeing the verb with "pages" instead
+    # reads as a typo in something a reviewer is meant to trust.
+    noun = "page" if unread == 1 else "pages"
+    parsed["extraction_notes"] = [
+        f"Source PDF had {page_count} pages; only page {PDF_PAGES_READ} was "
+        f"transcribed. Any detail on the remaining {unread} {noun} is absent "
+        f"from this record.",
+        *existing,
+    ]
 
 
 def get_agent_info() -> dict[str, Any]:

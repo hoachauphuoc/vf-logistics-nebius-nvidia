@@ -117,11 +117,12 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
             + "\n<<<END EXTERNAL WEB SEARCH FINDINGS>>>\n"
         )
 
+    user_text = f"Conduct a thorough investigation:\n{case_text}{tavily_context}"
     with Timer() as timer:
         text, input_tokens, output_tokens = await nebius_client.complete_json(
             model=get_model_id(),
             system_prompt=INVESTIGATION_PROMPT,
-            user_text=f"Conduct a thorough investigation:\n{case_text}{tavily_context}",
+            user_text=user_text,
             temperature=0.2,
         )
 
@@ -136,6 +137,7 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         legacy_key="investigation_result",
+        prompt=user_text,
         case_id=case_data.get("case_id"),
     )
     out["thinking_enabled"] = True

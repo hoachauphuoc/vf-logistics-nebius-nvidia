@@ -1,0 +1,214 @@
+# Adversarial HS classification pairs.
+#
+# Purpose
+# -------
+# verifier.check_hs_code() compares the DECLARED hs_code against
+# DUAL_USE_HS_PREFIXES. It never reads cargo_description -- that field appears
+# exactly once in verifier.py, as a presence check. So an exporter who declares a
+# benign heading and describes the goods honestly (or dishonestly) passes the
+# dual-use check outright. Adding more prefixes to the dict cannot fix this,
+# because the declarant chooses which code to write.
+#
+# Each entry below pairs a controlled heading with the benign heading a declarant
+# would plausibly substitute for it. "Plausibly" is doing real work: the pair has
+# to be close enough that the substitution survives a customs officer's glance,
+# which is why these are adjacent headings covering genuinely related goods
+# rather than arbitrary codes.
+#
+# Sourcing and licensing
+# ----------------------
+# Heading NUMBERS and the fact of which goods fall under them are factual
+# reference data. The `controlled_goods` / `benign_goods` strings here are written
+# for this dataset, not copied from the WCO Harmonized System nomenclature, whose
+# text WCO asserts copyright over. US HTS (USITC) and the EU Combined
+# Nomenclature republish the headings and are the authoritative sources to verify
+# against; EU dual-use scope is Regulation 2021/821 Annex I.
+#
+# `control_basis` records why the heading is sensitive so a finding can cite
+# something. It is a summary, not a legal determination -- a real deployment must
+# check the current Annex I / CCL text, which changes.
+#
+# Scope limits, stated plainly
+# ----------------------------
+# The ten controlled headings here are the ones already in
+# verifier.DUAL_USE_HS_PREFIXES, so this dataset measures the blind spot around
+# the rules that exist. Real dual-use lists run to thousands of entries. This is
+# a seed for measuring a capability gap, not a compliance-grade control list.
+
+version: 1
+
+pairs:
+  - controlled_hs: "8411"
+    controlled_goods: "turbojets, turbopropellers and other gas turbines"
+    control_basis: "propulsion and power generation; aerospace and missile applications"
+    benign_hs: "8414"
+    benign_goods: "air or vacuum pumps, air compressors, fans and ventilating hoods"
+    why_plausible: >
+      Both are rotating air-moving machinery. A turbine section described as a
+      compressor stage is a substitution a non-specialist reviewer would accept,
+      and compressor stages genuinely exist inside gas turbines.
+
+  - controlled_hs: "8411"
+    controlled_goods: "gas turbine components including hot section parts"
+    control_basis: "propulsion and power generation; aerospace and missile applications"
+    benign_hs: "8483"
+    benign_goods: "transmission shafts, cranks, bearing housings, gears and gearing"
+    why_plausible: >
+      Turbine rotor and shaft assemblies are describable as plain transmission
+      shafts, dropping the thermal and aerospace context that makes them
+      controlled.
+
+  - controlled_hs: "8542"
+    controlled_goods: "electronic integrated circuits"
+    control_basis: "advanced computing and microelectronics; performance thresholds apply"
+    benign_hs: "8543"
+    benign_goods: "electrical machines and apparatus having individual functions"
+    why_plausible: >
+      A populated board carrying a controlled processor can be presented as a
+      generic electrical apparatus, shifting attention from the die to the
+      assembly.
+
+  - controlled_hs: "8542"
+    controlled_goods: "electronic integrated circuits and microassemblies"
+    control_basis: "advanced computing and microelectronics; performance thresholds apply"
+    benign_hs: "8473"
+    benign_goods: "parts and accessories for office and data processing machines"
+    why_plausible: >
+      Accelerator cards are literally parts for data processing machines, so the
+      benign heading is defensible on its face while omitting the compute
+      performance that triggers control.
+
+  - controlled_hs: "8471"
+    controlled_goods: "automatic data processing machines"
+    control_basis: "high performance computing; aggregate compute thresholds"
+    benign_hs: "8528"
+    benign_goods: "monitors and projectors not incorporating television reception"
+    why_plausible: >
+      Shipping compute nodes as display equipment exploits the fact that both
+      arrive as rack or crate mounted electronics with similar packaging.
+
+  - controlled_hs: "9030"
+    controlled_goods: "oscilloscopes, spectrum analysers and other instruments for measuring electrical quantities"
+    control_basis: "test equipment for electronics and RF development, including weapons electronics"
+    benign_hs: "9031"
+    benign_goods: "measuring or checking instruments not specified elsewhere"
+    why_plausible: >
+      9031 is a residual heading, which makes it the natural place to park an
+      instrument the declarant does not want examined closely.
+
+  - controlled_hs: "9026"
+    controlled_goods: "instruments for measuring flow, level, pressure or other variables of liquids or gases"
+    control_basis: "process control for chemical and nuclear facilities"
+    benign_hs: "9025"
+    benign_goods: "hydrometers, thermometers, pyrometers, barometers and hygrometers"
+    why_plausible: >
+      Adjacent metrology headings. Both are described colloquially as gauges, so
+      one word choice moves the goods between them.
+
+  - controlled_hs: "9014"
+    controlled_goods: "direction finding compasses and other navigational instruments"
+    control_basis: "inertial navigation and guidance applications"
+    benign_hs: "9015"
+    benign_goods: "surveying, hydrographic, meteorological and geophysical instruments"
+    why_plausible: >
+      Surveying and navigation overlap heavily in both vocabulary and hardware;
+      an IMU can be described as a survey instrument without obvious strain.
+
+  - controlled_hs: "8458"
+    controlled_goods: "numerically controlled lathes for removing metal"
+    control_basis: "precision machining capability; tolerance thresholds apply"
+    benign_hs: "8462"
+    benign_goods: "machine tools for forging, bending, folding or punching metal"
+    why_plausible: >
+      Both are heavy metalworking machine tools. Forming rather than cutting is a
+      distinction that hides the CNC precision that actually matters.
+
+  - controlled_hs: "8458"
+    controlled_goods: "numerically controlled metal removing lathes"
+    control_basis: "precision machining capability; tolerance thresholds apply"
+    benign_hs: "8466"
+    benign_goods: "parts and accessories suitable for use solely with machine tools"
+    why_plausible: >
+      Declaring a complete machine tool as parts is a standard undervaluation and
+      misclassification move, and it also drops it out of the controlled heading.
+
+  - controlled_hs: "8479"
+    controlled_goods: "machines having individual functions, including isotope separation equipment"
+    control_basis: "nuclear fuel cycle; isotope separation is explicitly controlled"
+    benign_hs: "8421"
+    benign_goods: "centrifuges, filtering and purifying machinery for liquids or gases"
+    why_plausible: >
+      The most consequential pair here. Industrial centrifuges and enrichment
+      centrifuges are described almost identically, and 8421 is a wholly
+      legitimate heading for laboratory and dairy equipment.
+
+  - controlled_hs: "2844"
+    controlled_goods: "radioactive chemical elements and isotopes and their compounds"
+    control_basis: "nuclear material"
+    benign_hs: "2843"
+    benign_goods: "colloidal precious metals and compounds of precious metals"
+    why_plausible: >
+      Neighbouring inorganic chemistry headings. Both cover specialist metal
+      compounds shipped in small, heavily packaged quantities.
+
+  - controlled_hs: "2844"
+    controlled_goods: "radioactive isotopes and compounds, including sealed sources"
+    control_basis: "nuclear material"
+    benign_hs: "9022"
+    benign_goods: "apparatus based on the use of X-rays or of alpha, beta or gamma radiations"
+    why_plausible: >
+      A sealed source inside a gauge can be declared as the instrument rather
+      than the material, which is the one that carries the control.
+
+  - controlled_hs: "8504"
+    controlled_goods: "electrical transformers, static converters and inductors"
+    control_basis: "high voltage power conversion used in enrichment and directed energy applications"
+    benign_hs: "8548"
+    benign_goods: "electrical parts of machinery not specified elsewhere"
+    why_plausible: >
+      Another residual heading, reachable for almost any electrical assembly and
+      therefore attractive for a high voltage supply the declarant wants ignored.
+
+  - controlled_hs: "8504"
+    controlled_goods: "static converters and high voltage power supplies"
+    control_basis: "high voltage power conversion used in enrichment and directed energy applications"
+    benign_hs: "8536"
+    benign_goods: "electrical apparatus for switching or protecting electrical circuits"
+    why_plausible: >
+      Switchgear and power conversion arrive in similar enclosures and share
+      terminology around voltage and current ratings.
+
+# Benign controls: descriptions that genuinely belong to the benign heading.
+# Without these the evaluation cannot distinguish a model that understands HS
+# classification from one that has learned to answer "mismatch" to everything.
+benign_controls:
+  - hs_code: "8414"
+    cargo_description: "Industrial ventilation fans, 600mm axial, for warehouse air circulation"
+  - hs_code: "8483"
+    cargo_description: "Steel transmission shafts and pillow block bearings for conveyor drives"
+  - hs_code: "8543"
+    cargo_description: "Ultrasonic cleaning bath, 40kHz, 20 litre, for workshop parts cleaning"
+  - hs_code: "8473"
+    cargo_description: "Laptop docking stations and replacement keyboards, retail packaged"
+  - hs_code: "8528"
+    cargo_description: "27 inch LED computer monitors, 1920x1080, retail boxed"
+  - hs_code: "9031"
+    cargo_description: "Coordinate measuring arm for automotive body panel inspection"
+  - hs_code: "9025"
+    cargo_description: "Laboratory mercury thermometers and glass hydrometers, calibrated"
+  - hs_code: "9015"
+    cargo_description: "Total station theodolite for construction site surveying, tripod included"
+  - hs_code: "8462"
+    cargo_description: "Hydraulic press brake, 100 ton, for sheet metal folding"
+  - hs_code: "8466"
+    cargo_description: "Tool holders and collet chucks for milling machines, assorted sizes"
+  - hs_code: "8421"
+    cargo_description: "Dairy cream separator centrifuge, 500 litre per hour, stainless steel"
+  - hs_code: "2843"
+    cargo_description: "Colloidal silver solution for industrial catalyst preparation, 2 litre"
+  - hs_code: "9022"
+    cargo_description: "Dental X-ray unit, wall mounted, with lead apron"
+  - hs_code: "8548"
+    cargo_description: "Assorted wiring harnesses and terminal blocks for machinery repair"
+  - hs_code: "8536"
+    cargo_description: "Miniature circuit breakers, 32A, DIN rail mount, 200 units"

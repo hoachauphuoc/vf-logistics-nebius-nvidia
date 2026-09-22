@@ -5,15 +5,103 @@ These fixtures provide isolated test environments:
 - Mock Firestore client for data layer tests
 - Mock Nebius Token Factory responses for agent tests
 - Test shipment data generators
+
+Network guard
+-------------
+`_no_real_api_calls` is autouse and exists because of a real near-miss. The
+orchestrator gained two model calls -- HS classification and zero-day screening --
+and the existing tests mocked only analyze_shipment and screen_shipment. The suite
+stayed green, but for the wrong reason: the new calls were raising "Missing
+credentials", being caught by the orchestrator's exception handler, and never
+running. Two consequences, both bad.
+
+  * the new code paths were not being tested at all while appearing to be
+  * a developer with NEBIUS_API_KEY in their environment would have had the suite
+    make real, billed API calls on every run
+
+The guard removes both. It blanks the credential environment variables so nothing
+can reach the API by accident, and it provides deterministic stand-ins for the two
+new agents at the orchestrator's seam so the paths are exercised. A test wanting
+different behaviour overrides with its own patch, which takes precedence.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_real_api_calls(monkeypatch) -> Generator[None, None, None]:
+    """
+    Stop tests reaching a paid API, and make the new agent paths deterministic.
+
+    Scoped to the orchestrator's imported names rather than to nebius_client, so
+    tests that exercise the client directly -- the retry tests in
+    test_schema_enforcement.py build a client on purpose -- are unaffected.
+    """
+    # Blanked rather than left alone: a developer with a real key in their shell
+    # would otherwise run a billed suite.
+    for var in ("NEBIUS_API_KEY", "TAVILY_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.setenv(var, "")
+
+    # Business-logic tests act as an administrator.
+    #
+    # Writes now require a credential -- the anonymous role floor defaults to
+    # viewer -- so without this every test that posts anything would 403 while
+    # testing nothing about authorisation. Granting admin here rather than
+    # threading an API key through ~30 test files keeps those tests about what
+    # they are actually for.
+    #
+    # This is the same posture auth.assert_write_access_is_guarded() permits for
+    # local development, and it is only safe because it cannot hide an auth
+    # regression: test_network_defence.py walks app.url_map and asserts that
+    # every state-changing route refuses an anonymous caller, deriving the list
+    # rather than restating it, so a new unprotected route fails the suite even
+    # though the tests here run as admin.
+    monkeypatch.setenv("ANONYMOUS_ROLE", "governance_admin")
+    monkeypatch.setenv("STORE_BACKEND", "memory")
+    monkeypatch.delenv("VF_API_KEY", raising=False)
+    monkeypatch.delenv("IAP_ENABLED", raising=False)
+
+    hs_reply = {
+        "agent": "hs_classifier",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "result": {
+            "consistent": True, "declared_hs": None, "suggested_hs": None,
+            "confidence": 0.9, "reasoning": "stubbed by conftest",
+            "obfuscation_observed": "none",
+        },
+        "hs_classification": {},
+        "latency_ms": 5, "input_tokens": 50, "output_tokens": 20,
+        "parse_error": False, "raw": "{}", "at": "1970-01-01T00:00:00+00:00",
+    }
+    zero_day_reply = {
+        "agent": "zero_day",
+        "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+        "result": {
+            "entities_checked": [], "reasoning": "stubbed by conftest",
+            "evidence_urls": [], "searched": True, "confidence": 0.9,
+            "risk_found": False,
+        },
+        "zero_day_result": {},
+        "latency_ms": 5, "input_tokens": 50, "output_tokens": 20,
+        "parse_error": False, "raw": "{}", "at": "1970-01-01T00:00:00+00:00",
+        "searches": [], "search_ran": True,
+    }
+
+    from vf_logistics import orchestrator
+
+    with patch.object(
+        orchestrator, "classify_hs", new=AsyncMock(return_value=hs_reply),
+    ), patch.object(
+        orchestrator, "screen_zero_day", new=AsyncMock(return_value=zero_day_reply),
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------

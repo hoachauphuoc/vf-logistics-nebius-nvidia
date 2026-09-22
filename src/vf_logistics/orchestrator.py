@@ -41,9 +41,11 @@ import os
 import time
 from typing import Any
 
+from vf_logistics import budget
 from vf_logistics import document_render
 from vf_logistics import document_store
 from vf_logistics import governance
+from vf_logistics import lineage
 from vf_logistics import model_armor
 from vf_logistics import shipper_registry
 from vf_logistics import tavily_client
@@ -53,11 +55,28 @@ from vf_logistics import verifier
 from vf_logistics import config as model_config
 from vf_logistics.agents import (
     analyze_shipment,
+    conduct_debate,
     extract_shipment,
     investigate_case,
     screen_shipment,
 )
-from vf_logistics.store import get_store, new_id, utcnow, OptimisticLockError
+# Imported directly rather than via agents/__init__ because these two are not
+# re-exported there -- __init__ exports the twelve names the dashboard uses, and
+# adding to it would put them in an API surface they are not part of.
+from vf_logistics.agents.hs_classifier_agent import classify_hs
+from vf_logistics.agents.hs_classifier_agent import interpret as interpret_hs
+from vf_logistics.agents.zero_day_agent import interpret as interpret_zero_day
+from vf_logistics.agents.zero_day_agent import screen_zero_day
+from vf_logistics.agents.zero_day_agent import should_screen as should_screen_zero_day
+from vf_logistics.store import (
+    TENANT_FIELD,
+    OptimisticLockError,
+    get_store,
+    new_id,
+    utcnow,
+)
+
+log = logging.getLogger(__name__)
 
 # Objects the service writes itself. Notifications for this prefix are ignored,
 # or the pipeline would process its own archived output in a loop.
@@ -115,25 +134,49 @@ AWAITING_HUMAN = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED")
 # cache that turns into ~40 aggregation round trips/second for a number that
 # does not need sub-second freshness. A short cache keeps the totals exact
 # at any collection size while bounding both cost and per-poll latency.
+#
+# Keyed by tenant. A single shared entry would be a cross-tenant leak through
+# the cache rather than through a query: the first caller's totals -- case
+# counts, token spend, cost -- would be served to the next tenant to poll
+# within the TTL, and no amount of scoping on the queries underneath would
+# show it, because the queries would not run.
 _METRICS_CACHE_TTL_SECONDS = float(os.getenv("METRICS_CACHE_TTL_SECONDS", "5"))
-_metrics_cache: dict[str, Any] = {"at": 0.0, "value": None}
+_metrics_cache: dict[str, dict[str, Any]] = {}
 
 
-async def global_metrics() -> dict[str, Any]:
+def _case_tenant(case: dict[str, Any]) -> str | None:
+    """
+    The tenant a stored case belongs to, read off the document itself.
+
+    Preferred over a `tenant_id` parameter everywhere the case is already in
+    hand. A parameter can disagree with the document, and on a read that
+    disagreement is silent -- it would simply return nothing, or worse, scope a
+    follow-up query to the caller's tenant while acting on a case owned by
+    another. put_case already refuses a write whose requested owner differs from
+    the stored one (store.py), so deriving here keeps reads and writes answering
+    to the same source of truth.
+
+    Returns None for a case that predates tenant stamping, which the store
+    treats as the single implicit tenant.
+    """
+    return case.get(TENANT_FIELD)
+
+
+async def global_metrics(tenant_id: str | None = None) -> dict[str, Any]:
     """Exact counts/token/cost/latency totals across the whole collection,
     cached briefly so frequent polling does not multiply aggregation reads."""
     now = time.monotonic()
-    if _metrics_cache["value"] is not None and (
-        now - _metrics_cache["at"] < _METRICS_CACHE_TTL_SECONDS
-    ):
-        return _metrics_cache["value"]
+    cache_key = tenant_id or ""
+    cached = _metrics_cache.get(cache_key)
+    if cached is not None and (now - cached["at"] < _METRICS_CACHE_TTL_SECONDS):
+        return cached["value"]
 
     store = get_store()
     all_states = ACTIONABLE + TERMINAL
     counts, rollups, cleared_by = await asyncio.gather(
-        store.count_by_state(all_states), 
-        store.sum_rollups(),
-        store.count_by_cleared_by(),
+        store.count_by_state(all_states, tenant_id=tenant_id),
+        store.sum_rollups(tenant_id=tenant_id),
+        store.count_by_cleared_by(tenant_id=tenant_id),
     )
     value = {
         "counts": counts,
@@ -151,8 +194,7 @@ async def global_metrics() -> dict[str, Any]:
         "total_auto_cleared": cleared_by["total_auto_cleared"],
         "at": utcnow(),
     }
-    _metrics_cache["at"] = now
-    _metrics_cache["value"] = value
+    _metrics_cache[cache_key] = {"at": now, "value": value}
     return value
 
 
@@ -160,7 +202,10 @@ async def global_metrics() -> dict[str, Any]:
 # Event feed
 # --------------------------------------------------------------------------
 
-async def emit(case_id: str, kind: str, message: str, **extra: Any) -> None:
+async def emit(
+    case_id: str, kind: str, message: str, *, tenant_id: str | None = None,
+    **extra: Any,
+) -> None:
     await get_store().add_event(
         {
             "event_id": new_id("evt"),
@@ -169,7 +214,8 @@ async def emit(case_id: str, kind: str, message: str, **extra: Any) -> None:
             "message": message,
             "at": utcnow(),
             **extra,
-        }
+        },
+        tenant_id=tenant_id,
     )
 
 
@@ -182,6 +228,7 @@ async def ingest_shipment(
     source: str = "event",
     provenance: dict[str, Any] | None = None,
     intake_step: dict[str, Any] | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Accept a shipment event and create the case the worker will pick up.
@@ -199,7 +246,11 @@ async def ingest_shipment(
     shipment_id = str(shipment.get("shipment_id") or new_id("SHIP"))
     case_id = f"CASE-{shipment_id}"
 
-    existing = await store.get_case(case_id)
+    # Scoped: case_id is derived from the caller-supplied shipment_id, so an
+    # unscoped lookup lets a submitter probe for another tenant's case by naming
+    # its shipment -- and worse, the early return would hand that case back while
+    # silently discarding the shipment actually submitted.
+    existing = await store.get_case(case_id, tenant_id=tenant_id)
     if existing:
         return existing
 
@@ -230,6 +281,46 @@ async def ingest_shipment(
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
+
+    # The document-intake step's tokens must reach the rollups, not only `steps`.
+    #
+    # This was a real metering defect. `intake_step` is built by ingest_document with
+    # genuine token counts and inserted straight into `steps` above, bypassing
+    # _record_step -- which is the only other place `_agent_calls`, `_input_tokens`,
+    # `_output_tokens` and `_estimated_cost_usd` are incremented. The consequences
+    # were split and self-inconsistent:
+    #
+    #   - the audit record reads `steps[]` via lineage.step_lineage(), so it PRICED
+    #     the vision call correctly;
+    #   - /api/v1/billing/usage reads the rollups via sum_rollups(), so it did NOT
+    #     see it at all.
+    #
+    # So for every document-sourced case the audit row and the case's own
+    # `_estimated_cost_usd` disagreed, and the billing figure was the lower of the
+    # two. It was also the worst call to lose: the vision model's input rate is the
+    # highest in config.PRICING, roughly eleven times Nano's.
+    #
+    # backfill_rollups() cannot repair historical cases here, because it skips any
+    # case that already has `_agent_calls` -- which a document-sourced case acquires
+    # the moment its first fraud step runs.
+    if intake_step:
+        intake_in = int(intake_step.get("input_tokens") or 0)
+        intake_out = int(intake_step.get("output_tokens") or 0)
+        intake_latency = intake_step.get("latency_ms")
+
+        case["_agent_calls"] = 1
+        case["_input_tokens"] = intake_in
+        case["_output_tokens"] = intake_out
+        if isinstance(intake_latency, int):
+            case["_sum_latency_ms"] = intake_latency
+
+        intake_cost = lineage.cost_usd(
+            intake_step.get("model"), intake_in, intake_out
+        )
+        # Written onto the step too, so the trace shows what this hop cost -- the
+        # same field _record_step sets for every other step.
+        intake_step["cost_usd"] = round(intake_cost, 8)
+        case["_estimated_cost_usd"] = intake_cost
     # Every case must be reviewable against paperwork. A case that arrived as a
     # structured event has none, so the event is rendered into a bill of lading
     # and archived alongside document-sourced cases. It is flagged `generated`
@@ -251,12 +342,13 @@ async def ingest_shipment(
                 **receipt,
             }
 
-    await store.put_case(case)
+    await store.put_case(case, tenant_id=tenant_id)
     await emit(
         case_id,
         "ingested",
         f"Shipment {shipment_id} received via {source}, case opened",
         source=source,
+        tenant_id=tenant_id,
     )
     return case
 
@@ -266,7 +358,8 @@ async def ingest_shipment(
 # --------------------------------------------------------------------------
 
 async def ingest_document(
-    document_bytes: bytes, filename: str, mime_type: str | None = None
+    document_bytes: bytes, filename: str, mime_type: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Turn an uploaded shipping document into a running case.
@@ -279,6 +372,11 @@ async def ingest_document(
     screened before it reaches any downstream agent. The case records which of
     the two it got, because they are not the same assurance.
     """
+    # Set before the vision transcription, which is the single most expensive model
+    # call in the service -- MiniCPM-V's input rate is 11x Nano's. A tenant over its
+    # ceiling must be refused here, not after the page has been read.
+    budget.set_current_tenant(tenant_id)
+
     pre_screen: dict[str, Any] | None = None
     raw_text = ""
 
@@ -321,6 +419,7 @@ async def ingest_document(
                     "model_armor": pre_screen,
                 },
             },
+            tenant_id=tenant_id,
         )
         receipt = await document_store.archive(
             document_bytes, filename, mime_type or "application/pdf", case["case_id"]
@@ -334,13 +433,14 @@ async def ingest_document(
             "action": "document_intake",
             "reason": "DENIED: Model Armor flagged prompt injection; no model was invoked",
         }]
-        await get_store().put_case(case)
+        await get_store().put_case(case, tenant_id=tenant_id)
         await emit(
             case["case_id"],
             "security",
             f"Model Armor blocked {filename} before any model processing "
             f"({pre_screen.get('confidence') or 'match found'}). No tokens spent.",
             agent="model_armor",
+            tenant_id=tenant_id,
         )
         return {
             "accepted": True,
@@ -427,8 +527,22 @@ async def ingest_document(
     case = await ingest_shipment(
         shipment,
         source="document",
-        provenance={"filename": filename, **receipt},
+        # The page count rides on provenance rather than on the intake step:
+        # ingest_shipment persists a fixed subset of the agent envelope
+        # (agent, at, model, tokens, latency, parse_error, result), so
+        # source_pages would be dropped the way source_mime already is.
+        # provenance is both persisted and the right home for a fact about the
+        # file rather than about the transcription -- and it gives the count a
+        # numeric field to assert on, next to the prose note in
+        # extraction_notes.
+        provenance={
+            "filename": filename,
+            "pages": response.get("source_pages"),
+            "pages_read": response.get("source_pages_read"),
+            **receipt,
+        },
         intake_step=intake_step,
+        tenant_id=tenant_id,
     )
 
     armor = pre_screen or post_screen or {}
@@ -447,7 +561,7 @@ async def ingest_document(
         or armor.get("requires_human")
     ):
         case["requires_human"] = True
-        await get_store().put_case(case)
+        await get_store().put_case(case, tenant_id=tenant_id)
         reasons = sorted({f["type"] for f in screening["findings"]})
         if armor.get("blocked"):
             reasons.append("Model Armor match")
@@ -460,9 +574,10 @@ async def ingest_document(
             "security",
             "Document flagged for mandatory human review: " + "; ".join(reasons),
             agent="input_security",
+            tenant_id=tenant_id,
         )
     else:
-        await get_store().put_case(case)
+        await get_store().put_case(case, tenant_id=tenant_id)
 
     await emit(
         case["case_id"],
@@ -470,6 +585,7 @@ async def ingest_document(
         f"Read {filename} in {response.get('latency_ms')}ms"
         + (f"; {len(notes)} transcription issue(s) noted" if notes else ""),
         agent="document_intake",
+        tenant_id=tenant_id,
     )
 
     return {
@@ -507,6 +623,34 @@ async def _record_step(
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
     }
+    # The exact text sent to the model and the exact text it returned. Carried
+    # onto the step so a reviewer can audit a decision rather than take the
+    # parsed summary on trust; both are already truncated by envelope().
+    if response.get("prompt"):
+        step["prompt"] = response["prompt"]
+    if response.get("prompt_sha256"):
+        # Carried onto the step because this is what makes a decision auditable:
+        # it identifies the exact prompt version that produced the reply, and it
+        # is a hash of the full text rather than the truncated copy stored above.
+        step["prompt_sha256"] = response["prompt_sha256"]
+    if response.get("raw"):
+        step["raw_response"] = response["raw"]
+    # Kept apart from parse_error so the two stay countable. JSON that would not
+    # parse is a formatting problem; JSON that parsed into the wrong shape is a
+    # model behaviour problem, and they need different fixes.
+    if response.get("schema_error"):
+        step["schema_error"] = True
+
+    # A tally of model calls that produced nothing usable, so the auto-clear
+    # decision can refuse to run on a case where an agent failed. Without this,
+    # a compliance reply that failed validation left compliance_status at
+    # "UNKNOWN", which is not in ("BLOCKED", "REVIEW_REQUIRED"), so a shipment
+    # could auto-clear on the strength of a screening that never happened.
+    if response.get("parse_error"):
+        case["_model_failures"] = case.get("_model_failures", 0) + 1
+        failed = case.setdefault("_model_failure_agents", [])
+        if agent not in failed:
+            failed.append(agent)
     # Only the compliance step carries these (set in compliance_agent.py);
     # surfaced so the case trace can show the live Tavily lookup was real,
     # not just a claim in the docs.
@@ -525,10 +669,26 @@ async def _record_step(
     case["_output_tokens"] = case.get("_output_tokens", 0) + output_tokens
     if isinstance(latency_ms, int):
         case["_sum_latency_ms"] = case.get("_sum_latency_ms", 0) + latency_ms
-    step_pricing = model_config.pricing_for(model)
-    case["_estimated_cost_usd"] = case.get("_estimated_cost_usd", 0.0) + (
-        input_tokens * step_pricing["input"] + output_tokens * step_pricing["output"]
-    ) / 1_000_000
+    # One pricing implementation, called from here rather than repeated.
+    #
+    # This arithmetic previously existed in four places -- lineage.cost_usd(),
+    # which nothing called, plus inline copies here, in the debate rollup below,
+    # and in store.backfill_rollups(). A rate-card change had to be made
+    # correctly in four files, and three of them were invisible from the one that
+    # looked canonical.
+    step_cost = lineage.cost_usd(model, input_tokens, output_tokens)
+    # Per-step cost, so the trace can attribute spend to the individual model
+    # call instead of only showing a case total.
+    step["cost_usd"] = round(step_cost, 8)
+    case["_estimated_cost_usd"] = case.get("_estimated_cost_usd", 0.0) + step_cost
+
+    # Invalidate the cached spend total now that it is stale.
+    #
+    # Without this, the budget check's few-second cache would be the only thing
+    # deciding when a breach is noticed, and a case running six agent hops back to
+    # back could complete entirely inside one cache window. Dropping the entry here
+    # means the next hop re-reads and refuses.
+    budget.forget(_case_tenant(case))
 
     return result
 
@@ -559,6 +719,7 @@ async def _decide(
     to do and why it was not allowed to.
     """
     case_id = case["case_id"]
+    tenant = _case_tenant(case)
 
     case["decision_pack"] = {
         "proposed_outcome": outcome,
@@ -578,7 +739,7 @@ async def _decide(
     receipts = []
     denials = []
     for index, (name, kwargs) in enumerate(actions):
-        receipt = await governance.execute(name, case, **kwargs)
+        receipt = await governance.execute(name, case, tenant_id=tenant, **kwargs)
         receipts.append(receipt)
         if receipt.get("status") == "denied":
             denials.append({
@@ -617,6 +778,15 @@ async def _decide(
             "gate_denied",
             f"Proposed {outcome} not executed: " + denials[0]["reason"],
             outcome="PENDING_HUMAN",
+            tenant_id=tenant,
+        )
+        # Recorded even though nothing was executed. A gate denial is a decision
+        # the system made and a customs authority may ask about it -- "the agent
+        # wanted to release this and was refused" is exactly the kind of thing
+        # that must not exist only in a log line.
+        await lineage.record_decision(
+            case, "gate_denied", outcome="PENDING_HUMAN", actor="governance",
+            tenant_id=tenant,
         )
         return case
 
@@ -633,8 +803,30 @@ async def _decide(
         ),
     }
     case["state"] = outcome
-    await emit(case_id, "decision", rationale[:180], outcome=outcome)
+    await emit(case_id, "decision", rationale[:180], outcome=outcome, tenant_id=tenant)
+    # The lineage record for an automated decision. Written here rather than at
+    # each call site so every outcome that becomes official carries one -- a
+    # branch that forgot to call it would produce a released shipment with no
+    # defensible trail, which is the failure this module exists to prevent.
+    record = await lineage.record_decision(
+        case, "agent_decision", outcome=outcome, tenant_id=tenant,
+    )
+    case["lineage_audit_id"] = record["audit_id"]
     return case
+
+
+async def _prefilter_rules(tenant_id: str | None) -> verifier.PrefilterRules:
+    """
+    The pre-AI screening rules for one tenant, or the bundled defaults.
+
+    Read per advance() rather than cached in the module, which is the point of
+    the change that introduced this: the five lists used to be module globals
+    rebound by the governance route, so a tenant's edit applied to every tenant
+    and a container restart silently reverted it. A keyed document read is cheap
+    enough to do on the one transition that needs it.
+    """
+    stored = await get_store().get_prefilter_rules(tenant_id=tenant_id)
+    return verifier.PrefilterRules.from_dict(stored)
 
 
 async def advance(case: dict[str, Any]) -> dict[str, Any]:
@@ -647,7 +839,17 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
     store = get_store()
     state = case["state"]
     case_id = case["case_id"]
+    # Read off the case rather than taken as an argument: advance() is called by
+    # the worker for every tenant in turn and by request handlers for one, and a
+    # parameter would let those two disagree with the stored owner.
+    tenant = _case_tenant(case)
     expected_version = case.get("_version")  # Capture version for optimistic lock
+
+    # Declare whose budget this transition spends against, before any agent runs.
+    # nebius_client._with_retry reads it to enforce the tenant spend ceiling, and it
+    # is set here rather than passed down because it would otherwise have to thread
+    # through every agent signature -- nine chances to forget one.
+    budget.set_current_tenant(tenant)
 
     if state == "INGESTED":
         # ---------------------------------------------------------------
@@ -663,7 +865,12 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         # "type a known company name and skip every check" gap a
         # whitelist-only short-circuit would otherwise leave open.
         # ---------------------------------------------------------------
-        validation = verifier.validate(case["shipment"])
+        # The rule set is read from this tenant's stored rules rather than from
+        # module state. verifier.py used to hold the live lists as globals that
+        # the governance screen rebound in place, so one customer's blacklist
+        # edit changed what every customer's shipments were screened against.
+        rules = await _prefilter_rules(tenant)
+        validation = verifier.validate(case["shipment"], rules=rules)
 
         clearance_findings = [
             f for f in validation["findings"] if f.get("auto_clear_by_rules")
@@ -688,6 +895,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 + ", ".join(f["code"] for f in competing)
                 + " - routed to full AI/human review instead of auto-clear.",
                 agent="sql_prefilter",
+                tenant_id=tenant,
             )
 
         if validation.get("skip_ai"):
@@ -759,6 +967,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                     f"Auto-cleared by SQL rules: {reason}",
                     agent="sql_prefilter",
                     risk_score=0,
+                    tenant_id=tenant,
                 )
                 
                 # Skip AI, go straight to AUTO_CLEARED
@@ -787,6 +996,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                     f"Auto-rejected by SQL rules: {reason}",
                     agent="sql_prefilter",
                     risk_score=100,
+                    tenant_id=tenant,
                 )
                 
                 # Skip AI, escalate immediately
@@ -804,7 +1014,9 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 )
             
             # Persist and return - no AI needed
-            await store.put_case(case, expected_version=expected_version)
+            await store.put_case(
+                case, expected_version=expected_version, tenant_id=tenant,
+            )
             return case
         
         # ---------------------------------------------------------------
@@ -819,6 +1031,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             "agent_start",
             "Fraud detection and compliance screening running in parallel",
             agent="specialists",
+            tenant_id=tenant,
         )
 
         # Route validation: search for disruptions on this shipping lane
@@ -834,6 +1047,84 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             analyze_shipment(case["shipment"]),
             screen_shipment(case["shipment"]),
             _route_search(case["shipment"]),
+        )
+
+        # The two checks the deterministic battery cannot make, run after the
+        # first pair because both depend on `validation`: the HS check needs to
+        # know what was declared, and the zero-day gate must not fire on a
+        # shipment the official list has already matched.
+        hs_verdict: dict[str, Any] | None = None
+        zero_day_verdict: dict[str, Any] | None = None
+
+        shipment = case["shipment"]
+        if shipment.get("cargo_description") and shipment.get("hs_code"):
+            try:
+                hs_resp = await classify_hs(
+                    str(shipment["cargo_description"]),
+                    str(shipment["hs_code"]),
+                    mode="cot_strict",
+                )
+                await _record_step(case, "hs_classifier", hs_resp)
+                hs_verdict = interpret_hs(hs_resp)
+                case["hs_classification"] = hs_verdict
+            except Exception as exc:
+                log.warning("HS classification failed for %s: %s", case_id, exc)
+                # Synthesised rather than left as None. A None verdict makes
+                # validate() skip the check entirely, so a failed call would be
+                # indistinguishable from a description that matched its heading --
+                # silence reading as a clearance, which is the failure mode this
+                # whole layer exists to prevent. "unknown" produces
+                # HS_DESCRIPTION_CHECK_UNAVAILABLE instead, which says on the case
+                # that the comparison did not happen.
+                hs_verdict = {
+                    "verdict": "unknown",
+                    "suggested_hs": None,
+                    "confidence": 0.0,
+                    "reasoning": f"{type(exc).__name__}: {exc}",
+                    "obfuscation": None,
+                }
+                case["hs_classification"] = hs_verdict
+
+        screen_now, gate_reason = should_screen_zero_day(shipment, validation)
+        # Recorded either way. "We did not search, and here is why" belongs in an
+        # audit trail as much as a finding does.
+        case["zero_day_gate"] = {"screened": screen_now, "reason": gate_reason}
+        if screen_now:
+            try:
+                zd_resp = await screen_zero_day(shipment)
+                await _record_step(case, "zero_day", zd_resp)
+                zero_day_verdict = interpret_zero_day(zd_resp)
+                case["zero_day"] = zero_day_verdict
+                for search in zd_resp.get("searches") or []:
+                    case.setdefault("tavily_searches", []).append({
+                        "type": "zero_day",
+                        "query": search.get("query"),
+                        "status": search.get("status"),
+                        "results": search.get("result_count", 0),
+                        "urls": search.get("urls") or [],
+                        "at": utcnow(),
+                    })
+            except Exception as exc:
+                log.warning("Zero-day screening failed for %s: %s", case_id, exc)
+                # Same reasoning as the HS path above: the gate said this shipment
+                # needed an adverse-media check, so a failed check must appear as
+                # a check that did not happen rather than as nothing at all.
+                zero_day_verdict = {
+                    "verdict": "unknown",
+                    "searched": False,
+                    "confidence": 0.0,
+                    "reasoning": f"{type(exc).__name__}: {exc}",
+                    "evidence_urls": [],
+                    "entities_checked": [],
+                }
+                case["zero_day"] = zero_day_verdict
+
+        # Re-derived so the two model findings take part in the ordinary floor and
+        # corroboration arithmetic rather than being merged in afterwards. One code
+        # path computes the floor; a second would drift out of agreement with it.
+        validation = verifier.validate(
+            shipment, hs_verdict=hs_verdict, zero_day=zero_day_verdict,
+            rules=await _prefilter_rules(tenant),
         )
 
         # Attach route intelligence to case for downstream agents
@@ -855,15 +1146,22 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         # fast-path branch; reused here so both branches see the same facts.
         reconciled = verifier.reconcile(fraud_result.get("risk_score"), validation)
 
-        # Learning loop: adjust risk based on shipper's human review history
-        shipper_name = case.get("shipment", {}).get("shipper_name", "")
-        adj = shipper_risk_adjustment(shipper_name)
+        # Learning loop: adjust risk by how humans have ruled on this shipper
+        # before. Deliberately applied after reconcile() so it can move the
+        # effective risk but never lowers the deterministic floor itself -- the
+        # clamp below keeps a trusted shipper from being discounted past 0, and
+        # a rules-only auto-clear never reaches this branch at all.
+        shipper_name = (case.get("shipment") or {}).get("shipper_name", "")
+        adj = await shipper_risk_adjustment(shipper_name, tenant_id=tenant)
         if adj != 0:
+            feedback = await get_shipper_feedback(shipper_name, tenant_id=tenant) or {}
             old_risk = reconciled["effective_risk"]
             reconciled["effective_risk"] = max(0, min(100, old_risk + adj))
             reconciled["learning_adjustment"] = adj
             reconciled["learning_note"] = (
-                f"Risk adjusted by {adj:+d} based on shipper feedback history"
+                f"Risk {old_risk} -> {reconciled['effective_risk']} ({adj:+d}) from "
+                f"{feedback.get('released', 0)} human release(s) and "
+                f"{feedback.get('blocked', 0)} human block(s) on this shipper"
             )
 
         case["validation"] = validation
@@ -884,37 +1182,38 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 f"hard finding(s). Effective risk {reconciled['effective_risk']}.",
                 agent="verifier",
                 risk_score=reconciled["effective_risk"],
+                tenant_id=tenant,
             )
 
-            # Auto-debate: when model and floor disagree significantly,
-            # trigger multi-agent debate without waiting for human
+            # Auto-debate: when the model and the deterministic floor disagree by
+            # a wide margin, put Super on it immediately rather than waiting for
+            # a human to click Deep Review. conduct_debate reads the fraud and
+            # compliance steps off the case, both of which _record_step has
+            # already appended above, along with model_risk_score/risk_score.
             if reconciled.get("score_disputed"):
                 try:
-                    debate_result = await conduct_debate(
-                        case_id=case_id,
-                        fraud_result=fraud_result,
-                        compliance_result=compliance_result,
-                        shipment=case["shipment"],
-                        trigger="auto_score_disputed",
-                    )
-                    case.setdefault("steps", []).append({
-                        "agent": "auto_debate",
-                        "model": debate_result.get("model"),
-                        "latency_ms": debate_result.get("latency_ms", 0),
-                        "input_tokens": debate_result.get("input_tokens", 0),
-                        "output_tokens": debate_result.get("output_tokens", 0),
-                        "at": utcnow(),
-                        "result": debate_result.get("result"),
-                    })
-                    case["auto_debate"] = debate_result.get("result")
+                    debate_result = await conduct_debate(case)
+                    # Routed through _record_step rather than appended by hand so
+                    # the debate's tokens land in the cost rollups. Appending
+                    # directly left auto-debate spend out of _estimated_cost_usd
+                    # entirely, understating the cost of the disputed-score path.
+                    debate_out = await _record_step(case, "auto_debate", debate_result)
+                    verdict = (debate_out or {}).get("verdict") or {}
+                    case["auto_debate"] = debate_out
                     await emit(
                         case_id, "debate",
-                        f"Auto-debate triggered (score disputed): "
-                        f"Super re-evaluated in {debate_result.get('latency_ms', '?')}ms",
+                        f"Auto-debate (score disputed by "
+                        f"{reconciled['risk_floor'] - (reconciled['model_risk'] or 0)} "
+                        f"points): Super returned "
+                        f"{verdict.get('verdict') or 'no verdict'} in "
+                        f"{debate_result.get('latency_ms', '?')}ms",
                         agent="debate",
+                        tenant_id=tenant,
                     )
                 except Exception as exc:
-                    log.warning("Auto-debate failed for %s: %s", case_id, exc)
+                    log.warning(
+                        "Auto-debate failed for %s: %s", case_id, exc, exc_info=True
+                    )
         else:
             await emit(
                 case_id,
@@ -926,6 +1225,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 f"deterministic checks agree",
                 agent="specialists",
                 risk_score=case["risk_score"],
+                tenant_id=tenant,
             )
 
     elif state == "SPECIALISTS_DONE":
@@ -934,14 +1234,38 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         may_auto_clear = reconciled.get("auto_clear_permitted", True)
         status = (case.get("compliance_status") or "").upper()
 
+        # Any agent that returned nothing usable -- unparseable JSON, or JSON that
+        # failed its schema after the retries in nebius_client were exhausted.
+        # reconcile() already blocks auto-clear when the FRAUD score is missing,
+        # but nothing blocked it when COMPLIANCE failed, and a shipment released
+        # on a screening that did not happen is the worst outcome this system can
+        # produce. A human gets it instead.
+        failed_agents = case.get("_model_failure_agents") or []
+        model_failed = bool(case.get("_model_failures"))
+
         clean = (
             risk < FRAUD_CLEAR_BELOW
             and may_auto_clear
             and status not in ("BLOCKED", "REVIEW_REQUIRED")
+            and not model_failed
         )
         needs_investigation = (
             status in ("BLOCKED", "REVIEW_REQUIRED") or risk >= INVESTIGATE_AT
         )
+
+        if model_failed:
+            # Named before the routing so the trace says which agent failed and
+            # why the case is with a human, rather than leaving a reviewer to
+            # infer it from a risk score that no model produced.
+            await emit(
+                case_id,
+                "veto",
+                f"Model output unusable from {', '.join(failed_agents)} after "
+                f"retries; auto-clear withheld and the case routed to a human. "
+                f"The raw reply is on the step for inspection.",
+                agent="schema_guard",
+                tenant_id=tenant,
+            )
 
         if clean:
             case["cleared_by"] = "ai"  # Track for metrics: cleared by Nemotron
@@ -966,10 +1290,19 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             case = await _decide(
                 case,
                 "HELD_FOR_REVIEW",
-                f"Compliance cleared the shipment but effective risk {risk}/100 is "
-                f"above the auto-clear threshold, so a human reviewer is assigned.",
+                (
+                    f"Model output from {', '.join(failed_agents)} could not be "
+                    f"validated after retries, so no automated decision is safe "
+                    f"on this case."
+                    if model_failed else
+                    f"Compliance cleared the shipment but effective risk {risk}/100 is "
+                    f"above the auto-clear threshold, so a human reviewer is assigned."
+                ),
                 [
-                    ("assign_analyst", {"queue": "trade-review", "priority": "NORMAL"}),
+                    ("assign_analyst", {
+                        "queue": "trade-review",
+                        "priority": "HIGH" if model_failed else "NORMAL",
+                    }),
                     ("publish_decision", {
                         "decision": {"outcome": "HELD_FOR_REVIEW", "effective_risk": risk}
                     }),
@@ -982,6 +1315,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 f"Compliance {status} at risk {risk}, opening deep investigation "
                 "with extended thinking",
                 agent="investigation",
+                tenant_id=tenant,
             )
             response = await investigate_case(_investigation_payload(case))
             result = await _record_step(case, "investigation", response)
@@ -994,6 +1328,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 f"Investigation complete in {response.get('latency_ms')}ms: "
                 f"{result.get('fraud_pattern') or 'pattern inconclusive'}",
                 agent="investigation",
+                tenant_id=tenant,
             )
 
     elif state == "INVESTIGATED":
@@ -1012,6 +1347,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 "veto",
                 exposure_flag["detail"],
                 agent="verifier",
+                tenant_id=tenant,
             )
 
         case = await _decide(
@@ -1048,7 +1384,9 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
 
     case["updated_at"] = utcnow()
     case["claimed"] = False
-    await store.put_case(case, expected_version=expected_version)
+    await store.put_case(
+        case, expected_version=expected_version, tenant_id=tenant,
+    )
     return case
 
 
@@ -1089,7 +1427,9 @@ def _investigation_payload(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def sweep_bucket(prefix: str, limit: int) -> dict[str, Any]:
+async def sweep_bucket(
+    prefix: str, limit: int, tenant_id: str | None = None,
+) -> dict[str, Any]:
     """
     Process documents already on the stage.
 
@@ -1108,12 +1448,16 @@ async def sweep_bucket(prefix: str, limit: int) -> dict[str, Any]:
         if name.startswith(ARCHIVE_PREFIX) or name.endswith("/"):
             continue
 
-        marker = await store.get_case(f"CASE-DOCOBJ-{_object_key(name)}")
+        marker = await store.get_case(
+            f"CASE-DOCOBJ-{_object_key(name)}", tenant_id=tenant_id,
+        )
         if marker:
             skipped.append(name)
             continue
 
-        result = await ingest_from_storage(document_store.BUCKET, name)
+        result = await ingest_from_storage(
+            document_store.BUCKET, name, tenant_id=tenant_id,
+        )
         processed.append({
             "object": name,
             "case_id": result.get("case_id"),
@@ -1136,18 +1480,24 @@ def _object_key(name: str) -> str:
     return hashlib.sha1(name.encode("utf-8")).hexdigest()[:16]
 
 
-async def ingest_from_storage(bucket: str, name: str) -> dict[str, Any]:
+async def ingest_from_storage(
+    bucket: str, name: str, tenant_id: str | None = None,
+) -> dict[str, Any]:
     """
     Read an object off the stage and run it through document intake.
 
     A marker case is written under the object's hash so a repeated notification
     or sweep does not process the same file twice. Pub/Sub delivers at least
     once, so this is not optional.
+
+    The marker is tenant-scoped along with everything else, which means two
+    tenants staging the same object path each get their own marker rather than
+    the second silently seeing the first's as a duplicate and processing nothing.
     """
     store = get_store()
     marker_id = f"CASE-DOCOBJ-{_object_key(name)}"
 
-    existing = await store.get_case(marker_id)
+    existing = await store.get_case(marker_id, tenant_id=tenant_id)
     if existing:
         return {
             "accepted": False,
@@ -1161,7 +1511,7 @@ async def ingest_from_storage(bucket: str, name: str) -> dict[str, Any]:
         return {"accepted": False, "error": f"could not read gs://{bucket}/{name}"}
 
     filename = name.rsplit("/", 1)[-1]
-    result = await ingest_document(data, filename, content_type)
+    result = await ingest_document(data, filename, content_type, tenant_id=tenant_id)
 
     # Write the marker only after intake, so a failed read can be retried.
     await store.put_case({
@@ -1178,7 +1528,7 @@ async def ingest_from_storage(bucket: str, name: str) -> dict[str, Any]:
         "actions": [],
         "created_at": utcnow(),
         "updated_at": utcnow(),
-    })
+    }, tenant_id=tenant_id)
 
     result["source_object"] = f"gs://{bucket}/{name}"
     return result
@@ -1196,7 +1546,8 @@ HUMAN_ACTIONS = {
 
 
 async def human_decide(
-    case_id: str, action: str, reviewer: str, note: str
+    case_id: str, action: str, reviewer: str, note: str,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Apply a named human's decision to a case.
@@ -1217,7 +1568,12 @@ async def human_decide(
     if action != "release" and not note.strip():
         return {"ok": False, "error": f"a note is required when action is '{action}'"}
 
-    case = await store.get_case(case_id)
+    # Scoped: without the tenant, a guessed case_id lets a reviewer in one tenant
+    # release or block another tenant's shipment, and put_case below preserves the
+    # stored owner -- so the decision would succeed and be recorded against the
+    # victim's case. get_case returns None rather than raising on a foreign id,
+    # deliberately, so id enumeration gets the same answer as a genuine 404.
+    case = await store.get_case(case_id, tenant_id=tenant_id)
     if not case:
         return {"ok": False, "error": "case not found"}
     expected_version = case.get("_version")  # Capture for optimistic lock
@@ -1233,11 +1589,14 @@ async def human_decide(
     receipts = []
     if tool_action == "release_shipment":
         receipts.append(await tools.release_shipment(
-            case_id, case["shipment_id"], f"Released by {reviewer}: {note or 'no note'}"
+            case_id, case["shipment_id"],
+            f"Released by {reviewer}: {note or 'no note'}",
+            tenant_id=tenant_id,
         ))
     elif tool_action == "hold_shipment":
         receipts.append(await tools.hold_shipment(
-            case_id, case["shipment_id"], f"Blocked by {reviewer}: {note}"
+            case_id, case["shipment_id"], f"Blocked by {reviewer}: {note}",
+            tenant_id=tenant_id,
         ))
 
     # Any SAR draft on this case now carries a signature.
@@ -1275,7 +1634,13 @@ async def human_decide(
             "decided_by": "human",
         }
 
-    await store.put_case(case, expected_version=expected_version)
+    await store.put_case(
+        case, expected_version=expected_version, tenant_id=tenant_id,
+    )
+    # Two records, because they answer different questions. The thin one below
+    # says a named human chose an action; the lineage record says what evidence
+    # was in front of them -- which list version, which model, which prompt --
+    # and is the one a customs authority reads three years later.
     await store.add_audit({
         "audit_id": new_id("audit"),
         "case_id": case_id,
@@ -1283,7 +1648,11 @@ async def human_decide(
         "status": "done",
         "detail": review,
         "at": utcnow(),
-    })
+    }, tenant_id=tenant_id)
+    await lineage.record_decision(
+        case, f"human_{action}", outcome=new_state, actor=reviewer,
+        tenant_id=tenant_id,
+    )
     await emit(
         case_id,
         "human_decision",
@@ -1291,55 +1660,131 @@ async def human_decide(
         + (f" (agent had proposed {review['agent_proposed']})"
            if review["agent_proposed"] else ""),
         outcome=new_state,
+        tenant_id=tenant_id,
     )
 
-    # Learning loop: update shipper clearance rate for future risk adjustment
-    shipper_name = case.get("shipment", {}).get("shipper_name", "")
-    if shipper_name and action in ("release", "block"):
-        _update_shipper_feedback(store, shipper_name, action)
+    # Learning loop: this decision is now part of the shipper's history, so the
+    # derived tallies must be re-read rather than served from the stale cache.
+    _invalidate_shipper_feedback()
 
     return {"ok": True, "case_id": case_id, "state": new_state, "review": review}
 
 
-# Shipper feedback tracking for learning loop
-_SHIPPER_FEEDBACK: dict[str, dict] = {}
+# --------------------------------------------------------------------------
+# Learning loop: human review history feeds back into risk scoring
+# --------------------------------------------------------------------------
+#
+# Derived from the cases themselves rather than kept in a counter, because a
+# counter in process memory is wrong in both directions on Cloud Run: it resets
+# on every cold start, and each instance accumulates its own totals, so the same
+# shipper gets a different adjustment depending on which instance answers. The
+# terminal state of a reviewed case is already durable and already the source of
+# truth for "what did a human decide", so the history is read from there.
+#
+# The cache is a read-through TTL cache only. Losing it costs one query, not
+# correctness.
 
-def _update_shipper_feedback(store, shipper_name: str, action: str):
-    """Track human decisions per shipper to adjust future risk scoring."""
-    key = shipper_name.strip().lower()
+_FEEDBACK_STATES = ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN")
+_FEEDBACK_TTL_SECONDS = 30.0
+_FEEDBACK_SCAN_LIMIT = 500
+
+# Keyed by tenant, not by shipper alone. A single shared dict was a verdict-
+# changing leak rather than a display one: the tallies feed
+# shipper_risk_adjustment(), which moves the effective risk score by up to 15
+# points, so one customer's reviewers blocking "Acme Trading" twice would have
+# raised the risk of a different customer's unrelated "Acme Trading".
+_feedback_cache: dict[str, dict[str, dict[str, Any]]] = {}
+_feedback_cache_at: dict[str, float] = {}
+
+
+def _shipper_key(shipper_name: str) -> str:
+    return (shipper_name or "").strip().lower()
+
+
+async def _load_shipper_feedback(
+    force: bool = False, tenant_id: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Rebuild the per-shipper release/block tallies from stored cases."""
+    key = tenant_id or ""
+    at = _feedback_cache_at.get(key, 0.0)
+    fresh = (time.monotonic() - at) < _FEEDBACK_TTL_SECONDS
+    if at and fresh and not force:
+        return _feedback_cache.get(key, {})
+
+    store = get_store()
+    tallies: dict[str, dict[str, Any]] = {}
+    cursor = None
+    scanned = 0
+
+    while scanned < _FEEDBACK_SCAN_LIMIT:
+        page, cursor = await store.query_cases(
+            states=_FEEDBACK_STATES, cursor=cursor, limit=100,
+            tenant_id=tenant_id,
+        )
+        if not page:
+            break
+        for case in page:
+            key = _shipper_key((case.get("shipment") or {}).get("shipper_name"))
+            if not key:
+                continue
+            row = tallies.setdefault(key, {"released": 0, "blocked": 0})
+            if case.get("state") == "RELEASED_BY_HUMAN":
+                row["released"] += 1
+            elif case.get("state") == "BLOCKED_BY_HUMAN":
+                row["blocked"] += 1
+        scanned += len(page)
+        if not cursor:
+            break
+
+    for row in tallies.values():
+        total = row["released"] + row["blocked"]
+        row["clearance_rate"] = (row["released"] / total) if total else 0.0
+
+    _feedback_cache[key] = tallies
+    _feedback_cache_at[key] = time.monotonic()
+    return tallies
+
+
+def _invalidate_shipper_feedback() -> None:
+    """Drop the cache so the next read reflects a decision just recorded."""
+    _feedback_cache_at.clear()
+
+
+async def get_shipper_feedback(
+    shipper_name: str, tenant_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Release/block history for a shipper, or None if a human never ruled."""
+    key = _shipper_key(shipper_name)
     if not key:
-        return
-    fb = _SHIPPER_FEEDBACK.setdefault(key, {"released": 0, "blocked": 0})
-    if action == "release":
-        fb["released"] += 1
-    elif action == "block":
-        fb["blocked"] += 1
-    total = fb["released"] + fb["blocked"]
-    fb["clearance_rate"] = fb["released"] / total if total else 0.0
+        return None
+    return (await _load_shipper_feedback(tenant_id=tenant_id)).get(key)
 
-def get_shipper_feedback(shipper_name: str) -> dict | None:
-    """Return feedback stats for a shipper, or None if no data."""
-    key = (shipper_name or "").strip().lower()
-    return _SHIPPER_FEEDBACK.get(key)
 
-def shipper_risk_adjustment(shipper_name: str) -> int:
-    """Return risk floor adjustment based on human feedback history.
-
-    Positive = increase floor (more risky), negative = decrease (more trusted).
-    - Cleared 5+ times by humans -> reduce risk floor by 10
-    - Blocked 2+ times by humans -> raise risk floor by 15
+async def shipper_risk_adjustment(
+    shipper_name: str, tenant_id: str | None = None,
+) -> int:
     """
-    fb = get_shipper_feedback(shipper_name)
-    if not fb:
+    Risk adjustment implied by how humans have historically ruled on a shipper.
+
+    Positive raises effective risk, negative lowers it:
+    - blocked 2+ times by a human -> +15
+    - released 5+ times by a human -> -10
+
+    Blocks are checked first and with a lower threshold on purpose: a shipper a
+    human has stopped twice should not be discounted because it also has a long
+    tail of releases.
+    """
+    feedback = await get_shipper_feedback(shipper_name, tenant_id=tenant_id)
+    if not feedback:
         return 0
-    if fb["blocked"] >= 2:
+    if feedback["blocked"] >= 2:
         return 15
-    if fb["released"] >= 5:
+    if feedback["released"] >= 5:
         return -10
     return 0
 
 
-async def deep_review(case_id: str) -> dict[str, Any]:
+async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, Any]:
     """
     Conduct a Multi-Agent Debate on a case.
 
@@ -1352,10 +1797,11 @@ async def deep_review(case_id: str) -> dict[str, Any]:
     This is an expensive, opt-in operation triggered by an analyst clicking
     "Deep Review" on a specific case in the Review Queue.
     """
-    from vf_logistics.agents import conduct_debate
-
     store = get_store()
-    case = await store.get_case(case_id)
+    # Scoped for the same reason as human_decide, plus one of its own: this spends
+    # Nemotron Super tokens and returns a debate payload containing the case
+    # content, so an unscoped lookup bills one tenant to read another's shipment.
+    case = await store.get_case(case_id, tenant_id=tenant_id)
 
     if not case:
         return {"ok": False, "error": "case not found"}
@@ -1368,17 +1814,23 @@ async def deep_review(case_id: str) -> dict[str, Any]:
 
     expected_version = case.get("_version")
 
+    # Read off the stored case rather than the argument, for the same reason advance()
+    # does: the case's own owner is the authority on whose budget this spends. Deep
+    # review runs Nemotron Super, the most expensive text model in the table.
+    budget.set_current_tenant(_case_tenant(case))
+
     await emit(
         case_id,
         "debate_start",
         "Senior Auditor (Nemotron Super) reviewing Junior Analyst (Nano) assessment",
         agent="debate",
+        tenant_id=tenant_id,
     )
 
     try:
         debate_result = await conduct_debate(case)
     except Exception as e:
-        await emit(case_id, "debate_error", f"Debate failed: {e}", agent="debate")
+        await emit(case_id, "debate_error", f"Debate failed: {e}", agent="debate", tenant_id=tenant_id)
         return {"ok": False, "error": str(e)}
 
     # Record as a step in the case trace
@@ -1399,11 +1851,15 @@ async def deep_review(case_id: str) -> dict[str, Any]:
     case["_agent_calls"] = case.get("_agent_calls", 0) + 1
     case["_input_tokens"] = case.get("_input_tokens", 0) + debate_result.get("input_tokens", 0)
     case["_output_tokens"] = case.get("_output_tokens", 0) + debate_result.get("output_tokens", 0)
-    step_pricing = model_config.pricing_for(debate_result.get("model", ""))
-    case["_estimated_cost_usd"] = case.get("_estimated_cost_usd", 0.0) + (
-        debate_result.get("input_tokens", 0) * step_pricing["input"]
-        + debate_result.get("output_tokens", 0) * step_pricing["output"]
-    ) / 1_000_000
+    case["_estimated_cost_usd"] = case.get("_estimated_cost_usd", 0.0) + lineage.cost_usd(
+        debate_result.get("model", ""),
+        debate_result.get("input_tokens", 0),
+        debate_result.get("output_tokens", 0),
+    )
+    # Deep review does not go through _record_step, so the cached spend total is
+    # invalidated here for the same reason it is there: the next model call must
+    # see this spend rather than a pre-debate figure.
+    budget.forget(_case_tenant(case))
 
     verdict = (debate_result.get("result") or {}).get("verdict")
     if verdict:
@@ -1418,10 +1874,13 @@ async def deep_review(case_id: str) -> dict[str, Any]:
             verdict=verdict_str,
             confidence=confidence,
             recommended_action=verdict.get("recommended_action"),
+            tenant_id=tenant_id,
         )
 
     try:
-        await store.put_case(case, expected_version=expected_version)
+        await store.put_case(
+            case, expected_version=expected_version, tenant_id=tenant_id,
+        )
     except OptimisticLockError:
         return {"ok": False, "error": "case was modified concurrently, please retry"}
 
@@ -1435,7 +1894,7 @@ async def deep_review(case_id: str) -> dict[str, Any]:
 
 
 async def review_queue(
-    cursor: str | None = None, limit: int = 40
+    cursor: str | None = None, limit: int = 40, tenant_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
     Cases waiting on a person, newest first, with cursor pagination.
@@ -1448,7 +1907,7 @@ async def review_queue(
     the composite index this relies on.
     """
     return await get_store().query_cases(
-        states=AWAITING_HUMAN, cursor=cursor, limit=limit
+        states=AWAITING_HUMAN, cursor=cursor, limit=limit, tenant_id=tenant_id,
     )
 
 
@@ -1477,10 +1936,11 @@ async def list_cases_page(
     states: tuple[str, ...] | None = None,
     cursor: str | None = None,
     limit: int = 50,
+    tenant_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Slim, cursor-paginated case listing for GET /api/v1/cases."""
     cases, next_cursor = await get_store().query_cases(
-        states=states, cursor=cursor, limit=limit
+        states=states, cursor=cursor, limit=limit, tenant_id=tenant_id,
     )
     return [slim_case(c) for c in cases], next_cursor
 
@@ -1593,9 +2053,52 @@ def synthesise_packs(case: dict[str, Any]) -> list[dict[str, Any]]:
 # Failure handling
 # --------------------------------------------------------------------------
 
+async def _superseded(case: dict[str, Any]) -> None:
+    """
+    Abandon a transition whose case was committed by somebody else mid-flight.
+
+    Deliberately writes NOTHING. The store already holds the authoritative case,
+    and the in-memory copy here is a mutated stale snapshot -- persisting it is
+    precisely the bug this exists to prevent. A reviewer released
+    CASE-FULL-20-THINHISTORY at 07:27:18 and the case read ESCALATED again twenty
+    seconds later because a losing transition wrote its stale copy back.
+
+    Also does not touch `attempts`. A lost race is not a fault of the case, and
+    counting it as one means three reviewer decisions in quick succession could
+    push a perfectly healthy case to DEAD_LETTER.
+    """
+    _stats["superseded"] = _stats.get("superseded", 0) + 1
+    logging.info(
+        "case %s superseded by a concurrent write; discarding this transition",
+        case.get("case_id"),
+    )
+    await emit(
+        case["case_id"],
+        "superseded",
+        "A concurrent write (usually a reviewer decision) committed while this "
+        "transition was running. The computed result was discarded rather than "
+        "overwriting the newer state.",
+        tenant_id=_case_tenant(case),
+    )
+
+
 async def _fail(case: dict[str, Any], exc: Exception) -> None:
-    """Back off and retry, or dead-letter after MAX_ATTEMPTS."""
+    """
+    Back off and retry, or dead-letter after MAX_ATTEMPTS.
+
+    Both writes below carry `expected_version`. They used to be the only two case
+    writes in this module without it, which made this recovery path the one place
+    that could silently overwrite committed state: a transition that lost a race
+    landed here, and here it wrote its stale copy back unconditionally. Step 3
+    stops the known route in (a lock conflict is now handled as superseded before
+    it can reach this function), but any *other* failure racing a reviewer's
+    decision had exactly the same power, so the guard belongs here too.
+
+    A recovery path that can destroy a committed decision is not a recovery path.
+    """
     store = get_store()
+    tenant = _case_tenant(case)
+    expected_version = case.get("_version")
     case["attempts"] = case.get("attempts", 0) + 1
     case["last_error"] = f"{type(exc).__name__}: {exc}"
     case["claimed"] = False
@@ -1603,11 +2106,21 @@ async def _fail(case: dict[str, Any], exc: Exception) -> None:
 
     if case["attempts"] >= MAX_ATTEMPTS:
         case["state"] = "DEAD_LETTER"
-        await store.put_case(case)
+        try:
+            await store.put_case(
+                case, expected_version=expected_version, tenant_id=tenant,
+            )
+        except OptimisticLockError:
+            # Somebody committed while we were failing. Their state wins; marking
+            # DEAD_LETTER over a reviewer's decision would be the worst possible
+            # outcome of a failed retry.
+            await _superseded(case)
+            return
         await emit(
             case["case_id"],
             "dead_letter",
             f"Gave up after {case['attempts']} attempts: {case['last_error']}",
+            tenant_id=tenant,
         )
         return
 
@@ -1620,11 +2133,18 @@ async def _fail(case: dict[str, Any], exc: Exception) -> None:
     case["not_before"] = (
         datetime.now(timezone.utc) + timedelta(seconds=backoff)
     ).isoformat()
-    await store.put_case(case)
+    try:
+        await store.put_case(
+            case, expected_version=expected_version, tenant_id=tenant,
+        )
+    except OptimisticLockError:
+        await _superseded(case)
+        return
     await emit(
         case["case_id"],
         "retry",
         f"Attempt {case['attempts']} failed, retrying in {backoff}s: {case['last_error']}",
+        tenant_id=tenant,
     )
 
 
@@ -1643,19 +2163,25 @@ _stats: dict[str, Any] = {
 }
 
 
-async def tick() -> int:
+async def tick(tenant_id: str | None = None) -> int:
     """
     Advance up to MAX_CONCURRENT cases by one step each.
 
     Also usable as an HTTP-driven fallback if the always-on background loop is
     ever unavailable, which is why it is a plain awaitable returning a count.
+
+    `tenant_id=None` reaches every tenant, which is what claim_next_pending's
+    own contract means by None and is correct for the background worker: scoping
+    the worker to one tenant would leave every other tenant's cases unprocessed
+    forever. A request handler passes its own tenant so one customer cannot
+    spend another's work budget.
     """
     _stats["ticks"] += 1
     claimed = []
     store = get_store()
 
     for _ in range(MAX_CONCURRENT):
-        case = await store.claim_next_pending(ACTIONABLE)
+        case = await store.claim_next_pending(ACTIONABLE, tenant_id=tenant_id)
         if not case:
             break
         claimed.append(case)
@@ -1667,6 +2193,12 @@ async def tick() -> int:
         try:
             await advance(case)
             _stats["advanced"] += 1
+        except OptimisticLockError:
+            # Not a failure. Another writer -- most often a reviewer's decision --
+            # committed while this transition was running, so everything computed
+            # here is based on a snapshot that no longer exists. Retrying would
+            # recompute from the same stale copy, and _fail() would persist it.
+            await _superseded(case)
         except Exception as exc:  # noqa: BLE001 - one bad case must not stop the worker
             _stats["failed"] += 1
             logging.exception("case %s failed to advance", case.get("case_id"))
@@ -1687,18 +2219,48 @@ async def advance_until_terminal(case: dict[str, Any]) -> dict[str, Any]:
     Bounded twice over - by step count and by wall clock - so a pathological
     case cannot hold a request open forever. A case that runs out of budget is
     simply left where it is, and the next trigger picks it up.
+
+    The stored case is re-read before every step after the first. This loop used
+    to judge `state in ACTIONABLE` against its own in-memory copy, which made a
+    decision committed by a reviewer completely invisible to it: the chain carried
+    on from the stale snapshot and executed the next transition's TOOLS --
+    hold_shipment, draft_sar -- against a shipment a human had already released.
+    The optimistic lock stops the resulting *write*, but a lock only guards
+    writes, and by the time it fires the side effects have happened. That is why
+    the audit for CASE-FULL-20-THINHISTORY shows a hold twenty seconds after a
+    release.
+
+    One extra store read per step, against several model calls per step, is not a
+    cost worth optimising away.
     """
     started = time.monotonic()
     steps = 0
 
-    while (
-        case.get("state") in ACTIONABLE
-        and steps < MAX_CHAIN_STEPS
-        and time.monotonic() - started < CHAIN_BUDGET_SECONDS
-    ):
+    while steps < MAX_CHAIN_STEPS and time.monotonic() - started < CHAIN_BUDGET_SECONDS:
+        if steps:
+            fresh = await get_store().get_case(
+                case["case_id"], tenant_id=_case_tenant(case)
+            )
+            # A missing case means it was deleted mid-chain (a reset, most
+            # likely). Keep the in-memory copy for the return value but stop
+            # working it -- there is nothing left to advance.
+            if fresh is None:
+                break
+            case = fresh
+
+        if case.get("state") not in ACTIONABLE:
+            break
+
         try:
             case = await advance(case)
             _stats["advanced"] += 1
+        except OptimisticLockError:
+            # Someone else committed this case while the transition ran. Stop the
+            # chain: the stored state is authoritative, and if it is still
+            # actionable the next trigger will pick it up from the real state
+            # rather than from this stale copy.
+            await _superseded(case)
+            break
         except Exception as exc:  # noqa: BLE001
             _stats["failed"] += 1
             logging.exception("case %s failed to advance", case.get("case_id"))
@@ -1709,7 +2271,9 @@ async def advance_until_terminal(case: dict[str, Any]) -> dict[str, Any]:
     return case
 
 
-async def drain(max_cases: int = 1) -> dict[str, Any]:
+async def drain(
+    max_cases: int = 1, tenant_id: str | None = None,
+) -> dict[str, Any]:
     """
     Claim up to `max_cases` pending cases and run each to completion.
 
@@ -1721,7 +2285,7 @@ async def drain(max_cases: int = 1) -> dict[str, Any]:
     handled: list[str] = []
 
     for _ in range(max_cases):
-        case = await store.claim_next_pending(ACTIONABLE)
+        case = await store.claim_next_pending(ACTIONABLE, tenant_id=tenant_id)
         if not case:
             break
         done = await advance_until_terminal(case)
@@ -1790,7 +2354,7 @@ def worker_status() -> dict[str, Any]:
 # Dashboard projection
 # --------------------------------------------------------------------------
 
-async def snapshot(limit: int = 60) -> dict[str, Any]:
+async def snapshot(limit: int = 60, tenant_id: str | None = None) -> dict[str, Any]:
     """
     Dashboard header + a bounded board window.
 
@@ -1803,10 +2367,10 @@ async def snapshot(limit: int = 60) -> dict[str, Any]:
     """
     store = get_store()
     all_cases, events, audit, metrics = await asyncio.gather(
-        store.list_cases(limit + 40),
-        store.list_events(80),
-        store.list_audit(80),
-        global_metrics(),
+        store.list_cases(limit + 40, tenant_id=tenant_id),
+        store.list_events(80, tenant_id=tenant_id),
+        store.list_audit(80, tenant_id=tenant_id),
+        global_metrics(tenant_id=tenant_id),
     )
 
     # Storage dedupe markers are bookkeeping, not cases. They must not appear on
@@ -1827,7 +2391,7 @@ async def snapshot(limit: int = 60) -> dict[str, Any]:
             bucket["input"] += step.get("input_tokens", 0) or 0
             bucket["output"] += step.get("output_tokens", 0) or 0
 
-    readiness = await governance.agent_readiness()
+    readiness = await governance.agent_readiness(tenant_id=tenant_id)
 
     return {
         "cases": cases,

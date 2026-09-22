@@ -70,7 +70,8 @@ def configured() -> bool:
 
 
 async def request_protected_action(
-    action: str, case_id: str, payload: dict[str, Any]
+    action: str, case_id: str, payload: dict[str, Any],
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Ask the executor identity to perform an action this identity may not.
@@ -78,6 +79,24 @@ async def request_protected_action(
     Returns a receipt-shaped dict either way. A refusal or a transport failure is
     reported, never swallowed: an action that did not happen must not look like
     one that did.
+
+    `tenant_id` travels in the request body, which is the one place in this
+    codebase a tenant is taken from a caller rather than from an authenticated
+    identity. That is sound here and nowhere else: the caller is the analysis
+    service itself, holding `run.invoker` on an endpoint deployed
+    --no-allow-unauthenticated, so it is the same identity whose word is already
+    being taken for "publish this decision".
+
+    The executor now also requires the shared API key, and the body tenant is
+    honoured only for that service identity. Two reasons the OIDC token alone was
+    not enough: the same app.py serves /internal/execute on the public analysis
+    service as well as on the executor, so "unreachable by a customer" was not
+    true of every deployment of this route; and IAM tells the executor that *a*
+    permitted identity called, not that the caller is entitled to name a tenant.
+
+    Without the tenant the executor writes its audit receipt with no owner, which
+    under multi-tenancy raises rather than misfiling -- so the publish would
+    succeed and the receipt recording it would not exist.
     """
     if not EXECUTOR_URL:
         return {
@@ -94,12 +113,24 @@ async def request_protected_action(
             "reason": "could not mint an OIDC identity token for the executor",
         }
 
+    headers = {"Authorization": f"Bearer {token}"}
+    # Read per call, not captured at import, so a rotated key reaches the next
+    # publish rather than the next deploy.
+    shared_key = os.getenv("VF_API_KEY", "").strip()
+    if shared_key:
+        headers["X-VF-API-Key"] = shared_key
+
     try:
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
                 f"{EXECUTOR_URL}/internal/execute",
-                json={"action": action, "case_id": case_id, "payload": payload},
-                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "action": action,
+                    "case_id": case_id,
+                    "payload": payload,
+                    "tenant_id": tenant_id,
+                },
+                headers=headers,
             )
     except Exception as exc:  # noqa: BLE001
         return {
@@ -108,12 +139,16 @@ async def request_protected_action(
             "reason": f"{type(exc).__name__}: {exc}",
         }
 
-    if resp.status_code == 403:
+    if resp.status_code in (401, 403):
         return {
             "delegated": True,
             "status": "failed",
-            "reason": "executor refused the call: analysis identity lacks run.invoker",
-            "http_status": 403,
+            "reason": (
+                "executor refused the call: the analysis identity lacks "
+                "run.invoker, or VF_API_KEY is unset or does not match the "
+                "executor's"
+            ),
+            "http_status": resp.status_code,
         }
 
     try:

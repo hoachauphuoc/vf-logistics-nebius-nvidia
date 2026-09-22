@@ -19,10 +19,21 @@ python-dotenv>=1.0.0
 pypdf>=4.0.0
 httpx>=0.24.0
 
+# hs_reference.py and hs_cot.py read data/hs_reference.yaml at import time; a
+# hard import with no fallback, so the container cannot boot without it.
+pyyaml>=6.0
+
 # pypdfium2 rasterises the first page of an uploaded PDF to PNG before it is sent
 # to the vision model - Token Factory's vision models take images, not PDFs.
 # pypdfium2 uses Apache 2.0/BSD-3 license (Google's PDFium), no AGPL concerns.
 pypdfium2>=4.30.0
+
+# Pillow is a direct dependency even though nothing in src/ imports PIL by name:
+# _to_image() reaches it through pypdfium2's bitmap.to_pil(). pypdfium2 does not
+# require Pillow itself, so without this line Pillow arrives only as an fpdf2
+# transitive -- and PDF upload would break the moment fpdf2 is changed, while
+# image upload carried on working.
+pillow>=10.0.0
 
 # fpdf2 renders event-sourced shipments into a bill of lading so every case has
 # paperwork a human can review, not only the ones uploaded as a document.

@@ -1,0 +1,370 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens, read off the four reference surfaces:
+
+   Linear    -> near-black with a blue cast, hairline borders, and a LIGHTER
+                TOP EDGE on every card. That top edge is what makes the card
+                look lit from above; without it the same border reads flat.
+   Vercel    -> pure black plus a large radial glow behind the content, and
+                inset darker panels for monospace blocks.
+   Gradient  -> vertical slate-950 -> indigo-950/20.
+   Supabase  -> #3ECF8E emerald as the single accent, on dark text for CTAs
+                because emerald on white text fails contrast at this weight.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Named distinctly from shadcn's --color-accent / --color-destructive so
+     that restyling risk states here cannot silently restyle Button, Select,
+     and every other primitive that binds to those. */
+  --color-brand: #3ecf8e;
+  --color-brand-dim: #2ba672;
+  --color-brand-ink: #04180f;
+
+  --color-risk-critical: #ff4d4d;
+  --color-risk-warn: #f5a524;
+  --color-risk-clear: #3ecf8e;
+  --color-risk-unknown: #94a3b8;
+
+  --color-dim: #9ca3af;
+  --color-faint: #6b7280;
+  --color-hairline: rgba(255, 255, 255, 0.1);
+  --color-hairline-lit: rgba(255, 255, 255, 0.14);
+
+  --shadow-glow-indigo: 0 8px 40px -12px rgba(99, 102, 241, 0.35);
+  --shadow-bento: 0 8px 40px -12px rgba(2, 6, 23, 0.9);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* This product is dark-only: a compliance console is read in a control room,
+   and the reference surfaces are all dark. The palette therefore lives in
+   :root rather than behind .dark, so nothing depends on a class being set
+   before the first paint. .dark repeats it so shadcn's dark: variants still
+   resolve to the same values instead of falling back to shadcn's greys. */
+:root {
+  --background: #020617;
+  --foreground: #ffffff;
+
+  --card: rgba(0, 0, 0, 0.4);
+  --card-foreground: #ffffff;
+  --popover: #0a0f1f;
+  --popover-foreground: #ffffff;
+
+  /* Emerald primary with dark ink, per Supabase. */
+  --primary: #3ecf8e;
+  --primary-foreground: #04180f;
+
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.04);
+  --muted-foreground: #9ca3af;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #ffffff;
+  --destructive: #ff4d4d;
+
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: rgba(62, 207, 142, 0.6);
+
+  --chart-1: #3ecf8e;
+  --chart-2: #6366f1;
+  --chart-3: #f5a524;
+  --chart-4: #ff4d4d;
+  --chart-5: #94a3b8;
+
+  --radius: 0.75rem;
+
+  --sidebar: #050914;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #3ecf8e;
+  --sidebar-primary-foreground: #04180f;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: rgba(62, 207, 142, 0.6);
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #ffffff;
+  --card: rgba(0, 0, 0, 0.4);
+  --card-foreground: #ffffff;
+  --popover: #0a0f1f;
+  --popover-foreground: #ffffff;
+  --primary: #3ecf8e;
+  --primary-foreground: #04180f;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.04);
+  --muted-foreground: #9ca3af;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #ffffff;
+  --destructive: #ff4d4d;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: rgba(62, 207, 142, 0.6);
+  --sidebar: #050914;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #3ecf8e;
+  --sidebar-primary-foreground: #04180f;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: rgba(62, 207, 142, 0.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply text-foreground;
+    /* slate-950 -> indigo-950/20, the gradient from the third reference. */
+    background:
+      linear-gradient(
+        to bottom,
+        #020617 0%,
+        #050a1c 45%,
+        #080a22 100%
+      );
+    background-attachment: fixed;
+    min-height: 100svh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* The Vercel glow. Fixed and behind everything, so scrolling content moves
+     through the light rather than dragging it along. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        56rem 30rem at 50% -12%,
+        rgba(99, 102, 241, 0.2),
+        transparent 72%
+      ),
+      radial-gradient(
+        34rem 20rem at 88% 4%,
+        rgba(62, 207, 142, 0.07),
+        transparent 70%
+      );
+  }
+
+  /* Tabular figures everywhere numbers are compared down a column. Risk
+     scores and token counts in a proportional font make columns ragged and
+     two values genuinely harder to compare. */
+  th,
+  td,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Linear's card: hairline border, but with the top edge lifted so it reads
+     as lit from above, plus an inset highlight on the same edge. */
+  .bento-card {
+    position: relative;
+    isolation: isolate;
+    border-radius: var(--radius-xl);
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid var(--color-hairline);
+    border-top-color: var(--color-hairline-lit);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+      var(--shadow-bento);
+  }
+
+  /* Vercel's border glow. Painted as a gradient ring masked to the 1px edge,
+     which keeps the fill transparent so the blurred backdrop still shows. */
+  .border-glow::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      140deg,
+      rgba(99, 102, 241, 0.5),
+      transparent 38%,
+      transparent 62%,
+      rgba(62, 207, 142, 0.32)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .border-glow:hover::after,
+  .border-glow[data-glow="on"]::after {
+    opacity: 1;
+  }
+
+  /* The inset monospace panel from Vercel and Supabase. */
+  .code-surface {
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono), ui-monospace, "SFMono-Regular", monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+
+  .hairline {
+    border-color: var(--color-hairline);
+  }
+
+  /* Risk badges. Three states, not two -- see RiskBadge.tsx for why an
+     unverifiable check must not render as clear. */
+  .badge-risk {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.125rem 0.5rem 0.125rem 0.4375rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .badge-critical {
+    color: #ff8080;
+    background: rgba(255, 77, 77, 0.1);
+    border-color: rgba(255, 77, 77, 0.35);
+    box-shadow:
+      0 0 14px -3px rgba(255, 77, 77, 0.5),
+      inset 0 0 14px -8px rgba(255, 77, 77, 0.45);
+  }
+
+  .badge-warn {
+    color: #f7bc5c;
+    background: rgba(245, 165, 36, 0.1);
+    border-color: rgba(245, 165, 36, 0.32);
+  }
+
+  .badge-clear {
+    color: #5fdda6;
+    background: rgba(62, 207, 142, 0.1);
+    border-color: rgba(62, 207, 142, 0.3);
+  }
+
+  .badge-neutral {
+    color: #a9b4c4;
+    background: rgba(148, 163, 184, 0.1);
+    border-color: rgba(148, 163, 184, 0.28);
+  }
+}
+
+@layer utilities {
+  /* Everything sits above body::before. */
+  .above-glow {
+    position: relative;
+    z-index: 1;
+  }
+
+  .text-dim {
+    color: var(--color-dim);
+  }
+
+  .text-faint {
+    color: var(--color-faint);
+  }
+
+  /* Linear's headings: tight tracking, which only looks right at >= 20px. */
+  .tracking-display {
+    letter-spacing: -0.021em;
+  }
+
+  .glow-indigo {
+    box-shadow: var(--shadow-glow-indigo);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
