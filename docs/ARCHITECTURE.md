@@ -99,8 +99,26 @@ GET https://vf-console-.../api/proxy/billing/usage   -> 200   data returned
 GET https://vf-logistics-.../api/v1/billing/usage    -> 403   backend refuses
 ```
 
-The backend authorisation was right. The console defeated it. The same anonymous call
-now returns 401.
+The backend authorisation was right. The console defeated it.
+
+**Writes are now closed and reads are deliberately still open.** `POST` and `PUT` on
+the proxy refuse without a verified session -- measured, an anonymous
+`POST /api/proxy/governance/simulate` returns 401. `GET` is governed separately by
+`VF_PUBLIC_READS`, which is **on** in this deployment:
+
+```
+POST /api/proxy/governance/simulate   -> 401   writes need a session
+GET  /api/proxy/billing/usage         -> 200   reads are public by configuration
+```
+
+That split is the same line the backend draws in `anonymous_role()`: reads are public,
+writes need a credential. `VF_PUBLIC_READS` defaults to false, and the default is the
+point -- a deployment that forgets it is locked, not open. It is on here for a stated
+reason, the judging window, and one consequence is accepted knowingly: an anonymous
+GET still carries `VF_API_KEY` upstream, so an anonymous reader sees `review/queue` and
+`billing/usage`, both of which sit above `viewer` on the backend.
+
+**This must be turned off before a paying customer's data is in the store.**
 
 ---
 
@@ -469,6 +487,11 @@ Roles are strictly nested: `VIEWER` inside `REVIEWER` inside `OPERATOR` inside
 `--allow-unauthenticated`, that makes every read route reachable without a credential.
 The stronger `none` is supported and not yet set.
 
+The console adds a second, independent switch in front of that: `loginRequired()` is
+unconditionally true in production -- *a missing secret there must take the console
+offline, not open it, because a dead console is a visible failure that gets fixed and an
+open one is not* -- while `publicReads()` governs GET alone and never writes.
+
 `MULTI_TENANT` is off in every deployed configuration. When off, an absent tenant
 resolves to `default`, and every document is still stamped and filtered, so the code
 path is identical.
@@ -546,7 +569,10 @@ An architecture document that omits these is marketing.
   split on those variables has no `.strip()`, so `"a@x.com, b@y.com"` silently never
   grants the second address.
 - **`ANONYMOUS_ROLE=viewer` on a service open to the internet** means case and audit
-  reads need no credential.
+  reads need no credential, and `VF_PUBLIC_READS=true` on the console means an
+  anonymous GET is additionally lent the platform API key, so a reader reaches
+  `review/queue` and `billing/usage`. Both are deliberate for a demo and both must
+  change before a customer's data is in the store.
 - **The document-intake vision step bypasses the billing rollups.** It is inserted
   straight into `steps` and never passes through `_record_step`, so the audit row
   prices it and `/api/v1/billing/usage` does not. MiniCPM-V has the highest input rate
@@ -586,9 +612,14 @@ An architecture document that omits these is marketing.
 | Investigation | `nvidia/nemotron-3-super-120b-a12b` |
 | Vision | `openbmb/MiniCPM-V-4_5` |
 | Spend ceiling | `VF_TENANT_SPEND_CEILING_USD=50`, soft |
-| Anonymous floor | `viewer` |
+| Anonymous floor | `viewer` on the backend, `VF_PUBLIC_READS=true` on the console |
+| Console writes | session required, verified |
 | Multi-tenancy | off |
 
 Both Cloud Run services carry `roles/run.invoker` for `allUsers`. On the console the
-session login sits in front of it; on the backend the API key and the role hierarchy
-are the only boundary.
+session login gates every write; on the backend the API key and the role hierarchy are
+the only boundary.
+
+Cloud IAP is not part of this and cannot be: enabling `iapEnabled` on a Cloud Run
+service in a project with no organisation serves an empty 502 to every visitor, which
+is why the console signs its own sessions instead.
