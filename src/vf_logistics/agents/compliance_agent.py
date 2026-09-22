@@ -10,7 +10,6 @@ Track: Best Apps and Agents
 Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
-import os
 from typing import Any
 
 from vf_logistics import nebius_client
@@ -85,21 +84,6 @@ sanctions or fraud hit found there should raise sanctions_hits/risk_factors.
 """
 
 
-# The floor at or above which the adverse-media cache is bypassed and the lookup is
-# always live.
-#
-# Read from the same environment variable the orchestrator reads rather than imported
-# from it, because orchestrator imports this module and the reverse would be a cycle.
-# The default matches FRAUD_CLEAR_BELOW's 40 deliberately: at or above that floor the
-# case cannot auto-clear, so it is going to a human or to investigation either way,
-# and a fresh search is cheap against the cost of that decision. A reviewer reading
-# the evidence for a held shipment should be looking at a live lookup.
-#
-# This is a conservatism, not a control. Tavily is NOT the sanctions check -- that is
-# validation.sanctions_screening, a separate deterministic path against the official
-# list, and the risk floor itself comes from code-resident findings. A stale entry here
-# delays an adverse-media signal, a news article rather than a sanction.
-CACHE_BYPASS_FLOOR_AT = int(os.getenv("FRAUD_CLEAR_BELOW", "40"))
 
 
 # Placeholder values that are not counterparty names.
@@ -119,25 +103,28 @@ def _searchable_name(value: Any) -> str:
     return "" if text.lower() in _PLACEHOLDER_NAMES else text
 
 
-def _bypass_cache(risk_floor: int | None) -> bool:
-    """
-    True when this case should pay for a live lookup.
-
-    An unknown floor (None) uses the cache. That is the manual screening endpoint,
-    where there is no case and therefore no floor -- and an operator screening an
-    entity by hand is not making a release decision.
-
-    Coerced rather than compared directly: the floor arrives from a case document that
-    has been through JSON, so it can be a float, and a string is cheap to survive.
-    """
-    if risk_floor is None:
-        return False
-    try:
-        return float(risk_floor) >= CACHE_BYPASS_FLOOR_AT
-    except (TypeError, ValueError):
-        # Unreadable floor: treat as elevated. A live search costs a credit; guessing
-        # "low" would serve cached evidence to a case whose risk is unknown.
-        return True
+# THERE IS NO CACHE BYPASS, AND THE ONE THAT WAS HERE WAS REMOVED ON MEASUREMENT.
+#
+# A previous version skipped the cache when the deterministic risk floor was at or
+# above the auto-clear threshold, on the reasoning that a case heading for human review
+# deserves a live lookup. Two things killed it.
+#
+# First, the premise was wrong. That bypass was written while I still believed Tavily
+# was compliance-critical. It is not: sanctions screening is a separate deterministic
+# path in validation.sanctions_screening, run against the official list with its own
+# freshness tracking, and the risk floor comes from code-resident findings. Tavily
+# supplies adverse media -- news -- as labelled untrusted evidence in a prompt. A stale
+# entry delays a news article, not a designation.
+#
+# Second, it disabled the thing it was guarding. Measured across 22 live cases, 20 had a
+# floor at or above 40, so the bypass fired on 91% of traffic and the cache it was
+# protecting never ran. That is the nature of fraud screening: a shipment that trips no
+# findings at all is the minority, so "cases heading for review" describes nearly
+# everything.
+#
+# What remains is the audit record. Each step still reports how many of its lookups were
+# served from cache, so a reviewer reading a released shipment can tell reused evidence
+# from live -- which was the part of the original design worth keeping.
 
 
 async def screen_shipment(
@@ -148,9 +135,10 @@ async def screen_shipment(
     """
     Screen a shipment for compliance issues.
 
-    `risk_floor` is the deterministic floor from verifier.validate(), used only to
-    decide whether the adverse-media lookups may be served from cache. Keyword-only
-    with a None default so the manual endpoint and existing tests are unaffected.
+    `risk_floor` is accepted and unused. It fed a cache bypass that measurement
+    removed (see above); the parameter is kept so the orchestrator call site and the
+    tests that pass it do not have to change back and forth if the decision is
+    revisited.
     """
     screening_text = f"""
     Shipment ID: {shipment_data.get('shipment_id', 'N/A')}
@@ -181,10 +169,9 @@ async def screen_shipment(
     shipper_name = _searchable_name(shipment_data.get("shipper_name"))
     receiver_name = _searchable_name(shipment_data.get("receiver_name"))
 
-    # Cached unless this case is already heading somewhere that deserves fresh
-    # evidence. See CACHE_BYPASS_FLOOR_AT for the reasoning; a bypass is expressed as
-    # a zero TTL so there is one code path, not two.
-    ttl = 0.0 if _bypass_cache(risk_floor) else tavily_client.ENTITY_CACHE_TTL_SECONDS
+    # Always cached. The bypass that used to sit here was removed on measurement; the
+    # reasoning is above the function.
+    ttl = tavily_client.ENTITY_CACHE_TTL_SECONDS
 
     tavily_results: list[dict[str, Any]] = []
     statuses: list[str] = []

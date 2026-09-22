@@ -88,59 +88,88 @@ class ComplianceCacheTestCase(unittest.TestCase):
         return calls, fake
 
 
-class TestTheCacheBypass(ComplianceCacheTestCase):
+class TestEveryCaseUsesTheCache(ComplianceCacheTestCase):
+    """
+    There is no bypass, and the one that was here was removed on measurement.
+
+    A previous version skipped the cache when the deterministic floor was at or above
+    the auto-clear threshold, so a case heading for human review got a live lookup. Two
+    findings ended it.
+
+    The premise was wrong. That bypass was written while Tavily was still believed to be
+    compliance-critical. It is not: sanctions screening is a separate deterministic path
+    in validation.sanctions_screening against the official list, and the risk floor comes
+    from code-resident findings. Tavily supplies adverse media -- news -- as labelled
+    untrusted evidence in a prompt.
+
+    And it disabled what it was guarding. Measured across 22 live cases, 20 had a floor
+    at or above 40, so the bypass fired on 91% of traffic. That is the nature of fraud
+    screening: a shipment tripping no findings at all is the minority, so "heading for
+    review" describes nearly everything.
+    """
+
+    def test_a_high_floor_case_still_uses_the_cache(self):
+        calls, fake = self._spy()
+        with patch.object(tavily_client, "search_cached", new=fake):
+            run(compliance_agent.screen_shipment(SHIPMENT, risk_floor=95))
+        self.assertEqual(len(calls), 2)
+        for c in calls:
+            self.assertEqual(
+                c["ttl"], tavily_client.ENTITY_CACHE_TTL_SECONDS,
+                "an elevated floor must no longer force a live lookup",
+            )
+
     def test_a_low_floor_case_uses_the_cache(self):
         calls, fake = self._spy()
         with patch.object(tavily_client, "search_cached", new=fake):
             run(compliance_agent.screen_shipment(SHIPMENT, risk_floor=10))
-        self.assertEqual(len(calls), 2, "shipper and receiver")
-        for c in calls:
-            self.assertEqual(
-                c["ttl"], tavily_client.ENTITY_CACHE_TTL_SECONDS,
-                "a case that can still auto-clear should reuse a recent lookup",
-            )
-
-    def test_an_elevated_floor_case_bypasses_the_cache(self):
-        calls, fake = self._spy()
-        with patch.object(tavily_client, "search_cached", new=fake):
-            run(compliance_agent.screen_shipment(
-                SHIPMENT, risk_floor=compliance_agent.CACHE_BYPASS_FLOOR_AT,
-            ))
-        for c in calls:
-            self.assertEqual(
-                c["ttl"], 0.0,
-                "at or above the auto-clear threshold the lookup must be live",
-            )
-
-    def test_the_boundary_is_inclusive(self):
-        """At the threshold, not above it. A case sitting exactly on the line cannot
-        auto-clear, so it belongs on the live side."""
-        at = compliance_agent.CACHE_BYPASS_FLOOR_AT
-        self.assertTrue(compliance_agent._bypass_cache(at))
-        self.assertTrue(compliance_agent._bypass_cache(at + 1))
-        self.assertFalse(compliance_agent._bypass_cache(at - 1))
-
-    def test_an_unknown_floor_uses_the_cache(self):
-        """The manual screening endpoint has no case and therefore no floor. An
-        operator screening an entity by hand is not making a release decision."""
-        self.assertFalse(compliance_agent._bypass_cache(None))
-
-        calls, fake = self._spy()
-        with patch.object(tavily_client, "search_cached", new=fake):
-            run(compliance_agent.screen_shipment(SHIPMENT))
         for c in calls:
             self.assertEqual(c["ttl"], tavily_client.ENTITY_CACHE_TTL_SECONDS)
 
-    def test_the_orchestrator_passes_the_floor(self):
-        """Source check. The bypass is worthless if the call site never supplies the
-        floor, and that failure would be silent -- every case would quietly cache."""
+    def test_no_floor_at_all_uses_the_cache(self):
+        """The manual screening endpoint, which passes no floor."""
+        calls, fake = self._spy()
+        with patch.object(tavily_client, "search_cached", new=fake):
+            run(compliance_agent.screen_shipment(SHIPMENT))
+        self.assertEqual(len(calls), 2)
+        for c in calls:
+            self.assertEqual(c["ttl"], tavily_client.ENTITY_CACHE_TTL_SECONDS)
+
+    def test_the_bypass_machinery_is_gone_rather_than_disabled(self):
+        """
+        Removed, not left switched off. A dormant threshold constant reads as a safety
+        feature somebody can re-enable, and the reason it went is that its premise was
+        false -- not that the number was wrong.
+        """
+        self.assertFalse(hasattr(compliance_agent, "_bypass_cache"))
+        self.assertFalse(hasattr(compliance_agent, "CACHE_BYPASS_FLOOR_AT"))
+
+    def test_the_cache_hit_record_survived_the_removal(self):
+        """
+        The part of the original design worth keeping. A reviewer reading a released
+        shipment should still be able to tell reused evidence from live.
+        """
+        async def fake(query, max_results=5, *, ttl_seconds, **kw):
+            hit = "Pacific" in query
+            return [{"title": "t", "url": "u", "content": "c"}], tavily_client.OK, hit
+
+        with patch.object(tavily_client, "search_cached", new=fake):
+            out = run(compliance_agent.screen_shipment(SHIPMENT, risk_floor=95))
+
+        self.assertEqual(out["external_search_cache_hits"], 1)
+        self.assertEqual(out["external_search_live"], 1)
+
+    def test_the_orchestrator_still_passes_the_floor(self):
+        """
+        Kept at the call site so the decision is cheap to revisit. If the floor stops
+        being threaded, re-adding a bypass becomes a two-file change again.
+        """
         import pathlib
 
         src = pathlib.Path(__file__).resolve().parents[1] / "src" / "vf_logistics" / "orchestrator.py"
-        text = src.read_text(encoding="utf-8")
         self.assertIn(
-            'risk_floor=validation.get("risk_floor")', text,
-            "orchestrator must pass the deterministic floor into screen_shipment",
+            'risk_floor=validation.get("risk_floor")',
+            src.read_text(encoding="utf-8"),
         )
 
 
