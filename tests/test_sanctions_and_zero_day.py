@@ -297,14 +297,60 @@ class ZeroDayGateTests(unittest.TestCase):
         self.assertTrue(run)
         self.assertIn("8542", reason)
 
-    def test_a_diversion_hub_triggers_screening(self):
+    def test_two_diversion_hubs_trigger_screening(self):
+        """
+        TWO, matching verifier.py's MULTIPLE_DIVERSION_HUBS.
+
+        This test previously asserted that ONE hub was enough, and that was measured
+        to be the reason the gate admitted almost everything: on a 20-case run, 14 of
+        16 eligible cases screened and 13 of them on this indicator alone. Two causes,
+        both disagreements with the verifier over the same list -- `destination` was in
+        the haystack, so shipping Vietnam to PSA Singapore read as "routed via
+        singapore"; and one hub sufficed, where verifier.py:974 requires two before it
+        will raise a finding at all.
+        """
+        shipment = _clean_shipment(
+            route_details="Hamburg to Karachi via Jebel Ali and Singapore",
+            transit_points="Jebel Ali, Singapore",
+        )
+        run, reason = zd.should_screen(shipment, verifier.validate(shipment))
+        self.assertTrue(run)
+        self.assertIn("jebel ali", reason)
+        self.assertIn("singapore", reason)
+
+    def test_a_single_transhipment_hub_does_not_trigger_screening(self):
+        """
+        Passing through one major port is freight, not a pattern.
+
+        The list's own comment describes hubs "commonly used to obscure final
+        destination", which is a chain of calls rather than a single one. Screening on
+        one spends up to four Nemotron completions and two Tavily searches on an
+        ordinary routing.
+        """
         shipment = _clean_shipment(
             route_details="Hamburg to Karachi via Jebel Ali",
             transit_points="Jebel Ali",
         )
         run, reason = zd.should_screen(shipment, verifier.validate(shipment))
-        self.assertTrue(run)
-        self.assertIn("jebel ali", reason)
+        self.assertFalse(run)
+        self.assertEqual(reason, "no risk indicator present")
+
+    def test_the_destination_is_not_treated_as_a_diversion(self):
+        """
+        A destination is where the cargo is going, not evidence it is being hidden.
+
+        Vietnam to Singapore is the most ordinary freight movement in the region, and
+        it was being reported as "routed via singapore" -- a reason string that did not
+        describe what had happened.
+        """
+        shipment = _clean_shipment(
+            destination="PSA Singapore, Singapore",
+            transit_points="none",
+            route_details="Cat Lai to PSA Singapore",
+        )
+        run, reason = zd.should_screen(shipment, verifier.validate(shipment))
+        self.assertFalse(run)
+        self.assertNotIn("singapore", reason)
 
     def test_a_high_risk_destination_triggers_screening(self):
         shipment = _clean_shipment(destination="Iran")
