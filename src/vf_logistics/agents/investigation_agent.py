@@ -18,6 +18,14 @@ from typing import Any
 from vf_logistics import nebius_client, tavily_client
 from ._common import Timer, envelope, parse_model_json
 
+# Output ceiling. 4,500 against a measured legitimate maximum of 1,387 output
+# tokens, median 900.
+#
+# This agent produced the clearest runaway on the 20-case run: 8,192 output tokens in
+# a degenerate loop emitting empty objects, 38.6 seconds, $0.007873 for a call that
+# returned nothing usable -- 29% of all investigation spend on that run.
+MAX_OUTPUT_TOKENS = 4500
+
 MODEL_ID = os.getenv("INVESTIGATION_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 
 def get_model_id():
@@ -124,6 +132,7 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
             system_prompt=INVESTIGATION_PROMPT,
             user_text=user_text,
             temperature=0.2,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)
@@ -236,6 +245,7 @@ async def generate_report(investigation_results: list[dict]) -> dict[str, Any]:
             system_prompt=report_prompt,
             user_text=f"Generate report from these investigations:\n{results_text}",
             temperature=0.2,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)

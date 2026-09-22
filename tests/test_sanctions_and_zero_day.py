@@ -826,7 +826,7 @@ class ToolBudgetExhaustionTests(unittest.TestCase):
         })
         calls_made = []
 
-        async def fake_complete(*, model, messages, tools, temperature):
+        async def fake_complete(*, model, messages, tools, temperature, **kw):
             calls_made.append(tools)
             if tools is None:
                 # The forced call. Must be the only one without tools.
@@ -865,7 +865,7 @@ class ToolBudgetExhaustionTests(unittest.TestCase):
         the Tavily spend against a 1,000-credit monthly free tier."""
         searches = []
 
-        async def fake_complete(*, model, messages, tools, temperature):
+        async def fake_complete(*, model, messages, tools, temperature, **kw):
             if tools is None:
                 return self._stub_response(content=json.dumps({
                     "searched": True, "risk_found": False, "confidence": 0.9,
@@ -891,7 +891,7 @@ class ToolBudgetExhaustionTests(unittest.TestCase):
 
     def test_a_normal_run_is_not_forced(self):
         """The fix must not fire when the model answers on its own."""
-        async def fake_complete(*, model, messages, tools, temperature):
+        async def fake_complete(*, model, messages, tools, temperature, **kw):
             return self._stub_response(content=json.dumps({
                 "searched": False, "risk_found": False, "confidence": 0.5,
                 "reasoning": "no search needed", "evidence_urls": [],
@@ -911,7 +911,7 @@ class ToolBudgetExhaustionTests(unittest.TestCase):
         The model has an incentive to fill `searched` optimistically, and it is the
         one field whose truth the caller can check.
         """
-        async def fake_complete(*, model, messages, tools, temperature):
+        async def fake_complete(*, model, messages, tools, temperature, **kw):
             return self._stub_response(content=json.dumps({
                 "searched": True, "risk_found": False, "confidence": 0.9,
                 "reasoning": "I searched and found nothing",

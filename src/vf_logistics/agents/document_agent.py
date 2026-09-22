@@ -26,6 +26,15 @@ from vf_logistics import nebius_client
 from ._common import Timer, envelope, parse_model_json
 from vf_logistics import config as model_config
 
+# Output ceiling. 8,000, and this one is NOT measured -- the 20-case run that produced
+# every other figure here was event-sourced, so no vision call appears in it.
+#
+# Set generously for that reason. A transcribed bill of lading is a few hundred tokens
+# of JSON, so this is roughly an order of magnitude of headroom: enough to catch a true
+# runaway on the most expensive model in the pipeline (MiniCPM-V's input rate is 11x
+# Nano's) without risking a truncated transcription, which would reject the document.
+MAX_OUTPUT_TOKENS = 8000
+
 
 class DocumentConversionError(RuntimeError):
     """
@@ -147,6 +156,7 @@ async def extract_shipment(
             mime_type=image_mime,
             user_text="Transcribe this shipping document into the required JSON record.",
             temperature=0.0,  # transcription, not generation
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)

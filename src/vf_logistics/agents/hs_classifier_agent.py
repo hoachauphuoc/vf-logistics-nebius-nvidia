@@ -28,6 +28,14 @@ from vf_logistics import hs_reference, nebius_client
 from . import hs_cot
 from ._common import Timer, envelope, parse_model_json
 
+# Output ceiling. 10,500 against a measured legitimate maximum of 3,442 output
+# tokens, median 2,060.
+#
+# The highest legitimate output of any single-call agent, because cot_strict asks for
+# chain-of-thought before the verdict. That is the intended cost of the mode, so the
+# ceiling is set well clear of it rather than used to trim it.
+MAX_OUTPUT_TOKENS = 10500
+
 # base      -- instruction only, verdict field emitted first
 # few_shot  -- base plus two input/output examples. Measured WORSE than base
 #              (recall 26.7% vs 40.0%); kept so the regression stays visible
@@ -174,6 +182,7 @@ async def classify_hs(
             system_prompt=system,
             user_text=user_text,
             temperature=temperature,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
 
     parsed, error = parse_model_json(text)
