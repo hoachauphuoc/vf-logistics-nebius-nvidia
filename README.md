@@ -101,8 +101,13 @@ Investigation runs on **Nemotron 3 Super** — by the time a case reaches it, th
 fraud and compliance findings already exist; it only runs on cases that were
 escalated or where the deterministic floor and the model disagreed, so it is
 the low-volume, high-stakes call that can afford a stronger, pricier model.
-`INVESTIGATION_MODEL` is a one-line environment variable away from
-`nvidia/Nemotron-3-Ultra-550b-a55b` if more Token Factory credit becomes
+
+The debate agent runs on **Nemotron 3 Ultra**, and it is the only place Ultra is used.
+Not because the debate is the most important step, but because it is the only one whose
+output the deterministic floor does not override — see
+[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else).
+Investigation deliberately stays on Super: it is 40% of measured spend already, and
+`INVESTIGATION_MODEL` can point it at Ultra if more Token Factory credit becomes
 available.
 
 Document intake is the one agent that needs a vision-capable model, and
@@ -686,6 +691,12 @@ project (no `firebase-tools` dependency required).
 | `NEMOTRON_MODEL` | Model for fraud detection and compliance screening | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` |
 | `VISION_MODEL` | Model for document intake | `openbmb/MiniCPM-V-4_5` |
 | `INVESTIGATION_MODEL` | Model for investigation, pinned separately | `nvidia/nemotron-3-super-120b-a12b` |
+| `DEBATE_MODEL` | Model for the debate agent — **the one place Nemotron Ultra is used by default**. See the note below the table. | `nvidia/Nemotron-3-Ultra-550b-a55b` |
+| `MODEL_SWITCH_MAX_RATE_MULTIPLE` | How much dearer a model `POST /api/v1/config/model` may select without `confirm_higher_cost`, against the cheapest priced model. Super is 4.0× Nano and permitted; Ultra is 13.3× and answered 409. | `5.0` |
+| `TAVILY_ROUTE_CACHE_TTL_SECONDS` | TTL for the shipping-lane disruption search, whose query carries only a country pair. Measured: 20 searches across 6 distinct lanes. `0` disables. | `21600` (6h) |
+| `TAVILY_ENTITY_CACHE_TTL_SECONDS` | TTL for the shipper/receiver adverse-media searches. Shorter because these carry a counterparty — though Tavily is *not* the sanctions control. `0` disables. | `3600` (1h) |
+| `ZERO_DAY_MIN_DIVERSION_HUBS` | How many **distinct** transhipment hubs a route needs before zero-day screening opens. Two, matching the verifier's `MULTIPLE_DIVERSION_HUBS`. | `2` |
+| `ZERO_DAY_NEWS_DAYS` | How far back the zero-day news search looks; older designations are the official list's job | `45` |
 | `PROJECT_ID` | GCP project used for Firestore, Pub/Sub, Cloud Storage | `project-93ded24f-21c3-4f1b-a7d` |
 | `WORKER_MODE` | `ondemand` (advance inside requests) or `poll` (always-on loop) | `ondemand` |
 | `STORE_BACKEND` | `firestore` or `memory` | `firestore` |
@@ -724,6 +735,44 @@ project (no `firebase-tools` dependency required).
 and compliance. `POST /api/v1/config/model` switches between the registered
 Nemotron tiers at runtime; investigation ignores it and reads
 `INVESTIGATION_MODEL` at import.
+
+#### Why Ultra is on the debate agent and nowhere else
+
+`DEBATE_MODEL` defaults to Nemotron Ultra. Every other agent stays on Nano or Super, and
+the reason is architectural rather than financial: `verifier.py` computes a deterministic
+risk floor, and an agent may **raise** risk but never lower it below that floor. A
+stronger model on fraud detection or compliance therefore cannot move the outcome in the
+direction that matters — the floor has already decided. Measured, putting those two on
+Ultra costs 13× each and 3.3× overall for no change in any decision.
+
+The debate is the exception. It runs only when the floor and the model disagree by 15
+points or more (measured: 2 calls across 20 cases) and what it emits is not a score
+awaiting override — it is a reasoned CONFIRM or DISAGREE on whether that disagreement can
+be settled without a person. That judgement *is* the outcome, so reasoning capacity is
+load-bearing. At this volume the switch costs roughly `$0.007` per 20 cases.
+
+This is a quality bet, not a measured improvement: nothing yet demonstrates Ultra
+resolves more disputes than Super. `scripts/compare_debate_models.py` replays disputed
+cases through both and reports resolution rate and cost, and setting `DEBATE_MODEL` back
+to `nvidia/nemotron-3-super-120b-a12b` reverses the decision without a deploy.
+
+#### Tavily is the binding cost constraint, not the models
+
+Measured on a 20-case run: **90–106 Tavily searches** (4.5–5.3 per case) against
+`$0.067994` of Nemotron. At the free tier's 1,000 credits a month that is **188–222
+cases**, while the model bill for the same traffic is under seven cents — so the external
+search, not inference, is what limits throughput. `estimated_cost_usd` counts Nebius
+only, which is why `GET /api/v1/billing/usage` now also reports `tavily_searches`,
+`tavily_cached` and `tavily_billable`. The three are summed independently rather than
+derived from each other, because a cache hit and a request that never left the process
+(no API key, a timeout) both cost nothing.
+
+Caching is opt-in per call site and **only successful searches are stored**. Caching a
+429 or a missing-key failure would turn one outage into a TTL-long outage, and would
+re-create the defect `tavily_client` was written to remove: an outage read as a clean
+result. An empty `OK` result *is* cached — "we searched and found nothing" is a real
+answer. The cache lives in process memory, so on Cloud Run the hit rate depends on which
+instance serves the request; a cold instance after a deploy starts empty.
 
 `NEMOTRON_MODEL` and `VISION_MODEL` are read straight from the environment and do
 **not** pass through the `PRICING` check that `POST /api/v1/config/model` enforces, so
