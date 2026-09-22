@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
+import { LogIn, LogOut } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -55,10 +55,36 @@ export function AccountMenu() {
     }
   }
 
-  // Renders nothing at all when there is no session rather than an empty frame.
-  // In local development with no VF_SESSION_SECRET there is no login, and a
-  // "Sign out" button that signs nobody out would be a lie.
-  if (!session.data) return null;
+  // No session. Offer the way in rather than rendering nothing.
+  //
+  // Rendering nothing was right while the console was wall-to-wall private: there
+  // was no way to be here unauthenticated, so a control would have been dead
+  // weight. With reads public, an anonymous reader is an ordinary visitor and
+  // needs to be told that writing is possible and how -- otherwise the first thing
+  // they learn about the login is a 401 on a button they already pressed.
+  //
+  // `isLoading` is distinguished from "signed out" so the header does not flash a
+  // Sign in link for one frame on every page load for someone who is signed in.
+  if (!session.data) {
+    if (session.isLoading) return null;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href="/login"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/10 px-2.5 text-[11.5px] text-dim transition-colors hover:border-white/20 hover:text-white"
+          >
+            <LogIn className="size-3.5" />
+            Sign in
+          </a>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-[20rem]">
+          You are viewing read-only. Sign in to record a review decision; the
+          audit trail records the signed-in account.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1.5">

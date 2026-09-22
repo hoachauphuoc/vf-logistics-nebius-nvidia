@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { COOKIE_NAME, loginRequired, verifySession } from "@/lib/session";
+import { COOKIE_NAME, loginRequired, publicReads, verifySession } from "@/lib/session";
 
 /**
  * The door.
@@ -45,6 +45,19 @@ export async function proxy(request: NextRequest) {
   // unconditionally in production, so this cannot disable the door where it
   // matters -- a missing secret there takes the console offline instead.
   if (!loginRequired()) return NextResponse.next();
+
+  // Reads may be public; writes never are.
+  //
+  // Scoped to the METHOD rather than to a path list on purpose. A path list would
+  // have to be kept in step with the API proxy's own allow-list, and the two
+  // drifting apart is how a write route ends up readable by anyone. The HTTP
+  // method is the one signal that cannot drift.
+  //
+  // HEAD is included because it is a GET without a body; OPTIONS is not, because
+  // nothing here answers a preflight -- the browser talks to this origin only.
+  if (publicReads() && (request.method === "GET" || request.method === "HEAD")) {
+    return NextResponse.next();
+  }
 
   const session = await verifySession(request.cookies.get(COOKIE_NAME)?.value);
   if (session) return NextResponse.next();
