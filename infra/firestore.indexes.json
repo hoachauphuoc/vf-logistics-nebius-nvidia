@@ -1,17 +1,195 @@
 {
+  "//": [
+    "Every index leads with _tenant_id. Firestore requires equality-filtered",
+    "fields to precede the ordered field in a composite index, and every query",
+    "in store.py now filters on tenant first -- so an index without it is an",
+    "index Firestore will refuse to use, and the query fails outright rather",
+    "than running unscoped. That failure mode is the right one: a query that",
+    "silently dropped the tenant filter would return another customer's data.",
+    "",
+    "Deploy with: gcloud firestore indexes composite create, or",
+    "firebase deploy --only firestore:indexes"
+  ],
   "indexes": [
+    {
+      "//": "query_cases with a state filter, and the review queue",
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "query_cases with no state filter, list_cases, compliance/reports",
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "find_case_by_client_reference -- the idempotency check on the hot path",
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "client_reference", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "count_by_cleared_by",
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "cleared_by", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": [
+        "sum_rollups -- the five below are one index per summed field.",
+        "",
+        "A sum() carrying an equality filter needs the summed field in the same",
+        "index as the filtered one; Firestore will not combine the tenant filter",
+        "with a separate single-field index on the metric. Nothing here is",
+        "optional and nothing collapses into one composite index either, because",
+        "each aggregation is issued as its own query.",
+        "",
+        "These were missing when the tenant-scoped store shipped, and the effect",
+        "was not a slow query but FAILED_PRECONDITION on sum_rollups() -- which",
+        "orchestrator.snapshot() calls, so GET /api/v1/orchestrator/state and",
+        "GET /api/v1/billing/usage both returned 500 and the operations",
+        "dashboard went blank."
+      ],
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "_input_tokens", "order": "ASCENDING" }
+      ]
+    },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "state", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "_output_tokens", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "_agent_calls", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "_estimated_cost_usd", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "_sum_latency_ms", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": [
+        "sum_rollups WITH A BILLING PERIOD -- the five below add created_at.",
+        "",
+        "Same rule as the five above, one step further: a sum() carrying an",
+        "equality filter AND a range filter needs all three fields in one index.",
+        "The unbounded indexes above do not serve a windowed call, and the",
+        "windowed ones do not replace them, so all ten are required.",
+        "",
+        "Learned by measurement, and the principle was already written above:",
+        "a first attempt created only (_tenant_id, created_at) and the query",
+        "failed with FAILED_PRECONDITION naming _input_tokens -- the first of the",
+        "five sums to be issued.",
+        "",
+        "These are needed only once a period is requested, so a deployment",
+        "without them keeps serving the dashboard and fails on the first",
+        "invoice. Create them with infra/monitoring/create_billing_indexes.py."
+      ],
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" },
+        { "fieldPath": "_input_tokens", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" },
+        { "fieldPath": "_output_tokens", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" },
+        { "fieldPath": "_agent_calls", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" },
+        { "fieldPath": "_estimated_cost_usd", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" },
+        { "fieldPath": "_sum_latency_ms", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "list_events, query_events",
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "list_audit, and query_audit with no field filter",
+      "collectionGroup": "audit_log",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
         { "fieldPath": "case_id", "order": "ASCENDING" },
         { "fieldPath": "at", "order": "DESCENDING" }
       ]
@@ -20,6 +198,7 @@
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
         { "fieldPath": "action", "order": "ASCENDING" },
         { "fieldPath": "at", "order": "DESCENDING" }
       ]
@@ -28,8 +207,27 @@
       "collectionGroup": "audit_log",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "//": "active_boundary",
+      "collectionGroup": "delegation_boundaries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "list_boundaries",
+      "collectionGroup": "delegation_boundaries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_tenant_id", "order": "ASCENDING" },
+        { "fieldPath": "version", "order": "DESCENDING" }
       ]
     }
   ],
