@@ -3,7 +3,15 @@
 **Hackathon:** Nebius x NVIDIA Global AI Hackathon
 **Track:** Best Apps and Agents
 **Bonus target:** Best Use of Tavily ($3,000, stackable with a Track Award)
-**Live demo:** https://vf-logistics-f7rcctz26a-as.a.run.app
+
+**Live demo (console):** https://vf-console-f7rcctz26a-as.a.run.app
+**API:** https://vf-logistics-f7rcctz26a-as.a.run.app
+
+The console is readable without signing in — the board, a case, the audit trail and
+the cost figures are all public. **Recording a decision needs an account**, because
+the audit trail names the person who released a shipment rather than the service that
+called the API, and a free-text name field would make that record worthless. Judges:
+the credentials are in the Devpost submission's testing-instructions field.
 
 ## The problem
 
@@ -41,9 +49,10 @@ This project began as a Google Cloud submission for a different hackathon (All
 Things Agentic 2026), built entirely on Vertex AI Gemini. For this hackathon it
 was substantially rebuilt as a new, standalone project:
 
-- Every model call in all four agents was rewritten from the `google-genai`
-  Vertex AI SDK to `nebius_client.py`, a wrapper around the OpenAI-compatible
-  `openai.AsyncOpenAI` client pointed at Nebius Token Factory.
+- Every model call in all four agents that existed at the time was rewritten from
+  the `google-genai` Vertex AI SDK to `nebius_client.py`, a wrapper around the
+  OpenAI-compatible `openai.AsyncOpenAI` client pointed at Nebius Token Factory.
+  Three more agents have been added since, all Nemotron from the start.
 - The model roster changed entirely: **NVIDIA Nemotron 3 Nano** now drives
   fraud detection and compliance screening, **NVIDIA Nemotron 3 Super** drives
   investigation, and **MiniCPM-V-4.5** (a vision model, since Token Factory
@@ -238,12 +247,12 @@ original.
 ## Architecture
 
 ```
-                    Browser (static/index.html)
+                    Browser (Next.js 16 console, separate Cloud Run service)
                       |  fetch() JSON
                       v
       +---------------------------------------------+
       |  Cloud Run  ·  asia-southeast1               |
-      |  vf-fraud-detection-nebius                   |
+      |  vf-logistics  (+ vf-console)                 |
       |                                               |
       |  gunicorn --> Flask (main.py)                 |
       |                 |                             |
@@ -352,7 +361,7 @@ the routing policy is configuration rather than something buried in code.
 
 | Layer | Choice |
 |---|---|
-| Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance) + **NVIDIA Nemotron 3 Super** (investigation) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
+| Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance, HS classification, zero-day radar) + **NVIDIA Nemotron 3 Super** (investigation, Senior Auditor debate) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
 | Agent framework | `openai.AsyncOpenAI` (Token Factory's OpenAI-compatible endpoint) |
 | External signal | **Tavily Search API** — live sanctions/news lookup in the compliance agent |
 | Input security | **Model Armor** (Google Cloud) — windowed prompt-injection screening |
@@ -360,17 +369,17 @@ the routing policy is configuration rather than something buried in code.
 | State | **Firestore** (Native mode) — cases, events, audit log |
 | Messaging | **Pub/Sub** — `shipment-events` in, `case-decisions` out |
 | Web | Flask + gunicorn, flask-cors |
-| Frontend | Vanilla HTML/CSS/JS, no build step |
+| Console | **Next.js 16** (App Router, React 19, Tailwind, TanStack Query) on a second Cloud Run service |
 | Runtime | Python 3.11-slim container |
 
 Requirement check against the hackathon rules:
 
-- Runtime call to Nebius Token Factory -> every one of the four agents
+- Runtime call to Nebius Token Factory -> every one of the seven agents
 - Uses an NVIDIA open model -> `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (fraud,
   compliance) and `nvidia/nemotron-3-super-120b-a12b` (investigation)
 - Functional, runtime Tavily API call -> `tavily_client.search()` in the
   compliance agent, on the live path, not a stub
-- Multi-step, autonomous workflow -> four agents chained with conditional
+- Multi-step, autonomous workflow -> seven agents chained with conditional
   branching, driven by a background worker with no human in the loop
 - Takes meaningful action -> shipments are held or released, analysts
   assigned, SAR drafts produced, decisions published
@@ -543,7 +552,7 @@ Deploy, with `NEBIUS_API_KEY` and `TAVILY_API_KEY` set as secrets rather than
 plain env vars in a real deployment:
 
 ```bash
-gcloud run deploy vf-fraud-detection-nebius \
+gcloud run deploy vf-logistics \
   --source . \
   --region asia-southeast1 \
   --allow-unauthenticated \
@@ -556,7 +565,7 @@ gcloud run deploy vf-fraud-detection-nebius \
 Verify:
 
 ```bash
-BASE=$(gcloud run services describe vf-fraud-detection-nebius \
+BASE=$(gcloud run services describe vf-logistics \
   --region asia-southeast1 --format='value(status.url)')
 
 curl -s $BASE/health          # expect store.backend=firestore, worker.mode=ondemand
@@ -569,7 +578,8 @@ curl -s $BASE/api/v1/orchestrator/state   # poll; each poll also advances a step
 ### 3. Tear down
 
 ```bash
-gcloud run services delete vf-fraud-detection-nebius --region asia-southeast1
+gcloud run services delete vf-logistics --region asia-southeast1
+gcloud run services delete vf-console   --region asia-southeast1
 ```
 
 ---
@@ -577,7 +587,7 @@ gcloud run services delete vf-fraud-detection-nebius --region asia-southeast1
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests (226 tests)
+# Unit + integration tests (637 tests)
 python -m pytest tests/ -v
 
 # Document upload tests
@@ -591,13 +601,28 @@ python scripts/check_registry.py        # 11 checks on the counterparty book
 | Suite | Count | What it covers |
 |-------|-------|----------------|
 | Pure logic | 61 | auth, config, schemas, simulator, untrusted, agents._common |
-| Orchestrator | 17 | State machine, tool execution, agent envelopes |
-| Routes | 22 | Security headers, CORS, auth, validation, pagination |
-| Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
-| Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
-| Governance | 20 | Boundaries, drift detection, fail-closed |
-| Observability | 14 | Logging, metrics, request context |
+| Sanctions & zero-day | 62 | Sanctions matching, list freshness, unseen-pattern handling |
+| Decision paths | 54 | Every route a shipment can take through the state machine |
+| Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
 | Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
+| Document upload | 33 | Accepted types, the PDF branch, injection screening |
+| Console session | 31 | HMAC signing, forged tokens, reviewer attribution |
+| Network defence | 31 | Rate limits, request size, header hygiene |
+| Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
+| B2B contract | 28 | The published response shape callers depend on |
+| Routes | 27 | Security headers, CORS, auth, validation, pagination |
+| Schema enforcement | 27 | Untrusted document fields against the declared schema |
+| Budget | 26 | Per-tenant spend ceiling, cache TTL, fail-open on store error |
+| Billing period | 24 | Windowed usage, and that every aggregation has an index |
+| Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
+| Governance | 18 | Boundaries, drift detection, fail-closed |
+| Lineage & billing | 18 | Per-step cost attribution |
+| Orchestrator | 17 | State machine, tool execution, agent envelopes |
+| Observability | 16 | Logging, metrics, request context |
+| Concurrent decisions | 13 | Two reviewers deciding the same case |
+| Unpriced model | 9 | An unpriced model is logged, not silently billed at the cheapest rate |
+| Screen layers | 7 | Which of the two screening layers may refuse a shipment |
+| **Total** | **637** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -609,7 +634,8 @@ result, so they exercise the ported pipeline exactly as they exercised the
 original.
 
 `GET $BASE/demo` runs the fraud agent on a built-in sample shipment — one
-request, no body, no configuration.
+request, no body, no configuration. It needs an operator API key: it spends Nemotron
+tokens on a GET, so it is the one read that is not public.
 
 ---
 
@@ -680,15 +706,71 @@ project (no `firebase-tools` dependency required).
 | `MAX_CHAIN_STEPS` | Hops one case may take before the chain is cut | `6` |
 | `CHAIN_BUDGET_SECONDS` | Wall-clock ceiling for one case's chain | `120` |
 | `POLL_SECONDS` | Loop interval in `WORKER_MODE=poll` | `1.5` |
+| `ANONYMOUS_ROLE` | Role granted to a request with no credentials. `viewer` makes reads public; `none` refuses them. The process refuses to boot if this grants write. | `viewer` |
+| `VF_API_KEY` | Operator API key. Also what the console forwards upstream. | set in production via Secret Manager |
+| `VF_TENANT_SPEND_CEILING_USD` | Per-tenant soft spend ceiling. Unset, garbage or `<= 0` all mean no ceiling. | unset |
+
+### Console (the `vf-console` Cloud Run service)
+
+| Variable | Description | Default |
+|---|---|---|
+| `FLASK_API_BASE` | Backend base URL. Read server-side per request, so it changes without a rebuild. | unset — required |
+| `VF_SESSION_SECRET` | HMAC key for session cookies. Must be at least 32 characters; a shorter one is treated as absent. | unset — **required in production**, where a missing value takes the console offline rather than opening it |
+| `VF_OPERATORS` | Semicolon-separated `email:iterations:salt:hash` records, PBKDF2-SHA256. Generate with `node frontend/scripts/make-operator.mjs <email> --out <dir>`, which writes the password to a file rather than printing it. | unset |
+| `VF_PUBLIC_READS` | `true` lets anonymous visitors read the console. Writes are never covered by it — the split is on the HTTP method, not a path list. Defaults to false so a deployment that forgets it is locked, not open. | `false` |
+| `NEXT_PUBLIC_DEMO_MODE` | Build-time, not runtime: `NEXT_PUBLIC_*` is inlined by `next build`, so setting it with `gcloud run deploy --set-env-vars` has no effect on an already-built bundle. `frontend/.env.production` is what actually turns demo fixtures off. | `false` in `.env.production` |
 
 `config.py` holds the shared model registry and per-token pricing for fraud
 and compliance. `POST /api/v1/config/model` switches between the registered
 Nemotron tiers at runtime; investigation ignores it and reads
 `INVESTIGATION_MODEL` at import.
 
+`NEMOTRON_MODEL` and `VISION_MODEL` are read straight from the environment and do
+**not** pass through the `PRICING` check that `POST /api/v1/config/model` enforces, so
+pointing either at a model absent from `config.PRICING` — `nvidia/Nemotron-3_5-Lightning`
+is servable on Token Factory today and is not in the table — costs every call at the
+cheapest rate in the table. That under-reports spend, and the tenant spend ceiling
+reads the same figure, so it is logged at ERROR both at startup and per call rather
+than being silently absorbed.
+
 ---
 
 ## Findings & learnings
+
+**Token Factory has 24 models and not one of them is a safety model.** Measured
+against the live `/v1/models` endpoint: four NVIDIA models, all chat
+(`Nemotron-3_5-Lightning`, `NVIDIA-Nemotron-3-Nano-30B-A3B`,
+`nemotron-3-super-120b-a12b`, `Nemotron-3-Ultra-550b-a55b`), no `nemoguard`, no
+content-safety classifier, nothing purpose-built for screening input. That is the
+single reason a component of this otherwise Nemotron-driven pipeline is a Google
+service: there is no NVIDIA-native option on the platform to screen a document with.
+
+**NVIDIA NeMo Guardrails was evaluated to replace Model Armor, and was not adopted.**
+The reasoning, since "why isn't the security layer NVIDIA?" is the obvious question:
+
+- It is a **toolkit, not a model**. Adopting it would have added an NVIDIA library
+  wrapping a Nemotron call, not an NVIDIA model — so it does not strengthen the
+  Token Factory or Nemotron story that the track actually asks about.
+- Its `self check input` rail asks an LLM whether text is trying to manipulate an
+  LLM, which is **itself injectable**. Model Armor is a purpose-built detector. Asking
+  the vulnerable component to police itself is a weaker guarantee, not a stronger one.
+- Removing one Google service would not have made the deployment less Google: it runs
+  on Cloud Run, Firestore, Cloud Storage and Pub/Sub regardless.
+- `nemoguardrails` makes LangChain opt-in but carries `fastembed` and `onnxruntime` as
+  mandatory base dependencies, and emits usage telemetry to NVIDIA on `LLMRails`
+  instantiation unless `NEMO_GUARDRAILS_NO_USAGE_STATS=1` is set.
+- The windowing that `model_armor.py` needs for accuracy would have turned nine
+  near-free HTTP calls per document into nine Nemotron calls.
+
+What was taken from the evaluation instead: a free deterministic pass over
+`untrusted.INJECTION_PATTERNS` now runs before Model Armor on every screen. It closes
+a real gap — an injection in document prose that the vision extractor does not carry
+into any structured field never reaches the field-level screen, so nothing catches it
+when Model Armor is unreachable. It is **advisory, not blocking**, and deliberately so:
+those patterns were written for extracted field values, and a bill of lading
+containing the ordinary strings `Booking System:` and `pre-approved` trips two of
+them. A committed test asserts exactly that document is not blocked, because refusing
+a real shipment on a form label is a worse failure than screening it a moment later.
 
 **Vision models on OpenAI-compatible endpoints want images, not PDFs.**
 Gemini read PDF bytes directly; MiniCPM-V, like most vision models behind an
@@ -706,8 +788,8 @@ without Tavily.
 **JSON mode travels well across providers.** Both Gemini's
 `response_mime_type="application/json"` and the OpenAI-compatible
 `response_format={"type": "json_object"}` do the same job — coerce the model
-into emitting parseable JSON — so the four agents' prompts and output schemas
-needed no changes at all, only the transport underneath them.
+into emitting parseable JSON — so the prompts and output schemas of the four agents
+that existed at the time needed no changes at all, only the transport underneath them.
 
 **A human reviewer with no paperwork is not a control.** (Carried over from
 the original build.) The review panel only showed a source document for
@@ -780,8 +862,12 @@ collection effort.
 │   ├── fraud_detection_agent.py  Fraud scoring                   — Nemotron 3 Nano
 │   ├── compliance_agent.py       Sanctions / trade / AML + Tavily — Nemotron 3 Nano
 │   └── investigation_agent.py    Deep-dive investigation         — Nemotron 3 Super
-├── static/
-│   └── index.html                Dashboard (no build step)
+├── frontend/                     Next.js 16 console (its own Cloud Run service)
+│   ├── src/app/                  App Router pages: board, review, billing, legal, login
+│   ├── src/components/           UI, incl. AccountMenu and the layout shell
+│   ├── src/lib/session.ts        HMAC session signing, via Web Crypto so it runs on Edge
+│   ├── src/proxy.ts              The login door (Next 16 renamed `middleware` to `proxy`)
+│   └── scripts/make-operator.mjs PBKDF2 operator records; writes the password to a file
 ├── infra/
 │   └── model_armor_template.json  Filter config for the Model Armor template
 ├── docs/
