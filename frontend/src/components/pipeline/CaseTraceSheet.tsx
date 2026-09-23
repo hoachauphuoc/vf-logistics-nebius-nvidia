@@ -319,25 +319,89 @@ function Payload({ label, text }: { label: string; text: string }) {
   );
 }
 
-/** Tavily searches and the citations they returned. */
+/**
+ * Tavily searches and the citations they returned.
+ *
+ * The citations come from the STEPS, not from `tavily_searches`. That distinction was a
+ * silent bug for as long as this component has existed: `tavily_searches` entries carry
+ * {type, results, cached, status, at} -- counts and provenance, no URLs -- and this
+ * component read `s.urls` from them, which is a key the backend never writes. So the
+ * anchor list was always empty, every case rendered a bare "3 result(s)", and the block's
+ * own promise that citations are "reproduced rather than summarised" was false.
+ *
+ * Nothing failed loudly. There was no error, no `undefined` on screen and no empty bullet
+ * -- a count is a plausible-looking thing to render, so ten dropped sources per case read
+ * as a design choice. It was found by comparing the rendered DOM against the API payload
+ * rather than by looking at the page.
+ */
 function Evidence({ case: c }: { case: Case }) {
   const searches = c.tavily_searches ?? [];
-  if (searches.length === 0 && !c.route_intelligence) return null;
+
+  // Grouped by the agent that fetched them, because which reasoning a source fed is part
+  // of what makes it evidence. A flat list would say a case cited OFAC; this says the
+  // compliance screen did.
+  const cited = (c.steps ?? [])
+    .map((s) => ({
+      agent: s.agent,
+      results: (s.external_search_results ?? []).filter((r) => r?.url),
+    }))
+    .filter((g) => g.results.length > 0);
+
+  if (searches.length === 0 && cited.length === 0 && !c.route_intelligence)
+    return null;
 
   return (
     <Block
       title="Live evidence"
       note="Public web search run at decision time. The citations are what a customs authority would be shown, so they are reproduced rather than summarised."
     >
+      {cited.map((group) => (
+        <div key={group.agent} className="mb-2">
+          {/* text-dim rather than text-faint: faint (#6b7280) measures ~4.2:1 on this
+              card, under the WCAG AA 4.5:1 floor for text this size. The same lift was
+              applied to the login notes for the same reason. */}
+          <p className="mb-1 text-[11px] uppercase tracking-wide text-dim">
+            {group.agent.replace(/_/g, " ")} read {group.results.length} source
+            {group.results.length === 1 ? "" : "s"}
+          </p>
+          <ul className="space-y-1">
+            {group.results.map((r, i) => (
+              <li key={`${r.url}-${i}`}>
+                <a
+                  href={r.url ?? "#"}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-start gap-1.5 rounded-md border border-white/[0.07] bg-black/25 px-2.5 py-1.5 text-[11.5px] text-white/85 hover:border-white/20 hover:text-white"
+                >
+                  <ExternalLink
+                    className="mt-0.5 size-3 shrink-0 text-brand"
+                    aria-hidden
+                  />
+                  <span className="min-w-0">
+                    {/* The title, not the URL. A reviewer scanning for whether a
+                        sanctions list was actually consulted reads titles; a column of
+                        truncated hostnames makes them all look alike. */}
+                    <span className="block">{r.title || r.url}</span>
+                    <span className="block truncate text-[10.5px] text-dim">
+                      {hostOf(r.url)}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+
       {c.route_intelligence && (
         <pre className="code-surface mb-2 max-h-40 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-white/80 scrollbar-thin">
           {c.route_intelligence}
         </pre>
       )}
-      <ul className="space-y-1.5">
-        {searches.map((s, i) => {
-          const urls = Array.isArray(s.urls) ? (s.urls as string[]) : [];
-          return (
+
+      {searches.length > 0 && (
+        <ul className="space-y-1.5">
+          {searches.map((s, i) => (
             <li
               key={i}
               className="rounded-lg border border-white/[0.07] bg-black/25 px-2.5 py-2"
@@ -346,26 +410,31 @@ function Evidence({ case: c }: { case: Case }) {
                 {String(s.type ?? "search")}
                 <span className="ml-1.5 text-faint">
                   {String(s.results ?? 0)} result(s)
+                  {s.cached === true && " · served from cache"}
                 </span>
               </p>
-              {urls.map((url) => (
-                <a
-                  key={url}
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="mt-1 flex items-center gap-1 truncate text-[11px] text-brand hover:underline"
-                >
-                  <ExternalLink className="size-3 shrink-0" aria-hidden />
-                  <span className="truncate">{url}</span>
-                </a>
-              ))}
             </li>
-          );
-        })}
-      </ul>
+          ))}
+        </ul>
+      )}
     </Block>
   );
+}
+
+/**
+ * The host, for a second line under a citation title.
+ *
+ * Deliberately total: a malformed URL returns the input rather than throwing, because a
+ * bad href in one citation must not blank the whole evidence block. Duplicated from
+ * AuditDetailSheet rather than shared -- five lines, and that component is working.
+ */
+function hostOf(url?: string | null): string {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 
 /**

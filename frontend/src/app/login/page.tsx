@@ -82,11 +82,17 @@ function Frame({ children }: { children?: React.ReactNode }) {
             displaying working credentials would make the audit trail's attribution
             meaningless. What was missing was any statement of where to ASK, which left
             the form looking like a wall with no door. */}
-        <p className="mt-4 border-t border-white/[0.06] pt-3 text-[11px] leading-relaxed text-faint">
+        {/* text-dim, not text-faint. Measured at 4.3:1 against this card in the
+            deployed page, faint fell under the WCAG AA 4.5:1 minimum for 11px text --
+            and this is the note telling a reviewer where their password is, so it was
+            the hardest-to-read text on the page and the one most needed. dim (#9ca3af)
+            clears the threshold. Changed here rather than in --color-faint, which sets
+            the visual hierarchy across the whole console. */}
+        <p className="mt-4 border-t border-white/[0.06] pt-3 text-[11px] leading-relaxed text-dim">
           Reviewer accounts are issued by the operator, not self-service. If you are
           assessing this submission, the reviewer address and password are in the private
           testing-instructions field that came with it; if you are running your own
-          deployment, see <span className="text-dim">Signing in</span> in the README.
+          deployment, see <span className="text-white/80">Signing in</span> in the README.
         </p>
       </div>
 
@@ -202,7 +208,7 @@ function LoginForm() {
         {busy ? "Signing in" : "Sign in"}
       </Button>
 
-      <p className="text-[11px] leading-relaxed text-faint">
+      <p className="text-[11px] leading-relaxed text-dim">
         Every decision you record here is written to the audit trail under this
         address. By signing in you accept the{" "}
         <a href="/legal" className="text-brand hover:underline">

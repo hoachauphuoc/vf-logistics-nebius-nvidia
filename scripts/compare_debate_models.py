@@ -49,41 +49,59 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import time
+import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from vf_logistics import config, lineage, store  # noqa: E402
+from vf_logistics import config, lineage  # noqa: E402
 from vf_logistics.agents import debate_agent  # noqa: E402
 
 SUPER = "nvidia/nemotron-3-super-120b-a12b"
 ULTRA = "nvidia/Nemotron-3-Ultra-550b-a55b"
 
+# Read over HTTP, not through store.get_store().
+#
+# The first version imported the store directly and found nothing, twice, for two
+# different reasons that both looked like "the board is empty":
+#
+#   1. list_cases returns a LIST; it was being unpacked as a paginated dict.
+#   2. get_store() falls back to MemoryStore when Firestore cannot be reached and
+#      records why in store._init_note -- which nothing here read. On this machine the
+#      reason was `ModuleNotFoundError: No module named 'google.cloud'`, so the script
+#      cheerfully read an empty in-process store and reported an empty board.
+#
+# That fallback is right for the service, where a Firestore outage must not take the demo
+# down. It is wrong for a diagnostic script, where a silent empty result is the one
+# outcome that wastes the most time. Reading the public state endpoint removes the
+# question: no local credentials, no google-cloud dependency, and it works against any
+# deployment.
+BOARD = os.getenv(
+    "VF_TEST_BASE", "https://vf-logistics-f7rcctz26a-as.a.run.app",
+).rstrip("/")
 
-async def disputed_cases(limit: int) -> list[dict]:
+
+def disputed_cases(limit: int) -> list[dict]:
     """
     Cases where the floor and the model actually disagreed.
 
-    Read from the store rather than synthesised, because a disagreement that a
-    handwritten fixture produces is not the disagreement the pipeline produces -- the
-    whole question is how a model handles the real ones.
+    Taken from the board rather than synthesised, because a disagreement a handwritten
+    fixture produces is not the disagreement the pipeline produces -- the whole question
+    is how a model handles the real ones.
     """
-    backing = store.get_store()
-    page = await backing.list_cases(limit=200)
-    items = page.get("items") or page.get("cases") or []
+    with urllib.request.urlopen(BOARD + "/api/v1/orchestrator/state", timeout=120) as r:
+        payload = json.loads(r.read().decode())
 
-    out = []
-    for slim in items:
-        case = await backing.get_case(slim["case_id"])
-        if not case:
-            continue
-        if (case.get("reconciliation") or {}).get("score_disputed"):
-            out.append(case)
-        if len(out) >= limit:
-            break
-    return out
+    cases = payload.get("cases") or payload.get("items") or []
+    disputed = [
+        c for c in cases
+        if (c.get("reconciliation") or {}).get("score_disputed")
+    ]
+    print(f"board: {len(cases)} cases, {len(disputed)} disputed")
+    return disputed[:limit]
 
 
 async def run_one(case: dict, model: str) -> dict:
@@ -149,10 +167,10 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    cases = await disputed_cases(args.cases)
+    cases = disputed_cases(args.cases)
     if not cases:
-        print("No disputed cases in the store. Seed the board first:")
-        print("  POST /api/v1/simulate")
+        print(f"No disputed cases on {BOARD}. Seed the board first:")
+        print("  python scripts/seed_full_board.py --yes")
         return 1
 
     print(f"Replaying {len(cases)} disputed case(s) through both models.")
