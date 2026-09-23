@@ -44,6 +44,7 @@ API to delete a single case, so the only remedy is to reset and run again.
 from __future__ import annotations
 
 import json
+import os
 import random
 import sys
 import time
@@ -51,7 +52,13 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-BASE = "https://vf-fraud-detection-304507056252.asia-southeast1.run.app"
+# Same stale-URL defect as scripts/test_documents.py: this pointed at
+# `vf-fraud-detection-304507056252`, a service in a different project that is still live,
+# so a seed run would have filled someone else's board and reported success. See the
+# comment in test_documents.py for the full account.
+BASE = os.getenv(
+    "VF_TEST_BASE", "https://vf-logistics-f7rcctz26a-as.a.run.app",
+).rstrip("/")
 EVENT_URL = f"{BASE}/api/v1/events/shipment"
 STATE_URL = f"{BASE}/api/v1/orchestrator/state"
 

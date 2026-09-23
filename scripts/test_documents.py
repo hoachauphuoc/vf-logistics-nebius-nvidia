@@ -27,6 +27,7 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -34,7 +35,22 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-BASE = "https://vf-fraud-detection-304507056252.asia-southeast1.run.app"
+# The service this suite actually tests, overridable without editing the file.
+#
+# THIS POINTED AT A DIFFERENT DEPLOYMENT, and the failure mode was the worst kind: it
+# passed. The old value was
+# `https://vf-fraud-detection-304507056252.asia-southeast1.run.app` -- project number
+# 304507056252, service `vf-fraud-detection`, while this repository now deploys
+# `vf-logistics` into 350828852747. That old service is still live and still answers
+# /health, so every "all 7 documents matched" this script has ever printed was reporting
+# on code that is not in this repository. A verification that silently checks the wrong
+# thing is worse than no verification, because it is quoted in a README as evidence.
+#
+# Read from the environment so a fresh clone can point it anywhere:
+#   VF_TEST_BASE=http://localhost:8080 python scripts/test_documents.py
+BASE = os.getenv(
+    "VF_TEST_BASE", "https://vf-logistics-f7rcctz26a-as.a.run.app",
+).rstrip("/")
 
 # Resolved from this file, not the working directory, so the script runs the same
 # from the repository root or from inside scripts/.
@@ -84,13 +100,29 @@ TERMINAL = {"AUTO_CLEARED", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN",
             "DEAD_LETTER"}
 
 
+def auth_headers() -> dict[str, str]:
+    """
+    The operator key, if one is configured.
+
+    Needed because uploading a document is a WRITE, and the deployed service grants
+    anonymous callers `viewer` only -- reads are public, writes are refused on the HTTP
+    method. Without this the suite gets a flat 403 before the first document is read.
+
+    This is the other half of the stale-URL defect. The old service this script used to
+    point at still accepted anonymous writes, so the suite never needed a key and never
+    noticed it lacked one. Fixing the URL surfaced the 403 immediately.
+
+        $env:VF_API_KEY = (gcloud secrets versions access latest --secret=VF_API_KEY)
+    """
+    key = (os.getenv("VF_API_KEY") or "").strip()
+    return {"X-VF-API-Key": key} if key else {}
 
 
 def post_json(path: str, body: dict | None = None) -> dict:
     req = urllib.request.Request(
         BASE + path,
         data=json.dumps(body or {}).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **auth_headers()},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=300) as resp:
@@ -121,7 +153,10 @@ def upload(filename: str) -> dict | None:
     req = urllib.request.Request(
         BASE + "/api/v1/events/document",
         data=body.getvalue(),
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            **auth_headers(),
+        },
         method="POST",
     )
     try:
@@ -189,6 +224,48 @@ def describe(case: dict | None, blocked: bool) -> str:
     return f"effective risk {risk} (model {model}, floor {floor})"
 
 
+def confirm_reset() -> None:
+    """
+    Refuse to wipe a board that is not obviously disposable.
+
+    THIS SCRIPT DESTROYS THE BOARD, and that was survivable only while the URL was
+    wrong. `one_pass` calls /orchestrator/reset before every pass -- documented in the
+    module docstring, and necessary, because re-uploading the same document returns the
+    existing case rather than re-running it. But while BASE pointed at a dead-end service
+    in another project, the reset hit nothing anyone cared about. Pointing it at the real
+    deployment turned a test into a demolition: the first corrected run cleared 25 cases,
+    including the 20-case seeded demo board that the submission asks judges to look at.
+    Re-seeding takes about 35 minutes.
+
+    So a reset against a non-local base now needs saying so out loud. `--yes-wipe-board`
+    or VF_ALLOW_BOARD_RESET=1; localhost needs neither, because a local board is cheap.
+    """
+    local = "localhost" in BASE or "127.0.0.1" in BASE
+    allowed = (
+        local
+        or "--yes-wipe-board" in sys.argv
+        or (os.getenv("VF_ALLOW_BOARD_RESET") or "").strip() == "1"
+    )
+    if allowed:
+        return
+
+    print(
+        f"REFUSING TO RESET {BASE}\n"
+        "\n"
+        "This suite clears the board before each pass, so running it here would destroy\n"
+        "whatever is on it -- including the seeded demo board, which takes about 35\n"
+        "minutes to rebuild with scripts/seed_full_board.py.\n"
+        "\n"
+        "If that is what you want:\n"
+        "    python scripts/test_documents.py --yes-wipe-board\n"
+        "\n"
+        "To test without touching a shared board, point it somewhere disposable:\n"
+        "    VF_TEST_BASE=http://localhost:8080 python scripts/test_documents.py",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def one_pass(index: int, total: int) -> dict[str, tuple[str, str]]:
     if total > 1:
         print(f"\n=== pass {index} of {total}", flush=True)
@@ -239,15 +316,20 @@ def one_pass(index: int, total: int) -> dict[str, tuple[str, str]]:
 
 def main() -> int:
     passes = 1
-    if len(sys.argv) == 2:
+    # The flag is consumed here so it does not get parsed as a pass count.
+    args = [a for a in sys.argv[1:] if a != "--yes-wipe-board"]
+    if len(args) == 1:
         try:
-            passes = int(sys.argv[1])
+            passes = int(args[0])
         except ValueError:
-            print("usage: tools_test_documents.py [passes]")
+            print("usage: test_documents.py [passes] [--yes-wipe-board]")
             return 2
-    elif len(sys.argv) != 1:
-        print("usage: tools_test_documents.py [passes]")
+    elif len(args) != 0:
+        print("usage: test_documents.py [passes] [--yes-wipe-board]")
         return 2
+
+    print(f"target: {BASE}")
+    confirm_reset()
 
     observed = [one_pass(i + 1, passes) for i in range(passes)]
 

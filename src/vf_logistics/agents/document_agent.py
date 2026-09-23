@@ -26,14 +26,25 @@ from vf_logistics import nebius_client
 from ._common import Timer, envelope, parse_model_json
 from vf_logistics import config as model_config
 
-# Output ceiling. 8,000, and this one is NOT measured -- the 20-case run that produced
-# every other figure here was event-sourced, so no vision call appears in it.
+# Output ceiling. 2,000 against a measured legitimate maximum of 377 output tokens.
 #
-# Set generously for that reason. A transcribed bill of lading is a few hundred tokens
-# of JSON, so this is roughly an order of magnitude of headroom: enough to catch a true
-# runaway on the most expensive model in the pipeline (MiniCPM-V's input rate is 11x
-# Nano's) without risking a truncated transcription, which would reject the document.
-MAX_OUTPUT_TOKENS = 8000
+# NOW MEASURED. This was 8,000 and explicitly a guess -- the 20-case run that produced
+# every other ceiling here was event-sourced, so no vision call appeared in it. Six real
+# transcriptions through scripts/test_documents.py against the deployed service:
+#
+#     1,151 in / 322 out     1,151 in / 261 out     1,151 in / 273 out
+#     1,151 in / 377 out     1,151 in / 376 out     1,151 in / 329 out
+#
+# Max 377, median ~326, and the input is identical every time because the prompt is fixed
+# and the image is resized. 8,000 was 21x the real maximum, far looser than the 2-3x the
+# other agents run at, and loose on the most expensive model in the pipeline --
+# MiniCPM-V's input rate is 11x Nano's, so a runaway here is the costliest available.
+#
+# 2,000 keeps 5.3x headroom. The output is structurally bounded in a way the other agents'
+# is not: a fixed set of shipment fields rather than reasoning, so there is no legitimate
+# path to a long reply. Truncation would reject the document rather than corrupt a case,
+# because invalid JSON fails parse_model_json and the upload is refused outright.
+MAX_OUTPUT_TOKENS = 2000
 
 
 class DocumentConversionError(RuntimeError):

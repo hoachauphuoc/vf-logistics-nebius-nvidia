@@ -803,7 +803,26 @@ The debate is the exception. It runs only when the floor and the model disagree 
 points or more (measured: 2 calls across 20 cases) and what it emits is not a score
 awaiting override — it is a reasoned CONFIRM or DISAGREE on whether that disagreement can
 be settled without a person. That judgement *is* the outcome, so reasoning capacity is
-load-bearing. At this volume the switch costs roughly `$0.007` per 20 cases.
+load-bearing.
+
+**Measured cost, and it is higher than the rate suggests.** Three Ultra debates and two
+Super debates have now run on the live service:
+
+| Model | Input | Output | Cost |
+|---|---|---|---|
+| Ultra | 13,151 | 2,011 | `$0.019184` |
+| Ultra | 16,502 | 2,333 | `$0.023501` |
+| Ultra | 13,937 | 879 | `$0.016574` |
+| Super | 2,522 | 276 | `$0.001005` |
+| Super | 5,546 | 403 | `$0.002027` |
+
+`$0.0198` per Ultra debate against Super's `$0.0015` — **13×, not the 3.3× rate
+multiple.** The rate accounts for 3.3× of that; the rest is token volume. Ultra consumed
+13,151–16,502 input tokens where Super used 2,522–5,546, because it emits more tool-call
+rounds and each round resends the growing transcript, so volume compounds on top of price.
+An earlier version of this section said "roughly `$0.007` per 20 cases", arrived at by
+multiplying Super's token usage by Ultra's rate — which assumed the two models would spend
+the same tokens, and they do not.
 
 This is a quality bet, not a measured improvement: nothing yet demonstrates Ultra
 resolves more disputes than Super. `scripts/compare_debate_models.py` replays disputed
