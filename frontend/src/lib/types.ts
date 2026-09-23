@@ -198,6 +198,20 @@ export interface CaseStep {
   /** Exact text sent to and returned by the model, when recorded. */
   prompt?: string | null;
   raw_response?: string | null;
+  /**
+   * Citations the agent actually read, as {title, url}.
+   *
+   * This lives on the STEP, not on the case: it is evidence a particular agent
+   * fetched, and attributing it to the case would lose which reasoning it fed.
+   * compliance and investigation are the two that populate it.
+   */
+  external_search_results?: ExternalCitation[] | null;
+}
+
+/** One web source an agent read at decision time. */
+export interface ExternalCitation {
+  title?: string | null;
+  url?: string | null;
 }
 
 /** A receipt from tools.py, or a governance denial. */
@@ -287,6 +301,14 @@ export interface Case {
   provenance?: Record<string, unknown> | null;
   input_security?: Record<string, unknown> | null;
   route_intelligence?: string | null;
+  /**
+   * Per-search METADATA: {type, results, cached, status, at}. Counts, not citations.
+   *
+   * Deliberately not `urls`. An earlier version of the trace sheet read `s.urls` from
+   * these entries, which never existed on them, so the citation list silently rendered
+   * empty for every case while the section claimed to reproduce sources. The URLs are on
+   * CaseStep.external_search_results.
+   */
   tavily_searches?: Array<Record<string, unknown>> | null;
   debate?: Record<string, unknown> | null;
   attempts?: number | null;

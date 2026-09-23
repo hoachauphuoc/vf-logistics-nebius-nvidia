@@ -357,6 +357,19 @@ async def search_cached(
 
     `ttl_seconds` is required rather than defaulted: a caller asking for the caching
     variant has to state how stale it is willing to be.
+
+    NO SINGLE-FLIGHT, and that is a measured decision rather than an oversight. This is a
+    read-then-write around an await, so concurrent callers with the same query all miss
+    and all fetch -- the cache helps the caller who arrives after a response has landed,
+    not the ones already waiting. tests/test_cache_concurrency.py measures it: ten
+    concurrent identical queries issue ten requests, where five serial ones issue one.
+
+    It is not worth fixing at this scale. orchestrator.MAX_CONCURRENT is 3 and each case
+    makes its lookups sequentially, so a colliding query costs 3 credits instead of 1, and
+    only when cases sharing a counterparty land in the same batch of three -- a handful of
+    extra credits against roughly 40 for a 20-case run. An in-flight map would sit in the
+    path of every case in the system to recover that. The test asserts MAX_CONCURRENT
+    stays small and will fail if this reasoning stops holding.
     """
     return await _search(
         query,
