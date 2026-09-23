@@ -29,7 +29,7 @@ MAX_OUTPUT_TOKENS = 1500
 
 # Nemotron 3 Ultra, the one place in the pipeline it earns its rate.
 #
-# Ultra is 1.00/3.00 per million against Super's 0.30/0.90 -- 3.3x -- and it is
+# Ultra is 1.00/3.00 per million against Super's 0.30/0.90, so its RATE is 3.3x. It is
 # deliberately NOT used on fraud_detection or compliance, which run on every case. The
 # reason there is architectural rather than financial: verifier.py computes a
 # deterministic risk floor, and an agent may raise risk but never lower it below that
@@ -38,8 +38,24 @@ MAX_OUTPUT_TOKENS = 1500
 # The debate is the exception. It runs only when `score_disputed` is set -- measured at
 # 2 calls across 20 cases -- and what it produces is not a score that the floor will
 # override, it is a reasoned CONFIRM/DISAGREE on whether the floor and the model can be
-# reconciled without a person. That judgement is the outcome. At this volume the whole
-# switch costs about $0.007 per 20 cases.
+# reconciled without a person. That judgement is the outcome.
+#
+# THE COST MULTIPLE IS 13x, NOT THE 3.3x RATE MULTIPLE, and that gap is measured rather
+# than predicted. Three Ultra debates on the live service:
+#
+#     Ultra   13,151 in / 2,011 out   $0.019184
+#     Ultra   16,502 in / 2,333 out   $0.023501
+#     Ultra   13,937 in /   879 out   $0.016574
+#     Super    2,522 in /   276 out   $0.001005
+#     Super    5,546 in /   403 out   $0.002027
+#
+# $0.0198 per Ultra debate against Super's $0.0015. The rate explains 3.3x of that; the
+# rest is token volume -- Ultra consumed 13,151-16,502 input tokens where Super used
+# 2,522-5,546, because it emits more tool-call rounds and each round resends the growing
+# transcript. An earlier version of this comment said "about $0.007 per 20 cases",
+# arrived at by multiplying Super's token usage by Ultra's rate. That assumed the two
+# models would spend the same tokens, which is the one thing worth checking before
+# quoting a number.
 #
 # Worth being honest that this is a quality bet, not a measured improvement: nothing
 # here yet demonstrates Ultra resolves more disputes than Super. scripts/compare_debate_models.py

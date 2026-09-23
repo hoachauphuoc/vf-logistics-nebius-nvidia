@@ -32,7 +32,11 @@ the case to review; one that DISAGREEs with a well-argued reason can let it clea
     failing to parse or running out of tool rounds
   * the split between CONFIRM and DISAGREE, and whether the DISAGREE reasons read as
     argument or as compliance with the prompt
-  * cost per debate, which at 2 debates per 20 cases is small either way
+  * cost per debate, which is NOT small: measured at $0.0198 for Ultra against $0.0015
+    for Super, 13x rather than the 3.3x rate multiple. Ultra consumed 13,151-16,502
+    input tokens where Super used 2,522-5,546, because it emits more tool-call rounds
+    and each round resends the growing transcript. Volume compounds on top of price,
+    which is why the cost column below is worth reading rather than assuming.
 
 If Ultra shows no better resolution rate, set DEBATE_MODEL back to
 nvidia/nemotron-3-super-120b-a12b. That reverses the decision without a deploy, which
