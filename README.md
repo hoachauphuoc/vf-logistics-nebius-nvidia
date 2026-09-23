@@ -646,7 +646,7 @@ and in production a missing one takes the console **offline** rather than leavin
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests (637 tests)
+# Unit + integration tests (712 tests)
 python -m pytest tests/ -v
 
 # Document upload tests

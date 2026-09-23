@@ -426,9 +426,9 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
 | Hosted project URL | done -- console https://vf-console-f7rcctz26a-as.a.run.app, API https://vf-logistics-f7rcctz26a-as.a.run.app |
 | Runtime call to Nebius Token Factory | done -- all seven agents |
-| NVIDIA open model used | done -- Nemotron 3 Nano + Super |
+| NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 637 tests passing (pytest) |
+| Automated test suite | 712 tests passing (pytest) |
 | CI pipeline | GitHub Actions (lint + typecheck + test + coverage) |
 | Auto-debate on score disputes | done -- fires without human intervention |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |
