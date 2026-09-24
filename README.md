@@ -474,17 +474,68 @@ the routing policy is configuration rather than something buried in code.
 | Console | **Next.js 16** (App Router, React 19, Tailwind, TanStack Query) on a second Cloud Run service |
 | Runtime | Python 3.11-slim container |
 
-Requirement check against the hackathon rules:
+### Where Token Factory and the NVIDIA models did the work
 
-- Runtime call to Nebius Token Factory -> every one of the seven agents
-- Uses an NVIDIA open model -> `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (fraud,
-  compliance) and `nvidia/nemotron-3-super-120b-a12b` (investigation)
-- Functional, runtime Tavily API call -> `tavily_client.search()` in the
-  compliance agent, on the live path, not a stub
-- Multi-step, autonomous workflow -> seven agents chained with conditional
-  branching, driven by a background worker with no human in the loop
-- Takes meaningful action -> shipments are held or released, analysts
-  assigned, SAR drafts produced, decisions published
+The rules ask submissions to say where Token Factory accelerated the workflow and which
+NVIDIA open models were used, so this is that answer in one place rather than spread over
+the sections above.
+
+**The NVIDIA open models, and what each one is for.** Three sizes of Nemotron 3, picked per
+task rather than one model everywhere:
+
+| Model | Where it runs | Why this size |
+|---|---|---|
+| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar — the four hops that touch **every** case | `verifier.py` computes a deterministic risk floor an agent may raise but never lower, so a stronger model cannot move these outcomes in the direction that matters |
+| `nvidia/nemotron-3-super-120b-a12b` | investigation | writes the narrative a human reads; benefits from reasoning, does not decide the verdict |
+| `nvidia/Nemotron-3-Ultra-550b-a55b` | the auto-debate ("Senior Auditor") | the one place where the model's CONFIRM/DISAGREE **is** the outcome rather than a score the floor overrides, so reasoning capacity is worth paying for: measured `$0.0198` per debate against Super's `$0.0015` |
+| `openbmb/MiniCPM-V-4_5` | document intake (vision) | not an NVIDIA model, and said plainly: Token Factory carries no NVIDIA vision model yet |
+
+**Where Token Factory accelerated the workflow.** All four models, from 30B to 550B plus a
+vision model, are served by **one** OpenAI-compatible endpoint
+(`https://api.tokenfactory.nebius.com/v1/`) through `openai.AsyncOpenAI` — `nebius_client.py`
+is a thin wrapper, not a bespoke SDK. Three consequences that shaped the build:
+
+- **Model choice became a config value, not an infrastructure change.** `config.py` holds
+  the ids and per-token prices; `set_model` swaps them per task. Escalating one hop from
+  Nano to Super to Ultra is a string, so the Nano-vs-chain-of-thought-vs-reference-block
+  experiment that took HS recall from 40.0% to 91.7% cost nothing in plumbing.
+- **No GPU provisioning, so a 550B model was affordable to reach for once.** Ultra runs only
+  on the debate path, which fires when the deterministic floor and the model disagree by 15
+  points or more. Standing up 550B of capacity for an occasional call would not have been
+  worth it; per-token access made a rarely-used heavyweight practical.
+- **The port from the predecessor was a client change, not a rewrite.** The JSON contract
+  each agent returns was preserved, so swapping Vertex AI Gemini for Token Factory changed
+  the base URL, the model ids and the sampling parameters — not the pipeline.
+
+**Other Nebius services used: none.** Token Factory's inference API is the whole Nebius
+surface here. Serverless Endpoints and Serverless Jobs are encouraged by the track and are
+**not** used — the service runs on Cloud Run, which is stated rather than dressed up.
+
+**Tavily**, which is a separate bonus track, is a live runtime call in five places, not a
+stub. See *A real Tavily call, not a simulated one* above.
+
+### Requirement check against the hackathon rules
+
+Checked against the Official Rules for this Hackathon. An earlier version of this table
+checked against the **predecessor** hackathon's criteria — it listed "multi-step autonomous
+workflow" and "takes meaningful action", which are not requirements here, and omitted the
+track, the video, the feedback and the licence, which are.
+
+| Rule | Where it is met |
+|---|---|
+| Runtime call to Nebius Token Factory | every one of the seven agents |
+| At least one NVIDIA open source model | three Nemotron 3 sizes, table above |
+| Fits one of the four tracks | **Best Apps and Agents** |
+| Significantly updated after the Submission Period opened (26 Aug 2026) | every commit in this repository is dated 17–24 Sep 2026; `git log --reverse --format="%ai"` shows the first |
+| Written explanation of what was updated | *What was significantly updated during the Submission Period*, above |
+| URL to a working demo | console and API URLs at the top of this file |
+| Public repository with a detectable open source licence | GitHub reports this repository's licence as **MIT** |
+| README with setup and running instructions | *Spin-up instructions*, below |
+| Highlight the NVIDIA models, Token Factory and Nebius services | the section immediately above |
+| Feedback on Token Factory, AI Cloud and NVIDIA tools | `SUBMISSION.md` -> *Feedback on Nebius Token Factory, AI Cloud, and NVIDIA tools* |
+| Free, unrestricted access for judging, with credentials | *The demo reviewer account*, below |
+| Demonstration video under three minutes, public on YouTube | **OUTSTANDING** — the shooting script is `docs/DEMO_SCRIPT.md` |
+| Bonus: functional runtime Tavily call | `tavily_client.search()` on the live compliance path, five integration points |
 
 ---
 
