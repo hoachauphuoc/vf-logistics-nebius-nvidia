@@ -202,6 +202,56 @@ export default function ReviewQueuePage() {
  * the second is an operator's deployment gap, and an empty frame invites a
  * reviewer to conclude the shipment arrived with no paperwork.
  */
+/**
+ * CONFIRM or DISAGREE, legible without reading JSON.
+ *
+ * The debate payload was rendered only as a `JSON.stringify` dump, and grepping the
+ * whole console for CONFIRM or DISAGREE returned nothing rendered anywhere -- so the
+ * one hop that runs Nemotron Ultra, and the only hop whose verdict the deterministic
+ * floor does not override, was the least readable thing on the screen.
+ *
+ * The dump stays. It is the honest artefact and this badge is a convenience over it,
+ * which is also why extraction is defensive rather than typed: `debate` is
+ * `Record<string, unknown>` on the wire, the verdict has lived at two different depths
+ * across versions, and if none of the known shapes match this renders nothing at all
+ * rather than guessing. A badge that invents a verdict would be worse than no badge on
+ * a screen whose whole purpose is that a human can check the machine.
+ */
+function DebateVerdictBadge({ debate }: { debate: Record<string, unknown> }) {
+  function pick(source: unknown): string | null {
+    if (!source || typeof source !== "object") return null;
+    const v = (source as Record<string, unknown>).verdict;
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object") {
+      const inner = (v as Record<string, unknown>).verdict;
+      if (typeof inner === "string") return inner;
+    }
+    return null;
+  }
+
+  const verdict = pick(debate) ?? pick(debate.result);
+  if (verdict !== "CONFIRM" && verdict !== "DISAGREE") return null;
+
+  const confirmed = verdict === "CONFIRM";
+  return (
+    <span
+      className={cn(
+        "rounded border px-1.5 py-0.5 font-mono text-[10.5px] uppercase tracking-wide",
+        confirmed
+          ? "border-risk-clear/40 bg-risk-clear/[0.12] text-risk-clear"
+          : "border-risk-critical/40 bg-risk-critical/[0.12] text-risk-critical",
+      )}
+      title={
+        confirmed
+          ? "The Senior Auditor agreed with the Junior Analyst's assessment."
+          : "The Senior Auditor found something the Junior Analyst missed."
+      }
+    >
+      {verdict}
+    </span>
+  );
+}
+
 function Paperwork({ case: c }: { case: Case }) {
   const provenance = (c.provenance ?? {}) as Record<string, unknown>;
   const uri = typeof provenance.uri === "string" ? provenance.uri : null;
@@ -362,10 +412,15 @@ function ReviewPanel({
   });
 
   const rec = c.reconciliation;
-  const disputed =
-    rec?.model_risk != null &&
-    rec?.effective_risk != null &&
-    Math.abs(rec.effective_risk - rec.model_risk) >= 15;
+  // Read from the server, not re-derived. This computed
+  //   Math.abs(effective_risk - model_risk) >= 15
+  // which cannot express the rule: `effective_risk` is max(model, floor), so on any
+  // case where the model scored ABOVE the floor the difference is zero and a genuine
+  // dispute is invisible, while `Math.abs` would also fire on the impossible reverse
+  // direction. verifier.reconcile() sets `score_disputed` as (floor - model) >= 15 --
+  // deliberately one-directional, because only the model under-scoring against the
+  // floor is a dispute worth a debate.
+  const disputed = rec?.score_disputed === true;
 
   const findings = c.validation?.findings ?? [];
 
@@ -393,8 +448,8 @@ function ReviewPanel({
           <AlertTriangle className="mt-[1px] size-4 shrink-0 text-risk-warn" aria-hidden />
           <p className="text-[12px] leading-relaxed text-risk-warn">
             The model scored {rec?.model_risk} and the deterministic floor put
-            this at {rec?.effective_risk}. A gap that wide means the two
-            disagree materially — read the findings before deciding.
+            this at {rec?.risk_floor}. The floor stands, so this case carries{" "}
+            {rec?.effective_risk} — read the findings before deciding.
           </p>
         </div>
       )}
@@ -571,9 +626,12 @@ function ReviewPanel({
 
       {detail?.debate != null && (
         <div className="bento-card p-4">
-          <h3 className="text-[12px] font-medium text-white">
-            Senior auditor debate
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[12px] font-medium text-white">
+              Senior auditor debate
+            </h3>
+            <DebateVerdictBadge debate={detail.debate} />
+          </div>
           <pre className="code-surface mt-2 max-h-64 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-white/80 scrollbar-thin">
             {JSON.stringify(detail.debate, null, 2)}
           </pre>

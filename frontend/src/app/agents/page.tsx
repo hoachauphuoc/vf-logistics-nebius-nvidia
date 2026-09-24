@@ -17,7 +17,7 @@ import {
   queryKeys,
   screenText,
 } from "@/lib/api";
-import { humaniseAgent } from "@/lib/format";
+import { formatUsd, humaniseAgent } from "@/lib/format";
 import { useTenant } from "@/lib/tenant-context";
 import { cn } from "@/lib/utils";
 
@@ -152,7 +152,13 @@ export default function AgentConsolePage() {
           ) : (
             <ul className="mt-2 space-y-1">
               {Object.entries(byAgent)
-                .sort((a, b) => b[1].input + b[1].output - (a[1].input + a[1].output))
+                // Sorted by money, not by tokens. This card is titled "Cost by agent"
+                // and used to rank by token volume, which inverts the one thing it
+                // exists to show: Ultra runs the debate at roughly 13x Nano's cost per
+                // call, so the dearest agent is routinely not the chattiest one. A cost
+                // card that buries the expensive agent below four cheap ones is worse
+                // than no card.
+                .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
                 .map(([agent, t]) => (
                   <li
                     key={agent}
@@ -162,7 +168,8 @@ export default function AgentConsolePage() {
                       {humaniseAgent(agent)}
                     </span>
                     <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">
-                      {t.calls} call(s) · {t.input.toLocaleString()}→
+                      <span className="text-white/85">{formatUsd(t.cost_usd)}</span>{" "}
+                      · {t.calls} call(s) · {t.input.toLocaleString()}→
                       {t.output.toLocaleString()} tok
                     </span>
                   </li>

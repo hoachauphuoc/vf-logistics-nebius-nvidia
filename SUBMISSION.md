@@ -12,7 +12,19 @@ VF Logistics — Fraud Detection an Operator Can Delegate To
 
 ## Elevator pitch (200 char limit on Devpost)
 
-Seven agents on Nebius Token Factory screen shipments for fraud. Senior Auditor (Nemotron Ultra) debates Junior Analyst (Nano) with function calling. A Delegation Boundary, not the agents, decides.
+<!--
+198 characters. Counted, not estimated -- there is no headroom here, so check before
+editing: python -c "print(len(open('SUBMISSION.md').read().split(chr(10))[N-1]))"
+
+The previous version spent its whole budget on mechanism ("Senior Auditor debates Junior
+Analyst with function calling. A Delegation Boundary, not the agents, decides.") and never
+said WHY the models are split that way. The delegation boundary is carried by the Track
+section, the video's longest clip and the whole governance screen; the floor rule was
+stated nowhere a judge reads first, which made the one non-obvious decision in the system
+invisible at the point of first contact.
+-->
+
+Shipment-fraud agents on Nebius Token Factory. A deterministic floor lets them raise risk but never lower it: Nano screens every case, Ultra (Nemotron) debates only where its verdict is the outcome.
 
 ## Track
 
@@ -35,6 +47,33 @@ account; credentials are in the private testing-instructions field below.
 
 ## Text description
 
+### The idea: an agent that cannot clear a shipment on its own
+
+Most autonomous-agent systems get safer by making the model better. This one gets safer by
+making the model's opinion unable to help in one direction.
+
+`verifier.py` computes a **deterministic risk floor** from arithmetic and list lookups — no
+model calls, no network. An agent may **raise** risk above that floor. It may never lower
+it. The asymmetry is the point: escalating on model judgement is acceptable, exonerating on
+model judgement is not, because a wrong exoneration releases contraband while a wrong
+escalation costs a human ten minutes.
+
+Two consequences, and the second is what the model tiering is actually for:
+
+- **Nemotron 3 Nano on fraud and compliance is the correct choice, not a cheap one.** Those
+  hops sit under the floor, so a stronger model cannot move either outcome in the direction
+  that matters. Measured, putting them on Ultra costs 13× per call for no change in any
+  decision.
+- **Nemotron 3 Ultra runs in exactly one place — the auto-debate — because that is the only
+  hop the floor does not override.** It fires when the floor and the model disagree by 15
+  points or more, and what it emits is not a score awaiting override but a reasoned CONFIRM
+  or DISAGREE on whether the disagreement can be settled without a person. That judgement
+  *is* the outcome, so reasoning capacity is load-bearing there and nowhere else.
+
+The invariant is checked rather than asserted. `validate()` computes the floor twice, with
+and without the model's finding, and raises `AssertionError` if the model's contribution
+lowered it. That runs on every call.
+
 ### What was significantly updated during the Submission Period
 
 This began as a Google Cloud submission for a different hackathon (All Things
@@ -55,7 +94,7 @@ which model reasons. Everything else was rebuilt.
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
 | **Anonymous authority** | any visitor held `GOVERNANCE_ADMIN` on the live console; unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method | Found by doing it. Splitting on method rather than a path list means a route added later is covered by default |
 | **Cost control** | none; `max_tokens` set on **no agent**, and the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **zero** unit tests (one HTTP script) | **712** tests, 27 files, 75% coverage | — |
+| **Tests** | **zero** unit tests (one HTTP script) | **717** tests, 27 files, 75% coverage | — |
 | **CI** | existed but filtered on branch `main` while the repo uses `master`, so it had **never run once** | four jobs, green | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 17 modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
 
@@ -504,7 +543,7 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 712 tests passing (pytest) |
+| Automated test suite | 717 tests passing (pytest) |
 | CI pipeline | GitHub Actions — lint + test + coverage gate the build; typecheck runs `mypy … \|\| true`, so it reports but cannot fail it |
 | Auto-debate on score disputes | done -- fires without human intervention |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |

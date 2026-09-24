@@ -395,9 +395,9 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "agents.cost-by-agent": {
     title: "Cost by agent",
     body:
-      "One row per agent. Calls is how many times that model was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
+      "One row per agent, ordered by spend. The dollar figure is summed from each call's own rate rather than from these token totals, because the rate depends on which model ran the step: Nano on fraud and compliance, Super on investigation, Ultra on the debate. Calls is how many times that agent was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
     note:
-      "The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
+      "Ordered by money rather than by tokens on purpose — Ultra costs roughly 13x Nano per call, so the most expensive agent is usually not the one that produced the most tokens. The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
   },
   "agents.injection-probe": {
     title: "Prompt-injection screen",

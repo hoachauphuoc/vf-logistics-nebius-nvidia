@@ -559,8 +559,12 @@ async def compliance_entity():
 
 @app.route("/api/v1/investigation/case", methods=["POST"])
 @require_operator
-# Nemotron Super 120B with an 8000-token thinking budget: the most expensive
-# single call in the system.
+# Nemotron 3 Super: the most expensive single agent call on the ordinary path.
+#
+# This said "with an 8000-token thinking budget", which was a Vertex AI Gemini
+# parameter. Nothing in this pipeline sends it -- the output ceiling here is
+# max_tokens, and the same stale figure was still being served by GET /api/v1/config
+# until it was removed. Deep review costs more than this call, but it is opt-in.
 @limiter.limit("5 per minute")
 @async_route
 async def investigation_case():
@@ -1573,15 +1577,20 @@ def review_decide(case_id: str):
 
 @app.route("/api/v1/review/<case_id>/deep-review", methods=["POST"])
 @require_reviewer
-# Nemotron Super 120B debate plus Tavily searches. The docstring below calls it
+# Nemotron 3 Ultra debate plus Tavily searches. The docstring below calls it
 # an expensive, opt-in operation; this is the ceiling that makes that true.
+#
+# Ultra, not Super. This comment and the docstring under it both named Super on the
+# hop that runs debate_agent.MODEL_ID, which defaults to Ultra -- the same drift
+# debate_agent.py records having leaked into the README, the architecture diagram
+# and the Devpost submission once already.
 @limiter.limit("3 per minute")
 def review_deep_review(case_id: str):
     """
-    Trigger Multi-Agent Debate: Nemotron Super reviews Nano's assessment.
+    Trigger Multi-Agent Debate: the Senior Auditor reviews Nano's assessment.
 
-    This is an expensive, opt-in operation. The Senior Auditor (Super 120B)
-    can use function calling to:
+    This is an expensive, opt-in operation. The Senior Auditor runs on Nemotron 3
+    Ultra and can use function calling to:
     - Request Nano to re-evaluate with specific focus
     - Run additional Tavily searches
     - Render a CONFIRM or DISAGREE verdict

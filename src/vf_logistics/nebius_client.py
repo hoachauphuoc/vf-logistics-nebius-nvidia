@@ -277,8 +277,9 @@ async def complete_with_tools(
     """
     Chat completion with function calling (tool use) support.
 
-    Used by the debate agent where Nemotron Super reviews Nano's assessment
-    and can call tools like request_nano_reevaluation or search_tavily.
+    Used by the debate agent, where the Senior Auditor (Nemotron 3 Ultra) reviews
+    Nano's assessment and can call tools like request_nano_reevaluation or
+    search_tavily.
 
     Returns the raw ChatCompletion response so the caller can access
     tool_calls on the assistant message.

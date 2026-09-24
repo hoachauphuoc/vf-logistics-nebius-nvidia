@@ -222,6 +222,31 @@ def pricing_for(model: str | None) -> dict:
     return known
 
 
+def model_label(model: str | None) -> str:
+    """
+    Human-readable name for a model id, for strings a person will read.
+
+    Deliberately NOT `pricing_for(model)["name"]`: that logs at ERROR on an unknown
+    id, which is right when money is being computed and wrong when a label is being
+    rendered. Calling it here would emit a spurious billing error every time an
+    event line is written, and duplicate the one the cost path already emits.
+
+    An unknown id falls back to the id itself rather than to a guess. That matters
+    for the reason this function exists at all: `orchestrator.py` used to hard-code
+    "Super" into the auto-debate event string while the hop ran Ultra, and
+    `debate_agent.py` records that the same comment-vs-constant drift had already
+    been copied into the README, the architecture diagram and the Devpost
+    submission. A wrong name is worse than a raw id, because a raw id cannot be
+    mistaken for a claim.
+    """
+    if not model:
+        return "an unnamed model"
+    entry = PRICING.get(model)
+    if entry is None:
+        return model
+    return str(entry.get("name") or model)
+
+
 def warn_on_unpriced_selection() -> list[str]:
     """
     Report any configured model that has no entry in PRICING.

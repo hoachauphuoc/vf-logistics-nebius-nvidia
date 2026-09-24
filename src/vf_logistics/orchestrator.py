@@ -51,6 +51,7 @@ import time
 from typing import Any
 
 from vf_logistics import budget
+from vf_logistics import config
 from vf_logistics import document_render
 from vf_logistics import document_store
 from vf_logistics import governance
@@ -73,6 +74,11 @@ from vf_logistics.agents import (
 # adding to it would put them in an API surface they are not part of.
 from vf_logistics.agents.hs_classifier_agent import classify_hs
 from vf_logistics.agents.hs_classifier_agent import interpret as interpret_hs
+# The module rather than a name, so the event strings can read MODEL_ID at call time.
+# Reading it through the module is also what lets a test monkeypatch the debate model
+# and assert the emitted line follows it, which is the guard that stops this from
+# drifting back to a hard-coded "Super".
+from vf_logistics.agents import debate_agent
 from vf_logistics.agents.zero_day_agent import interpret as interpret_zero_day
 from vf_logistics.agents.zero_day_agent import screen_zero_day
 from vf_logistics.agents.zero_day_agent import should_screen as should_screen_zero_day
@@ -1269,10 +1275,19 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             )
 
             # Auto-debate: when the model and the deterministic floor disagree by
-            # a wide margin, put Super on it immediately rather than waiting for
-            # a human to click Deep Review. conduct_debate reads the fraud and
-            # compliance steps off the case, both of which _record_step has
-            # already appended above, along with model_risk_score/risk_score.
+            # a wide margin, put the Senior Auditor on it immediately rather than
+            # waiting for a human to click Deep Review. conduct_debate reads the
+            # fraud and compliance steps off the case, both of which _record_step
+            # has already appended above, along with model_risk_score/risk_score.
+            #
+            # This comment and the event string below both said "Super" while the
+            # hop ran Ultra (debate_agent.MODEL_ID defaults to
+            # nvidia/Nemotron-3-Ultra-550b-a55b). The name is now read from the
+            # result the debate actually returned, so it reports the model that
+            # ran rather than the model someone last wrote down -- see
+            # debate_agent.py, which records that this exact drift had already been
+            # copied into the README, the architecture diagram and the Devpost
+            # submission once.
             if reconciled.get("score_disputed"):
                 try:
                     debate_result = await conduct_debate(case)
@@ -1287,7 +1302,8 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                         case_id, "debate",
                         f"Auto-debate (score disputed by "
                         f"{reconciled['risk_floor'] - (reconciled['model_risk'] or 0)} "
-                        f"points): Super returned "
+                        f"points): "
+                        f"{config.model_label(debate_result.get('model'))} returned "
                         f"{verdict.get('verdict') or 'no verdict'} in "
                         f"{debate_result.get('latency_ms', '?')}ms",
                         agent="debate",
@@ -1878,7 +1894,7 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
     Conduct a Multi-Agent Debate on a case.
 
     Nemotron Ultra (Senior Auditor) reviews Nemotron Nano's (Junior Analyst)
-    fraud assessment. Super can use function calling to:
+    fraud assessment. Ultra can use function calling to:
     - Request Nano to re-evaluate with specific focus areas
     - Run additional Tavily searches for context
     - Render a final verdict: CONFIRM or DISAGREE
@@ -1888,7 +1904,7 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
     """
     store = get_store()
     # Scoped for the same reason as human_decide, plus one of its own: this spends
-    # Nemotron Super tokens and returns a debate payload containing the case
+    # Nemotron Ultra tokens and returns a debate payload containing the case
     # content, so an unscoped lookup bills one tenant to read another's shipment.
     case = await store.get_case(case_id, tenant_id=tenant_id)
 
@@ -1905,13 +1921,17 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
 
     # Read off the stored case rather than the argument, for the same reason advance()
     # does: the case's own owner is the authority on whose budget this spends. Deep
-    # review runs Nemotron Super, the most expensive text model in the table.
+    # review runs the debate agent, which is Nemotron 3 Ultra -- the most expensive
+    # text model in the table. This comment said Super, and so did the event string
+    # below; both were wrong in the same direction, and Super is not the dearest entry
+    # either. The name is now read from debate_agent.MODEL_ID so it cannot drift again.
     budget.set_current_tenant(_case_tenant(case))
 
     await emit(
         case_id,
         "debate_start",
-        "Senior Auditor (Nemotron Super) reviewing Junior Analyst (Nano) assessment",
+        f"Senior Auditor ({config.model_label(debate_agent.MODEL_ID)}) reviewing "
+        f"Junior Analyst ({config.model_label(config.get_model())}) assessment",
         agent="debate",
         tenant_id=tenant_id,
     )
@@ -2469,16 +2489,34 @@ async def snapshot(limit: int = 60, tenant_id: str | None = None) -> dict[str, A
     # Per-agent breakdown is a Cost Monitor detail (a secondary, DEMO_MODE-
     # hidden feature), not a headline KPI, so it stays windowed rather than
     # needing a denormalized field per agent per case.
-    tokens_by_agent: dict[str, dict[str, int]] = {}
+    #
+    # `cost_usd` is summed here rather than derived in the console, for the reason
+    # config.pricing_for() spells out: the rate depends on WHICH model ran the step,
+    # and only the step knows that. Investigation runs Super and the debate runs Ultra
+    # while fraud and compliance run Nano, so a client multiplying total tokens by the
+    # currently selected model's rate would misreport every mixed window. The per-step
+    # figure already exists -- _record_step writes it -- so this only adds it up.
+    #
+    # The card this feeds was titled "Cost by agent" and displayed calls and tokens
+    # only, with no money on it at all, while the demo narration said spend was metered
+    # "per agent, in tokens and in dollars". The claim came first and the field second.
+    tokens_by_agent: dict[str, dict[str, float]] = {}
     for case in cases:
         for step in case.get("steps", []) or []:
             agent = step.get("agent", "unknown")
             bucket = tokens_by_agent.setdefault(
-                agent, {"calls": 0, "input": 0, "output": 0}
+                agent, {"calls": 0, "input": 0, "output": 0, "cost_usd": 0.0}
             )
             bucket["calls"] += 1
             bucket["input"] += step.get("input_tokens", 0) or 0
             bucket["output"] += step.get("output_tokens", 0) or 0
+            bucket["cost_usd"] += step.get("cost_usd", 0.0) or 0.0
+
+    # Rounded once at the end rather than per step: summing eight-decimal figures and
+    # rounding the total keeps the per-agent column adding up to the board total, which
+    # is what an operator checks first when two numbers on one screen disagree.
+    for bucket in tokens_by_agent.values():
+        bucket["cost_usd"] = round(bucket["cost_usd"], 6)
 
     readiness = await governance.agent_readiness(tenant_id=tenant_id)
 

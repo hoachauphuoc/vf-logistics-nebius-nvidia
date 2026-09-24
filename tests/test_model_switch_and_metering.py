@@ -260,5 +260,117 @@ class TestTavilyMetering(unittest.TestCase):
             self.assertIn(field, script)
 
 
+class TestTheModelNameInStringsAPersonReads(unittest.TestCase):
+    """
+    3. THE MODEL NAME NOBODY VALIDATES.
+
+    `orchestrator.py` hard-coded "Super" into the auto-debate event string and into the
+    Deep Review start event, on a hop that runs `debate_agent.MODEL_ID` -- Ultra by
+    default. `debate_agent.py`'s own docstring records that the identical
+    comment-vs-constant drift had already been copied into the README, the architecture
+    diagram and the Devpost submission before anyone noticed.
+
+    Nothing caught it because a wrong string in an audit record is still a valid string.
+    These tests catch it: the label has to come from the model id, so changing
+    DEBATE_MODEL changes what the audit trail says, and no literal can go stale.
+    """
+
+    def test_model_label_names_each_tier(self):
+        self.assertEqual(config.model_label(NANO), "NVIDIA Nemotron 3 Nano")
+        self.assertEqual(config.model_label(SUPER), "NVIDIA Nemotron 3 Super")
+        self.assertEqual(config.model_label(ULTRA), "NVIDIA Nemotron 3 Ultra")
+
+    def test_an_unknown_model_falls_back_to_its_own_id_not_a_guess(self):
+        """
+        Deliberately the raw id rather than a default tier name. `Nemotron-3_5-Lightning`
+        is servable on Token Factory today and is absent from PRICING, so this path is
+        reachable in production -- and a raw id cannot be mistaken for a claim, whereas
+        "Nemotron 3 Nano" printed over an Ultra call can.
+        """
+        unknown = "nvidia/Nemotron-3_5-Lightning"
+        self.assertEqual(config.model_label(unknown), unknown)
+
+    def test_model_label_does_not_log_an_unpriced_model_error(self):
+        """
+        Why this is not `pricing_for(model)["name"]`. That function logs at ERROR on an
+        unknown id, which is correct when money is being computed and wrong when a label
+        is being rendered -- it would fire a billing error every time an event line is
+        written, duplicating the one the cost path already emits.
+        """
+        with self.assertLogs("vf_logistics.config", level="ERROR") as captured:
+            config.pricing_for("nvidia/does-not-exist")
+            logging.getLogger("vf_logistics.config").error("sentinel")
+        self.assertTrue(
+            any("UNPRICED MODEL" in line for line in captured.output),
+            "pricing_for should still log -- this test's premise is that it does",
+        )
+
+        logger = logging.getLogger("vf_logistics.config")
+        with self.assertLogs(logger, level="ERROR") as captured:
+            config.model_label("nvidia/does-not-exist")
+            logger.error("sentinel")
+        self.assertEqual(
+            [line for line in captured.output if "UNPRICED MODEL" in line], [],
+            "model_label must not emit a billing error just to render a name",
+        )
+
+    def test_the_debate_label_follows_DEBATE_MODEL(self):
+        """
+        The guard that matters. If someone reverts to a literal, this fails.
+        """
+        from vf_logistics.agents import debate_agent
+
+        self.assertEqual(
+            config.model_label(debate_agent.MODEL_ID),
+            "NVIDIA Nemotron 3 Ultra",
+            "DEBATE_MODEL defaults to Ultra, so the label the audit trail carries for "
+            "the debate hop must read Ultra -- if this says Super, the string has been "
+            "hard-coded again",
+        )
+        self.assertNotIn("Super", config.model_label(debate_agent.MODEL_ID))
+
+    def test_no_source_file_hardcodes_Super_onto_the_debate_path(self):
+        """
+        A grep as a test, because this drifted back three times.
+
+        Two exclusions, both necessary rather than convenient:
+
+        `Super` is CORRECT for the investigation agent -- INVESTIGATION_MODEL genuinely
+        is Super -- so this cannot ban the word. It is scoped to lines that also mention
+        the debate, the Senior Auditor, or deep review.
+
+        And a line naming BOTH Ultra and Super is comparing them, not claiming Super runs
+        the debate. The measured cost lines in debate_agent.py ("$0.0198 per Ultra debate
+        against Super's $0.0015") and the note in config.model_label describing this very
+        bug are the reason: a rule that flagged those would be a rule people switch off.
+        What is left is the actual failure mode -- Super named on the debate path with no
+        Ultra in sight, which is how every one of the three regressions read.
+
+        This caught orchestrator.py:1907 on its first run, one line below a docstring
+        that said Ultra correctly.
+        """
+        import pathlib
+        import re
+
+        src = pathlib.Path(__file__).resolve().parents[1] / "src" / "vf_logistics"
+        offenders = []
+        for path in src.rglob("*.py"):
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if not re.search(r"\bSuper\b", line):
+                    continue
+                if re.search(r"\bUltra\b", line):
+                    continue
+                if re.search(r"debate|Senior Auditor|deep.?review", line, re.I):
+                    offenders.append(f"{path.name}:{number}: {line.strip()}")
+        self.assertEqual(
+            offenders, [],
+            "these lines name Super on the debate/Senior Auditor/deep-review path "
+            "without naming Ultra, and that hop runs Ultra:\n  "
+            + "\n  ".join(offenders),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

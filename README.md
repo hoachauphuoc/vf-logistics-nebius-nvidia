@@ -44,6 +44,50 @@ actually go to Token Factory, which they do.
 
 ---
 
+## The design rule: model capacity only where it can change the answer
+
+This is the one non-obvious decision in the system, and for a long time it was written
+down 1,000 lines below here as a footnote to an environment variable. It belongs at the
+top, because everything else about the model layer follows from it.
+
+`verifier.py` computes a **deterministic risk floor**, and an agent may **raise** risk but
+never lower it below that floor. The rule is asymmetric on purpose: escalating on model
+judgement is acceptable, exonerating on model judgement is not, because the cost of a
+wrong exoneration is released contraband and the cost of a wrong escalation is a human
+spending ten minutes on a clean shipment.
+
+**So Nemotron Nano on fraud and compliance is not a budget compromise. It is the correct
+choice.** A stronger model there cannot move the outcome in the direction that matters —
+the floor has already decided. Measured, putting those two on Ultra would cost 13× per
+call, against a rate that is only 3.3×, for no change in any decision.
+
+**And the debate is the one exception, which is why Ultra runs there and nowhere else.**
+It fires when the floor and the model disagree by 15 points or more, and what it emits is
+not a score awaiting override — it is a reasoned CONFIRM or DISAGREE on whether that
+disagreement can be settled without a person. That judgement *is* the outcome, so
+reasoning capacity is load-bearing. Measured: `$0.0198` per Ultra debate against Super's
+`$0.0015`.
+
+The invariant is not a convention. `validate()` computes the floor twice, with and
+without the model's finding, and raises if the model's contribution lowered it:
+
+```python
+    base_floor, base_high, _, _ = _floor_for(deterministic_only)
+    if floor < base_floor:
+        raise AssertionError(
+            "model-derived finding lowered the risk floor "
+            f"({base_floor} -> {floor}); a model must only ever raise it"
+        )
+```
+
+That runs on every call. The claim is checked rather than argued, which is the difference
+between a design rule and a comment.
+
+Full working, with the per-call measurements and why the cost multiple is 13× rather than
+the 3.3× the rate implies: *[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else)*.
+
+---
+
 ## What was significantly updated during the Submission Period
 
 This project began as a Google Cloud submission for a different hackathon (All
@@ -151,7 +195,7 @@ a model-cost figure.
 **Before:** zero unit tests. The initial commit contains exactly one test file,
 `scripts/test_documents.py`, which drives a deployed service over HTTP.
 
-**Now:** **712 tests** across 27 files, 75% line coverage, and four GitHub Actions
+**Now:** **717 tests** across 27 files, 75% line coverage, and four GitHub Actions
 jobs that actually run — the workflow existed earlier but filtered on a branch
 named `main` while this repository uses `master`, so it had never executed once.
 
@@ -185,8 +229,11 @@ system follows that shape directly:
 
 Fraud and compliance screening run on **Nemotron 3 Nano** — every shipment
 that arrives gets scored by both, so this is the highest-volume call in the
-pipeline, and Nano is fast and inexpensive enough to run it on every event
-without a cost blowout.
+pipeline. Nano is also fast and cheap, but that is a side benefit rather than the
+reason: these two hops sit under the deterministic floor, so a stronger model
+cannot move either outcome in the direction that matters. Choosing Nano here costs
+nothing in accuracy, which is what makes it the right choice rather than a
+compromise — see *[The design rule](#the-design-rule-model-capacity-only-where-it-can-change-the-answer)*.
 
 Investigation runs on **Nemotron 3 Super** — by the time a case reaches it, the
 fraud and compliance findings already exist; it only runs on cases that were
@@ -827,7 +874,7 @@ and in production a missing one takes the console **offline** rather than leavin
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests (712 tests)
+# Unit + integration tests (717 tests)
 python -m pytest tests/ -v
 
 # Counterparty book, offline
@@ -875,7 +922,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Schema enforcement | 27 | Untrusted document fields against the declared schema |
 | Budget | 26 | Per-tenant spend ceiling, cache TTL, fail-open on store error |
 | Billing period | 25 | Windowed usage, and that every aggregation has an index |
-| Model switch & metering | 20 | The cost ratchet, and that an unpriced model cannot bill silently |
+| Model switch & metering | 25 | The cost ratchet, that an unpriced model cannot bill silently, and that no string names Super on the debate path |
 | Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
 | Tavily cache | 20 | TTL behaviour, key derivation, and that a cached hit is recorded as one |
 | Governance | 18 | Boundaries, drift detection, fail-closed |
@@ -888,7 +935,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Unpriced model | 9 | An unpriced model is logged, not silently billed at the cheapest rate |
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| **Total** | **712** | |
+| **Total** | **717** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1210,7 +1257,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        27 files, 712 tests
+├── tests/                        27 files, 717 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions and reference data
