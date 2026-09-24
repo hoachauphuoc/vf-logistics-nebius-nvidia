@@ -328,6 +328,20 @@ export interface Case {
    * CaseStep.external_search_results.
    */
   tavily_searches?: Array<Record<string, unknown>> | null;
+  /**
+   * TWO fields, because there are two debate paths and the orchestrator names them
+   * differently:
+   *
+   *   `auto_debate` -- fired with no human involved when the floor and the model
+   *                    disagree by 15 points or more (orchestrator.py sets it on the
+   *                    automatic path). This is the one the submission advertises.
+   *   `debate`      -- a reviewer clicked Deep Review (set on the manual path).
+   *
+   * The console read only `debate`, so the verdict card mounted only for manually
+   * triggered reviews -- and no seeded case has one, because seeding never clicks the
+   * button. The headline capability was the one that could not be shown. Read both.
+   */
+  auto_debate?: Record<string, unknown> | null;
   debate?: Record<string, unknown> | null;
   attempts?: number | null;
   last_error?: string | null;
