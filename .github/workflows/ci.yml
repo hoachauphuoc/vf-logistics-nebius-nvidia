@@ -1,10 +1,22 @@
 name: CI
 
+# `master`, not `main`.
+#
+# This workflow has existed since a452fd6 and had NEVER RUN ONCE. It was registered and
+# reported `active`, but both triggers filtered on `main` while this repository's default
+# branch is `master` and no `main` branch has ever existed -- so the condition could not
+# match and GitHub had nothing to report. `gh run list` returned zero runs across the whole
+# history of the repo.
+#
+# That made the README and SUBMISSION claim of a CI pipeline aspirational rather than
+# false-by-a-hair: the jobs below are correct for this layout, they simply were not being
+# invoked. Both branch names are listed now so a future rename to `main` does not silently
+# switch it off again.
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 jobs:
   lint:
