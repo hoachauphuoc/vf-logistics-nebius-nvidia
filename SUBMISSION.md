@@ -548,7 +548,7 @@ outstanding item is the video.
 Each item below is something we measured while building, with the consequence it had
 on this codebase. The first two are the ones we would fix first.
 
-1. **There is no safety or guard model in the catalogue \u2014 24 models, zero
+1. **There is no safety or guard model in the catalogue — 24 models, zero
    classifiers.** Queried against the live `/v1/models` endpoint at submission time:
    24 models served, of which four are NVIDIA and all four are chat models
    (`Nemotron-3_5-Lightning`, `NVIDIA-Nemotron-3-Nano-30B-A3B`,
@@ -557,7 +557,7 @@ on this codebase. The first two are the ones we would fix first.
 
    The consequence is concrete and visible in this submission: a shipping document is
    attacker-controlled and its transcription moves physical cargo, so it has to be
-   screened before a model reads it \u2014 and **the only component of this pipeline that
+   screened before a model reads it — and **the only component of this pipeline that
    is not on Token Factory is that screen**. It runs on Google Cloud Model Armor
    because Token Factory offers no first-party alternative. We evaluated NVIDIA NeMo
    Guardrails as a replacement and did not adopt it, for a reason that is itself
@@ -568,14 +568,14 @@ on this codebase. The first two are the ones we would fix first.
 
    What would close it: a hosted `nemoguard`-class content-safety or
    jailbreak-detection model behind the same OpenAI-compatible endpoint. A team
-   building anything that ingests untrusted text \u2014 which is most agentic pipelines \u2014
+   building anything that ingests untrusted text — which is most agentic pipelines —
    currently has to leave the platform at exactly the security-critical step.
 
 2. **A servable model is missing from the published pricing, and the failure is
    silent.** `nvidia/Nemotron-3_5-Lightning` is returned by `/v1/models` and can be
    called, but we could find no rate for it, and the models endpoint does not carry
    pricing. Because a client has to hard-code a rate table, an unpriced model does not
-   fail \u2014 it falls through to whatever default the client picked. In our case that was
+   fail — it falls through to whatever default the client picked. In our case that was
    the cheapest entry, which means spend is under-reported and the per-tenant spend
    ceiling that reads the same figure quietly stops holding. We now log it at ERROR at
    startup and per call rather than absorbing it, but the fix belongs upstream.
@@ -586,7 +586,7 @@ on this codebase. The first two are the ones we would fix first.
 
 3. **`usage` can be absent from a completion response, and there is no way to tell
    that apart from a free call.** Our `_usage()` helper returns `(0, 0)` when the block
-   is missing, because there is nothing else it can return \u2014 so an unmetered call and
+   is missing, because there is nothing else it can return — so an unmetered call and
    a zero-token call are indistinguishable downstream, and billing silently
    under-counts. A guarantee that `usage` is always present on a 2xx, or an explicit
    error when it cannot be computed, closes a metering hole that a customer-facing
@@ -596,8 +596,8 @@ on this codebase. The first two are the ones we would fix first.
    of lading, invoices, packing lists) needs a vision-language model, and at
    submission time Token Factory's NVIDIA catalog has none, so this project runs that
    one agent on `MiniCPM-V-4.5`. Document understanding is one of the most common
-   real-world entry points for an agentic pipeline \u2014 someone always starts from a PDF,
-   a scan, or a photo of paperwork \u2014 so a team building a document-first workflow has
+   real-world entry points for an agentic pipeline — someone always starts from a PDF,
+   a scan, or a photo of paperwork — so a team building a document-first workflow has
    no first-party NVIDIA option for the very first step. A Nemotron VL variant, or an
    `nvidia/nemotron-parse`-style OCR/layout model on the same endpoint, would close it.
 
@@ -637,16 +637,16 @@ on this codebase. The first two are the ones we would fix first.
    "the reply was cut off". Surfacing the 8192 default more prominently — or defaulting
    to the model's context limit rather than a fixed number — would have saved the hunt.
 
-6. **Rate limit headers** \u2014 Token Factory returns 429 on rate limit but does not
+6. **Rate limit headers** — Token Factory returns 429 on rate limit but does not
    include `Retry-After` or `X-RateLimit-*`. For a production service that has to back
    off gracefully, knowing *when* to retry is the difference between a backoff and a
    guess.
 
-7. **Streaming for long completions** \u2014 the investigation agent's detailed reports
-   take 8\u201312 seconds. Streaming would improve perceived latency for a human reviewer
+7. **Streaming for long completions** — the investigation agent's detailed reports
+   take 8–12 seconds. Streaming would improve perceived latency for a human reviewer
    waiting on a decision.
 
-8. **Batch API** \u2014 for offline scoring of historical shipments (backtesting a new
+8. **Batch API** — for offline scoring of historical shipments (backtesting a new
    risk model against last year's freight), a batch endpoint at a lower per-token cost
    would make the difference between running it and not.
 
