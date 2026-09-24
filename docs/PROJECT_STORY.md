@@ -16,6 +16,19 @@ with the model.**
 So we built the queue-clearing agent, and then we built the things that constrain
 it. The constraints are the project.
 
+The sharpest of them is one line of asymmetry. `verifier.py` computes a
+deterministic risk floor out of arithmetic and list lookups — no model calls, no
+network — and an agent may **raise** risk above it but never lower it. Escalating
+on model judgement is fine; exonerating on model judgement is not, because a wrong
+exoneration releases contraband and a wrong escalation costs a human ten minutes.
+
+That single rule decided the model layer, which is why our tiering is not the usual
+"big model for hard things". Fraud and compliance sit under the floor, so a stronger
+model there cannot change the outcome in the direction that matters — Nemotron 3
+Nano is the *correct* choice on those hops, not the affordable one. Nemotron 3 Ultra
+runs in exactly one place, the auto-debate, because that is the only hop whose
+output is a verdict the floor does not override rather than a score it does.
+
 ## What it does
 
 VF Logistics is an autonomous compliance pipeline for shipping documents. Work
@@ -166,7 +179,7 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 712.
+test file, and it drives a deployed service over HTTP. There are now 717.
 
 ## Challenges we ran into
 

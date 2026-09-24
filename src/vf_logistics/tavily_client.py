@@ -6,7 +6,7 @@ Two defects were fixed here, and both mattered more than they looked.
 1. The tool schema was lying to the model
    ------------------------------------
    agents/debate_agent.py advertises a `search_depth` parameter with an enum of
-   "basic" and "advanced" to Nemotron Super as part of its function-calling
+   "basic" and "advanced" to the Senior Auditor as part of its function-calling
    schema. This client hardcoded `"search_depth": "basic"` in the request body,
    so the model's choice was discarded before it reached the API -- the debate
    agent papered over it by mapping "advanced" to max_results=5 and calling that

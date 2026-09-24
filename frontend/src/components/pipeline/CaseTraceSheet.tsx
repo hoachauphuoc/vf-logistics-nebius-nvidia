@@ -157,7 +157,17 @@ function Verdict({ case: c }: { case: Case }) {
         {rec?.model_risk != null && (
           <Row label="Model alone" value={rec.model_risk} />
         )}
-        {rec?.floor != null && <Row label="Rules floor" value={rec.floor} />}
+        {/*
+          `risk_floor`, not `floor`. This read `rec.floor`, a key verifier.reconcile()
+          has never emitted, and the `!= null` guard turned that into silence rather
+          than an error -- so the row that shows the deterministic minimum an agent is
+          not allowed to go under has never appeared on any case. It is the single most
+          load-bearing number in the console: without it, "Effective risk" and "Model
+          alone" look like two opinions instead of a rule and a score.
+        */}
+        {rec?.risk_floor != null && (
+          <Row label="Rules floor" value={rec.risk_floor} />
+        )}
         {vetoed && (
           <p className="rounded-md border border-risk-warn/30 bg-risk-warn/[0.07] px-2.5 py-2 text-[11.5px] leading-relaxed text-risk-warn">
             The deterministic floor overruled the model here. The model may raise

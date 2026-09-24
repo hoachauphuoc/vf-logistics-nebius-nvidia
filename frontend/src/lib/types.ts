@@ -240,8 +240,26 @@ export interface GateDenial {
 export interface Reconciliation {
   model_risk?: number | null;
   effective_risk?: number | null;
-  floor?: number | null;
+  /**
+   * `risk_floor`, NOT `floor`. This interface declared `floor`, which
+   * verifier.reconcile() has never emitted -- checked against the live API, where a
+   * case's reconciliation carries exactly: auto_clear_permitted, effective_risk,
+   * model_risk, risk_floor, score_disputed, source, veto_reasons.
+   *
+   * The consequence was silent and sat on the most important row in the console:
+   * CaseTraceSheet guarded the "Rules floor" row on `rec.floor != null`, so the one
+   * number that shows an agent cannot lower risk simply never rendered, on any case.
+   * Same shape of bug as the dropped citations, which read `s.urls` off a step that
+   * only ever had `external_search_results`.
+   */
+  risk_floor?: number | null;
   source?: string | null;
+  /** Model and floor disagreed by 15 points or more. Computed server-side; do not
+   * re-derive it from effective_risk, which equals max(model, floor) and so cannot
+   * distinguish "the floor won" from "the model scored higher". */
+  score_disputed?: boolean | null;
+  /** Not sent by the backend today. `source === "deterministic floor"` is the live
+   * signal; this stays only because reading it is harmless if it ever appears. */
   vetoed?: boolean | null;
   veto_reasons?: string[] | null;
   auto_clear_permitted?: boolean | null;
@@ -426,7 +444,11 @@ export interface OrchestratorSnapshot {
   total_output_tokens: number;
   tokens_by_agent: Record<
     string,
-    { calls: number; input: number; output: number }
+    // `cost_usd` is summed server-side from each step's own rate, not derived here.
+    // The rate depends on which model ran the step -- Nano for fraud and compliance,
+    // Super for investigation, Ultra for the debate -- so multiplying these tokens by
+    // any single model's price would misreport every mixed window.
+    { calls: number; input: number; output: number; cost_usd: number }
   >;
   estimated_cost_usd: number;
   worker: WorkerStatus;

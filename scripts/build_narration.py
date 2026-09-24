@@ -56,96 +56,118 @@ GAP_AFTER_SENTENCE_S = 0.25
 
 # (scene name, recorded clip length in seconds, narration)
 #
-# Clip lengths are the ones actually shot on 31/08. The writing is sized to them:
-# scene 5 is the review queue and carries the strongest argument in the video, but
-# its clip is only 16 seconds, so it keeps one point and drops two rather than
-# being read at auctioneer speed.
+# TEN scenes, 164 seconds -- 2:44. Three deliberate changes from the nine-scene, 180s
+# version, and the enabling fact is that NOTHING had been shot: build/ did not exist, the
+# repository held no media, and the clip lengths previously in this list were measured on
+# 31/08 against footage of the PREDECESSOR system, before the Nebius port landed on 17/09.
+# Restructuring therefore cost nothing.
+#
+#   1. It now runs UNDER three minutes rather than to exactly 180.0s. The rules say the
+#      video "should be less than three (3) minutes", and landing on the boundary is a
+#      needless risk for no gain.
+#   2. Two evidence scenes added -- 5 (live Tavily citations resolving to real URLs) and 9
+#      (the test suite and CI). The rigour in this project was almost entirely invisible on
+#      camera, so a judge scoring Technological Implementation had to read the repository to
+#      find it. Scene 5 also carries the Tavily bonus award, which the old script showed
+#      nowhere at all.
+#   3. Scene 3 now states the DESIGN RULE instead of the cost. It used to say spend was
+#      metered "in tokens and in dollars" over a screen that displayed no dollars, and it
+#      justified Nano on price -- the very framing the README spends a thousand lines
+#      correcting. The floor is why Nano is CORRECT there, not why it is cheap.
+#
+# What was cut, and it is a real loss: the old clip 6, a bill of lading rendered from a data
+# event and labelled as rendered. A good honesty point with nowhere to go inside 2:45 once
+# the evidence scenes were in. It survives in the console and in SUBMISSION.md, not on film.
+#
+# WORD BUDGET. There is no offline fit check -- the real one runs AFTER the billable TTS
+# call, only warns, and exits 0. Estimate before spending a run:
+#
+#     seconds_needed = 0.6 + (sentences - 1) * 0.25 + words / 2.5
+#
+# Every scene below leaves at least a second of headroom on that estimate. Splitting a
+# sentence costs 0.25s even if no words are added. And an overrun is not local: clip_start
+# advances by max(clip_seconds, spoken), so one long scene pushes every later scene off its
+# cut.
 SCENES: list[tuple[str, float, str]] = [
     (
         "1 - The problem",
-        17.0,
-        "A freight forwarder clears thousands of shipments a week. "
-        "Any one of them can hide price manipulation, a sanctioned buyer, "
-        "or dual-use cargo dressed up as farm equipment. "
-        "Checking all of them by hand is impossible. "
-        "Letting a model release them is reckless.",
+        16.0,
+        "A forwarder clears thousands of shipments a week. "
+        "Any one can hide under-invoicing, a sanctioned buyer, or dual-use cargo "
+        "on farm paperwork. "
+        "Checking by hand is impossible; letting a model release them is reckless.",
     ),
     (
         "2 - A real document",
         15.0,
         "This is a real bill of lading, dropped the way a mailroom would drop it. "
-        "Nothing about it is pre-registered. "
         "Model Armor screens the file before any model reads it. "
         "Then an intake agent transcribes it.",
     ),
     (
-        "3 - Cost and model tiering",
-        17.0,
-        "Fraud detection and compliance screening run in parallel on Nemotron Nano. "
-        "When either raises something serious, an investigation agent opens a "
-        "deeper case on Super. "
-        "Every call is metered per agent, in tokens and in dollars. "
-        "Screening a shipment costs well under a cent.",
+        "3 - The design rule",
+        20.0,
+        "Rules set a risk floor an agent may raise, never lower. "
+        "So fraud and compliance run on Nano: a stronger model cannot change it. "
+        "Ultra runs one hop, the debate, where its verdict is the answer. "
+        "Spend is metered per agent, in dollars.",
     ),
     (
         "4 - A case that cleared itself",
-        22.0,
-        "This one cleared on its own. "
-        "It arrived as a data event, and it sat inside every limit the business "
-        "granted the agent: value under the ceiling, no forbidden destination, "
-        "no deterministic finding. "
+        20.0,
+        "This one cleared itself. "
+        "Three numbers say why: what the model scored, what the rules floor "
+        "demanded, and the higher of the two. "
         "The agent did not decide it was safe. "
         "It proved it was permitted, and recorded which rule allowed it.",
     ),
     (
-        "5 - The review queue",
-        16.0,
-        "Everything the agent was not permitted to close comes here. "
-        "Red is escalated, yellow is held; the state is the border colour. "
-        "The shipping document sits beside the findings, because approving a hold "
-        "you cannot check is a rubber stamp.",
+        "5 - Live evidence",
+        14.0,
+        "The compliance screen read five public sources at decision time. "
+        "Each one is a live link, not a summary. "
+        "This is what a customs authority would be shown.",
     ),
     (
-        "6 - A rendered bill of lading",
-        19.0,
-        "This shipment arrived as a data event, with no document at all. "
-        "So the system rendered one from the record it received, and labelled it "
-        "as rendered, on the page and in the provenance. "
-        "A reconstruction is never presented as an original. "
-        "That would corrupt the audit trail.",
+        "6 - The review queue",
+        16.0,
+        "Everything the agent was not permitted to close comes here. "
+        "Red is escalated, yellow is held. "
+        "The document sits beside the findings, because approving a hold you "
+        "cannot check is a rubber stamp.",
     ),
     (
         "7 - The delegation boundary",
-        38.0,
+        28.0,
         "The agent has no authority of its own. "
-        "A human publishes a machine-readable boundary, and the agent operates "
-        "inside it. "
-        "It sets the value ceiling, the forbidden destinations, and which actions "
-        "the agent may execute without asking. "
-        "Every action it takes records the boundary version that allowed it, so a "
-        "decision made months ago can be replayed against the policy in force at "
-        "the time. "
-        "Withdraw the boundary and the system suspends itself. "
-        "It keeps analysing and proposing, but the execution gate refuses every "
-        "protected action. "
-        "Autonomy here is delegated, and delegation can be revoked.",
+        "A human publishes a machine-readable boundary; the agent works inside it: "
+        "the value ceiling, forbidden destinations, which actions it may take "
+        "unasked. "
+        "Every action records the boundary version that allowed it, so old "
+        "decisions replay against the policy of their day. "
+        "Withdraw it and the system suspends itself, still analysing but refusing "
+        "every protected action.",
     ),
     (
         "8 - Prompt injection blocked",
-        18.0,
+        15.0,
         "This document told the agent to ignore its instructions and release the "
         "container. "
-        "Model Armor caught it before any model was invoked, so no tokens were "
-        "spent. "
-        "The case opened already denied, and the file was kept for a human to see.",
+        "Model Armor caught it before any model ran, so no tokens were spent. "
+        "The case opened already denied.",
     ),
     (
-        "9 - Close",
-        18.0,
-        "Seven agents on Nebius Token Factory. "
-        "Nemotron Nano screens every shipment, Super investigates, and Ultra argues "
-        "the cases where the floor and the model disagree. "
-        "Agents that act, inside limits a person set, and stop when they should.",
+        "9 - Tests and CI",
+        8.0,
+        "717 tests pass at 75 percent coverage. "
+        "Continuous integration runs them on every push.",
+    ),
+    (
+        "10 - Close",
+        12.0,
+        "Seven agents on Nebius Token Factory, with Nemotron picked per hop. "
+        "Agents that act, inside limits a person set. "
+        "And stop when they should.",
     ),
 ]
 
