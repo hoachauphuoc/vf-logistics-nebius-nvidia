@@ -109,11 +109,18 @@ function ScriptedBatch({ onDone }: { onDone: () => void }) {
     onSuccess: onDone,
   });
 
+  // The note below is kept honest against `simulator.scripted_shipments`, which returns
+  // three cases: CLEAN, MID, DIRTY. It used to promise four branches that do not exist --
+  // "a sanctions hit, an export-control name, an HS mismatch, a clean low-value domestic
+  // parcel". There is no HS mismatch in the batch, and the clean case is an international
+  // sailing worth USD 9,600, not a low-value domestic parcel. This is the panel a judge
+  // clicks first, so it has to describe the cases that actually load. If you change the
+  // batch, change this note in the same commit.
   return (
     <Panel
       helpId="devops.scripted-batch"
       title="Scripted batch"
-      note="The rehearsed set that exercises each verifier branch: a sanctions hit, an export-control name, an HS mismatch, a clean low-value domestic parcel. Fixed rather than random, so two runs are comparable."
+      note="Three cases, one per outcome, fixed rather than random so two runs are comparable. A settled shipper on a direct sailing to Singapore, which should clear itself. Furniture to Busan with clean paperwork but freight under the route average from a shipper with nine prior shipments, which compliance clears and fraud still sends to a human. And frequency converters to Karachi declared as agricultural, from a company registered eleven days ago with no tax ID, at 14% of the route's normal freight, with two transhipments added after booking."
     >
       <Button
         size="sm"
