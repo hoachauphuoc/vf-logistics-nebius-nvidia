@@ -35,6 +35,42 @@ account; credentials are in the private testing-instructions field below.
 
 ## Text description
 
+### What was significantly updated during the Submission Period
+
+This began as a Google Cloud submission for a different hackathon (All Things
+Agentic 2026), on Vertex AI Gemini. Everything below is checkable against the
+repository: `6bb1e59` is the initial commit, and `git diff --shortstat 6bb1e59 HEAD`
+reports **243 files changed, 156,525 insertions** across 23 commits.
+
+One thing was deliberately *not* changed: the deterministic governance layer — risk
+floor, untrusted-input boundary, delegation boundary, shipper identity verification.
+None of it is model-specific, and it is what constrains the system regardless of
+which model reasons. Everything else was rebuilt.
+
+| | Before | Now | Why |
+|---|---|---|---|
+| **Models** | 4 agents on Gemini 3.5 Flash + Flash-Lite, Vertex AI | 7 agents, 4 models on Token Factory: Nano ×4 hops, Super, **Ultra**, MiniCPM-V | The floor overrides a score but not a verdict, so reasoning capacity is only worth paying for on the debate — measured `$0.0198` vs `$0.0015` |
+| **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,656 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
+| **Console** | one static HTML page served by Flask | Next.js 16 on a second Cloud Run service — 67 files, 12,672 lines, 7 screens | The static page could not carry a session, and recording a decision had to be attributable |
+| **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
+| **Anonymous authority** | any visitor held `GOVERNANCE_ADMIN` on the live console; unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method | Found by doing it. Splitting on method rather than a path list means a route added later is covered by default |
+| **Cost control** | none; `max_tokens` set on **no agent**, and the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
+| **Tests** | **zero** unit tests (one HTTP script) | **712** tests, 27 files, 75% coverage | — |
+| **CI** | existed but filtered on branch `main` while the repo uses `master`, so it had **never run once** | four jobs, green | A documented pipeline that does not execute is the same defect as an undocumented one |
+| **Structure** | flat root: `main.py` and 17 modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
+
+Two measured results worth stating plainly, because both corrected an assumption we
+had published:
+
+- **HS classification recall went 40.0% → 26.7% → 91.7%.** Chain-of-thought
+  prompting made it *worse*; what fixed it was giving the model a reference block of
+  real HS headings. A retrieval problem dressed as a reasoning problem does not
+  respond to reasoning.
+- **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
+  about `$0.068` on inference and 90–106 Tavily searches, so the free search tier
+  runs out around 200 cases while model spend is still negligible. Every cost figure
+  we had published before measuring this was a model-cost figure.
+
 ### The problem
 
 Vietnamese logistics operators lose money to shipment fraud that threshold rules

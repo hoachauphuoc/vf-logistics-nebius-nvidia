@@ -126,6 +126,48 @@ sometimes had paperwork and sometimes did not, which meant asking a reviewer to
 sign off on a risk score they had no way to check. Presenting a reconstruction as
 an original would have been worse than showing nothing.
 
+## What changed from the version before this one
+
+This started as a Google Cloud submission for a different hackathon, on Vertex AI
+Gemini. It is worth being precise about what carried over, because "we ported the
+SDK" would undersell it and "we rebuilt everything" would overstate it.
+
+**What we deliberately did not touch** is the deterministic governance layer: the
+risk floor, the untrusted-input boundary, the delegation boundary, the shipper
+identity check. None of it calls a model, so none of it needed to change — and that
+is the argument the whole project rests on. If the governance had needed rewriting
+to swap the model underneath, it would not have been governance.
+
+**What we rebuilt, and why it was not optional:**
+
+The console was one static HTML page. It became a Next.js service on its own Cloud
+Run instance, and the reason was not appearance: a static page cannot carry a
+session, and we had discovered that the `reviewer` name on a decision was being read
+from the **request body as free text**. Anyone could record a decision under
+anyone's name. An audit trail that cannot say who decided is decoration. Fixing that
+required a login, which required a console that could hold one.
+
+In the same pass we found that any anonymous visitor to the deployed console held
+`GOVERNANCE_ADMIN`, because the proxy attached the operator API key and there was no
+login in front of it. An unauthenticated `POST /orchestrator/reset` cleared 307 real
+cases. We know because we sent it.
+
+Three agents did not exist: HS classification, zero-day adverse-media screening, and
+the auto-debate. Each answers something the deterministic layer structurally cannot.
+A rule can check a declared tariff heading against a dual-use list, but not against
+the cargo described next to it. A sanctions list is always behind the news. And when
+the floor and the model disagree by fifteen points, escalating is not the same as
+resolving.
+
+And there was no cost story at all. `max_tokens` was set on no agent — the provider
+default is 8,192, and two runaway calls hit it and returned unparseable output after
+paying for the privilege. That led to per-hop cost attribution, a per-tenant ceiling
+at the single point every model call passes through, and the finding that surprised
+us most: **Tavily, not the models, is what actually runs out.**
+
+There were also **zero unit tests**. The first commit of this repository contains one
+test file, and it drives a deployed service over HTTP. There are now 712.
+
 ## Challenges we ran into
 
 **A security control that quietly made autonomy impossible.** We refuse to take a
