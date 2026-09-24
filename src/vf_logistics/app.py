@@ -314,7 +314,7 @@ def utcnow() -> str:
 #
 # Every coroutine in the process runs on this one loop, including Flask request
 # handlers via async_route below. Handlers used to call asyncio.run(), which
-# closes its loop on the way out and left the module-level Vertex AI client
+# closes its loop on the way out and left the module-level inference client
 # holding a dead loop, so the second analysis in a container's life failed.
 #
 # In WORKER_MODE=poll the loop also drives the pipeline unattended, which needs
@@ -357,7 +357,7 @@ def async_route(f):
     def wrapper(*args, **kwargs):
         # These handlers run on the long-lived worker loop rather than a private
         # asyncio.run() loop per request. asyncio.run() closes its loop on the way
-        # out, and the Vertex AI client is created once and cached at module level,
+        # out, and the inference client is created once and cached at module level,
         # so it kept a reference to a loop that no longer existed - the second
         # single-agent analysis in a container's life failed with "Event loop is
         # closed". One loop for every coroutine in the process removes the class
@@ -867,7 +867,7 @@ def event_document():
     """
     Shipping document intake.
 
-    Accepts a PDF or scanned image as multipart form-data under `file`. Gemini
+    Accepts a PDF or scanned image as multipart form-data under `file`. The vision model
     3.5 Flash transcribes it into a shipment record, the original is archived to
     Cloud Storage for audit, and the background worker takes it from there.
 
@@ -920,7 +920,7 @@ def simulate_bulk():
     """
     Inject a larger randomised batch to show the pipeline under volume.
 
-    Capped deliberately. Every case costs at least one Gemini call and up to
+    Capped deliberately. Every case costs at least one model call and up to
     three, so an uncapped endpoint is a quota and billing hazard rather than a
     better demo.
     """
@@ -982,7 +982,7 @@ def config():
             "document_intake": {"temperature": 0.0, "note": "transcription, not generation"},
             "fraud_detection": {"temperature": 0.1},
             "compliance": {"temperature": 0.1},
-            "investigation": {"temperature": 0.2, "thinking_budget": 8000}
+            "investigation": {"temperature": 0.2}
         },
         "routing_thresholds": orchestrator.worker_status()["thresholds"],
         "response_contract": "application/json enforced on every agent call",
@@ -1016,7 +1016,7 @@ def set_model_config():
     """
     Change the active AI model at runtime.
     
-    This allows switching between Gemini models without redeployment.
+    This allows switching the model without redeployment.
     Changes take effect immediately for new requests.
     """
     data = request.get_json(silent=True) or {}

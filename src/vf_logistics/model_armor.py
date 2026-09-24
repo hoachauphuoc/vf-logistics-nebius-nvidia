@@ -9,10 +9,12 @@ Ordering matters, and it is the reason this module extracts text without a model
 The control plane requires that a blocked document produce **no model processing
 at all** - not "the model looked at it and we discarded the answer". For a PDF
 that is achievable: pypdf pulls the text layer deterministically, Model Armor
-screens that, and Gemini is only invoked if the document passes.
+screens that, and the vision model (MiniCPM-V-4.5) is only invoked if the document
+passes.
 
 Scanned images have no text layer, so no pre-screen is possible without OCR. For
-those the order is necessarily reversed: Gemini transcribes, and the transcription
+those the order is necessarily reversed: the vision model transcribes, and the
+transcription
 is screened before it reaches any downstream agent. That is a weaker guarantee and
 is reported as such on the case rather than glossed over.
 

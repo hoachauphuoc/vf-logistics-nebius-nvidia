@@ -1,14 +1,22 @@
 """
-Multi-Agent Debate: Nemotron Super reviews Nano's assessment using function calling.
+Multi-Agent Debate: Nemotron Ultra reviews Nano's assessment using function calling.
 
-This implements the "Deep Review" feature where a Senior Auditor (Super 120B)
-reviews and can challenge the Junior Analyst's (Nano 30B) fraud assessment.
-Super has access to tools:
+A Senior Auditor (Ultra 550B) reviews and can challenge the Junior Analyst's
+(Nano 30B) fraud assessment. Ultra has access to tools:
   - request_nano_reevaluation: Ask Nano to re-score with specific focus
   - search_tavily: Run additional web searches for context
   - render_final_verdict: Submit final CONFIRM or DISAGREE verdict
 
-Only Nemotron Super supports function calling. Nano uses context injection.
+It runs automatically when the deterministic floor and the model disagree by 15 points
+or more, and is also reachable manually as "Deep Review".
+
+MODEL_ID below is the authority on which model this is, and it reads Ultra. This
+docstring said Super for a while, 60 lines above a constant that said otherwise, which
+is the failure mode worth naming: a comment and the code it describes drifted apart in
+the same file, and the comment is what got copied into the README, the architecture
+diagram and the Devpost submission.
+
+Nano does not support function calling and uses context injection instead.
 """
 
 from __future__ import annotations

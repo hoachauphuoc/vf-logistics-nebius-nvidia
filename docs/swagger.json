@@ -18,6 +18,10 @@
     {
       "name": "compliance",
       "description": "Submit shipments and read verdicts"
+    },
+    {
+      "name": "billing",
+      "description": "Metered usage and spend for a period"
     }
   ],
   "paths": {

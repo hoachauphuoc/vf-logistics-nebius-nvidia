@@ -81,10 +81,10 @@ SCENES: list[tuple[str, float, str]] = [
     (
         "3 - Cost and model tiering",
         17.0,
-        "Fraud detection and compliance screening run in parallel. "
+        "Fraud detection and compliance screening run in parallel on Nemotron Nano. "
         "When either raises something serious, an investigation agent opens a "
-        "deeper case on Flash Lite. "
-        "Every call is metered here, per agent, in tokens and in dollars. "
+        "deeper case on Super. "
+        "Every call is metered per agent, in tokens and in dollars. "
         "Screening a shipment costs well under a cent.",
     ),
     (
@@ -142,10 +142,10 @@ SCENES: list[tuple[str, float, str]] = [
     (
         "9 - Close",
         18.0,
-        "Four agents on Vertex AI, each with one job, handing the case forward. "
-        "Gemini Flash for screening, Flash Lite for narrative work. "
-        "Built entirely on Google Cloud: agents that act, inside limits a person "
-        "set, and stop when they should.",
+        "Seven agents on Nebius Token Factory. "
+        "Nemotron Nano screens every shipment, Super investigates, and Ultra argues "
+        "the cases where the floor and the model disagree. "
+        "Agents that act, inside limits a person set, and stop when they should.",
     ),
 ]
 

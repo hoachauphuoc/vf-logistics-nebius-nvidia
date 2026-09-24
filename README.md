@@ -34,8 +34,9 @@ releasing the shipment, assigning an analyst, or holding the cargo and drafting 
 suspicious activity report for human signature.
 
 The AI model layer runs on **Nebius Token Factory**: **NVIDIA Nemotron 3 Nano**
-for fraud and compliance scoring, **NVIDIA Nemotron 3 Super** for deep
-investigation, and a vision model (**MiniCPM-V-4.5**) for document intake, since
+for fraud, compliance, HS classification and zero-day screening, **NVIDIA Nemotron 3
+Super** for deep investigation, **NVIDIA Nemotron 3 Ultra** for the auto-debate, and
+a vision model (**MiniCPM-V-4.5**) for document intake, since
 Token Factory does not yet carry an NVIDIA vision model. Infrastructure — Cloud
 Run, Firestore, Pub/Sub, Cloud Storage, Model Armor — stays on Google Cloud;
 nothing about Nebius's rules requires moving hosting, only that the model calls
@@ -66,7 +67,7 @@ was substantially rebuilt as a new, standalone project:
 - Document intake gained a PDF-to-image rasterisation step (`pypdfium2`), because
   vision models on Token Factory take images, not raw PDF bytes the way Gemini
   did natively.
-- `config.py`'s model/pricing registry, `.env.example`, `cloudbuild.yaml`, and
+- `config.py`'s model/pricing registry, `.env.example`, and
   the dashboard's model labels were all rewritten for the new model roster.
 - The deterministic governance layer — risk floor, untrusted-input boundary,
   delegation boundary, shipper identity verification — was carried over
@@ -75,7 +76,7 @@ was substantially rebuilt as a new, standalone project:
 
 ## What the system does
 
-Four specialised agents plus a deterministic verification layer, coordinated by a
+Seven specialised agents plus a deterministic verification layer, coordinated by a
 governance control plane:
 
 | Agent | Responsibility | Model | Notable config |
@@ -84,7 +85,7 @@ governance control plane:
 | **Fraud Detection** | Price manipulation, route fraud, weight/dimension fraud, document fraud, identity fraud, duplicate & time fraud. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `temperature=0.1` for stable scoring |
 | **Compliance Screening** | Sanctions exposure (OFAC/UN/EU patterns), trade & regulatory compliance, AML indicators — grounded by a live Tavily search. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `temperature=0.1`, runs in parallel with fraud, Tavily search injected as evidence |
 | **AI Investigation** | Multi-step case investigation, pattern analysis, network mapping. | `nvidia/nemotron-3-super-120b-a12b` | Only reached on escalated cases |
-| **Multi-Agent Debate** | Senior Auditor (Super) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. | `nvidia/nemotron-3-super-120b-a12b` | Opt-in via "Deep Review" button, function calling with 3 tools |
+| **Multi-Agent Debate** | Senior Auditor (Ultra) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. | `nvidia/Nemotron-3-Ultra-550b-a55b` | Fires automatically on a 15-point floor-model gap; also manual via "Deep Review". Function calling with 3 tools |
 
 ### Model selection, chosen per task
 
@@ -134,20 +135,19 @@ runtime web search, not a documented-but-unused integration. A Tavily outage
 or a missing API key degrades the agent to its pre-Tavily behaviour rather
 than blocking the pipeline.
 
-### Multi-Agent Debate: Super reviews Nano
+### Multi-Agent Debate: Ultra reviews Nano
 
 The most sophisticated reasoning pattern in the system is **Multi-Agent Debate**,
-where a Senior Auditor (Nemotron Super 120B) reviews the Junior Analyst's
-(Nemotron Nano 30B) fraud assessment. This is an opt-in "Deep Review" operation
-triggered by an analyst when a case needs extra scrutiny.
+where a Senior Auditor (Nemotron Ultra 550B) reviews the Junior Analyst's
+(Nemotron Nano 30B) fraud assessment.
 
 **Why two models?** Nano is fast and cheap — it scores every shipment that arrives.
 But speed optimises for throughput, not for catching the subtle case that slips
-through. Super is slower and costs more, but it can challenge Nano's reasoning
-and catch what Nano missed. The debate is asymmetric: Super can call Nano back
-for a re-evaluation with specific focus areas, but Nano never calls Super.
+through. Ultra is slower and costs more, but it can challenge Nano's reasoning
+and catch what Nano missed. The debate is asymmetric: Ultra can call Nano back
+for a re-evaluation with specific focus areas, but Nano never calls Ultra.
 
-**Function calling, not prompt chaining.** Nemotron Super supports native
+**Function calling, not prompt chaining.** Nemotron Ultra supports native
 tool_calls, so the debate agent uses real function calling with three tools:
 
 | Tool | Purpose |
@@ -156,15 +156,22 @@ tool_calls, so the debate agent uses real function calling with three tools:
 | `search_tavily` | Run an additional web search for context (e.g., "Thanh Phat Trading sanctions Vietnam") |
 | `render_final_verdict` | Submit the final verdict: **CONFIRM** (agree with Nano) or **DISAGREE** (found issues Nano missed), with confidence, rationale, and recommended action |
 
-Super iterates through tool calls until it calls `render_final_verdict`, up to
+Ultra iterates through tool calls until it calls `render_final_verdict`, up to
 3 rounds. The debate trace is recorded in the case and rendered in the UI so
-the analyst sees exactly what Super did.
+the analyst sees exactly what Ultra did.
 
-**When to use it.** Deep Review is expensive (~15-30 seconds, Super token costs).
-It is not run automatically. An analyst clicks "Deep Review" when:
+**When it runs.** The debate fires **automatically**, with no human involved, when
+the deterministic floor and the model disagree by 15 points or more — measured at 2
+calls across 20 cases. A reviewer can also trigger it manually as "Deep Review"
+when:
 - The risk score seems too low for the red flags present
 - The shipper or receiver name sounds suspicious
 - The case is borderline and the analyst wants a second opinion
+
+It is expensive: measured at `$0.0198` per debate against Super's `$0.0015`, and
+14–22 seconds against Super's 4–6. See
+[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else)
+for why that is worth paying on this call and on no other.
 
 The verdict does not override the analyst's decision — it is advisory evidence.
 
@@ -175,7 +182,7 @@ language model can be mistaken, overconfident, or manipulated by the very
 document it is reading. The pipeline holds and releases physical cargo, so agent
 output is treated as a **claim**, not a finding.
 
-[`verifier.py`](verifier.py) recomputes what can be computed. Freight against
+[`verifier.py`](src/vf_logistics/verifier.py) recomputes what can be computed. Freight against
 lane baselines, value per kilo, mandatory-field completeness, HS code validity
 against a dual-use watchlist held as a code constant, high-risk routing,
 counterparty history. No model is consulted, because
@@ -191,7 +198,7 @@ not, because a wrong exoneration releases contraband and a wrong escalation cost
 a reviewer ten minutes.
 
 Three inputs are deliberately excluded from the document schema in
-[`untrusted.py`](untrusted.py): `avg_route_cost`, `shipper_tx_count` and
+[`untrusted.py`](src/vf_logistics/untrusted.py): `avg_route_cost`, `shipper_tx_count` and
 `created_at`. A document that could state its own route average would defeat the
 pricing check by setting it low, and one that could state its own shipper history
 would defeat the counterparty check by claiming a long one. Absent history is
@@ -201,7 +208,7 @@ That exclusion leaves a gap the design has to close somewhere else. Absent
 history sets a floor of 45, above the auto-clear threshold of 40, so for a while
 *no* uploaded or staged document could clear autonomously — the control was
 written around an enrichment step that did not exist yet.
-[`shipper_registry.py`](shipper_registry.py) is that step: it resolves the
+[`shipper_registry.py`](src/vf_logistics/shipper_registry.py) is that step: it resolves the
 claimed shipper against our own counterparty book and supplies the trading
 history the document is not allowed to assert about itself. Identity must match
 on tax ID **and** company name together, because the tax ID is itself read off
@@ -228,7 +235,7 @@ supervision. Only cases that fall outside the published boundary come back to a
 person.
 
 With no active boundary the system is **SUSPENDED** and fails closed: it still
-analyses and proposes, but [`governance.py`](governance.py)'s execution gate
+analyses and proposes, but [`governance.py`](src/vf_logistics/governance.py)'s execution gate
 refuses every protected action.
 
 ### The reviewer always has the paperwork
@@ -242,7 +249,7 @@ usually all the way to a terminal state before it responds.
 Whichever way it arrived, **a case is meant to carry a bill of lading a human can
 read.** When a shipper's original was uploaded it is archived to Cloud Storage and
 shown as-is. When the case came from a data event there is no original, so
-[`document_render.py`](document_render.py) renders one from the record and marks
+[`document_render.py`](src/vf_logistics/document_render.py) renders one from the record and marks
 it `SYSTEM-GENERATED` — on the document itself and in the case provenance
 (`generated: true`, `rendered_from`). A reconstruction is never presented as an
 original.
@@ -259,7 +266,7 @@ original.
       |  Cloud Run  ·  asia-southeast1               |
       |  vf-logistics  (+ vf-console)                 |
       |                                               |
-      |  gunicorn --> Flask (main.py)                 |
+      |  gunicorn --> Flask (vf_logistics.app:app)    |
       |                 |                             |
       |                 +- /                UI         |
       |                 +- /health                     |
@@ -366,7 +373,7 @@ the routing policy is configuration rather than something buried in code.
 
 | Layer | Choice |
 |---|---|
-| Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance, HS classification, zero-day radar) + **NVIDIA Nemotron 3 Super** (investigation, Senior Auditor debate) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
+| Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance, HS classification, zero-day radar) + **NVIDIA Nemotron 3 Super** (investigation) + **NVIDIA Nemotron 3 Ultra** (Senior Auditor debate) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
 | Agent framework | `openai.AsyncOpenAI` (Token Factory's OpenAI-compatible endpoint) |
 | External signal | **Tavily Search API** — live sanctions/news lookup in the compliance agent |
 | Input security | **Model Armor** (Google Cloud) — windowed prompt-injection screening |
@@ -393,7 +400,7 @@ Requirement check against the hackathon rules:
 
 ## API
 
-Unchanged from the original design — the JSON contract every agent returns was
+The JSON contract every agent returns was
 preserved through the port, so every endpoint below behaves identically to
 before; only the `model` field in each response envelope changed.
 
@@ -442,11 +449,32 @@ before; only the `model` field in each response envelope changed.
 | `/api/v1/investigation/case` | POST | Deep-dive investigation |
 | `/api/v1/investigation/report` | POST | Consolidated report |
 
+### Not listed above
+
+These three tables document 30 of the 51 registered routes — the ones a caller is
+likely to want. The five most useful omissions:
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/v1/review/<case_id>/deep-review` | POST | Triggers the Ultra debate manually; the same agent the orchestrator fires automatically |
+| `/api/v1/billing/usage` | GET | Windowed spend, including `tavily_searches` / `tavily_cached` / `tavily_billable` |
+| `/api/v1/cases` | GET | Case list, slim shape, filterable by state |
+| `/api/v1/audit` | GET | The audit trail, filterable by case, action or status |
+| `/api/v1/security/screen` | POST | The Red Team surface: paste an attack, get the real screen verdict |
+
+`GET /api/v1/openapi.json` serves a machine-readable document for the whole API, which
+is the authoritative list. `docs/swagger.json` is a generated snapshot of the B2B
+contract subset only.
+
 ### Example
 
 ```bash
+# BASE is your deployed URL, and this is a WRITE, so it needs an operator key:
+#   BASE=https://vf-logistics-f7rcctz26a-as.a.run.app
+#   VF_API_KEY=$(gcloud secrets versions access latest --secret=VF_API_KEY)
 curl -s -X POST $BASE/api/v1/fraud/analyze \
   -H 'Content-Type: application/json' \
+  -H "X-VF-API-Key: $VF_API_KEY" \
   -d '{
     "shipment_id": "VF-2026-0001",
     "origin": "Ho Chi Minh City",
@@ -508,7 +536,16 @@ Configure and start:
 cp .env.example .env       # Windows: copy .env.example .env
 # set NEBIUS_API_KEY and (optionally) TAVILY_API_KEY
 
-python main.py             # http://localhost:8080
+# The package lives in src/, so it is reached as a module rather than a file.
+# There is no main.py; the Flask app is src/vf_logistics/app.py, which is also
+# what the container runs (Dockerfile: vf_logistics.app:app).
+PYTHONPATH=src python -m vf_logistics.app     # http://localhost:8080
+```
+
+On PowerShell:
+
+```powershell
+$env:PYTHONPATH = "src"; python -m vf_logistics.app
 ```
 
 ### 2. Deploy to Cloud Run
@@ -594,7 +631,10 @@ gcloud run services delete vf-console   --region asia-southeast1
 **Most of the console needs no account.** The board, every case trace, the audit trail
 and the cost figures are all readable anonymously — `VF_PUBLIC_READS=true` on the console
 and `ANONYMOUS_ROLE=viewer` on the backend govern that, and the split is on the **HTTP
-method**, not a path list, so reads are public and writes never are. If you are here to
+method**, not a path list, so reads are public and writes never are — with three
+named exceptions that need a reviewer credential despite being GETs
+(`/api/v1/review/queue`, `/api/v1/review/<case_id>/document`) or an operator key
+(`/demo`, which runs a model call and therefore spends money). If you are here to
 assess the system, you can ignore this section entirely.
 
 Signing in is required for exactly one thing: **recording a review decision.** The audit
@@ -649,18 +689,39 @@ and in production a missing one takes the console **offline** rather than leavin
 # Unit + integration tests (712 tests)
 python -m pytest tests/ -v
 
-# Document upload tests
-python scripts/test_documents.py        # uploads all seven sample docs
+# Counterparty book, offline
+python scripts/check_registry.py        # 11 checks
+```
+
+The document suite talks to a running service and **clears the board before every
+pass**, because re-uploading the same document returns the existing case rather than
+re-running it. So point it at something disposable:
+
+```bash
+export VF_TEST_BASE=http://localhost:8080
+export VF_API_KEY=...                   # uploading is a write; anonymous callers get viewer
+python scripts/test_documents.py        # all seven sample docs
 python scripts/test_documents.py 3      # three passes, reports any disagreement
-python scripts/check_registry.py        # 11 checks on the counterparty book
+```
+
+Against a non-local base it refuses unless you pass `--yes-wipe-board`. That guard
+exists because this script once pointed at a service in a different project, passed
+for weeks while testing code that was not in this repository, and then deleted the
+seeded demo board the moment the URL was corrected.
+
+Two live checks that need credentials and spend real tokens, so they are run by hand:
+
+```bash
+python scripts/check_model_switch_guard.py    # the cost ratchet, end to end, restores Nano
+python scripts/compare_debate_models.py       # replays disputed cases through Super and Ultra
 ```
 
 ### Test coverage
 
 | Suite | Count | What it covers |
 |-------|-------|----------------|
+| Sanctions & zero-day | 64 | Sanctions matching, list freshness, unseen-pattern handling |
 | Pure logic | 61 | auth, config, schemas, simulator, untrusted, agents._common |
-| Sanctions & zero-day | 62 | Sanctions matching, list freshness, unseen-pattern handling |
 | Decision paths | 54 | Every route a shipment can take through the state machine |
 | Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
 | Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
@@ -672,16 +733,21 @@ python scripts/check_registry.py        # 11 checks on the counterparty book
 | Routes | 27 | Security headers, CORS, auth, validation, pagination |
 | Schema enforcement | 27 | Untrusted document fields against the declared schema |
 | Budget | 26 | Per-tenant spend ceiling, cache TTL, fail-open on store error |
-| Billing period | 24 | Windowed usage, and that every aggregation has an index |
+| Billing period | 25 | Windowed usage, and that every aggregation has an index |
+| Model switch & metering | 20 | The cost ratchet, and that an unpriced model cannot bill silently |
 | Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
+| Tavily cache | 20 | TTL behaviour, key derivation, and that a cached hit is recorded as one |
 | Governance | 18 | Boundaries, drift detection, fail-closed |
 | Lineage & billing | 18 | Per-step cost attribution |
 | Orchestrator | 17 | State machine, tool execution, agent envelopes |
 | Observability | 16 | Logging, metrics, request context |
+| Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
+| Compliance cache | 12 | Counterparty lookups reused within a case and across cases |
 | Unpriced model | 9 | An unpriced model is logged, not silently billed at the cheapest rate |
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
-| **Total** | **637** | |
+| Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
+| **Total** | **712** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -704,34 +770,38 @@ tokens on a GET, so it is the one read that is not public.
 query `state IN [...]`/`case_id`/`action`/`status` combined with an
 `order_by` on a different field, which Firestore only serves from a
 composite index — the collection previously avoided this on purpose to stay
-zero-setup, at the cost of the bugs `firestore.indexes.json` and this step
-now fix (a case waiting for review could silently fall out of the queue
-once enough newer cases existed). Create the four indexes once per project:
+zero-setup, at the cost of the bugs this step now fixes (a case waiting for
+review could silently fall out of the queue once enough newer cases existed).
+
+**Apply the index file rather than writing the commands by hand.**
+[`infra/firestore.indexes.json`](infra/firestore.indexes.json) is the source of
+truth and defines **27** composite indexes — 20 on `cases`, 4 on `audit_log`, 2 on
+`delegation_boundaries`, 1 on `events`.
 
 ```bash
-gcloud firestore indexes composite create --collection-group=cases \
-  --field-config=field-path=state,order=ascending \
-  --field-config=field-path=created_at,order=descending
+firebase deploy --only firestore:indexes      # needs firebase-tools
+```
 
-gcloud firestore indexes composite create --collection-group=audit_log \
-  --field-config=field-path=case_id,order=ascending \
-  --field-config=field-path=at,order=descending
+Every index in that file **leads with `_tenant_id`**, and this is not cosmetic.
+Firestore requires equality-filtered fields to precede the ordered field, and every
+query in this system is tenant-scoped, so an index without `_tenant_id` is an index
+Firestore will refuse to use — the query then fails outright rather than running
+slowly. An earlier version of this README printed four hand-written
+`gcloud firestore indexes composite create` commands that omitted it; following them
+meant waiting out the index builds and still getting `FAILED_PRECONDITION` on
+`GET /api/v1/orchestrator/state`. The file's own header comment records that failure.
 
-gcloud firestore indexes composite create --collection-group=audit_log \
-  --field-config=field-path=action,order=ascending \
-  --field-config=field-path=at,order=descending
+The windowed billing indexes are generated rather than hand-written, because there
+are two document shapes times eight fields:
 
-gcloud firestore indexes composite create --collection-group=audit_log \
-  --field-config=field-path=status,order=ascending \
-  --field-config=field-path=at,order=descending
+```bash
+python infra/monitoring/create_billing_indexes.py
 ```
 
 Index builds run in the background (`gcloud firestore indexes composite list`
 to check status) and queries against an unbuilt index fail loudly rather
 than silently, so there is no risk of quietly querying an unindexed
-collection. `firestore.indexes.json` is the source of truth for what should
-exist; the commands above are how to apply it against a plain `gcloud`
-project (no `firebase-tools` dependency required).
+collection.
 
 ---
 
@@ -797,7 +867,8 @@ the reason is architectural rather than financial: `verifier.py` computes a dete
 risk floor, and an agent may **raise** risk but never lower it below that floor. A
 stronger model on fraud detection or compliance therefore cannot move the outcome in the
 direction that matters — the floor has already decided. Measured, putting those two on
-Ultra costs 13× each and 3.3× overall for no change in any decision.
+Ultra would cost 13× per call, against a rate that is only 3.3×, for no change in any
+decision.
 
 The debate is the exception. It runs only when the floor and the model disagree by 15
 points or more (measured: 2 calls across 20 cases) and what it emits is not a score
@@ -917,7 +988,7 @@ that existed at the time needed no changes at all, only the transport underneath
 the original build.) The review panel only showed a source document for
 cases uploaded as a document; event-sourced cases now get a
 `SYSTEM-GENERATED` bill of lading rendered from the record
-([`document_render.py`](document_render.py)), clearly labelled as such.
+([`document_render.py`](src/vf_logistics/document_render.py)), clearly labelled as such.
 
 **`asyncio.run()` per Flask request breaks a cached client.** (Carried over.)
 Every coroutine runs on the one long-lived worker loop the orchestrator
@@ -959,47 +1030,76 @@ collection effort.
 
 ```
 .
-├── main.py                       Flask app, routes, async bridge, worker boot
-├── orchestrator.py               Autonomous state machine + background worker
-├── config.py                     Model registry, per-token pricing, runtime switch
-├── governance.py                 Delegation Boundary + fail-closed execution gate
-├── verifier.py                   Deterministic risk floor (no model consulted)
-├── untrusted.py                  Schema whitelist for document-sourced fields
-├── shipper_registry.py           Counterparty book: verifies a claimed shipper identity
-├── model_armor.py                Windowed prompt-injection screening
-├── nebius_client.py              Nebius Token Factory client (OpenAI-compatible)
-├── tavily_client.py              Tavily search API wrapper
-├── store.py                      Case/event/audit state (Firestore, memory fallback)
-├── document_render.py            Renders event-sourced shipments as a bill of lading
-├── document_store.py             Cloud Storage document archive
-├── executor_client.py            Calls the split-identity executor service
-├── tools.py                      Actions taken on the operator's behalf
-├── simulator.py                  Scripted shipment events for the demo
-├── scripts/                      Not deployed; data generation and verification
+├── src/vf_logistics/             The backend package. PYTHONPATH=src reaches it.
+│   ├── app.py                    Flask app, routes, async bridge, worker boot
+│   ├── orchestrator.py           Autonomous state machine + background worker
+│   ├── config.py                 Model registry, per-token pricing, runtime switch
+│   ├── governance.py             Delegation Boundary + fail-closed execution gate
+│   ├── verifier.py               Deterministic risk floor (no model consulted)
+│   ├── untrusted.py              Schema whitelist for document-sourced fields
+│   ├── shipper_registry.py       Counterparty book: verifies a claimed shipper identity
+│   ├── sanctions.py              Sanctions index, loaded from Cloud Storage
+│   ├── hs_reference.py           Real HS headings; the fix that took recall 40% → 91.7%
+│   ├── model_armor.py            Windowed prompt-injection screening
+│   ├── nebius_client.py          Nebius Token Factory client (OpenAI-compatible)
+│   ├── tavily_client.py          Tavily search API wrapper, with the TTL cache
+│   ├── store.py                  Case/event/audit state (Firestore, memory fallback)
+│   ├── auth.py                   Roles, API keys, operator records
+│   ├── budget.py                 Per-tenant soft spend ceiling
+│   ├── tenant.py                 Tenant resolution and scoping
+│   ├── lineage.py                Per-step cost attribution
+│   ├── observability.py          Structured logging, metrics, request context
+│   ├── schemas.py                Request/response validation
+│   ├── openapi.py                Generates the OpenAPI document
+│   ├── b2b.py                    The published contract surface
+│   ├── document_render.py        Renders event-sourced shipments as a bill of lading
+│   ├── document_store.py         Cloud Storage document archive
+│   ├── executor_client.py        Calls the split-identity executor service
+│   ├── tools.py                  Actions taken on the operator's behalf
+│   ├── simulator.py              Scripted shipment events for the demo
+│   ├── static/index.html         The legacy dashboard, now served at /legacy
+│   └── agents/
+│       ├── __init__.py           Public agent API
+│       ├── _common.py            Shared JSON parsing, timing, response envelope
+│       ├── document_agent.py     Multimodal document intake      — MiniCPM-V-4.5
+│       ├── fraud_detection_agent.py  Fraud scoring               — Nemotron 3 Nano
+│       ├── compliance_agent.py   Sanctions / trade / AML + Tavily — Nemotron 3 Nano
+│       ├── hs_classifier_agent.py    Declared heading vs cargo   — Nemotron 3 Nano
+│       ├── hs_cot.py             The chain-of-thought that made recall worse
+│       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
+│       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
+│       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
+├── tests/                        27 files, 712 tests
+├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
-├── agents/
-│   ├── __init__.py               Public agent API
-│   ├── _common.py                Shared JSON parsing, timing, response envelope
-│   ├── document_agent.py         Multimodal document intake      — MiniCPM-V-4.5
-│   ├── fraud_detection_agent.py  Fraud scoring                   — Nemotron 3 Nano
-│   ├── compliance_agent.py       Sanctions / trade / AML + Tavily — Nemotron 3 Nano
-│   └── investigation_agent.py    Deep-dive investigation         — Nemotron 3 Super
+├── data/                         Sanctions and reference data
 ├── frontend/                     Next.js 16 console (its own Cloud Run service)
-│   ├── src/app/                  App Router pages: board, review, billing, legal, login
-│   ├── src/components/           UI, incl. AccountMenu and the layout shell
+│   ├── src/app/                  App Router pages: board, radar, review, audit,
+│   │                             governance, devops, agents, legal, login
+│   ├── src/components/           UI, incl. the case trace sheet and layout shell
 │   ├── src/lib/session.ts        HMAC session signing, via Web Crypto so it runs on Edge
 │   ├── src/proxy.ts              The login door (Next 16 renamed `middleware` to `proxy`)
 │   └── scripts/make-operator.mjs PBKDF2 operator records; writes the password to a file
 ├── infra/
-│   └── model_armor_template.json  Filter config for the Model Armor template
+│   ├── firestore.indexes.json    27 composite indexes; every one leads with _tenant_id
+│   ├── model_armor_template.json Filter config for the Model Armor template
+│   ├── monitoring/               Generates the windowed billing indexes
+│   └── terraform/                Cloud Armor policy (written, not applied)
 ├── docs/
+│   ├── ARCHITECTURE.md           The source of truth for how it fits together
 │   ├── architecture.html         Diagram source
-│   └── PROJECT_STORY.md          What was built and what it cost to learn
+│   ├── DEMO_SCRIPT.md            Nine scenes, timed to the narration track
+│   ├── PROJECT_STORY.md          What was built and what it cost to learn
+│   ├── swagger.json              Generated by scripts/build_docs.py — do not hand-edit
+│   ├── diagrams/                 Mermaid flows
+│   └── screenshots/              Console captures
+├── .github/workflows/ci.yml      Lint, test, coverage
 ├── Dockerfile                    python:3.11-slim + gunicorn
-├── cloudbuild.yaml               Cloud Build config
+├── pyproject.toml                Package config and pytest settings
 ├── requirements.txt
 ├── .env.example
 ├── SUBMISSION.md                 Devpost copy
+├── LICENSE
 └── README.md
 ```
 

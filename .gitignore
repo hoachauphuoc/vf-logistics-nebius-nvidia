@@ -29,12 +29,25 @@ Thumbs.db
 htmlcov/
 .coverage
 
-# Demo-video production: the narration script, the Text-to-Speech tooling that
-# renders the voiceover, and its output. The submission shows the finished video;
-# how it was assembled is not part of the project and would only invite a reader
-# to look for a connection to the service that does not exist.
+# Demo-video production.
+#
+# `build/` holds the rendered voiceover and subtitles, which are outputs and do not
+# belong in the repository.
+#
+# The narration source and the tooling that renders it ARE tracked, at
+# scripts/build_narration.py, and docs/DEMO_SCRIPT.md documents them. That is a change
+# of position from the original rule here, which excluded them on the grounds that "how
+# it was assembled is not part of the project". It became untenable once the shooting
+# script needed to say which narration line each clip is timed against: a tracked
+# document cannot point at an untracked file without giving a reader a dead reference.
+#
+# The old pattern `tools_build_narration.py` was already dead — the file had moved to
+# scripts/ and was being committed regardless, so the rule described an intent the
+# repository had stopped honouring.
+#
+# docs/video-script.txt was the earlier Vietnamese shooting script. It is superseded by
+# docs/DEMO_SCRIPT.md and deleted; the entry stays so a stray copy cannot be committed.
 docs/video-script.txt
-tools_build_narration.py
 build/
 
 # Scratch probes. Anything named tmp_* is a throwaway and must never be committed.

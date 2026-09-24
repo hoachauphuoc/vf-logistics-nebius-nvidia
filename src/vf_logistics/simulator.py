@@ -40,7 +40,7 @@ def bulk_shipments(count: int, run_tag: str) -> list[dict[str, Any]]:
     are randomised so the agents are scoring different shipments rather than the
     same one repeatedly.
 
-    A note on volume: each case costs one Gemini call minimum and three for a
+    A note on volume: each case costs one model call minimum and three for a
     full escalation, so this endpoint is capped low on purpose. The default of
     10 is about 20 model calls and finishes in roughly a minute, which is enough
     to show the worker draining a queue. Raising it to 1,000 would mean ~2,000
