@@ -319,9 +319,18 @@ the live service once destroyed the seeded demo board.
 | Console | Next.js 16 (App Router, React 19, Tailwind, TanStack Query) on a second Cloud Run service |
 | Container | python:3.11-slim |
 
-Hackathon requirements: a functional runtime call to Nebius Token Factory ·
-use of an NVIDIA open model · multi-step autonomous workflow · meaningful
-action taken on the user's behalf · (bonus) a functional runtime Tavily call.
+Hackathon requirements this satisfies, per the Official Rules: a functional runtime
+call to Nebius Token Factory (all seven agents) · at least one NVIDIA open source
+model (three Nemotron 3 sizes) · fits the **Best Apps and Agents** track · existed
+before the Submission Period and was significantly updated inside it, with the
+explanation given above · (bonus) a functional runtime Tavily call.
+
+This line previously read "multi-step autonomous workflow · meaningful action taken
+on the user's behalf", which are criteria from the **predecessor** hackathon and
+appear nowhere in these rules. The pipeline does both of those things, but claiming
+them as requirements of *this* competition was a leftover from the port. The four
+judging criteria here are Technological Implementation, Design, Potential Impact and
+Quality of the Idea.
 
 ### Other data sources used
 
