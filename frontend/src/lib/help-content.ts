@@ -473,8 +473,12 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   // Operations screen
   "devops.scripted-batch": {
     title: "Scripted batch",
+    // Three cases, not four branches. This said "a sanctions hit, an export-control name,
+    // an HS mismatch and a clean low-value parcel" -- `simulator.scripted_shipments`
+    // returns CLEAN, MID and DIRTY, there is no HS-mismatch case, and the clean one sails
+    // internationally for USD 9,600. Kept in step with the panel note in app/devops/page.tsx.
     body:
-      "A fixed set of shipments that between them exercise every branch of the verifier: a sanctions hit, an export-control name, an HS mismatch and a clean low-value parcel.",
+      "Three shipments, one per outcome, so a single click shows all three ways the pipeline can end: cleared by the agents, held for a human, escalated. Cotton garments to Singapore from a shipper with 412 prior shipments and a tax ID on file. Furniture to Busan whose paperwork is clean but whose freight sits under the route average, from a shipper with nine shipments behind it. And frequency converters to Karachi declared as agricultural end use, from a company registered eleven days ago with no tax ID, booked at 14% of the route's normal freight with two transhipments added after booking.",
     note:
       "Fixed rather than random on purpose, so two runs are comparable. Re-running it does not create duplicates -- a case id derives from the shipment, so the same shipment reuses its case.",
   },
