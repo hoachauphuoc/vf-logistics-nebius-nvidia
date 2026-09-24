@@ -1,7 +1,8 @@
 # Devpost Submission — VF Logistics Autonomous Fraud Detection
 
-Copy-paste material for the Devpost form. The demo shooting script is kept
-outside the repository — it is recording notes, not part of the submission.
+Copy-paste material for the Devpost form. The shooting script for the demo video is
+`docs/DEMO_SCRIPT.md`, and the narration it is timed to lives in
+`scripts/build_narration.py`.
 
 ---
 
@@ -11,7 +12,7 @@ VF Logistics — Fraud Detection an Operator Can Delegate To
 
 ## Elevator pitch (200 char limit on Devpost)
 
-Five NVIDIA Nemotron agents on Nebius Token Factory screen shipments for fraud. Senior Auditor (Super) debates Junior Analyst (Nano) using function calling. A Delegation Boundary, not the agents, decides.
+Seven agents on Nebius Token Factory screen shipments for fraud. Senior Auditor (Nemotron Ultra) debates Junior Analyst (Nano) with function calling. A Delegation Boundary, not the agents, decides.
 
 ## Track
 
@@ -81,10 +82,11 @@ shipments, pattern analysis, network mapping and consolidated reporting, on
 **NVIDIA Nemotron 3 Super**. Only reached on escalated cases, so it is the one
 agent that can afford a larger model.
 
-**Multi-Agent Debate (Senior Auditor)** — **NVIDIA Nemotron 3 Super** reviews the
+**Multi-Agent Debate (Senior Auditor)** — **NVIDIA Nemotron 3 Ultra** reviews the
 fraud agent's assessment through native function calling, with three tools it may
-choose to invoke: request re-evaluation, search Tavily, render verdict. Opt-in per
-case via *Deep Review*.
+choose to invoke: request re-evaluation, search Tavily, render verdict. It fires
+**automatically** when the deterministic floor and the model disagree by 15 points
+or more, and a reviewer can also trigger it manually via *Deep Review*.
 
 **HS Classification Agent** — **NVIDIA Nemotron 3 Nano**. The deterministic checks
 in `verifier.py` can compare a declared HS code against a dual-use prefix list, but
@@ -104,10 +106,17 @@ fast and cheap. Investigation runs on **Nemotron 3 Super** because by the time
 a case reaches it, the fraud and compliance findings already exist —
 investigation synthesises rather than makes the primary judgement, but it
 still benefits from a stronger model since the reasoning is multi-hop.
-`INVESTIGATION_MODEL` is one environment variable away from **Nemotron 3
-Ultra** if more credit becomes available. Document intake needs a vision
-model NVIDIA does not currently offer on Token Factory, so it runs on
-**MiniCPM-V-4.5**, which the catalog specifically calls out for OCR/PDF work.
+
+The debate is the one place **Nemotron 3 Ultra** runs, and the reason is
+architectural rather than budgetary. Everywhere else `verifier.py` computes a
+deterministic risk floor that an agent may raise but never lower, so a stronger
+model cannot move the outcome in the direction that matters — the floor has already
+decided. The debate is the exception: what it emits is not a score awaiting override
+but a reasoned CONFIRM or DISAGREE on whether the disagreement can be settled
+without a person. That judgement *is* the outcome, so reasoning capacity is
+load-bearing. Document intake needs a vision model NVIDIA does not currently offer
+on Token Factory, so it runs on **MiniCPM-V-4.5**, which the catalog specifically
+calls out for OCR/PDF work.
 
 All seven agents are reached through the same OpenAI-compatible client
 (`nebius_client.py`), so the split adds no integration surface. Every agent
@@ -211,18 +220,26 @@ record.
 Seven sample bills of lading are committed, each isolating one mechanism:
 
 ```bash
+$env:VF_API_KEY = (gcloud secrets versions access latest --secret=VF_API_KEY)
+$env:VF_TEST_BASE = "http://localhost:8080"
 python scripts/test_documents.py 3
 ```
+
+The suite clears the board before each pass, because re-uploading a document
+returns the existing case rather than re-running it. Against a non-local base it
+refuses unless you pass `--yes-wipe-board`, which is there because pointing it at
+the live service once destroyed the seeded demo board.
 
 ### Features and functionality
 
 - **Seven specialised agents** — Nemotron 3 Nano for fraud, compliance, HS
-  classification and zero-day radar; Nemotron 3 Super for investigation and the
-  Senior Auditor debate; MiniCPM-V-4.5 for document intake — all through one
-  OpenAI-compatible client
-- **Multi-Agent Debate** — Senior Auditor (Nemotron Super) reviews Junior Analyst
+  classification and zero-day radar; Nemotron 3 Super for investigation; Nemotron 3
+  Ultra for the Senior Auditor debate; MiniCPM-V-4.5 for document intake — all
+  through one OpenAI-compatible client
+- **Multi-Agent Debate** — Senior Auditor (Nemotron Ultra) reviews Junior Analyst
   (Nemotron Nano) using function calling with three tools: request re-evaluation,
-  Tavily search, and render verdict. Opt-in "Deep Review" for cases needing extra scrutiny.
+  Tavily search, and render verdict. Fires automatically on a 15-point floor-model
+  disagreement; also available manually as "Deep Review".
 - **A real, runtime Tavily search** in the compliance path (and in debate)
 - **Autonomous multi-step workflow** — conditional routing with no human
   step-through
@@ -231,9 +248,10 @@ python scripts/test_documents.py 3
 - **Fail-closed execution gate** — no boundary, no execution
 - **Deterministic risk floor** — arithmetic and code-resident lists constrain
   what the agent can claim
-- **Two-layer input screening** — a free deterministic pass over 14 injection
-  patterns and 15 classes of invisible Unicode runs first, then Model Armor's
-  windowed screening catches injections diluted by surrounding document text. Only
+- **Two-layer input screening** — Model Armor screens a text-layer PDF in
+  overlapping windows before any model is invoked, and an independent deterministic
+  pass over 14 injection patterns and 15 classes of invisible Unicode then runs on
+  the transcription. Only
   Model Armor blocks; the deterministic layer flags for a human, because its patterns
   were written for extracted fields and fire on ordinary phrases like `pre-approved`
 - **Every case gets reviewable paperwork** — an uploaded original is archived
@@ -253,7 +271,7 @@ python scripts/test_documents.py 3
 
 | Layer | Choice |
 |---|---|
-| Model | NVIDIA Nemotron 3 Nano (fraud, compliance, HS classification, zero-day radar), NVIDIA Nemotron 3 Super (investigation, Senior Auditor debate), MiniCPM-V-4.5 (document intake, vision) — all via Nebius Token Factory |
+| Model | NVIDIA Nemotron 3 Nano (fraud, compliance, HS classification, zero-day radar), NVIDIA Nemotron 3 Super (investigation), NVIDIA Nemotron 3 Ultra (Senior Auditor debate), MiniCPM-V-4.5 (document intake, vision) — all via Nebius Token Factory |
 | Agent framework | `openai.AsyncOpenAI` against Token Factory's OpenAI-compatible endpoint |
 | External signal | Tavily Search API |
 | Input security | Google Cloud Model Armor |
@@ -285,7 +303,7 @@ would have silently produced garbage transcriptions if missed.
 
 **Structured output travels across providers.** Gemini's
 `response_mime_type="application/json"` and the OpenAI-compatible
-`response_format={"type":"json_object"}` do the same job, so none of the four
+`response_format={"type":"json_object"}` do the same job, so none of the
 agents' prompts or output schemas needed to change — only the transport
 underneath them did. That is what made a same-week model-layer swap possible
 without rewriting the governance, verifier, or orchestrator layers at all.
@@ -299,8 +317,9 @@ pre-Tavily behaviour instead of failing the case.
 **Model choice is a per-agent decision, not a project-wide one.** Fraud and
 compliance are the highest-volume, primary-judgement calls, so they get the
 cheapest model that is still reliable (Nano); investigation is low-volume and
-benefits from more reasoning, so it gets a larger tier (Super), with Ultra one
-environment variable away. This mirrors the hackathon's own guidance almost
+benefits from more reasoning, so it gets a larger tier (Super); and the debate runs
+on Ultra, because it is the only call whose output the deterministic floor does not
+override. This mirrors the hackathon's own guidance almost
 exactly, and it is the same lesson the original Gemini build reached from the
 other direction — the two systems disagree on *which* task deserves the
 stronger model, which is itself evidence that the choice is genuinely
@@ -321,36 +340,45 @@ stripping. Both models respect `response_format={"type":"json_object"}` but Supe
 sometimes includes commentary outside the JSON block. Our `parse_model_json()`
 handles both.
 
-**Token Factory pricing is developer-friendly but hard to predict.** The
-per-token pricing ($0.06 / $0.24 per million for Nano input/output, $0.30 / $0.90
-for Super) is clear, but predicting total cost for a pipeline of variable-length
-prompts is non-trivial. A cost dashboard showing real-time spend per agent is
-essential for any production deployment -- we built one, and a per-tenant spend
-ceiling behind it.
+**Token Factory pricing is developer-friendly but hard to predict, and a rate
+multiple is not a cost multiple.** The per-token pricing ($0.06 / $0.24 per million
+for Nano input/output, $0.30 / $0.90 for Super, $1.00 / $3.00 for Ultra) is clear,
+but predicting total cost for a pipeline of variable-length prompts is non-trivial —
+and we got it wrong in the direction that matters. We documented the Ultra debate as
+costing 3.3x Super, which is its rate. Measured, it cost **13x**: `$0.0198` per
+debate against `$0.0015`, because Ultra emits more tool-call rounds and each round
+resends the growing transcript, so it spent 13,151-16,502 input tokens where Super
+spent 2,522-5,546. We had multiplied Super's token usage by Ultra's rate, assuming
+equal token spend. A cost dashboard showing real-time spend per agent is essential
+for any production deployment — we built one, and a per-tenant spend ceiling behind
+it — but the dashboard is what caught this, not the arithmetic.
 
 **What we'd build next with Nebius.** (1) Fine-tune Nano on our
-fraud-detection domain to improve structured output quality. (2) Deploy
-Nemotron Ultra for the debate agent when complex multi-hop reasoning is
-needed. (3) Use Nebius Serverless inference for auto-scaling during peak
-shipment volumes. (4) Explore Nebius GPU clusters for batch processing
-historical fraud cases with investigation agent.
+fraud-detection domain to improve structured output quality. (2) Use Nebius
+Serverless inference for auto-scaling during peak shipment volumes. (3) Explore
+Nebius GPU clusters for batch processing historical fraud cases with the
+investigation agent.
 
 ---
 
 ## Video script
 
-The shooting script is kept outside this repository — it is operator notes
-for one recording session, not submission material that should drift from the
-UI it describes.
+The shooting script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): nine scenes,
+each with the click path and the narration line it is timed against. The narration
+itself lives in [`scripts/build_narration.py`](scripts/build_narration.py), which
+synthesises the audio track and matching SRT subtitles per sentence, so caption
+timings are measured from real audio rather than interpolated from word counts. The
+nine scene lengths sum to exactly 180 seconds, the hard limit.
 
-**The previous script is stale and must not be followed**: it describes the retired
-vanilla-HTML dashboard, a `DEMO_MODE` sidebar that no longer exists, and a `/demo`
-endpoint that now requires an operator key. The recording has to be redone against the
-Next.js console.
+An earlier `docs/video-script.txt` described the retired vanilla-HTML dashboard, a
+`DEMO_MODE` sidebar that no longer exists, and pointed at a service in a different
+project. It was git-ignored, so it never formed part of this repository; it has now
+been deleted outright rather than repaired, because two shooting documents that
+disagree is worse than one.
 
 Two things worth knowing before recording: the board has to be seeded first
-(`POST /api/v1/simulate`) or the cost meter and pipeline board are both empty
-on camera, and a document upload takes roughly 30–60 seconds to reach a
+(`python scripts/seed_full_board.py --yes`) or the cost meter and pipeline board are
+both empty on camera, and a document upload takes roughly 30–60 seconds to reach a
 terminal state, so narration over that scene needs to be long enough to cover
 it.
 
@@ -361,7 +389,7 @@ USED" badge with the actual result titles/links (or the "returned nothing,
 degraded gracefully" state) is visible on camera, no narration workaround
 needed. Model Armor is live and enforcing (`sample_docs/injected_bol.pdf` is
 blocked with
-`MATCH_FOUND` at `HIGH` confidence before the vision model ever sees it,
+`MATCH_FOUND` before the vision model ever sees it,
 `case_id` prefixed `CASE-BLOCKED-`), so that scene can be shown directly
 rather than described. The demo should show, in order: a document upload
 reaching `AUTO_CLEARED` with the archive receipt visible, the injected sample
@@ -400,7 +428,10 @@ tailwindcss, docker
 
 **Which model provider(s) did you use?** → **Nebius Token Factory**, hosting
 **NVIDIA Nemotron 3 Nano** (`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`), **NVIDIA
-Nemotron 3 Super** (`nvidia/nemotron-3-super-120b-a12b`), and **MiniCPM-V-4.5**
+Nemotron 3 Super** (`nvidia/nemotron-3-super-120b-a12b`), **NVIDIA Nemotron 3
+Ultra** (`nvidia/Nemotron-3-Ultra-550b-a55b`), and **MiniCPM-V-4.5**
+(`openbmb/MiniCPM-V-4_5`) for document vision, which NVIDIA does not currently
+offer on Token Factory.
 
 **Which bonus integrations did you use?** -> **Tavily** -- 5 real, runtime
 search integrations: compliance screening, investigation enrichment, route
@@ -419,7 +450,7 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 
 | Item | Status |
 |---|---|
-| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The old shooting script describes the retired dashboard and cannot be followed. |
+| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The shooting script is `docs/DEMO_SCRIPT.md` (nine scenes, 180s) and the narration track is generated by `scripts/build_narration.py`. |
 | Public code repository | done -- https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
@@ -429,7 +460,7 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
 | Automated test suite | 712 tests passing (pytest) |
-| CI pipeline | GitHub Actions (lint + typecheck + test + coverage) |
+| CI pipeline | GitHub Actions — lint + test + coverage gate the build; typecheck runs `mypy … \|\| true`, so it reports but cannot fail it |
 | Auto-debate on score disputes | done -- fires without human intervention |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |
 | Adversarial demo scenarios | 3 one-click demos in DevOps |
@@ -581,14 +612,25 @@ on this codebase. The first two are the ones we would fix first.
    it holds `response_format={"type":"json_object"}` reliably across thousands of calls.
 
 2. **Nemotron 3 Super** (`nemotron-3-super-120b-a12b`) — handles the multi-hop work
-   well: cross-referencing compliance findings, temporal anomaly detection, and native
-   function calling in the Senior Auditor debate, where it decides at runtime whether
-   to search rather than following a script. One observed rough edge: it sometimes
-   wraps JSON in markdown fences or adds commentary outside the block even under
-   `json_object`, which Nano does not. Our `parse_model_json()` tolerates both, but a
-   caller who trusted `json_object` strictly would break on Super and not on Nano.
+   well: cross-referencing compliance findings and temporal anomaly detection. One
+   observed rough edge: it sometimes wraps JSON in markdown fences or adds commentary
+   outside the block even under `json_object`, which Nano does not. Our
+   `parse_model_json()` tolerates both, but a caller who trusted `json_object` strictly
+   would break on Super and not on Nano.
 
-3. **Wish list, in the order we would use them.** (a) A safety/guard model — see the
+3. **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — runs the Senior Auditor
+   debate, where native function calling lets it decide at runtime whether to search
+   rather than following a script. Three live debates all returned a parseable verdict.
+   The rough edge is economic rather than qualitative: **it cost 13x Super per debate
+   against a 3.3x rate difference**, because it takes more tool-call rounds and each
+   round resends the transcript — 13,151–16,502 input tokens where Super spent
+   2,522–5,546. A per-round token accounting breakdown in the usage object, rather than
+   a single total, would have made that visible without instrumenting it ourselves.
+   Worth saying plainly: on our sample Ultra showed no better dispute-resolution rate
+   than Super. We keep it because the debate is the one call the deterministic floor
+   does not override, not because we measured it winning.
+
+4. **Wish list, in the order we would use them.** (a) A safety/guard model — see the
    first item above; it is the only reason this pipeline reaches outside Nebius.
    (b) A Nemotron VL variant, so document intake can be Nemotron too. (c) A Nemotron
    fine-tuned for entity extraction, to pull shipper and receiver names, addresses and

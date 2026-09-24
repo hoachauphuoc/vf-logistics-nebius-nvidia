@@ -5,32 +5,41 @@ This is the Taskmaster layer. It monitors an event stream, drives each shipment
 through a conditional multi-agent workflow without human involvement, and
 executes real actions on the outcome.
 
-State machine:
+State machine. Three actionable states, not five:
+
+    ACTIONABLE = ("INGESTED", "SPECIALISTS_DONE", "INVESTIGATED")
 
   INGESTED
-     |  fraud_detection agent
+     |  fraud_detection, compliance and route validation run CONCURRENTLY
+     |  (asyncio.gather), then hs_classifier, then zero_day if the gate opens,
+     |  then auto_debate if the floor and the model disagree by >= 15 points
      v
-  FRAUD_SCORED
-     |-- risk < FRAUD_CLEAR_BELOW ---------------> AUTO_CLEARED   release_shipment
+  SPECIALISTS_DONE
+     |-- effective risk < FRAUD_CLEAR_BELOW ------> AUTO_CLEARED   release_shipment
      |
-     |-- risk >= FRAUD_CLEAR_BELOW
-     v  compliance agent
-  COMPLIANCE_SCREENED
-     |-- cleared and risk < INVESTIGATE_AT -----> HELD_FOR_REVIEW assign_analyst
+     |-- cleared and risk < INVESTIGATE_AT -------> HELD_FOR_REVIEW assign_analyst
      |
      |-- blocked / review required, or risk >= INVESTIGATE_AT
-     v  investigation agent (extended thinking)
+     v  investigation agent
   INVESTIGATED
      v
   ESCALATED   hold_shipment + draft_sar + notify_webhook
 
-  Any step failing 3 times ends in DEAD_LETTER.
+  Any step failing 3 times ends in DEAD_LETTER. A proposed outcome the delegation
+  boundary refuses becomes PENDING_HUMAN instead, and the refusal is recorded.
+
+THERE IS NO `FRAUD_SCORED` AND NO `COMPLIANCE_SCREENED`. An earlier version of this
+docstring drew them as sequential states, and they exist nowhere else in the codebase --
+fraud and compliance are gathered into one step and meet in `SPECIALISTS_DONE`. That
+mattered beyond tidiness: a hand-drawn architecture diagram was built from this comment
+and inherited the invented states, so the picture shipped wrong twice for the same
+reason. Draw the pipeline from `advance()` and `ACTIONABLE`, not from here.
 
 Every transition is persisted before the next one starts, so a case survives an
 instance restart and is picked up wherever it left off.
 
-Track: The Taskmaster - Autonomous Workflow Automation
-Hackathon: All Things Agentic 2026
+Track: Best Apps and Agents
+Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
 from __future__ import annotations
@@ -61,7 +70,7 @@ from vf_logistics.agents import (
     screen_shipment,
 )
 # Imported directly rather than via agents/__init__ because these two are not
-# re-exported there -- __init__ exports the twelve names the dashboard uses, and
+# re-exported there -- __init__ exports the thirteen names the dashboard uses, and
 # adding to it would put them in an API surface they are not part of.
 from vf_logistics.agents.hs_classifier_agent import classify_hs
 from vf_logistics.agents.hs_classifier_agent import interpret as interpret_hs
@@ -364,7 +373,7 @@ async def ingest_document(
     """
     Turn an uploaded shipping document into a running case.
 
-    Model Armor screens the document before Gemini sees it, whenever that is
+    Model Armor screens the document before the vision model sees it, whenever that is
     possible. For a PDF with a text layer, pypdf extracts the text with no model
     involved, Model Armor screens that, and a blocked document is never sent for
     transcription at all - no tokens spent, no model exposed. For a scan there is
@@ -1388,7 +1397,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 case_id,
                 "agent_start",
                 f"Compliance {status} at risk {risk}, opening deep investigation "
-                "with extended thinking",
+                "on Nemotron 3 Super",
                 agent="investigation",
                 tenant_id=tenant,
             )
@@ -1869,7 +1878,7 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
     """
     Conduct a Multi-Agent Debate on a case.
 
-    Nemotron Super (Senior Auditor) reviews Nemotron Nano's (Junior Analyst)
+    Nemotron Ultra (Senior Auditor) reviews Nemotron Nano's (Junior Analyst)
     fraud assessment. Super can use function calling to:
     - Request Nano to re-evaluate with specific focus areas
     - Run additional Tavily searches for context

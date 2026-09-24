@@ -5,8 +5,8 @@ This module is the difference between an agent that produces an opinion and an
 agent that does the job. Each function performs a real state change, writes an
 auditable record, and returns a receipt the case document keeps.
 
-Track: The Taskmaster - Autonomous Workflow Automation
-Hackathon: All Things Agentic 2026
+Track: Best Apps and Agents
+Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
 from __future__ import annotations

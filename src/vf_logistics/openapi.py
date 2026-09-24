@@ -118,6 +118,10 @@ def build_spec(server_url: str | None = None) -> dict[str, Any]:
         "servers": [{"url": url}],
         "tags": [
             {"name": "compliance", "description": "Submit shipments and read verdicts"},
+            # Declared because a path below tags an operation `billing`. An
+            # undeclared tag is legal OpenAPI but renders as a bare string with no
+            # description in Swagger UI, and validators flag it.
+            {"name": "billing", "description": "Metered usage and spend for a period"},
         ],
         "paths": {
             "/api/v1/compliance/audit": {

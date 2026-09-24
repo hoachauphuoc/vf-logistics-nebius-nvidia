@@ -18,12 +18,20 @@ Data integrity guarantees:
     prevent race conditions.
 
 Collections / keys:
-  cases      - one document per shipment moving through the pipeline
-  events     - append-only feed of what the orchestrator did, for the dashboard
-  audit_log  - append-only record of actions taken on behalf of the operator
+  cases                 - one document per shipment moving through the pipeline
+  events                - append-only feed of what the orchestrator did, for the
+                          dashboard
+  audit_log             - append-only record of actions taken on behalf of the
+                          operator
+  delegation_boundaries - the versioned policies that grant the agent authority
+  prefilter_rules       - deterministic rules applied before any model runs
 
-Track: The Taskmaster - Autonomous Workflow Automation
-Hackathon: All Things Agentic 2026
+Five collections, not three. The two that were missing from this list are the two
+that carry governance state, which is the opposite of the right thing to leave out
+of a map of where state lives.
+
+Track: Best Apps and Agents
+Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
 from __future__ import annotations
@@ -714,7 +722,7 @@ class FirestoreStore:
     """
     Durable backend. All google-cloud-firestore calls are blocking, so they are
     pushed onto a thread with asyncio.to_thread to keep the event loop free for
-    the concurrent Gemini calls.
+    the concurrent model calls.
     """
 
     backend = "firestore"

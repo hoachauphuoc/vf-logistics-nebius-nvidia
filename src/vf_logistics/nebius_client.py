@@ -3,10 +3,11 @@ Nebius Token Factory client.
 
 Token Factory exposes an OpenAI-compatible chat completions API, so this is a
 thin wrapper around `openai.AsyncOpenAI` rather than a bespoke SDK. Two helpers
-cover everything the four agents need:
+cover everything the seven agents need:
 
   * complete_json         - text-only prompt, JSON-mode response (fraud,
-                             compliance, investigation agents)
+                             compliance, investigation, hs_classifier, zero_day
+                             and debate agents)
   * complete_vision_json  - a document image/PDF page plus a text prompt,
                              JSON-mode response (document intake agent)
 

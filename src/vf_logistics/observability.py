@@ -7,8 +7,8 @@ Provides:
 - Metrics collection for key business and operational events
 - Request context propagation
 
-Track: The Taskmaster - Autonomous Workflow Automation
-Hackathon: All Things Agentic 2026
+Track: Best Apps and Agents
+Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
 from __future__ import annotations

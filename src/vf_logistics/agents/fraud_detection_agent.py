@@ -91,7 +91,7 @@ def _policy_field(shipment_data: dict[str, Any], key: str, suffix: str = "") -> 
 
 async def analyze_shipment(shipment_data: dict[str, Any]) -> dict[str, Any]:
     """
-    Analyze a single shipment for fraud indicators using Gemini 3.5 Flash.
+    Analyze a single shipment for fraud indicators using Nemotron 3 Nano.
     
     Args:
         shipment_data: Dictionary containing shipment details
