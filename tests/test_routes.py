@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch
 
 from vf_logistics.app import app
 

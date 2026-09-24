@@ -61,7 +61,6 @@ from vf_logistics import tavily_client
 from vf_logistics import tools
 from vf_logistics import untrusted
 from vf_logistics import verifier
-from vf_logistics import config as model_config
 from vf_logistics.agents import (
     analyze_shipment,
     conduct_debate,

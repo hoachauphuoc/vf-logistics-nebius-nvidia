@@ -28,7 +28,6 @@ different behaviour overrides with its own patch, which takes precedence.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 

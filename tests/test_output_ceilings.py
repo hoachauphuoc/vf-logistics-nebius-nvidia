@@ -38,7 +38,6 @@ from vf_logistics import nebius_client  # noqa: E402
 from vf_logistics.agents import (  # noqa: E402
     compliance_agent,
     debate_agent,
-    document_agent,
     fraud_detection_agent,
     hs_classifier_agent,
     investigation_agent,

@@ -254,7 +254,6 @@ class TestOrchestratorHumanDecide(unittest.TestCase):
         self.store_patcher.stop()
 
     def _create_pending_case(self):
-        from vf_logistics import orchestrator
         case = {
             "case_id": "CASE-PENDING",
             "state": "PENDING_HUMAN",

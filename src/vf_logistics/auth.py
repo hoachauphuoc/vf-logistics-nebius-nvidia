@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from flask import Request, g, jsonify, request
+from flask import g, jsonify, request
 
 from vf_logistics import tenant
 
