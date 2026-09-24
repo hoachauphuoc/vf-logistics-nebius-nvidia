@@ -123,7 +123,7 @@ class TestConfig(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────
 from vf_logistics.untrusted import (
     screen_text, sanitise_shipment, strip_invisible,
-    SHIPMENT_SCHEMA, FORBIDDEN_FIELDS, MAX_FIELD_CHARS,
+    MAX_FIELD_CHARS,
 )
 
 

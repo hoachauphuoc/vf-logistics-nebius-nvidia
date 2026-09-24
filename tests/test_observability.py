@@ -18,7 +18,6 @@ import pytest
 from vf_logistics.observability import (
     StructuredFormatter,
     Metrics,
-    get_metrics,
     set_trace_context,
     get_trace_context,
     log_business_event,

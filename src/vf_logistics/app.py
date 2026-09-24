@@ -28,7 +28,6 @@ load_dotenv()
 # from a loaded .env rather than from a bare shell.
 from vf_logistics import auth
 from vf_logistics.auth import (
-    require_auth,
     require_viewer,
     require_reviewer,
     require_operator,
@@ -50,11 +49,6 @@ from vf_logistics.observability import (
     get_logger,
     get_metrics,
     init_request_context,
-    set_trace_context,
-    log_business_event,
-    METRIC_CASES_INGESTED,
-    METRIC_CASES_AUTO_CLEARED,
-    METRIC_AUTH_FAILURES,
 )
 
 from vf_logistics.agents import (
@@ -1337,7 +1331,6 @@ def verify_entity():
     """
     try:
         from vf_logistics import tavily_client
-        import asyncio
 
         body = request.get_json(silent=True) or {}
         entity_type = str(body.get("type") or "company").strip()

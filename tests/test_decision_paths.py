@@ -31,13 +31,13 @@ import asyncio
 import json
 import os
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 os.environ.setdefault("STORE_BACKEND", "memory")
 
 import httpx  # noqa: E402
 
-from vf_logistics import hs_reference, sanctions, tavily_client, verifier  # noqa: E402
+from vf_logistics import hs_reference, tavily_client, verifier  # noqa: E402
 from vf_logistics.agents import hs_classifier_agent as hs_agent  # noqa: E402
 
 

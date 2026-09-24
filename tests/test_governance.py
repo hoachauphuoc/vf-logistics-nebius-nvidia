@@ -19,7 +19,6 @@ import pytest
 from vf_logistics.governance import (
     check,
     proposed_boundary,
-    publish_boundary,
     agent_readiness,
     PROTECTED_ACTIONS,
     NON_WAIVABLE_HUMAN_TRIGGERS,
