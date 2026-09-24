@@ -422,6 +422,17 @@ function ReviewPanel({
   // floor is a dispute worth a debate.
   const disputed = rec?.score_disputed === true;
 
+  // `auto_debate` first, then `debate`. The orchestrator writes two different keys for
+  // two different paths -- `auto_debate` when the floor and the model disagree by 15
+  // points or more and the debate fires with nobody asking, `debate` when a reviewer
+  // clicks Deep Review. The card read only the second, so it mounted on no seeded case
+  // at all: seeding never clicks the button, which means the ONE capability the
+  // submission leads with was the one the console could not display. Found by opening
+  // all fourteen queue cases and seeing the card on none, while the payload for
+  // FULL-07-BLACKTAX carried a DISAGREE verdict the whole time.
+  const debate = detail?.auto_debate ?? detail?.debate ?? null;
+  const debateWasAutomatic = detail?.auto_debate != null;
+
   const findings = c.validation?.findings ?? [];
 
   function submit(action: HumanAction) {
@@ -624,16 +635,21 @@ function ReviewPanel({
         )}
       </div>
 
-      {detail?.debate != null && (
+      {debate != null && (
         <div className="bento-card p-4">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[12px] font-medium text-white">
               Senior auditor debate
             </h3>
-            <DebateVerdictBadge debate={detail.debate} />
+            <DebateVerdictBadge debate={debate} />
+            {debateWasAutomatic && (
+              <span className="text-[10.5px] uppercase tracking-wide text-faint">
+                fired automatically
+              </span>
+            )}
           </div>
           <pre className="code-surface mt-2 max-h-64 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-white/80 scrollbar-thin">
-            {JSON.stringify(detail.debate, null, 2)}
+            {JSON.stringify(debate, null, 2)}
           </pre>
         </div>
       )}
