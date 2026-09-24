@@ -47,32 +47,122 @@ actually go to Token Factory, which they do.
 ## What was significantly updated during the Submission Period
 
 This project began as a Google Cloud submission for a different hackathon (All
-Things Agentic 2026), built entirely on Vertex AI Gemini. For this hackathon it
-was substantially rebuilt as a new, standalone project:
+Things Agentic 2026), built entirely on Vertex AI Gemini. Every claim below is
+checkable against this repository's git history: `6bb1e59` is the initial commit,
+and `git diff --shortstat 6bb1e59 HEAD` reports **243 files changed, 156,525
+insertions** across 23 commits.
 
-- Every model call in all four agents that existed at the time was rewritten from
-  the `google-genai` Vertex AI SDK to `nebius_client.py`, a wrapper around the
-  OpenAI-compatible `openai.AsyncOpenAI` client pointed at Nebius Token Factory.
-  Three more agents have been added since, all Nemotron from the start.
-- The model roster changed entirely: **NVIDIA Nemotron 3 Nano** now drives
-  fraud detection and compliance screening, **NVIDIA Nemotron 3 Super** drives
-  investigation, and **MiniCPM-V-4.5** (a vision model, since Token Factory
-  carries no NVIDIA vision model yet) drives document intake. None of these
-  existed in the original submission.
-- A new, functional **Tavily search integration** was added to the compliance
-  agent (`tavily_client.py`): before scoring, it runs a live web search for the
-  shipper and receiver names and folds the findings into the model's context as
-  labelled, untrusted external evidence — a real runtime dependency, not a
-  simulated one.
-- Document intake gained a PDF-to-image rasterisation step (`pypdfium2`), because
-  vision models on Token Factory take images, not raw PDF bytes the way Gemini
-  did natively.
-- `config.py`'s model/pricing registry, `.env.example`, and
-  the dashboard's model labels were all rewritten for the new model roster.
-- The deterministic governance layer — risk floor, untrusted-input boundary,
-  delegation boundary, shipper identity verification — was carried over
-  unchanged, because none of it is model-specific; it is what keeps the system
-  honest regardless of which LLM is doing the reasoning.
+The deterministic governance layer — risk floor, untrusted-input boundary,
+delegation boundary, shipper identity verification — was carried over deliberately
+and is the one thing that did not change, because none of it is model-specific. It
+is what keeps the system honest regardless of which model is reasoning.
+
+Everything else was rebuilt.
+
+### The model layer
+
+**Before:** four agents on Vertex AI. Gemini 3.5 Flash for document intake, fraud
+and compliance; Flash-Lite for investigation, with `thinking_budget=8000`.
+
+**Now:** seven agents on Nebius Token Factory, four models chosen per job.
+Nemotron 3 Nano runs the four hops that touch every case; Super runs
+investigation; **Ultra runs the auto-debate**; MiniCPM-V-4.5 reads documents,
+because Token Factory carries no NVIDIA vision model yet.
+
+**Why the split rather than one model everywhere:** `verifier.py` computes a
+deterministic risk floor that an agent may raise but never lower, so on fraud and
+compliance a stronger model cannot move the outcome in the direction that matters.
+The debate is the exception — its CONFIRM/DISAGREE *is* the outcome rather than a
+score the floor overrides — so that is the one place reasoning capacity is worth
+paying for. Measured: `$0.0198` per Ultra debate against Super's `$0.0015`.
+
+### Three agents that did not exist
+
+**Before:** intake, fraud, compliance, investigation.
+
+**Now:** plus `hs_classifier_agent.py`, `zero_day_agent.py` and
+`debate_agent.py` — 1,656 lines including the chain-of-thought module.
+
+**Why each:**
+
+- **HS classification.** The deterministic checks can compare a declared tariff
+  heading against a dual-use prefix list, but cannot tell whether the heading
+  matches the cargo actually described. Measured on a holdout: Nano alone reached
+  40.0% recall, chain-of-thought prompting made it **worse** at 26.7%, and adding a
+  reference block of real HS headings took it to **91.7%**. A retrieval problem
+  dressed as a reasoning problem does not respond to reasoning.
+- **Zero-day screening.** Sanctions lists lag reality. This runs a live
+  adverse-media search when a shipment trips a gate — a dual-use heading, or two or
+  more distinct transhipment hubs.
+- **Auto-debate.** Fires with no human involved when the floor and the model
+  disagree by 15 points or more.
+
+### The console
+
+**Before:** one static HTML page served by Flask from `static/`.
+
+**Now:** a Next.js 16 console on its own Cloud Run service — 67 files, 12,672 lines
+of TypeScript, seven screens over the operational API. The old page is still served
+at `/legacy`.
+
+**Why:** the static page could not carry sessions, and the submission needed a
+reviewer to sign in before recording a decision. That requirement is the next item.
+
+### Accountability in the audit trail
+
+**Before:** the `reviewer` field was read from the **request body as free text**.
+Anyone could record a decision under anyone's name, which makes an audit trail
+decoration rather than evidence.
+
+**Now:** HMAC-signed sessions (`auth.py`, 614 lines), operator records as
+PBKDF2-SHA256 in `VF_OPERATORS`, and the audit entry names the authenticated
+account.
+
+### Who could act on the live service
+
+**Before:** any anonymous visitor held `GOVERNANCE_ADMIN` on the deployed console,
+because the proxy attached the operator API key and there was no login. An
+unauthenticated `POST /orchestrator/reset` cleared 307 real cases — found by doing
+it.
+
+**Now:** `ANONYMOUS_ROLE=viewer`, `X-VF-API-Key` required on writes, and the split
+is on the HTTP method rather than a path list, so a route added later is covered by
+default. Plus request-size caps, batch caps and rate limits.
+
+### Cost, which turned out not to be where we assumed
+
+**Before:** no metering. `max_tokens` was set on **no agent at all**, and Token
+Factory's default is 8,192 — two runaway calls hit that ceiling and both returned
+unparseable output after spending for it.
+
+**Now:** per-hop cost attribution (`lineage.py`), a per-tenant soft ceiling checked
+at the single chokepoint every model call passes through (`budget.py`), a ratchet
+that refuses a runtime model switch past a rate multiple of the cheapest model, and
+a measured `max_tokens` on every agent.
+
+**The finding worth reporting:** **Tavily, not the models, is the binding
+constraint.** A 20-case run spends about `$0.068` on inference and 90–106 Tavily
+searches, so on the free search tier the quota runs out around 200 cases while
+model spend is still negligible. Every cost figure we had published until then was
+a model-cost figure.
+
+### Tests and CI
+
+**Before:** zero unit tests. The initial commit contains exactly one test file,
+`scripts/test_documents.py`, which drives a deployed service over HTTP.
+
+**Now:** **712 tests** across 27 files, 75% line coverage, and four GitHub Actions
+jobs that actually run — the workflow existed earlier but filtered on a branch
+named `main` while this repository uses `master`, so it had never executed once.
+
+### Structure
+
+**Before:** a flat repository root — `main.py`, `orchestrator.py`, `agents/` and
+seventeen other modules at top level.
+
+**Now:** a `src/vf_logistics/` package with ten modules that did not exist at all:
+`auth.py`, `budget.py`, `tenant.py`, `b2b.py`, `openapi.py`, `sanctions.py`,
+`hs_reference.py`, `lineage.py`, `observability.py`, `schemas.py`.
 
 ## What the system does
 
