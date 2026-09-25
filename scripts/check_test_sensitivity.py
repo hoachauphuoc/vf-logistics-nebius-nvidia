@@ -111,6 +111,24 @@ MUTATIONS = [
         "return {}",
         "tests/test_debate_logic.py::TestToolDispatch",
     ),
+    # The two below are the reason this script exists rather than a coverage number.
+    # Both of these tests originally re-implemented the code in the test body and
+    # asserted on their own literal, so they passed no matter what orchestrator.py did --
+    # the same failure mode as the UI bug they were written to catch.
+    (
+        "a step is recorded with no cost, blanking the cost card",
+        "src/vf_logistics/orchestrator.py",
+        '    step["cost_usd"] = round(step_cost, 8)',
+        "    pass  # cost not recorded",
+        "tests/test_console_contract.py::TestStepFieldNames::test_step_shape_has_cost_usd",
+    ),
+    (
+        "citations are written under the key the console used to read",
+        "src/vf_logistics/orchestrator.py",
+        '        step["external_search_results"] = response.get("external_search_results", [])',
+        '        step["urls"] = response.get("external_search_results", [])',
+        "tests/test_console_contract.py::TestStepFieldNames",
+    ),
 ]
 
 

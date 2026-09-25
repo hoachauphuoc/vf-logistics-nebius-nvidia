@@ -19,6 +19,7 @@ component breaks if the name changes.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import unittest
@@ -26,6 +27,14 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from vf_logistics import verifier  # noqa: E402
+
+
+def run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 class TestReconciliationFieldNames(unittest.TestCase):
@@ -104,29 +113,34 @@ class TestStepFieldNames(unittest.TestCase):
     def test_step_shape_has_cost_usd(self):
         """
         The per-agent cost card on /agents reads `tokens_by_agent[agent].cost_usd`.
-        Each bucket is summed from step-level `cost_usd`, set at orchestrator.py:721.
 
         Without this field, `formatUsd(undefined)` throws TypeError and blanks /agents.
+
+        This calls the real `_record_step` rather than re-implementing it. An earlier
+        version of this test built a step dict by hand and asserted `"cost_usd" in` its
+        own literal -- which would have stayed green if orchestrator.py stopped setting
+        the field altogether, i.e. it tested nothing. Same failure mode as the bug it
+        exists to catch.
         """
         from vf_logistics import orchestrator
 
-        step = {
-            "agent": "test",
+        case: dict = {"steps": [], "case_id": "C1"}
+        run(orchestrator._record_step(case, "fraud_detection", {
+            "result": {"risk_score": 40},
             "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
             "input_tokens": 100,
             "output_tokens": 50,
             "latency_ms": 500,
-            "cost_usd": 0.000024,
             "at": "2026-01-01T00:00:00Z",
-        }
-        # Simulate the snapshot aggregation loop.
-        bucket: dict = {"calls": 0, "input": 0, "output": 0, "cost_usd": 0.0}
-        bucket["calls"] += 1
-        bucket["input"] += step.get("input_tokens", 0) or 0
-        bucket["output"] += step.get("output_tokens", 0) or 0
-        bucket["cost_usd"] += step.get("cost_usd", 0.0) or 0.0
-        self.assertIn("cost_usd", bucket)
-        self.assertIsInstance(bucket["cost_usd"], float)
+        }))
+
+        step = case["steps"][0]
+        self.assertIn("cost_usd", step,
+                      "orchestrator.py:727 must set it or the cost card blanks the page")
+        self.assertIsInstance(step["cost_usd"], float)
+        self.assertGreater(step["cost_usd"], 0.0,
+                           "a priced model with real tokens must cost something, or the "
+                           "card renders $0 for work that was billed")
 
     def test_external_search_results_is_the_key_not_urls(self):
         """
@@ -135,13 +149,47 @@ class TestStepFieldNames(unittest.TestCase):
         It USED TO read `step.urls`, a key the backend never writes. The citation
         block rendered a bare count ("5 sources") with zero clickable links, while the
         page text promised citations were "reproduced rather than summarised".
+
+        Calls the real `_record_step`, for the same reason as the cost test above.
         """
         from vf_logistics import orchestrator
 
-        # _record_step sets it at line 673.
-        step = {"external_search_results": [{"url": "https://example.com", "title": "T"}]}
-        self.assertIn("external_search_results", step)
-        self.assertNotIn("urls", step)
+        case: dict = {"steps": [], "case_id": "C1"}
+        run(orchestrator._record_step(case, "compliance", {
+            "result": {"status": "CLEAR"},
+            "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+            "at": "2026-01-01T00:00:00Z",
+            "external_search_used": True,
+            "external_search_results": [{"url": "https://example.com", "title": "T"}],
+        }))
+
+        step = case["steps"][0]
+        self.assertIn("external_search_results", step,
+                      "CaseTraceSheet reads this for the citation anchors")
+        self.assertEqual(step["external_search_results"][0]["url"], "https://example.com")
+        self.assertNotIn("urls", step,
+                         "the key the component used to read, which rendered a bare "
+                         "count with no clickable links")
+
+    def test_a_step_with_no_search_carries_neither_key(self):
+        """
+        The guard at orchestrator.py:671 is `if "external_search_used" in response`, so
+        an agent that never searched must not get an empty results list -- the component
+        renders the citation block on presence, and an empty block claims a lookup that
+        did not happen.
+        """
+        from vf_logistics import orchestrator
+
+        case: dict = {"steps": [], "case_id": "C1"}
+        run(orchestrator._record_step(case, "fraud_detection", {
+            "result": {"risk_score": 10},
+            "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+            "at": "2026-01-01T00:00:00Z",
+        }))
+
+        step = case["steps"][0]
+        self.assertNotIn("external_search_results", step)
+        self.assertNotIn("external_search_used", step)
 
 
 class TestDebateFieldNames(unittest.TestCase):
