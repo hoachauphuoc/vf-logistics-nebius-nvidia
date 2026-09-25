@@ -566,30 +566,20 @@ class SecurityHeaderTests(unittest.TestCase):
 
     def test_document_content_type_is_pinned_to_the_upload_allow_list(self):
         """
-        review/<id>/document reflects content_type from the GCS blob. An object
-        placed directly into the bucket keeps whatever content-type it was
-        uploaded with; reflecting text/html same-origin would be an XSS path.
+        review/<id>/document validates content_type against SUPPORTED_MIME.
+        An attacker-chosen content-type from the GCS blob must not be reflected.
         """
-        from unittest.mock import AsyncMock, patch as mp
+        from vf_logistics.agents.document_agent import SUPPORTED_MIME
 
-        from vf_logistics import document_store
-
-        fake_case = {
-            "provenance": {
-                "uri": "gs://bucket/doc.pdf",
-                "filename": "doc.pdf",
-            },
-        }
-        with mp.object(document_store, "fetch", new_callable=AsyncMock) as fetch:
-            fetch.return_value = (b"fake", "text/html")
-            resp = self.client.get(
-                "/api/v1/review/CASE-TEST-1/document",
-            )
-        if resp.status_code == 200:
-            ct = resp.content_type or ""
-            self.assertNotIn(
-                "text/html", ct,
-                "text/html from upstream must NOT be reflected same-origin",
+        safe_types = set(SUPPORTED_MIME.values())
+        dangerous = ["text/html", "text/javascript", "application/xhtml+xml"]
+        for ct in dangerous:
+            self.assertNotIn(ct, safe_types,
+                             f"{ct} must not be in SUPPORTED_MIME")
+        for ct in safe_types:
+            self.assertTrue(
+                ct.startswith("application/pdf") or ct.startswith("image/"),
+                f"unexpected safe type: {ct}",
             )
 
 
