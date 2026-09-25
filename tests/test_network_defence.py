@@ -549,6 +549,21 @@ class SecurityHeaderTests(unittest.TestCase):
             "preload", self.client.get("/health").headers["Strict-Transport-Security"]
         )
 
+    def test_csp_contains_base_uri_and_form_action(self):
+        """
+        Neither inherits from default-src, so omitting them is a gap even when
+        default-src is restrictive. base-uri 'none' prevents injected <base> tags;
+        form-action 'self' constrains where forms submit.
+        """
+        csp = self.client.get("/health").headers.get("Content-Security-Policy", "")
+        self.assertIn("base-uri", csp)
+        self.assertIn("form-action", csp)
+
+    def test_csp_does_not_allow_star_in_script_src(self):
+        csp = self.client.get("/health").headers.get("Content-Security-Policy", "")
+        self.assertNotIn("script-src *", csp)
+        self.assertNotIn("script-src '*'", csp)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,9 +30,8 @@
  *
  * WEB CRYPTO, NOT NODE CRYPTO
  *
- * Uses the Web Crypto API rather than `node:crypto` because the same verify path
- * runs in middleware, which is Edge runtime, and `node:crypto` is unavailable
- * there. Web Crypto exists in both.
+ * Uses the Web Crypto API rather than `node:crypto` because Web Crypto is
+ * available in both Node and Edge runtimes with no polyfill.
  */
 
 const COOKIE_NAME = "vf_session";

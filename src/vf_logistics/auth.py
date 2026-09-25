@@ -312,6 +312,14 @@ def _verify_iap_jwt(token: str) -> dict | None:
         )
         return claims
     except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "IAP JWT verification failed (token length %d, audience %s)",
+            len(token or ""),
+            IAP_AUDIENCE,
+            exc_info=True,
+        )
         return None
 
 

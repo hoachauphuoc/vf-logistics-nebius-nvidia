@@ -173,7 +173,10 @@ def _security_headers(response):
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "frame-src 'self'; "
-        "frame-ancestors 'none'"
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "object-src 'none'"
     )
     return response
 
@@ -1649,6 +1652,16 @@ def review_document(case_id: str):
         if data is None:
             return jsonify({"error": f"could not read {uri}"}), 502
 
+        # Pin the content-type to the types the upload route accepts. An object
+        # placed directly into GCS (bucket-sweep) keeps whatever content-type it
+        # was uploaded with; reflecting that same-origin would let an attacker
+        # with bucket write access serve text/html on the console's domain.
+        from vf_logistics.agents.document_agent import SUPPORTED_MIME
+
+        safe_types = set(SUPPORTED_MIME.values())
+        if content_type not in safe_types:
+            content_type = "application/octet-stream"
+
         return Response(
             data,
             mimetype=content_type or "application/pdf",
@@ -2132,8 +2145,8 @@ def compliance_reports():
 
 
 @app.route("/api/v1/billing/usage", methods=["GET"])
-@limiter.limit("60 per minute")
 @require_operator
+@limiter.limit("60 per minute")
 def billing_usage():
     """
     Billable usage for the calling tenant, optionally for one billing period.
