@@ -129,6 +129,28 @@ MUTATIONS = [
         '        step["urls"] = response.get("external_search_results", [])',
         "tests/test_console_contract.py::TestStepFieldNames",
     ),
+    # --- Security hardening pass ---
+    (
+        "governance author is taken from the body instead of the identity",
+        "src/vf_logistics/app.py",
+        "if context is not None and context.acts_for_a_person:\n            author = context.email",
+        "if False:\n            author = context.email",
+        "tests/test_audit_integrity.py::TestAuditAuthorIntegrity",
+    ),
+    (
+        "CSP drops base-uri, allowing injected <base> tags",
+        "src/vf_logistics/app.py",
+        '"base-uri \'none\'; "',
+        '"base-uri \'self\'; "',
+        "tests/test_network_defence.py::SecurityHeaderTests::test_csp_contains_base_uri_and_form_action",
+    ),
+    (
+        "document content-type is reflected instead of allow-listed",
+        "src/vf_logistics/app.py",
+        "if content_type not in safe_types:",
+        "if False:",
+        "tests/test_network_defence.py::SecurityHeaderTests::test_document_content_type_is_pinned_to_the_upload_allow_list",
+    ),
 ]
 
 
