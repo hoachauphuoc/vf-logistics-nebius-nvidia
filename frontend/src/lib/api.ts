@@ -51,6 +51,21 @@ export class DemoModeUnavailable extends ApiError {
   }
 }
 
+/**
+ * Client-side ceiling on a single request.
+ *
+ * The BFF proxy already carries `AbortSignal.timeout(15_000)` for GET, but that governs
+ * the proxy's call to the backend, not the browser's call to the proxy. A route handler
+ * that hangs -- cold start, an exhausted connection pool, an unhandled await -- leaves
+ * the browser fetch pending with nothing to end it, and almost every query in this app
+ * sets `retry: false`, so the screen sits on its skeleton indefinitely.
+ *
+ * Longer than the proxy's own 15s so a genuine upstream timeout surfaces as the proxy's
+ * error rather than being masked by this one, which would report "unreachable" for a
+ * backend that answered with a 504.
+ */
+const CLIENT_TIMEOUT_MS = 20_000;
+
 async function request(
   path: string,
   init?: RequestInit,
@@ -60,10 +75,21 @@ async function request(
     response = await fetch(`/api/proxy/${path}`, {
       ...init,
       headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+      // An explicit signal on `init` wins, so a caller that wants its own cancellation
+      // is not overridden.
+      signal: init?.signal ?? AbortSignal.timeout(CLIENT_TIMEOUT_MS),
     });
   } catch (error) {
+    // A timeout arrives as a TimeoutError DOMException, whose message is "signal timed
+    // out" -- accurate but meaningless to an operator reading it on a card.
+    const timedOut =
+      error instanceof DOMException && error.name === "TimeoutError";
     throw new ApiError(
-      error instanceof Error ? error.message : String(error),
+      timedOut
+        ? `The request took longer than ${CLIENT_TIMEOUT_MS / 1000}s and was abandoned.`
+        : error instanceof Error
+          ? error.message
+          : String(error),
       0,
       "unreachable",
     );
@@ -317,7 +343,15 @@ export async function fetchAuditTrail(
   else if (action) params.set("action", action);
   else if (status) params.set("status", status);
   if (cursor) params.set("cursor", cursor);
-  return getJson<Page<AuditRecord>>(`audit?${params}`);
+  // Normalised for the same reason fetchReviewQueue is (see the comment at :233): a
+  // response without `items` left `trail.data?.items ?? []` producing an empty array at
+  // the call site, so the screen rendered "No audit records match" over a populated
+  // trail. That fix was applied to the sibling and not to this one.
+  const page = await getJson<Page<AuditRecord>>(`audit?${params}`);
+  return {
+    items: page?.items ?? [],
+    next_cursor: page?.next_cursor ?? null,
+  };
 }
 
 // --------------------------------------------------------------------------
