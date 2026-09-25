@@ -133,8 +133,8 @@ MUTATIONS = [
     (
         "governance author is taken from the body instead of the identity",
         "src/vf_logistics/app.py",
-        "Publish a delegation boundary. This is the only way an agent gains authority.\n\n    `author` is the authenticated identity",
-        "Publish a delegation boundary. This is the only way an agent gains authority.\n\n    `author` is mandatory and recorded",
+        "context = get_auth_context()\n        if context is not None and context.acts_for_a_person:\n            author = context.email\n        else:\n            author = str(body.get(\"author\") or \"\").strip()\n        if not author:\n            return jsonify({\"error\": \"an authenticated identity is required to publish a boundary\"}), 403",
+        "author = str(body.get(\"author\") or \"\").strip()\n        if not author:\n            return jsonify({\"error\": \"an authenticated identity is required to publish a boundary\"}), 403",
         "tests/test_audit_integrity.py::TestAuditAuthorIntegrity",
     ),
     (
