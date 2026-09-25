@@ -15,11 +15,37 @@ What is deliberately NOT covered, and why
                                     the property that matters -- but transactions,
                                     FieldFilter behaviour and index requirements
                                     cannot be faked.
-  model_armor.py, document_store.py mock a GCP service and you test the mock.
-  the model-calling bodies          debate_agent, investigation_agent: covered at
-                                    the interpret/parse boundary, where the logic
-                                    is, rather than by stubbing a completion and
-                                    asserting the stub came back.
+  model_armor._sanitize_once        one HTTP POST and a response parse. Mock the
+  and _access_token                 client and you assert the mock came back.
+  document_store.py                 same reason, for GCS.
+  a scripted successful debate      stubbing a completion and asserting the stub
+  and investigation_agent           came back proves nothing about the model. Both
+                                    are covered at the interpret/parse boundary,
+                                    where the logic is.
+
+Two of those exclusions used to be broader, and were narrowed on the evidence
+-----------------------------------------------------------------------------
+This file originally excluded model_armor.py and the debate_agent bodies wholesale.
+Both entries were too wide, measured against this file's own criterion -- "a line which
+can release a controlled consignment deserves a test":
+
+  tests/test_security_screen_logic.py  `_windows` is string arithmetic with no GCP in
+                                       it, and whether the screen FAILS CLOSED when
+                                       every window errors is a security property, not
+                                       a transport detail. Both were uncovered.
+  tests/test_debate_logic.py           `_truncate_context`, `_execute_tool` and
+                                       `_tavily_search` call no model at all.
+  tests/test_debate_control_flow.py    the loop's four exits. Writing these found a
+                                       real defect: a malformed-JSON verdict was
+                                       recorded as "Senior Auditor did not render
+                                       verdict after 3 rounds", which was false -- one
+                                       was rendered and could not be read -- and the
+                                       conversation sent back carried a tool_call with
+                                       no matching reply.
+
+The narrowing is the point rather than the extra percentage. "Mock a GCP service and you
+test the mock" is a good reason and it still holds for the four entries above; it was
+being used to cover code the reason did not apply to.
 
 Reported as 66% before this file, and the honest figure after it is in the summary.
 A claim of 100% would mean either lying or excluding whatever was inconvenient.
