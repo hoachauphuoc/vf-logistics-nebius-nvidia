@@ -248,10 +248,8 @@ function notProxied(joined: string, method: string) {
 /**
  * The caller's session, or null.
  *
- * Checked here as well as in middleware. The middleware matcher is one regex away
- * from excluding this route by accident, and if that happened every write below
- * would be reachable by anyone again -- so this route does not delegate its own
- * authorisation.
+ * Authorisation is checked here, not delegated to a middleware layer. The route
+ * does not rely on any external matcher to protect its write paths.
  */
 async function session(request: Request) {
   const header = request.headers.get("cookie") ?? "";
@@ -314,11 +312,30 @@ async function forward(
     // labelling that application/json made the browser download it instead of
     // rendering it in the review iframe. Bytes rather than text for the same
     // reason -- decoding a PDF as UTF-8 corrupts it.
-    const contentTypeOut =
+    const rawContentType =
       response.headers.get("content-type") ?? "application/json";
-    const isJson = contentTypeOut.includes("json");
 
-    const headersOut: Record<string, string> = { "content-type": contentTypeOut };
+    // Pin non-JSON responses to safe MIME types. The backend already validates
+    // via SUPPORTED_MIME, but duplicating the check here means the console's
+    // own origin never serves text/html from upstream regardless of what the
+    // backend does (defence-in-depth, not belt-and-suspenders).
+    const SAFE_BINARY = new Set([
+      "application/pdf",
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ]);
+    const isJson = rawContentType.includes("json");
+    const contentTypeOut = isJson
+      ? rawContentType
+      : SAFE_BINARY.has(rawContentType.split(";")[0].trim())
+        ? rawContentType
+        : "application/octet-stream";
+
+    const headersOut: Record<string, string> = {
+      "content-type": contentTypeOut,
+      "x-content-type-options": "nosniff",
+    };
     // Needed for the PDF to render inline rather than prompting a save.
     const disposition = response.headers.get("content-disposition");
     if (disposition) headersOut["content-disposition"] = disposition;
