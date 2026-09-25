@@ -150,7 +150,7 @@ class TestRequestValidation(FlaskTestBase):
             json={"permissions": {}},
             content_type="application/json",
         )
-        self.assertIn(r.status_code, [400, 422])
+        self.assertIn(r.status_code, [400, 403, 422])
 
     def test_prefilter_rules_put_ignores_a_body_supplied_author(self):
         """

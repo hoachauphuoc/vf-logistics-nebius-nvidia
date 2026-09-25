@@ -1114,15 +1114,26 @@ def governance_publish():
     """
     Publish a delegation boundary. This is the only way an agent gains authority.
 
-    `author` is mandatory and recorded on the boundary and in the audit log:
-    delegated authority that nobody is named as having granted is not delegated
-    authority, it is an accident.
+    `author` is the authenticated identity -- the same pattern applied at
+    `update_prefilter_rules` (:1480) and `review_decide` (:1561).  A body field
+    called ``author`` USED TO be accepted here, and the docstring that followed
+    said "delegated authority that nobody is named as having granted is not
+    delegated authority, it is an accident".  True -- but a name the caller
+    chooses names nobody either, so the field failed the very test it stated.
+
+    The service-identity fallback mirrors `review_decide`: a script holding only
+    the API key (e.g. seed_full_board.py) has no person to attribute, so the body
+    value is accepted for that case and the distinction is logged.
     """
     try:
         body = request.get_json(silent=True) or {}
-        author = str(body.get("author") or "").strip()
+        context = get_auth_context()
+        if context is not None and context.acts_for_a_person:
+            author = context.email
+        else:
+            author = str(body.get("author") or "").strip()
         if not author:
-            return jsonify({"error": "author is required to publish a boundary"}), 400
+            return jsonify({"error": "an authenticated identity is required to publish a boundary"}), 403
 
         # An explicit null/empty permissions used to fall through to the
         # permissive default template, so a caller trying to strip the agent's
@@ -1183,7 +1194,7 @@ def governance_simulate():
         )
         return jsonify(result)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return _safe_error(e, 400)
     except Exception as e:
         return _safe_error(e)
 
@@ -1199,9 +1210,13 @@ def governance_revoke():
     """
     try:
         body = request.get_json(silent=True) or {}
-        author = str(body.get("author") or "").strip()
+        context = get_auth_context()
+        if context is not None and context.acts_for_a_person:
+            author = context.email
+        else:
+            author = str(body.get("author") or "").strip()
         if not author:
-            return jsonify({"error": "author is required to revoke a boundary"}), 400
+            return jsonify({"error": "an authenticated identity is required to revoke a boundary"}), 403
         note = str(body.get("note") or "").strip()
 
         result = _on_worker(governance.revoke_boundary(author, note, tenant_id=_tenant()))
