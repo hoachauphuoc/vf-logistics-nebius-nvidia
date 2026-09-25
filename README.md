@@ -195,7 +195,7 @@ a model-cost figure.
 **Before:** zero unit tests. The initial commit contains exactly one test file,
 `scripts/test_documents.py`, which drives a deployed service over HTTP.
 
-**Now:** **791 tests** across 31 files, 77% line coverage, and four GitHub Actions
+**Now:** **800 tests** across 32 files, 77% line coverage, and four GitHub Actions
 jobs that actually run — the workflow existed earlier but filtered on a branch
 named `main` while this repository uses `master`, so it had never executed once.
 
@@ -874,7 +874,7 @@ and in production a missing one takes the console **offline** rather than leavin
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests (791 tests)
+# Unit + integration tests (800 tests)
 python -m pytest tests/ -v
 
 # Counterparty book, offline
@@ -915,7 +915,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
 | Document upload | 33 | Accepted types, the PDF branch, injection screening |
 | Console session | 31 | HMAC signing, forged tokens, reviewer attribution |
-| Network defence | 31 | Rate limits, request size, header hygiene |
+| Network defence | 34 | Rate limits, request size, header hygiene, CSP content, content-type allow-list |
 | Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
 | B2B contract | 28 | The published response shape callers depend on |
 | Routes | 27 | Security headers, CORS, auth, validation, pagination |
@@ -938,8 +938,9 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Console contract | 12 | The field names the console reads from the backend -- the cause of three silent bugs |
 | Unpriced model | 9 | An unpriced model is logged, not silently billed at the cheapest rate |
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
+| Audit integrity | 6 | The governance author is the authenticated identity, not a body field |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| **Total** | **791** | |
+| **Total** | **800** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1261,7 +1262,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        31 files, 791 tests
+├── tests/                        32 files, 800 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions and reference data
