@@ -146,16 +146,24 @@ def main() -> int:
         original = path.read_bytes()
         text = original.decode("utf-8")
 
+        # The anchors are written with "\n" but these files are checked out with CRLF on
+        # Windows, and `read_bytes` does no translation -- so a multi-line anchor matches
+        # zero times while a single-line one matches fine. Normalise to whatever the file
+        # actually uses rather than guessing.
+        newline = "\r\n" if "\r\n" in text else "\n"
+        find = find.replace("\n", newline)
+        replace = replace.replace("\n", newline)
+
         occurrences = text.count(find)
         if occurrences != 1:
             print(f"  SKIP  {label}")
             print(f"        the anchor matches {occurrences} times in {rel_path}, so the")
-            print(f"        mutation cannot be aimed at one line. Fix the anchor.")
+            print("        mutation cannot be aimed at one line. Fix the anchor.")
             undetected.append((label, f"anchor matched {occurrences} times"))
             continue
 
         try:
-            path.write_text(text.replace(find, replace), encoding="utf-8", newline="")
+            path.write_bytes(text.replace(find, replace).encode("utf-8"))
             passed = run_test(selector)
         finally:
             path.write_bytes(original)
