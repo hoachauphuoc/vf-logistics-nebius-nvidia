@@ -17,7 +17,7 @@ import {
   queryKeys,
   screenText,
 } from "@/lib/api";
-import { formatUsd, humaniseAgent } from "@/lib/format";
+import { NO_VALUE, formatUsd, humaniseAgent } from "@/lib/format";
 import { useTenant } from "@/lib/tenant-context";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +55,10 @@ export default function AgentConsolePage() {
     retry: false,
   });
 
-  if (config.isError && snapshot.isError) {
+  // `||`, not `&&`. With `&&` a page-level error needed BOTH reads to fail, so a dead
+  // snapshot API with a healthy config API rendered the whole console as if it were fine
+  // -- including the Worker card below, which then asserted `running: no`.
+  if (config.isError || snapshot.isError) {
     return (
       <>
         <PageHeading title="Agent Console">
@@ -85,6 +88,14 @@ export default function AgentConsolePage() {
           </div>
           {snapshot.isLoading ? (
             <Skeleton className="mt-2 h-24 rounded-lg bg-white/[0.04]" />
+          ) : !worker ? (
+            // A missing worker block is not a stopped worker. Printing `running: no`
+            // and picking the on-demand prose below both state facts about the
+            // deployment that this response did not contain.
+            <p className="mt-2 text-[11.5px] leading-relaxed text-risk-warn">
+              The snapshot did not include worker status, so its mode and liveness are
+              unknown. This is not the same as the worker being stopped.
+            </p>
           ) : (
             <>
               <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
@@ -93,12 +104,24 @@ export default function AgentConsolePage() {
                   : "On-demand mode: request handlers advance the pipeline, so no always-on CPU is needed and the service can scale to zero."}
               </p>
               <dl className="code-surface mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 px-3 py-2.5">
-                <Mono label="mode" value={worker?.mode ?? "—"} />
-                <Mono label="running" value={worker?.running ? "yes" : "no"} />
-                <Mono label="ticks" value={worker?.ticks ?? 0} />
-                <Mono label="advanced" value={worker?.advanced ?? 0} />
-                <Mono label="failed" value={worker?.failed ?? 0} />
-                <Mono label="in flight" value={snapshot.data?.in_flight ?? 0} />
+                <Mono label="mode" value={worker?.mode ?? NO_VALUE} />
+                <Mono
+                  label="running"
+                  value={
+                    worker?.running == null
+                      ? NO_VALUE
+                      : worker.running
+                        ? "yes"
+                        : "no"
+                  }
+                />
+                <Mono label="ticks" value={worker?.ticks ?? NO_VALUE} />
+                <Mono label="advanced" value={worker?.advanced ?? NO_VALUE} />
+                <Mono label="failed" value={worker?.failed ?? NO_VALUE} />
+                <Mono
+                  label="in flight"
+                  value={snapshot.data?.in_flight ?? NO_VALUE}
+                />
               </dl>
               {worker?.last_tick_error && (
                 <p className="mt-2 rounded-md border border-risk-critical/30 bg-risk-critical/[0.07] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-risk-critical">
@@ -114,11 +137,9 @@ export default function AgentConsolePage() {
             <h3 className="text-[12px] font-medium text-white">Models</h3>
             <HelpDot id="agents.models" />
           </div>
-          {config.isError ? (
-            <div className="mt-2">
-              <ErrorState error={config.error} />
-            </div>
-          ) : config.isLoading ? (
+          {/* No per-card error branch: the page-level guard above returns on
+              config.isError, so by here the config read has succeeded. */}
+          {config.isLoading ? (
             <Skeleton className="mt-2 h-24 rounded-lg bg-white/[0.04]" />
           ) : (
             <>

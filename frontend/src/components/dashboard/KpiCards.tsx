@@ -14,7 +14,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatLatency, formatUsd } from "@/lib/format";
+import { NO_VALUE, formatLatency, formatUsd } from "@/lib/format";
 import { unverifiedChecks } from "@/lib/risk";
 import type { ComplianceAuditResponse, TenantUsageResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -23,9 +23,19 @@ interface Props {
   audits: ComplianceAuditResponse[];
   usage: TenantUsageResponse | undefined;
   loading: boolean;
+  /**
+   * Set when the usage/billing read FAILED, as distinct from `usage` being absent
+   * because it is still loading.
+   *
+   * Without this the two are the same state at render time -- `usage === undefined`,
+   * `loading === false` -- and the money tiles used to resolve that with `?? 0`, so a
+   * dead billing API produced "Token spend $0" in 26px semibold on a compliance
+   * console. A real measured zero renders as `$0` too, so the two were indistinguishable.
+   */
+  usageError?: unknown;
 }
 
-export function KpiCards({ audits, usage, loading }: Props) {
+export function KpiCards({ audits, usage, loading, usageError }: Props) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -53,8 +63,12 @@ export function KpiCards({ audits, usage, loading }: Props) {
   // outcome counts above.
   const withGaps = audits.filter((a) => unverifiedChecks(a.findings).length > 0);
 
-  const rulesOnly = usage?.cleared_by_rules ?? 0;
-  const byAi = usage?.cleared_by_ai ?? 0;
+  // Null rather than 0 when the read failed. `formatUsd`/`formatLatency` render null as
+  // an em dash, which is the honest answer: the figure was not measured. Coercing to 0
+  // here would defeat the guard those helpers exist to provide.
+  const usageFailed = usageError != null;
+  const rulesOnly = usageFailed ? null : usage?.cleared_by_rules ?? 0;
+  const byAi = usageFailed ? null : usage?.cleared_by_ai ?? 0;
   // Clearances the *agent* reached on its own. Deliberately not `cleared`:
   // count_by_cleared_by() upstream counts only state == AUTO_CLEARED, so a
   // shipment a reviewer released is absent from it entirely -- not even in its
@@ -62,7 +76,7 @@ export function KpiCards({ audits, usage, loading }: Props) {
   // and says so; labelling it "cleared of audited" made it read "1 cleared of 6"
   // on a window where two audits had in fact cleared, which is a number an
   // operator would reasonably have reported to a customer.
-  const autoCleared = rulesOnly + byAi;
+  const autoCleared = (rulesOnly ?? 0) + (byAi ?? 0);
   const byHuman = Math.max(cleared - autoCleared, 0);
 
   return (
@@ -96,8 +110,14 @@ export function KpiCards({ audits, usage, loading }: Props) {
         icon={Coins}
         tone="neutral"
         label="Token spend"
-        value={formatUsd(usage?.estimated_cost_usd ?? 0)}
-        sub={`${formatUsd(usage?.cost_per_call_usd ?? 0)} per agent call · ${usage?.agent_calls ?? 0} calls`}
+        value={formatUsd(usage?.estimated_cost_usd)}
+        sub={
+          usageFailed
+            ? "Billing read failed — this is not a measured zero"
+            : `${formatUsd(usage?.cost_per_call_usd)} per agent call · ${
+                usage?.agent_calls ?? NO_VALUE
+              } calls`
+        }
         hint={
           "Computed from token counts at the per-model rate card. Excludes " +
           "search credits, egress and compute, which is why it is labelled an " +
@@ -109,7 +129,7 @@ export function KpiCards({ audits, usage, loading }: Props) {
         icon={Gauge}
         tone="neutral"
         label="Mean latency"
-        value={formatLatency(usage?.avg_latency_ms ?? null)}
+        value={formatLatency(usage?.avg_latency_ms)}
         sub={`${errored} audit${errored === 1 ? "" : "s"} returned no verdict`}
       />
 
@@ -130,7 +150,13 @@ export function KpiCards({ audits, usage, loading }: Props) {
           </span>
         </div>
 
-        {autoCleared === 0 ? (
+        {usageFailed ? (
+          <p className="mt-3 text-[13px] text-risk-warn">
+            The billing read failed, so the rules-versus-model split cannot be shown.
+            An empty bar here would read as &ldquo;no automatic clearances&rdquo;, which
+            is a claim about the pipeline rather than about the request that failed.
+          </p>
+        ) : autoCleared === 0 ? (
           <p className="mt-3 text-[13px] text-faint">
             {cleared === 0
               ? "No clearances in this window."
@@ -141,21 +167,21 @@ export function KpiCards({ audits, usage, loading }: Props) {
             <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-white/[0.06]">
               <div
                 className="bg-brand/70"
-                style={{ width: `${(rulesOnly / autoCleared) * 100}%` }}
+                style={{ width: `${((rulesOnly ?? 0) / autoCleared) * 100}%` }}
               />
               <div
                 className="bg-indigo-400/60"
-                style={{ width: `${(byAi / autoCleared) * 100}%` }}
+                style={{ width: `${((byAi ?? 0) / autoCleared) * 100}%` }}
               />
             </div>
             <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
               <LegendDot className="bg-brand/70">
-                <span className="text-white">{rulesOnly}</span> by deterministic
+                <span className="text-white">{rulesOnly ?? NO_VALUE}</span> by deterministic
                 rules
                 <span className="text-faint"> · no tokens spent</span>
               </LegendDot>
               <LegendDot className="bg-indigo-400/60">
-                <span className="text-white">{byAi}</span> after the model layer
+                <span className="text-white">{byAi ?? NO_VALUE}</span> after the model layer
               </LegendDot>
               {/* Shown as a third figure rather than a third bar segment: the bar
                   is the unit-economics split between rules and models, and a human
