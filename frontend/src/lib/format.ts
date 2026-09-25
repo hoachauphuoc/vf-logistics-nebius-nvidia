@@ -1,12 +1,28 @@
-/** Presentation helpers. Kept out of components so the rules are testable. */
+/**
+ * Presentation helpers. Kept out of components so the rules are testable.
+ *
+ * EVERY helper here accepts null/undefined and returns a sentinel rather than throwing.
+ * That is not defensive habit, it is a scar: `formatUsd` was originally typed
+ * `(value: number)`, a missing `cost_usd` arrived as `undefined`, and
+ * `undefined.toLocaleString()` threw during render. With no React error boundary in the
+ * app the whole tree unmounted -- a white page instead of a dash in one column.
+ *
+ * The guard was then added to `formatUsd` alone, while `shortModelName`,
+ * `humaniseAgent` and `humaniseCode` sat eight lines below with the identical bug and
+ * five label helpers routing through them. TypeScript did not catch it because the
+ * types describe the API contract rather than what the API actually sends: lib/types.ts
+ * says as much about the internal dashboard routes -- "those routes return whatever the
+ * store holds".
+ *
+ * So the rule is the class, not the instance: nothing in this file throws on absent
+ * input.
+ */
 
-export function formatUsd(value: number): string {
-  // Guard: a missing `cost_usd` arrives as `undefined`, and
-  // `undefined.toLocaleString()` throws TypeError -- which blanks the whole page rather
-  // than showing a dash where one column is missing. That happened to be /agents, the
-  // screen clip 3 of the demo video is filmed on. A missing column is information; a
-  // white page is not.
-  if (value == null || !Number.isFinite(value)) return "\u2014";
+/** What every helper returns when it has nothing to render. An em dash. */
+export const NO_VALUE = "\u2014";
+
+export function formatUsd(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return NO_VALUE;
   if (value === 0) return "$0";
   // Token costs land in the fractions of a cent; two decimal places would show
   // every audit as $0.00 and make the cost column useless.
@@ -15,19 +31,24 @@ export function formatUsd(value: number): string {
   return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatTokens(value: number): string {
+export function formatTokens(value: number | null | undefined): string {
+  // Without the guard this returned the literal string "undefined", which is worse than
+  // a dash because it reads as a rendering bug rather than as missing data.
+  if (value == null || !Number.isFinite(value)) return NO_VALUE;
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
   return String(value);
 }
 
-export function formatLatency(ms: number | null): string {
-  if (ms === null) return "—";
+export function formatLatency(ms: number | null | undefined): string {
+  // `ms === null` was the original check, so an undefined latency produced "NaN s".
+  if (ms == null || !Number.isFinite(ms)) return NO_VALUE;
   if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-export function formatRelative(iso: string): string {
+export function formatRelative(iso: string | null | undefined): string {
+  if (!iso) return NO_VALUE;
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return iso;
   const seconds = Math.round((Date.now() - then) / 1000);
@@ -39,14 +60,16 @@ export function formatRelative(iso: string): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function formatClock(iso: string): string {
+export function formatClock(iso: string | null | undefined): string {
+  if (!iso) return NO_VALUE;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toISOString().replace("T", " ").slice(0, 19) + "Z";
 }
 
 /** "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B" -> "Nemotron 3 Nano" */
-export function shortModelName(modelId: string): string {
+export function shortModelName(modelId: string | null | undefined): string {
+  if (!modelId) return NO_VALUE;
   const tail = modelId.split("/").pop() ?? modelId;
   const match = tail.match(/Nemotron-3-(Nano|Super|Ultra)/i);
   if (match) return `Nemotron 3 ${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}`;
@@ -54,7 +77,8 @@ export function shortModelName(modelId: string): string {
 }
 
 /** "fraud_detection" -> "Fraud detection", "hs_classifier" -> "HS classifier" */
-export function humaniseAgent(agent: string): string {
+export function humaniseAgent(agent: string | null | undefined): string {
+  if (!agent) return NO_VALUE;
   return humaniseCode(agent.toUpperCase());
 }
 
@@ -73,7 +97,8 @@ const ACRONYMS = new Set([
   "SAR",
 ]);
 
-export function humaniseCode(code: string): string {
+export function humaniseCode(code: string | null | undefined): string {
+  if (!code) return NO_VALUE;
   const words = code.split("_");
   const rendered = words.map((word, i) => {
     if (ACRONYMS.has(word)) return word;
@@ -122,7 +147,8 @@ export const CASE_STATE_LABEL: Record<string, string> = {
   DEAD_LETTER: "Abandoned after retries",
 };
 
-export function caseStateLabel(state: string): string {
+export function caseStateLabel(state: string | null | undefined): string {
+  if (!state) return NO_VALUE;
   return CASE_STATE_LABEL[state] ?? humaniseCode(state);
 }
 
@@ -147,7 +173,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   dead_letter: "Abandoned after retries",
 };
 
-export function actionLabel(action: string): string {
+export function actionLabel(action: string | null | undefined): string {
+  if (!action) return NO_VALUE;
   return AUDIT_ACTION_LABEL[action] ?? humaniseAgent(action);
 }
 
@@ -161,7 +188,8 @@ export const SEVERITY_LABEL: Record<string, string> = {
   CLEAR: "Clear",
 };
 
-export function severityLabel(severity: string): string {
+export function severityLabel(severity: string | null | undefined): string {
+  if (!severity) return NO_VALUE;
   return SEVERITY_LABEL[severity] ?? humaniseCode(severity);
 }
 
@@ -174,7 +202,8 @@ export const AUDIT_STATUS_LABEL: Record<string, string> = {
   recorded: "Recorded",
 };
 
-export function auditStatusLabel(status: string): string {
+export function auditStatusLabel(status: string | null | undefined): string {
+  if (!status) return NO_VALUE;
   return AUDIT_STATUS_LABEL[status] ?? humaniseAgent(status);
 }
 
@@ -185,7 +214,8 @@ export const COMPLIANCE_STATUS_LABEL: Record<string, string> = {
   BLOCKED: "Blocked",
 };
 
-export function complianceStatusLabel(status: string): string {
+export function complianceStatusLabel(status: string | null | undefined): string {
+  if (!status) return NO_VALUE;
   return COMPLIANCE_STATUS_LABEL[status] ?? humaniseCode(status);
 }
 
@@ -198,8 +228,8 @@ export function complianceStatusLabel(status: string): string {
  * first character is touched, so an acronym-initial label such as "HS code
  * malformed" is left alone.
  */
-export function lowerFirst(text: string): string {
-  if (!text) return text;
+export function lowerFirst(text: string | null | undefined): string {
+  if (!text) return text ?? NO_VALUE;
   const [first, ...rest] = text;
   // A deliberate acronym must survive: "HS ..." must not become "hS ...".
   if (first === first.toUpperCase() && rest[0] === rest[0]?.toUpperCase()) {
