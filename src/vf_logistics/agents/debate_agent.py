@@ -279,6 +279,11 @@ async def conduct_debate(
     
     debate_trace: list[dict[str, Any]] = []
     final_verdict: dict[str, Any] | None = None
+    # Distinguishes "the Senior Auditor never rendered a verdict" from "it rendered one
+    # and the arguments would not parse". Both leave `final_verdict` falsy, and the
+    # forced-verdict rationale below used to report the first for either -- recording a
+    # sentence that was untrue whenever the second happened.
+    unparseable_verdict: str | None = None
     total_input_tokens = 0
     total_output_tokens = 0
     
@@ -323,10 +328,14 @@ async def conduct_debate(
             tool_results_for_message = []
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
+                args_unparseable = False
                 try:
                     tool_args = json.loads(tool_call.function.arguments)
                 except json.JSONDecodeError:
                     tool_args = {}
+                    args_unparseable = True
+                    if tool_name == "render_final_verdict":
+                        unparseable_verdict = str(tool_call.function.arguments)
                 
                 # Execute tool
                 tool_result = await _execute_tool(tool_name, tool_args, case)
@@ -338,16 +347,42 @@ async def conduct_debate(
                     "result": tool_result,
                     "at": utcnow(),
                 }
+                if args_unparseable:
+                    # Without this the trace reads `arguments: {}, result: {recorded:
+                    # true}` -- indistinguishable from a tool called with no arguments,
+                    # and for render_final_verdict it claims a verdict was recorded when
+                    # none could be read. The raw string is what the model actually sent.
+                    trace_entry["arguments_unparseable"] = True
+                    trace_entry["raw_arguments"] = _truncate_context(
+                        str(tool_call.function.arguments), limit=2000,
+                    )
                 debate_trace.append(trace_entry)
                 
                 # Check if this is the final verdict
-                if tool_name == "render_final_verdict":
+                if tool_name == "render_final_verdict" and not args_unparseable:
                     final_verdict = tool_args
                     break
                 
                 tool_results_for_message.append({
                     "tool_call_id": tool_call.id,
-                    "content": json.dumps(tool_result),
+                    # An unparseable verdict is told to the model as a tool result rather
+                    # than silently dropped. Dropping it appended an assistant message
+                    # carrying tool_calls with no matching role:"tool" reply, which is a
+                    # malformed conversation, and spent the remaining rounds without ever
+                    # saying what was wrong. Naming the failure lets the model retry --
+                    # which is what the spare rounds are for.
+                    "content": json.dumps(
+                        {
+                            "error": "arguments were not valid JSON and could not be "
+                                     "read; call render_final_verdict again with "
+                                     "well-formed JSON",
+                            "received": _truncate_context(
+                                str(tool_call.function.arguments), limit=500,
+                            ),
+                        }
+                        if args_unparseable and tool_name == "render_final_verdict"
+                        else tool_result
+                    ),
                 })
             
             if final_verdict:
@@ -379,18 +414,39 @@ async def conduct_debate(
     
     # If we exhausted rounds without a verdict, force one
     if not final_verdict:
+        if unparseable_verdict is not None:
+            # The distinction is the point. "Did not render" and "rendered something
+            # unreadable" call for different follow-up: the first is a model that ignored
+            # its instructions, the second is a parse failure with the model's actual
+            # words still on the wire. Reporting the first for either put a false
+            # sentence into a record whose only value is being checkable.
+            rationale = (
+                "Senior Auditor rendered a verdict but its arguments were not valid "
+                f"JSON, across {max_tool_rounds} rounds. Defaulting to CONFIRM with "
+                "low confidence; the unparsed arguments are in the debate trace."
+            )
+        else:
+            rationale = (
+                f"Senior Auditor did not render verdict after {max_tool_rounds} "
+                "rounds. Defaulting to CONFIRM with low confidence."
+            )
         final_verdict = {
             "verdict": "CONFIRM",
             "confidence": 0.4,
-            "rationale": f"Senior Auditor did not render verdict after {max_tool_rounds} rounds. Defaulting to CONFIRM with low confidence.",
+            "rationale": rationale,
             "recommended_action": "hold",
         }
-        debate_trace.append({
+        forced_entry: dict[str, Any] = {
             "round": max_tool_rounds + 1,
             "type": "forced_verdict",
             "verdict": final_verdict,
             "at": utcnow(),
-        })
+        }
+        if unparseable_verdict is not None:
+            forced_entry["unparsed_arguments"] = _truncate_context(
+                unparseable_verdict, limit=2000,
+            )
+        debate_trace.append(forced_entry)
     
     return {
         "agent": "debate",
