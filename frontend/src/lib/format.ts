@@ -1,6 +1,12 @@
 /** Presentation helpers. Kept out of components so the rules are testable. */
 
 export function formatUsd(value: number): string {
+  // Guard: a missing `cost_usd` arrives as `undefined`, and
+  // `undefined.toLocaleString()` throws TypeError -- which blanks the whole page rather
+  // than showing a dash where one column is missing. That happened to be /agents, the
+  // screen clip 3 of the demo video is filmed on. A missing column is information; a
+  // white page is not.
+  if (value == null || !Number.isFinite(value)) return "\u2014";
   if (value === 0) return "$0";
   // Token costs land in the fractions of a cent; two decimal places would show
   // every audit as $0.00 and make the cost column useless.

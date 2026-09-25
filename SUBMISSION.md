@@ -94,7 +94,7 @@ which model reasons. Everything else was rebuilt.
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
 | **Anonymous authority** | any visitor held `GOVERNANCE_ADMIN` on the live console; unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method | Found by doing it. Splitting on method rather than a path list means a route added later is covered by default |
 | **Cost control** | none; `max_tokens` set on **no agent**, and the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **zero** unit tests (one HTTP script) | **717** tests, 27 files, 75% coverage | — |
+| **Tests** | **zero** unit tests (one HTTP script) | **728** tests, 28 files, 75% coverage | — |
 | **CI** | existed but filtered on branch `main` while the repo uses `master`, so it had **never run once** | four jobs, green | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 17 modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
 
@@ -543,7 +543,7 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 717 tests passing (pytest) |
+| Automated test suite | 728 tests passing (pytest) |
 | CI pipeline | GitHub Actions — lint + test + coverage gate the build; typecheck runs `mypy … \|\| true`, so it reports but cannot fail it |
 | Auto-debate on score disputes | done -- fires without human intervention |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |
