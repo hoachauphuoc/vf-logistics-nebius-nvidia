@@ -83,6 +83,11 @@ export default function GovernancePage() {
   const suspended = agent != null && agent.state !== "READY";
   const drift = driftQuery.data;
   const material = drift?.material === true;
+  // A failed drift read is not "no drift". Both leave `material === false`, so without
+  // this the banner is simply absent and the screen looks like a clean bill of health on
+  // a check that never ran -- the same shape as the three field-name bugs where a guarded
+  // read rendered nothing and every test passed.
+  const driftUnknown = driftQuery.isError;
 
   return (
     <>
@@ -141,6 +146,22 @@ export default function GovernancePage() {
         </div>
       )}
 
+      {driftUnknown && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <AlertTriangle className="mt-[2px] size-4 shrink-0 text-dim" aria-hidden />
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-white">
+              Drift could not be checked
+            </p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-dim">
+              The drift read failed, so the absence of a warning below is not a
+              statement that the traffic still matches what this boundary was published
+              for. Re-check before relying on it.
+            </p>
+          </div>
+        </div>
+      )}
+
       {material && drift && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-risk-warn/30 bg-risk-warn/[0.07] px-4 py-3">
           <AlertTriangle className="mt-[2px] size-4 shrink-0 text-risk-warn" aria-hidden />
@@ -149,7 +170,7 @@ export default function GovernancePage() {
               Material drift from what this boundary was published for
             </p>
             <p className="mt-0.5 text-[12px] leading-relaxed text-dim">
-              {drift.reason ?? drift.reasons.join(" ")}
+              {drift.reason ?? drift.reasons?.join(" ") ?? "No reason given."}
             </p>
             {drift.metrics && (
               <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[11px] tabular-nums text-dim">

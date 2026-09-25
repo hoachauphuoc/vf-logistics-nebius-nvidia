@@ -31,7 +31,7 @@ export default function RiskRadarPage() {
   // The tenant used for cache keys and the tenant shown to the reader are not
   // the same thing in live mode: the key is a local label, the display name has
   // to be whatever the API says the authenticated session resolves to.
-  const display = displayTenant(tenant, usage.data?.tenant_id);
+  const display = displayTenant(tenant, usage.data?.tenant_id, usage.isError);
 
   // Derived, not stored. Holding the audit object in state would need an effect
   // to clear it when the tenant changes, and forgetting that effect would leave
@@ -55,6 +55,7 @@ export default function RiskRadarPage() {
           audits={rows}
           usage={usage.data}
           loading={audits.isLoading || usage.isLoading}
+          usageError={usage.error}
         />
 
         <AuditLogsTable

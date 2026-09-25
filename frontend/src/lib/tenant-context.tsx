@@ -93,17 +93,47 @@ export function useTenant(): TenantState {
  * `/billing/usage` returns `tenant_id`, derived server-side from the
  * authenticated identity, which makes it the only trustworthy answer available
  * to the client. Until it arrives the label says so rather than guessing.
+ *
+ * `failed` distinguishes "the read has not come back yet" from "the read came back an
+ * error". Without it both were `liveTenantId === undefined`, so a dead billing API left
+ * the heading reading "screened for Resolving tenant" permanently -- a loading state that
+ * never ends, which is how a failure disguises itself as slowness.
+ *
+ * The raw id is humanised for display because the backend's default tenant is literally
+ * `"default"`, and "Import and export declarations screened for default" reads as an
+ * unconfigured install rather than as a single-tenant deployment.
  */
 export function displayTenant(
   selected: Tenant,
   liveTenantId: string | null | undefined,
+  failed = false,
 ): Tenant {
   if (DEMO_MODE) return selected;
+  if (liveTenantId) {
+    return {
+      id: liveTenantId,
+      name: tenantLabel(liveTenantId),
+      descriptor: "Bound to your authenticated session",
+    };
+  }
   return {
-    id: liveTenantId ?? "unknown",
-    name: liveTenantId ?? "Resolving tenant",
-    descriptor: liveTenantId
-      ? "Bound to your authenticated session"
+    id: "unknown",
+    name: failed ? "Tenant unavailable" : "Resolving tenant",
+    descriptor: failed
+      ? "The identity read failed; this is not a tenant named 'unknown'"
       : "Reading identity from the audit API",
   };
+}
+
+/**
+ * A tenant id rendered for a heading.
+ *
+ * Only `default` is special-cased, and deliberately so: inventing a display name for an
+ * arbitrary customer id would put a company name on screen that the API never said, which
+ * is the exact failure the comment above is guarding against. Everything else is shown as
+ * the id it is.
+ */
+function tenantLabel(tenantId: string): string {
+  if (tenantId === "default") return "this deployment";
+  return tenantId;
 }
