@@ -62,7 +62,7 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 717 tests, a measured HS recall of 91.7%, citations reproduced rather than
+  on camera.** 790 tests, a measured HS recall of 91.7%, citations reproduced rather than
   summarised — a judge scoring Technological Implementation had to read the repository to
   find any of it. Clip 5 also carries the **Tavily bonus award**, which the old script
   showed nowhere at all.
@@ -286,10 +286,10 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 ## Clip 9 — Tests and CI (2:24 → 2:32, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on `728 passed`. Then the GitHub
+tail of a real run — `python -m pytest tests/ -q` ending on `790 passed`. Then the GitHub
 Actions run page for `master`, with four green jobs visible.
 
-> 728 tests pass at 75 percent coverage. Continuous integration runs them on every push.
+> 790 tests pass at 77 percent coverage. Continuous integration runs them on every push.
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight
