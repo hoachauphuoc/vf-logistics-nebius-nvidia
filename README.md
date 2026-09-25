@@ -195,7 +195,7 @@ a model-cost figure.
 **Before:** zero unit tests. The initial commit contains exactly one test file,
 `scripts/test_documents.py`, which drives a deployed service over HTTP.
 
-**Now:** **728 tests** across 28 files, 75% line coverage, and four GitHub Actions
+**Now:** **790 tests** across 31 files, 77% line coverage, and four GitHub Actions
 jobs that actually run — the workflow existed earlier but filtered on a branch
 named `main` while this repository uses `master`, so it had never executed once.
 
@@ -874,7 +874,7 @@ and in production a missing one takes the console **offline** rather than leavin
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests (728 tests)
+# Unit + integration tests (790 tests)
 python -m pytest tests/ -v
 
 # Counterparty book, offline
@@ -923,20 +923,23 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Budget | 26 | Per-tenant spend ceiling, cache TTL, fail-open on store error |
 | Billing period | 25 | Windowed usage, and that every aggregation has an index |
 | Model switch & metering | 25 | The cost ratchet, that an unpriced model cannot bill silently, and that no string names Super on the debate path |
+| Debate control flow | 24 | The four ways the debate loop exits, and that a forced verdict never claims the auditor rendered nothing when it rendered something unreadable |
+| Debate logic | 22 | Context building, tool dispatch, search depth, and that a failed search is named rather than arriving as an empty list |
 | Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
 | Tavily cache | 20 | TTL behaviour, key derivation, and that a cached hit is recorded as one |
 | Governance | 18 | Boundaries, drift detection, fail-closed |
 | Lineage & billing | 18 | Per-step cost attribution |
 | Orchestrator | 17 | State machine, tool execution, agent envelopes |
 | Observability | 16 | Logging, metrics, request context |
+| Security screen logic | 16 | Window arithmetic, and that an unreachable screen fails closed instead of reporting a clean document |
 | Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
 | Compliance cache | 12 | Counterparty lookups reused within a case and across cases |
+| Console contract | 11 | The field names the console reads from the backend -- the cause of three silent bugs |
 | Unpriced model | 9 | An unpriced model is logged, not silently billed at the cheapest rate |
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| Console contract | 11 | The field names the console reads from the backend -- the cause of three silent bugs |
-| **Total** | **728** | |
+| **Total** | **790** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1258,7 +1261,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        28 files, 728 tests
+├── tests/                        31 files, 790 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions and reference data

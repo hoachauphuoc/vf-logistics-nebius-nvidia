@@ -179,7 +179,7 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 728.
+test file, and it drives a deployed service over HTTP. There are now 790.
 
 ## Challenges we ran into
 
