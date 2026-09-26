@@ -7,6 +7,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
 } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from "recharts";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -150,14 +151,16 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
           </span>
         </div>
 
+        <div className="mt-3 flex items-start gap-4">
+          <div className="min-w-0 flex-1">
         {usageFailed ? (
-          <p className="mt-3 text-[13px] text-risk-warn">
+          <p className="text-[13px] text-risk-warn">
             The billing read failed, so the rules-versus-model split cannot be shown.
             An empty bar here would read as &ldquo;no automatic clearances&rdquo;, which
             is a claim about the pipeline rather than about the request that failed.
           </p>
         ) : autoCleared === 0 ? (
-          <p className="mt-3 text-[13px] text-faint">
+          <p className="text-[13px] text-faint">
             {cleared === 0
               ? "No clearances in this window."
               : `No automatic clearances. All ${cleared} went through a reviewer, which is the expensive path in staff time even where it is free in tokens.`}
@@ -166,11 +169,11 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
           <>
             <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-white/[0.06]">
               <div
-                className="bg-brand/70"
+                className="bg-brand/70 transition-[width] duration-700 ease-out"
                 style={{ width: `${((rulesOnly ?? 0) / autoCleared) * 100}%` }}
               />
               <div
-                className="bg-indigo-400/60"
+                className="bg-indigo-400/60 transition-[width] duration-700 ease-out"
                 style={{ width: `${((byAi ?? 0) / autoCleared) * 100}%` }}
               />
             </div>
@@ -197,6 +200,17 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
             </div>
           </>
         )}
+          </div>
+
+          {audits.length > 0 && (
+            <OutcomeDonut
+              blocked={blocked}
+              held={held}
+              cleared={cleared}
+              errored={errored}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -263,5 +277,61 @@ function LegendDot({
       <span className={cn("size-2 shrink-0 rounded-full", className)} aria-hidden />
       {children}
     </span>
+  );
+}
+
+const DONUT_COLORS = ["#ff4d4d", "#f5a524", "#3ecf8e", "#94a3b8"];
+
+function OutcomeDonut({
+  blocked,
+  held,
+  cleared,
+  errored,
+}: {
+  blocked: number;
+  held: number;
+  cleared: number;
+  errored: number;
+}) {
+  const data = [
+    { name: "Blocked", value: blocked },
+    { name: "Held", value: held },
+    { name: "Cleared", value: cleared },
+    { name: "Error", value: errored },
+  ].filter((d) => d.value > 0);
+
+  if (data.length === 0) return null;
+
+  return (
+    <div className="hidden shrink-0 sm:block" style={{ width: 80, height: 80 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={22}
+            outerRadius={36}
+            dataKey="value"
+            strokeWidth={0}
+            animationDuration={800}
+          >
+            {data.map((entry) => {
+              const idx = ["Blocked", "Held", "Cleared", "Error"].indexOf(entry.name);
+              return <Cell key={entry.name} fill={DONUT_COLORS[idx] ?? "#94a3b8"} />;
+            })}
+          </Pie>
+          <RTooltip
+            contentStyle={{
+              background: "rgba(0,0,0,0.85)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 8,
+              fontSize: 11,
+              color: "#fff",
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
   );
 }

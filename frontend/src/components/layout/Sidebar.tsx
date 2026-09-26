@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   FileClock,
   Inbox,
+  KeyRound,
   LayoutGrid,
   Radar,
   ScrollText,
@@ -84,6 +85,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Agent Console",
     icon: Activity,
     blurb: "Models, cost and injection probes",
+  },
+  {
+    href: "/admin",
+    label: "Access Control",
+    icon: KeyRound,
+    blurb: "Auth posture, roles, proxy rules",
   },
 ];
 

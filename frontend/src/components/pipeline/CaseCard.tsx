@@ -105,9 +105,9 @@ export function CaseCard({
       onClick={() => onOpen(c.case_id)}
       className={cn(
         "w-full rounded-lg border border-l-2 border-white/[0.07] bg-black/30 p-2.5 text-left",
-        "transition-colors hover:border-white/15 hover:bg-white/[0.04]",
+        "transition-all active:scale-[0.98] hover:border-white/15 hover:bg-white/[0.04]",
         STATE_ACCENT[c.state] ?? "border-l-white/20",
-        selected && "border-white/25 bg-white/[0.06]",
+        selected && "border-glow border-white/25 bg-white/[0.06]",
       )}
     >
       <div className="flex items-start gap-1.5">
@@ -150,7 +150,7 @@ export function CaseCard({
       </p>
 
       <div className="mt-2 flex items-center gap-2">
-        <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
           <div
             className={cn(
               "h-full rounded-full transition-[width] duration-300",
@@ -159,15 +159,12 @@ export function CaseCard({
               riskTone === "low" && "bg-risk-clear",
               riskTone === "unknown" && "bg-risk-unknown",
             )}
-            // An unscored case shows a hairline rather than a full or empty bar.
-            // Zero width reads as "risk 0", which is a verdict; full width reads
-            // as "maximum risk". Neither is what "nothing has scored this" means.
             style={{ width: risk == null ? "4%" : `${Math.max(risk, 2)}%` }}
           />
         </div>
         <span
           className={cn(
-            "w-7 shrink-0 text-right font-mono text-[11px] tabular-nums",
+            "w-7 shrink-0 text-right font-mono text-[12px] tabular-nums",
             riskTone === "high" && "text-risk-critical",
             riskTone === "medium" && "text-risk-warn",
             riskTone === "low" && "text-risk-clear",

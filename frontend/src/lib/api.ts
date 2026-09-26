@@ -542,9 +542,30 @@ export async function uploadDocument(file: File): Promise<Record<string, unknown
 // Agent console
 // --------------------------------------------------------------------------
 
-export async function fetchModelConfig(): Promise<Record<string, unknown>> {
+/**
+ * One entry in `/config/model`'s `available_models`.
+ *
+ * `input` and `output` are USD per MILLION tokens, which is how Nebius publishes them.
+ * Typed as optional because this is an internal dashboard route -- see the note at the
+ * top of the types file: "those routes return whatever the store holds".
+ */
+export interface ModelOption {
+  id: string;
+  name?: string;
+  description?: string;
+  input?: number;
+  output?: number;
+}
+
+export interface ModelConfig {
+  available_models?: ModelOption[];
+  current_model?: string;
+  pricing?: Omit<ModelOption, "id">;
+}
+
+export async function fetchModelConfig(): Promise<ModelConfig> {
   if (DEMO_MODE) liveOnly("Model configuration");
-  return getJson<Record<string, unknown>>("config/model");
+  return getJson<ModelConfig>("config/model");
 }
 
 export async function fetchAttackLog(): Promise<Record<string, unknown>> {

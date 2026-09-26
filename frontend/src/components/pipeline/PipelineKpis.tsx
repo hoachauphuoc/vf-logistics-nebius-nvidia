@@ -1,5 +1,8 @@
 "use client";
 
+import { Activity, Cpu, DollarSign, Shield, UserCheck } from "lucide-react";
+
+import { AnimatedNumber } from "@/components/ui/animated-number";
 import { HelpDot } from "@/components/help/HelpDot";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -42,25 +45,32 @@ export function PipelineKpis({
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <Tile
+        icon={Activity}
         label="In flight"
         value={snapshot?.in_flight ?? 0}
+        animated
         helpId="kpi.in-flight"
         hint="Cases the worker will pick up: queued, fraud and compliance done, and investigated."
       />
       <Tile
+        icon={UserCheck}
         label="Awaiting human"
         value={snapshot?.awaiting_human ?? 0}
+        animated
         helpId="kpi.awaiting-human"
         tone={(snapshot?.awaiting_human ?? 0) > 0 ? "warn" : "neutral"}
         hint="Awaiting a person, held for review and escalated. Nothing leaves these states without a named reviewer."
       />
       <Tile
+        icon={Cpu}
         label="Agent calls"
         value={snapshot?.agent_calls ?? 0}
+        animated
         helpId="kpi.agent-calls"
         hint="Model invocations across every case, exact rather than windowed."
       />
       <Tile
+        icon={DollarSign}
         label="Spend"
         value={`$${(snapshot?.estimated_cost_usd ?? 0).toFixed(4)}`}
         helpId="kpi.spend"
@@ -74,10 +84,12 @@ export function PipelineKpis({
         nothing ever clears needs to be told why, not left to infer it.
       */}
       <Tile
+        icon={Shield}
         label="Delegated authority"
         value={suspended ? "Suspended" : `v${agent?.boundary?.version ?? "?"}`}
         helpId="kpi.delegated-authority"
         tone={suspended ? "critical" : "clear"}
+        pulse={suspended}
         hint={
           agent?.reason ??
           "Whether the agent may execute protected actions on its own."
@@ -92,29 +104,49 @@ export function PipelineKpis({
   );
 }
 
+const ICON_TONE = {
+  neutral: "text-dim",
+  warn: "text-risk-warn",
+  critical: "text-risk-critical",
+  clear: "text-risk-clear",
+} as const;
+
 function Tile({
+  icon: Icon,
   label,
   value,
   hint,
   helpId,
   tone = "neutral",
+  animated,
+  pulse,
   sub,
 }: {
+  icon: React.ElementType;
   label: string;
   value: string | number;
   hint: string;
   helpId?: string;
   tone?: "neutral" | "warn" | "critical" | "clear";
+  animated?: boolean;
+  pulse?: boolean;
   sub?: string;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="bento-card cursor-default px-3.5 py-3">
+        <div className="bento-card border-glow cursor-default px-3.5 py-3">
           <div className="flex items-center gap-1.5">
+            <Icon className={cn("size-3.5", ICON_TONE[tone])} aria-hidden />
             <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
               {label}
             </p>
+            {pulse && (
+              <span className="relative ml-auto flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-risk-critical opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-risk-critical" />
+              </span>
+            )}
             {helpId && <HelpDot id={helpId} />}
           </div>
           <p
@@ -126,7 +158,11 @@ function Tile({
               tone === "clear" && "text-risk-clear",
             )}
           >
-            {value}
+            {animated && typeof value === "number" ? (
+              <AnimatedNumber value={value} />
+            ) : (
+              value
+            )}
           </p>
           {sub && <p className="mt-1.5 truncate text-[10.5px] text-faint">{sub}</p>}
         </div>

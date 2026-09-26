@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Check, ChevronRight, ExternalLink } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChevronRight, Clipboard, ClipboardCheck, ExternalLink } from "lucide-react";
+import { motion } from "framer-motion";
 import { useState } from "react";
 
 import { ErrorState } from "@/components/layout/States";
@@ -55,9 +56,12 @@ export function CaseTraceSheet({
         className="w-full gap-0 overflow-y-auto border-white/[0.08] bg-slate-950/95 backdrop-blur-xl scrollbar-thin sm:max-w-xl"
       >
         <SheetHeader className="border-b border-white/[0.06] px-5 pb-4 pt-5">
-          <SheetTitle className="font-mono text-[14px] text-white">
-            {c?.shipment_id || caseId}
-          </SheetTitle>
+          <div className="flex items-center gap-2">
+            <SheetTitle className="font-mono text-[14px] text-white">
+              {c?.shipment_id || caseId}
+            </SheetTitle>
+            {caseId && <CopyButton text={caseId} />}
+          </div>
           <SheetDescription className="text-[12px] text-dim">
             {c
               ? `${caseStateLabel(c.state)} · ${c.steps?.length ?? 0} agent hop(s)`
@@ -78,11 +82,21 @@ export function CaseTraceSheet({
 
           {c && (
             <>
-              <Verdict case={c} />
-              <Economics case={c} />
-              <Hops steps={c.steps ?? []} />
-              <Evidence case={c} />
-              <Receipts actions={c.actions ?? []} denials={c.gate_denials ?? []} />
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
+                <Verdict case={c} />
+              </motion.section>
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
+                <Economics case={c} />
+              </motion.section>
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
+                <Hops steps={c.steps ?? []} />
+              </motion.section>
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}>
+                <Evidence case={c} />
+              </motion.section>
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}>
+                <Receipts actions={c.actions ?? []} denials={c.gate_denials ?? []} />
+              </motion.section>
             </>
           )}
         </div>
@@ -154,6 +168,9 @@ function Verdict({ case: c }: { case: Case }) {
                   : "clear"
           }
         />
+        {c.risk_score != null && (
+          <RiskMeter score={c.risk_score} floor={rec?.risk_floor ?? null} />
+        )}
         {rec?.model_risk != null && (
           <Row label="Model alone" value={rec.model_risk} />
         )}
@@ -301,10 +318,7 @@ function Hops({ steps }: { steps: CaseStep[] }) {
                     <Payload label="Raw reply" text={step.raw_response} />
                   )}
                   {step.result && (
-                    <Payload
-                      label="Parsed result"
-                      text={JSON.stringify(step.result, null, 2)}
-                    />
+                    <StructuredResult data={step.result} />
                   )}
                 </div>
               )}
@@ -536,5 +550,78 @@ function Mono({ label, value }: { label: string; value: string | number }) {
       <dt className="text-faint">{label}</dt>
       <dd className="tabular-nums text-white/85">{value}</dd>
     </div>
+  );
+}
+
+function RiskMeter({ score, floor }: { score: number; floor: number | null }) {
+  const tone =
+    score >= 70 ? "critical" : score >= 40 ? "warn" : "clear";
+  const barColor = {
+    critical: "bg-risk-critical",
+    warn: "bg-risk-warn",
+    clear: "bg-risk-clear",
+  }[tone];
+
+  return (
+    <div className="mt-1 mb-1">
+      <div className="relative h-2 overflow-hidden rounded-full bg-white/[0.07]">
+        <div
+          className={cn("h-full rounded-full transition-[width] duration-500", barColor)}
+          style={{ width: `${Math.max(score, 2)}%` }}
+        />
+        {floor != null && floor > 0 && (
+          <div
+            className="absolute top-0 h-full w-0.5 bg-white/40"
+            style={{ left: `${floor}%` }}
+            title={`Floor: ${floor}`}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StructuredResult({ data }: { data: Record<string, unknown> }) {
+  return (
+    <div>
+      <p className="mb-1 text-[10.5px] uppercase tracking-wide text-faint">
+        Parsed result
+      </p>
+      <dl className="code-surface space-y-1 px-2.5 py-2">
+        {Object.entries(data).map(([k, v]) => (
+          <div key={k} className="flex items-baseline gap-2 text-[11.5px]">
+            <dt className="shrink-0 text-faint">{humaniseAgent(k)}</dt>
+            <dd className="min-w-0 break-words tabular-nums text-white/85">
+              {typeof v === "object" && v !== null
+                ? JSON.stringify(v)
+                : String(v ?? "\u2014")}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="shrink-0 rounded p-1 text-faint transition-colors hover:bg-white/[0.06] hover:text-white"
+      title="Copy to clipboard"
+    >
+      {copied ? (
+        <ClipboardCheck className="size-3.5 text-risk-clear" />
+      ) : (
+        <Clipboard className="size-3.5" />
+      )}
+    </button>
   );
 }
