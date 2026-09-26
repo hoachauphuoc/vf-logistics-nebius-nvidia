@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Inbox, PlugZap, ServerCog } from "lucide-react";
+import { AlertTriangle, Inbox, PlugZap, RefreshCw, ServerCog } from "lucide-react";
+import { motion } from "framer-motion";
 
 import { ApiError, DemoModeUnavailable } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -18,9 +19,11 @@ import { cn } from "@/lib/utils";
 export function ErrorState({
   error,
   className,
+  onRetry,
 }: {
   error: unknown;
   className?: string;
+  onRetry?: () => void;
 }) {
   const api = error instanceof ApiError ? error : null;
 
@@ -82,6 +85,7 @@ export function ErrorState({
       tone="critical"
       icon={AlertTriangle}
       title="That request failed"
+      onRetry={onRetry}
     >
       <p className="font-mono text-[11px] text-faint">
         {error instanceof Error ? error.message : String(error)}
@@ -112,15 +116,20 @@ function Shell({
   children,
   tone,
   className,
+  onRetry,
 }: {
   icon: React.ElementType;
   title: string;
   children?: React.ReactNode;
   tone: "critical" | "warn" | "neutral";
   className?: string;
+  onRetry?: () => void;
 }) {
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.25 }}
       className={cn(
         "bento-card flex flex-col items-center px-6 py-10 text-center",
         className,
@@ -128,18 +137,28 @@ function Shell({
     >
       <span
         className={cn(
-          "mb-3 grid size-9 place-items-center rounded-xl ring-1",
+          "mb-3 grid size-11 place-items-center rounded-xl ring-1",
           tone === "critical" && "bg-risk-critical/10 text-risk-critical ring-risk-critical/30",
           tone === "warn" && "bg-risk-warn/10 text-risk-warn ring-risk-warn/30",
           tone === "neutral" && "bg-white/[0.05] text-dim ring-white/10",
         )}
       >
-        <Icon className="size-4" aria-hidden />
+        <Icon className="size-5" aria-hidden />
       </span>
       <h3 className="text-[14px] font-medium text-white">{title}</h3>
       <div className="mt-1.5 max-w-lg text-[12.5px] leading-relaxed text-dim">
         {children}
       </div>
-    </div>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.04] px-3 py-1.5 text-[12px] text-dim transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          <RefreshCw className="size-3" aria-hidden />
+          Try again
+        </button>
+      )}
+    </motion.div>
   );
 }

@@ -14,8 +14,12 @@
 # Honour the root ignore rules (venv, __pycache__, .env, coverage).
 #!include:.gitignore
 
-# The console. Deployed separately from frontend/.
-frontend/
+# The console's build artefacts and dependencies. The source files are needed
+# by Dockerfile.unified (unified deploy). The backend-only Dockerfile does not
+# COPY frontend/ so including the source is harmless to that build.
+frontend/node_modules/
+frontend/.next/
+frontend/out/
 
 # Benchmark and coverage artefacts. benchmark_report_cases.json alone is 848 KB
 # of per-case detail that the runtime never reads.

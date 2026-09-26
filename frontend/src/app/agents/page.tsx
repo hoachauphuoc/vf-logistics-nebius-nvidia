@@ -149,9 +149,69 @@ export default function AgentConsolePage() {
                 console — one customer must not be able to move every other
                 customer onto a different model.
               </p>
-              <pre className="code-surface mt-2 max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-[11px] text-white/80 scrollbar-thin">
-                {JSON.stringify(config.data, null, 2)}
-              </pre>
+              {/* Was a JSON.stringify dump. The numbers were already right; the
+                  presentation was not -- `"input": 0.06` on screen with no unit is a
+                  figure a reader cannot use, and this is the screen the cost argument
+                  is made on. Same defect class as the debate verdict that shipped as
+                  raw JSON. */}
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-[11.5px]">
+                  <caption className="sr-only">
+                    Available models with their per-token rates
+                  </caption>
+                  <thead>
+                    <tr className="text-[10.5px] uppercase tracking-wider text-faint">
+                      <th scope="col" className="py-1.5 pr-3 text-left font-medium">
+                        Model
+                      </th>
+                      <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+                        In
+                      </th>
+                      <th scope="col" className="py-1.5 text-right font-medium">
+                        Out
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(config.data?.available_models ?? []).map((m) => {
+                      const active = m.id === config.data?.current_model;
+                      return (
+                        <tr
+                          key={m.id}
+                          className="border-t border-white/[0.06] align-top"
+                        >
+                          <td className="py-2 pr-3">
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-white/90">{m.name}</span>
+                              {active && (
+                                <span className="rounded-full bg-brand/15 px-1.5 py-[1px] text-[10px] font-medium text-brand">
+                                  in use
+                                </span>
+                              )}
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-faint">
+                              {m.description}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono tabular-nums text-dim">
+                            {m.input == null ? NO_VALUE : `$${m.input}`}
+                          </td>
+                          <td className="py-2 text-right font-mono tabular-nums text-dim">
+                            {m.output == null ? NO_VALUE : `$${m.output}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* The unit, stated once rather than repeated in every cell. Without it
+                  "0.06" is unusable: per token, per thousand and per million differ by
+                  six orders of magnitude. */}
+              <p className="mt-2 text-[11px] text-faint">
+                Rates are USD per million tokens, as published on Nebius Token
+                Factory.
+              </p>
             </>
           )}
         </div>

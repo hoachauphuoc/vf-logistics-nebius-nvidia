@@ -30,7 +30,7 @@ export const DEMO_MODE =
  * be set on the build machine.
  */
 export function flaskBase(): string {
-  const raw = process.env.FLASK_API_BASE ?? "http://127.0.0.1:8080";
+  const raw = process.env.FLASK_API_BASE ?? "http://127.0.0.1:9090";
   return raw.replace(/\/+$/, "");
 }
 
