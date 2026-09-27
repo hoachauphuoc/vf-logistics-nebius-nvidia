@@ -28,7 +28,13 @@ export const metadata: Metadata = {
     "every verdict.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Typed explicitly rather than with Next's global LayoutProps<"/">. That global
+// is generated into .next/types by a build, and both .next/ and next-env.d.ts are
+// gitignored, so on a fresh clone -- and in CI, which typechecks before it builds
+// -- it does not exist and `tsc --noEmit` fails on this line alone.
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="en"
