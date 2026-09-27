@@ -80,7 +80,7 @@ ULTRA = "nvidia/Nemotron-3-Ultra-550b-a55b"
 # question: no local credentials, no google-cloud dependency, and it works against any
 # deployment.
 BOARD = os.getenv(
-    "VF_TEST_BASE", "https://vf-logistics-f7rcctz26a-as.a.run.app",
+    "VF_TEST_BASE", "https://vf-app-350828852747.asia-southeast1.run.app",
 ).rstrip("/")
 
 

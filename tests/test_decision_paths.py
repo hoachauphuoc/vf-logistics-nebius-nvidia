@@ -57,7 +57,7 @@ import asyncio
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("STORE_BACKEND", "memory")
 
@@ -447,6 +447,41 @@ class HsInterpretTests(unittest.TestCase):
             "confidence": 0.9, "obfuscation_observed": "circumlocution",
         }))
         self.assertEqual(out["obfuscation"], "circumlocution")
+
+
+class HsDeclaredHeadingTests(unittest.TestCase):
+    """
+    What the classifier is told was declared.
+
+    Found on the live board: a clean shipment declared as 6205.20 came back
+    "inconsistent" with heading_for_goods 6205, three times in three. The prompt
+    defines `consistent` as the 4-digit heading equalling the declared one, and
+    Nano compared 6205 against the string "6205.20". Every evaluation set and the
+    benchmark corpus declare plain 4-digit headings, so no measurement could see it.
+    """
+
+    def _sent(self, declared):
+        reply = AsyncMock(return_value=('{"consistent": true}', 1, 1))
+        with patch.object(hs_agent.nebius_client, "complete_json", reply):
+            _run(hs_agent.classify_hs(
+                "Woven cotton garments, retail packed", declared, mode="cot_strict",
+            ))
+        return reply.call_args.kwargs["user_text"]
+
+    def test_a_subheading_is_sent_as_its_heading(self):
+        for declared in ("6205.20", "6205.20.00", "6205 20", "6205209000"):
+            with self.subTest(declared=declared):
+                sent = self._sent(declared)
+                self.assertIn("Declared heading: 6205\n", sent)
+                self.assertNotIn(declared, sent)
+
+    def test_a_plain_heading_is_sent_unchanged(self):
+        """The shape every measured input has, so the figures still describe production."""
+        self.assertIn("Declared heading: 8414\n", self._sent("8414"))
+
+    def test_a_code_shorter_than_a_heading_is_sent_as_declared(self):
+        """Nothing to reduce; verifier's HS_CODE_MALFORMED is what answers a code like 99."""
+        self.assertIn("Declared heading: 99\n", self._sent("99"))
 
 
 # ---------------------------------------------------------------------------

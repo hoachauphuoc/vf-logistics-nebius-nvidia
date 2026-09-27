@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, Inbox, PlugZap, RefreshCw, ServerCog } from "lucide-react";
+import { AlertTriangle, Inbox, Lock, LogIn, PlugZap, RefreshCw, ServerCog } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { ApiError, DemoModeUnavailable } from "@/lib/api";
+import { roleLabel } from "@/lib/identity";
 import { cn } from "@/lib/utils";
 
 /**
@@ -63,17 +64,40 @@ export function ErrorState({
   }
 
   if (api?.status === 401 || api?.status === 403) {
+    // The API names the role it wanted (auth.py's refusal carries required_role),
+    // so the message can say which one instead of guessing -- and a 401 from the
+    // console means nobody is signed in at all, which is a different fix.
+    const needed = api.requiredRole ? roleLabel(api.requiredRole) : null;
+    const signedOut = api.status === 401;
     return (
       <Shell
         className={className}
         tone="warn"
-        icon={AlertTriangle}
-        title="Your role does not include this view"
+        icon={Lock}
+        title={
+          signedOut
+            ? "Sign in to see this"
+            : needed
+              ? `This needs the ${needed} role`
+              : "Your role does not include this view"
+        }
       >
         <p>
-          The API refused the read rather than returning a filtered version of
-          it. Ask an operator to grant the role this section needs.
+          The API refused the request rather than returning a filtered version of
+          it.{" "}
+          {signedOut
+            ? "Sign in with an account that holds the role this section needs."
+            : "Sign in with an account that holds it, or ask a governance admin to grant it."}
         </p>
+        <a
+          href={`/login?next=${encodeURIComponent(
+            typeof window === "undefined" ? "/" : window.location.pathname,
+          )}`}
+          className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.04] px-3 text-[12px] text-dim transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          <LogIn className="size-3.5" aria-hidden />
+          Sign in
+        </a>
         <p className="mt-2 font-mono text-[11px] text-faint">{api.message}</p>
       </Shell>
     );

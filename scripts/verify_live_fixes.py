@@ -20,8 +20,9 @@ import urllib.request
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-API = "https://vf-logistics-f7rcctz26a-as.a.run.app"
-CONSOLE = "https://vf-console-f7rcctz26a-as.a.run.app"
+# One service now: vf-app serves the console and, under /api/v1, the API.
+API = "https://vf-app-350828852747.asia-southeast1.run.app"
+CONSOLE = API
 
 
 def get(url: str) -> tuple[int, str]:

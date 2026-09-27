@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { fetchReviewQueue, queryKeys } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/config";
+import { useIdentity } from "@/lib/identity";
 import { displayTenant, useTenant } from "@/lib/tenant-context";
 import { cn } from "@/lib/utils";
 
@@ -50,14 +51,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     retry: false,
   });
 
-  const usage = useQuery({
-    queryKey: queryKeys.usage(tenant.id),
-    queryFn: () => fetchUsageSafe(tenant.id),
+  // The tenant the header names comes from whoami, not billing.
+  //
+  // It used to be read off `/billing/usage`, which also returns tenant_id -- but
+  // billing is operator-only, so once the console stopped lending its key to
+  // anonymous reads, every visitor's header said "Resolving tenant" forever. whoami
+  // is readable by every role and returns the tenant the API resolved for this
+  // caller, which is the same server-derived fact without the permission. In demo
+  // mode it resolves to null and the selected fixture is shown, as before. Not
+  // asked on the sign-in and legal pages, which render without the header.
+  const identity = useIdentity({
     enabled: pathname !== "/login" && pathname !== "/legal",
-    retry: false,
   });
 
-  const display = displayTenant(tenant, usage.data?.tenant_id);
+  const display = displayTenant(tenant, identity.data?.tenant_id, identity.isError);
 
   // Sign-in and the public legal page render bare. The shell's nav would be a list
   // of links that all bounce straight back to sign-in, and its two queries would
@@ -168,17 +175,4 @@ function MobileNavLink({
       )}
     </a>
   );
-}
-
-/**
- * Usage, tolerating demo mode.
- *
- * The header needs `tenant_id` from this endpoint to print the real organisation
- * name in live mode, and demoUsage supplies a fixture in demo mode, so unlike the
- * queue count this one is wanted in both. Imported lazily inside the function to
- * keep the demo branch out of the live bundle's critical path.
- */
-async function fetchUsageSafe(tenantId: string) {
-  const { fetchUsage } = await import("@/lib/api");
-  return fetchUsage(tenantId);
 }

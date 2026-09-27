@@ -29,7 +29,7 @@ import subprocess
 import urllib.error
 import urllib.request
 
-BACKEND = "https://vf-logistics-f7rcctz26a-as.a.run.app"
+BACKEND = "https://vf-app-350828852747.asia-southeast1.run.app"
 NANO = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 SUPER = "nvidia/nemotron-3-super-120b-a12b"
 ULTRA = "nvidia/Nemotron-3-Ultra-550b-a55b"

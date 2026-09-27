@@ -6,13 +6,16 @@ import {
   Check,
   ExternalLink,
   Loader2,
+  Newspaper,
   Plus,
   ShieldOff,
   Trash2,
+  UserCheck,
   X,
 } from "lucide-react";
 import { useState } from "react";
 
+import { Gated } from "@/components/layout/Gated";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { EmptyState, ErrorState } from "@/components/layout/States";
 import {
@@ -39,12 +42,14 @@ import {
   publishBoundary,
   queryKeys,
   revokeBoundary,
+  runTavilyScan,
   savePrefilterRules,
   simulateBoundary,
   verifyEntity,
 } from "@/lib/api";
 import { HelpDot } from "@/components/help/HelpDot";
 import { actionLabel, humaniseCode } from "@/lib/format";
+import { lockReason, roleLabel, useIdentity } from "@/lib/identity";
 import { useTenant } from "@/lib/tenant-context";
 import type { DelegationBoundary, PrefilterRules } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -206,6 +211,9 @@ export default function GovernancePage() {
           <TabsTrigger value="verify" className="text-[12.5px]">
             Verify an entity
           </TabsTrigger>
+          <TabsTrigger value="news" className="text-[12.5px]">
+            Sanctions news
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="boundary" className="mt-4">
@@ -216,6 +224,9 @@ export default function GovernancePage() {
         </TabsContent>
         <TabsContent value="verify" className="mt-4">
           <VerifyTab />
+        </TabsContent>
+        <TabsContent value="news" className="mt-4">
+          <NewsScanTab />
         </TabsContent>
       </Tabs>
     </>
@@ -248,8 +259,10 @@ function BoundaryTab() {
     queryFn: fetchBoundaries,
     retry: false,
   });
+  const identity = useIdentity().data;
+  const adminLock = lockReason(identity, "governance_admin");
+  const simulateLock = lockReason(identity, "viewer");
 
-  const [author, setAuthor] = useState("");
   const [note, setNote] = useState("");
   const [json, setJson] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -308,7 +321,7 @@ function BoundaryTab() {
 
   const publish = useMutation({
     mutationFn: (permissions: Record<string, unknown>) =>
-      publishBoundary({ permissions, author, note }),
+      publishBoundary({ permissions, note }),
     onSuccess: () => {
       setFormError(null);
       setSimulation(null);
@@ -318,7 +331,7 @@ function BoundaryTab() {
   });
 
   const revoke = useMutation({
-    mutationFn: () => revokeBoundary({ author, note }),
+    mutationFn: () => revokeBoundary({ note }),
     onSuccess: () => {
       setFormError(null);
       invalidate();
@@ -341,21 +354,31 @@ function BoundaryTab() {
           </div>
           <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
             This is the only operation in the system that grants the agent
-            authority, which is why it takes a name.
+            authority, which is why it is recorded against a verified identity.
           </p>
 
           <div className="mt-3 space-y-3">
-            <div>
-              <Label htmlFor="gov-author" className="text-[11.5px] text-dim">
-                Published by
-              </Label>
-              <Input
-                id="gov-author"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-                placeholder="Your name"
-                className="mt-1 h-8 border-white/10 bg-black/30 text-[12.5px]"
-              />
+            {/*
+              The author, as the API will record it -- not a text box. The backend
+              takes the name from the signed-in session and ignores any name in the
+              request body, so a field here would be either dead or, with no
+              verified identity, an unverified name written into the audit trail.
+            */}
+            <div className="flex items-center gap-2 rounded-md border border-white/[0.07] bg-black/25 px-2.5 py-2">
+              <UserCheck className="size-3.5 shrink-0 text-dim" aria-hidden />
+              <p className="min-w-0 text-[11.5px] leading-relaxed text-dim">
+                {identity?.acts_for_a_person ? (
+                  <>
+                    Recorded as{" "}
+                    <span className="font-mono text-white/90">{identity.email}</span>{" "}
+                    ({roleLabel(identity.role)})
+                  </>
+                ) : identity ? (
+                  "Recorded against the signed-in account. Sign in to publish or revoke."
+                ) : (
+                  "Recorded against the signed-in account."
+                )}
+              </p>
             </div>
 
             <div>
@@ -418,56 +441,56 @@ function BoundaryTab() {
                 one blind is how an auto-release cap gets tightened by an order of
                 magnitude by accident.
               */}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={simulate.isPending}
-                onClick={() => {
-                  const permissions = parsePermissions();
-                  if (permissions) simulate.mutate(permissions);
-                }}
-                className="h-8 border-white/10 text-[12px]"
-              >
-                {simulate.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                Simulate
-              </Button>
+              <Gated reason={simulateLock}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={simulate.isPending || simulateLock !== null}
+                  onClick={() => {
+                    const permissions = parsePermissions();
+                    if (permissions) simulate.mutate(permissions);
+                  }}
+                  className="h-8 border-white/10 text-[12px]"
+                >
+                  {simulate.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                  Simulate
+                </Button>
+              </Gated>
 
-              <Button
-                size="sm"
-                disabled={publish.isPending || !author.trim()}
-                onClick={() => {
-                  if (!author.trim()) {
-                    setFormError("A name is required to grant authority.");
-                    return;
-                  }
-                  if (parsePermissions()) setConfirmPublish(true);
-                }}
-                className="h-8 text-[12px]"
-              >
-                {publish.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                Publish
-              </Button>
+              <Gated reason={adminLock}>
+                <Button
+                  size="sm"
+                  disabled={publish.isPending || adminLock !== null}
+                  onClick={() => {
+                    if (parsePermissions()) setConfirmPublish(true);
+                  }}
+                  className="h-8 text-[12px]"
+                >
+                  {publish.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                  Publish
+                </Button>
+              </Gated>
 
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={revoke.isPending || active === null}
-                onClick={() => {
-                  if (!author.trim()) {
-                    setFormError("A name is required to revoke authority.");
-                    return;
-                  }
-                  if (!note.trim()) {
-                    setFormError("A reason is required to revoke authority.");
-                    return;
-                  }
-                  setConfirmRevoke(true);
-                }}
-                className="ml-auto h-8 border-risk-critical/40 text-[12px] text-risk-critical hover:bg-risk-critical/10"
-              >
-                {revoke.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                Revoke
-              </Button>
+              <span className="ml-auto">
+                <Gated reason={adminLock}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={revoke.isPending || active === null || adminLock !== null}
+                    onClick={() => {
+                      if (!note.trim()) {
+                        setFormError("A reason is required to revoke authority.");
+                        return;
+                      }
+                      setConfirmRevoke(true);
+                    }}
+                    className="h-8 border-risk-critical/40 text-[12px] text-risk-critical hover:bg-risk-critical/10"
+                  >
+                    {revoke.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    Revoke
+                  </Button>
+                </Gated>
+              </span>
             </div>
           </div>
         </div>
@@ -511,8 +534,8 @@ function BoundaryTab() {
               From the moment this is published the agent may execute the actions
               it permits without asking anyone, including releasing shipments if
               the permissions allow it. It supersedes{" "}
-              {active ? active.boundary_id : "nothing"} and is recorded against
-              your name.
+              {active ? active.boundary_id : "nothing"} and is recorded against{" "}
+              {identity?.acts_for_a_person ? identity.email : "your signed-in account"}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -738,6 +761,7 @@ function PrefilterTab() {
     queryFn: fetchPrefilterRules,
     retry: false,
   });
+  const saveLock = lockReason(useIdentity().data, "governance_admin");
 
   const [draft, setDraft] = useState<PrefilterRules | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -862,9 +886,10 @@ function PrefilterTab() {
       )}
 
       <div className="flex items-center gap-2">
+        <Gated reason={saveLock}>
         <Button
           size="sm"
-          disabled={!dirty || save.isPending}
+          disabled={!dirty || save.isPending || saveLock !== null}
           onClick={() => {
             if (!draft) return;
             // Only the keys that changed. The backend leaves an absent key as it
@@ -891,6 +916,7 @@ function PrefilterTab() {
           {save.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
           Save changes
         </Button>
+        </Gated>
         {dirty && (
           <Button
             variant="ghost"
@@ -1004,6 +1030,7 @@ function VerifyTab() {
   const verify = useMutation({
     mutationFn: () => verifyEntity({ type, value: value.trim() }),
   });
+  const searchLock = lockReason(useIdentity().data, "operator");
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -1041,20 +1068,22 @@ function VerifyTab() {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && value.trim()) verify.mutate();
+              if (e.key === "Enter" && value.trim() && !searchLock) verify.mutate();
             }}
             placeholder={type === "company" ? "Company name" : "0123456789"}
             className="h-8 border-white/10 bg-black/30 text-[12.5px]"
           />
-          <Button
-            size="sm"
-            disabled={!value.trim() || verify.isPending}
-            onClick={() => verify.mutate()}
-            className="h-8 shrink-0 text-[12px]"
-          >
-            {verify.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-            Search
-          </Button>
+          <Gated reason={searchLock}>
+            <Button
+              size="sm"
+              disabled={!value.trim() || verify.isPending || searchLock !== null}
+              onClick={() => verify.mutate()}
+              className="h-8 shrink-0 text-[12px]"
+            >
+              {verify.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+              Search
+            </Button>
+          </Gated>
         </div>
       </div>
 
@@ -1101,6 +1130,130 @@ function VerifyTab() {
           <p className="mt-2 text-[11.5px] text-faint">
             Nothing searched yet.
           </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Sanctions news
+// --------------------------------------------------------------------------
+
+/**
+ * A Tavily sweep for recent sanctions and enforcement news.
+ *
+ * What this is NOT: the sanctions control. Designations are screened on every
+ * shipment against the OFAC index (sanctions.py) with no network call. This is a
+ * reading aid for whoever maintains the pre-filter lists -- a quick look at what
+ * changed recently -- and it changes nothing on the service by itself.
+ *
+ * Governance admin upstream, because it is the list maintainers' tool and each
+ * call spends up to five searches of the monthly Tavily quota.
+ */
+function NewsScanTab() {
+  const lock = lockReason(useIdentity().data, "governance_admin");
+  const [queries, setQueries] = useState("");
+
+  const scan = useMutation({
+    mutationFn: () =>
+      runTavilyScan(
+        queries
+          .split("\n")
+          .map((q) => q.trim())
+          .filter(Boolean)
+          .slice(0, 5),
+      ),
+  });
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="bento-card p-4">
+        <div className="flex items-center gap-1.5">
+          <Newspaper className="size-3.5 text-brand" aria-hidden />
+          <h3 className="text-[12px] font-medium text-white">
+            Scan for sanctions updates
+          </h3>
+        </div>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
+          A live Tavily search for recent sanctions, export-control and
+          enforcement news. It informs the lists on the Pre-filter tab; it does
+          not change them, and it is not how shipments are screened — every
+          shipment is checked against the OFAC index with no network call.
+        </p>
+
+        <Label htmlFor="gov-scan-queries" className="mt-3 block text-[11.5px] text-dim">
+          Queries, one per line (up to five). Leave empty for the defaults.
+        </Label>
+        <Textarea
+          id="gov-scan-queries"
+          value={queries}
+          onChange={(e) => setQueries(e.target.value)}
+          rows={4}
+          placeholder={"logistics sanctions updates latest 2026\nOFAC SDN list new additions logistics shipping"}
+          className="mt-1 border-white/10 bg-black/30 text-[12px]"
+        />
+
+        <div className="mt-3 flex items-center gap-2">
+          <Gated reason={lock}>
+            <Button
+              size="sm"
+              disabled={scan.isPending || lock !== null}
+              onClick={() => scan.mutate()}
+              className="h-8 text-[12px]"
+            >
+              {scan.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+              Run scan
+            </Button>
+          </Gated>
+          <span className="text-[11px] text-faint">
+            Each query is one Tavily search against the monthly quota.
+          </span>
+        </div>
+      </div>
+
+      <div className="bento-card p-4">
+        <h3 className="text-[12px] font-medium text-white">Results</h3>
+        {scan.isError ? (
+          <div className="mt-2">
+            <ErrorState error={scan.error} />
+          </div>
+        ) : scan.data ? (
+          <>
+            <p className="mt-2 text-[11.5px] leading-relaxed text-dim">
+              {scan.data.summary}
+            </p>
+            {scan.data.alerts.length === 0 ? (
+              <p className="mt-2 text-[11.5px] text-faint">
+                No results. With no Tavily key configured, or a search that failed,
+                this is also empty — it is not evidence that nothing happened.
+              </p>
+            ) : (
+              <ul className="mt-2 max-h-[28rem] space-y-1.5 overflow-y-auto scrollbar-thin">
+                {scan.data.alerts.map((alert, i) => (
+                  <li
+                    key={`${alert.url}-${i}`}
+                    className="rounded border border-white/[0.06] px-2 py-1.5"
+                  >
+                    <a
+                      href={alert.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="flex items-center gap-1 text-[11.5px] text-brand hover:underline"
+                    >
+                      <ExternalLink className="size-3 shrink-0" aria-hidden />
+                      <span className="truncate">{alert.title || alert.url}</span>
+                    </a>
+                    <p className="mt-0.5 line-clamp-3 text-[11px] leading-relaxed text-faint">
+                      {alert.snippet}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-[11.5px] text-faint">Nothing scanned yet.</p>
         )}
       </div>
     </div>

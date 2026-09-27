@@ -36,7 +36,11 @@ import urllib.error
 import urllib.request
 
 PROJECT = "vf-fraud-detection-phuochoa"
-SERVICE = "vf-logistics"
+# The one Cloud Run service. vf-app runs the console and the API in one container;
+# the two services this used to watch (vf-logistics, vf-console) were deleted when
+# they merged, and a filter still naming vf-logistics would match nothing -- an
+# alert that can no longer fire, which reads as a clean bill of health.
+SERVICE = "vf-app"
 BASE = f"https://monitoring.googleapis.com/v3/projects/{PROJECT}"
 
 
@@ -90,13 +94,14 @@ def existing() -> set[str]:
 def policies(notify: list[str]) -> list[dict]:
     return [
         {
-            "displayName": "vf-logistics is unreachable",
+            "displayName": "vf-app is unreachable",
             "documentation": {
                 "content": (
                     "The /health endpoint stopped answering from multiple regions. "
-                    "Check the Cloud Run revision and its logs. /health does not "
-                    "touch Firestore or Nebius, so this means the container itself "
-                    "is not serving."
+                    "Check the Cloud Run revision and its logs. /health is served by "
+                    "Next.js and answered by Flask behind it, so this means one of "
+                    "the two processes in the container is not serving; it does not "
+                    "touch Firestore or Nebius."
                 ),
                 "mimeType": "text/markdown",
             },
@@ -129,7 +134,7 @@ def policies(notify: list[str]) -> list[dict]:
             "enabled": True,
         },
         {
-            "displayName": "vf-logistics is returning server errors",
+            "displayName": "vf-app is returning server errors",
             "documentation": {
                 "content": (
                     "Cloud Run is answering 5xx. The service is up -- the uptime "

@@ -1,20 +1,21 @@
 """
 Authentication and authorization middleware for VF Logistics.
 
-Implements Google IAP (Identity-Aware Proxy) JWT verification for Cloud Run,
-with RBAC (Role-Based Access Control) for fine-grained permissions.
-
-IAP Flow:
-1. User authenticates via Google IAP (configured in GCP Console)
-2. IAP adds X-Goog-IAP-JWT-Assertion header with signed JWT
-3. This middleware verifies the JWT signature using Google's public keys
-4. User email and roles are extracted and attached to the request context
+Three ways a request is authenticated, in the order authenticate_request() tries
+them: the console's API key (optionally with a signed console session naming the
+person), a Google IAP JWT, or nothing (the ANONYMOUS_ROLE floor).
 
 Roles:
 - viewer: Read-only access to dashboard and case details
 - reviewer: Can approve/reject cases in review queue
 - operator: Can run simulations, reset board, trigger processing
 - governance_admin: Can modify delegation boundaries and permissions
+
+Who holds which role is configuration on THIS service, never a claim in a token:
+ADMIN_EMAILS, OPERATOR_EMAILS and REVIEWER_EMAILS list the people, and a
+verified console session or IAP identity is looked up in them. See
+_api_key_context() for why the console's session can narrow what its key grants
+but never widen it.
 """
 
 from __future__ import annotations
@@ -29,9 +30,9 @@ import os
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
+from typing import Any, Callable
 
-from flask import g, jsonify, request
+from flask import Response, g, jsonify, request
 
 from vf_logistics import tenant
 
@@ -99,10 +100,10 @@ def _console_session_email() -> str | None:
     The verified email from a forwarded console session, or None.
 
     None covers every failure indistinguishably: header absent, no secret
-    configured, malformed token, bad signature, expired, no email. A caller cannot
-    tell a forged session from an expired one and does not need to -- in both cases
-    the request falls back to being attributed to the API key rather than being
-    refused, because the key is what authorised it.
+    configured, malformed token, bad signature, expired, no email. This function
+    does not decide what a failure MEANS -- _api_key_context() does, and it now
+    refuses a keyed request whose session fails, because the session is what
+    decides that request's role.
 
     MUST MATCH frontend/src/lib/session.ts, which mints these:
 
@@ -182,6 +183,43 @@ ROLE_HIERARCHY = {
     Role.GOVERNANCE_ADMIN: {Role.VIEWER, Role.REVIEWER, Role.OPERATOR, Role.GOVERNANCE_ADMIN},
 }
 
+# Derived from the hierarchy rather than written out, so a role added there cannot
+# be ranked inconsistently here: a role's rank is how many roles it includes.
+ROLE_RANK = {role: len(included) - 1 for role, included in ROLE_HIERARCHY.items()}
+ROLES_BY_RANK = sorted(ROLE_HIERARCHY, key=ROLE_RANK.__getitem__)
+
+# What a valid API key grants on its own. Stated once because it is also the
+# ceiling a console session is narrowed under: see _api_key_context().
+API_KEY_GRANT = Role.GOVERNANCE_ADMIN
+
+# Which environment variable lists the people holding which role. Applies to a
+# verified console session and to an IAP identity alike -- the two ways this
+# service learns WHICH person is calling.
+ROLE_ASSIGNMENT_VARS: tuple[tuple[str, Role], ...] = (
+    ("ADMIN_EMAILS", Role.GOVERNANCE_ADMIN),
+    ("OPERATOR_EMAILS", Role.OPERATOR),
+    ("REVIEWER_EMAILS", Role.REVIEWER),
+)
+
+
+def highest_role(roles: set[Role]) -> Role:
+    """The most privileged role in a set; VIEWER for an empty one."""
+    return max(roles, key=ROLE_RANK.__getitem__, default=Role.VIEWER)
+
+
+def narrow_roles(person: set[Role], ceiling: Role) -> set[Role]:
+    """
+    A person's roles, capped at `ceiling`.
+
+    Roles at or below the ceiling are kept; any above it collapse to the ceiling
+    itself. The result is never empty -- a listed person is at least a viewer.
+    """
+    limit = ROLE_RANK[ceiling]
+    kept = {r for r in person if ROLE_RANK[r] <= limit}
+    if any(ROLE_RANK[r] > limit for r in person):
+        kept.add(ceiling)
+    return kept or {Role.VIEWER}
+
 
 def iap_enabled() -> bool:
     """
@@ -247,6 +285,9 @@ class AuthContext:
     # to name a tenant would have vanished with it. Attribution must be free to
     # change without moving an authorisation boundary.
     via_api_key: bool = False
+    # True when a verified console session named the person, so `roles` came from
+    # the role lists rather than from the key alone. Read by whoami.
+    via_session: bool = False
 
     def has_role(self, required: Role) -> bool:
         """Check if user has the required role (including inherited)."""
@@ -294,7 +335,7 @@ class AuthContext:
         return self.email not in (SERVICE_IDENTITY_EMAIL, DEV_IDENTITY_EMAIL)
 
 
-def _verify_iap_jwt(token: str) -> dict | None:
+def _verify_iap_jwt(token: str) -> dict[str, Any] | None:
     """
     Verify Google IAP JWT and return claims.
 
@@ -310,7 +351,7 @@ def _verify_iap_jwt(token: str) -> dict | None:
             audience=IAP_AUDIENCE,
             certs_url="https://www.gstatic.com/iap/verify/public_key",
         )
-        return claims
+        return dict(claims)
     except Exception:
         import logging
 
@@ -323,27 +364,47 @@ def _verify_iap_jwt(token: str) -> dict | None:
         return None
 
 
+def _email_list(variable: str) -> set[str]:
+    """
+    One role list, normalised.
+
+    Trimmed and lowercased because the list is typed by a person and compared
+    against a machine-normalised address: "a@x.com, b@x.com" used to leave
+    " b@x.com" unmatchable, and a capitalised entry never matched the lowercased
+    session email. Either failure silently demoted the person it named.
+    """
+    return {
+        entry.strip().lower()
+        for entry in os.getenv(variable, "").split(",")
+        if entry.strip()
+    }
+
+
+def role_sources(email: str) -> dict[str, str]:
+    """Which list grants each of this person's roles, for whoami to explain."""
+    normalised = (email or "").strip().lower()
+    if not normalised:
+        return {}
+    return {
+        role.value: variable
+        for variable, role in ROLE_ASSIGNMENT_VARS
+        if normalised in _email_list(variable)
+    }
+
+
 def _get_user_roles(email: str) -> set[Role]:
     """
-    Get roles for a user email.
+    The roles this service assigns to a person, from ROLE_ASSIGNMENT_VARS.
 
-    In production, this would query Firestore or a role management service.
-    For now, uses environment-based configuration.
+    Everyone is a viewer; a listed person also holds the listed role. Unlisted is
+    therefore viewer, not an error, which makes adding a sign-in account a
+    read-only change until someone deliberately grants it more.
     """
-    # Admin emails from environment (comma-separated)
-    admin_emails = os.getenv("ADMIN_EMAILS", "").split(",")
-    operator_emails = os.getenv("OPERATOR_EMAILS", "").split(",")
-    reviewer_emails = os.getenv("REVIEWER_EMAILS", "").split(",")
-
-    roles = {Role.VIEWER}  # Everyone gets viewer by default
-
-    if email in admin_emails:
-        roles.add(Role.GOVERNANCE_ADMIN)
-    if email in operator_emails:
-        roles.add(Role.OPERATOR)
-    if email in reviewer_emails:
-        roles.add(Role.REVIEWER)
-
+    roles = {Role.VIEWER}
+    normalised = (email or "").strip().lower()
+    for variable, role in ROLE_ASSIGNMENT_VARS:
+        if normalised and normalised in _email_list(variable):
+            roles.add(role)
     return roles
 
 
@@ -358,15 +419,52 @@ def _presented_api_key() -> str | None:
     return supplied.strip() if supplied else None
 
 
+class InvalidConsoleSession(Exception):
+    """A keyed request carried an X-VF-Session header that did not verify."""
+
+
 def _api_key_context() -> AuthContext | None:
     """
-    The service context for a request carrying the correct API key.
+    The context for a request carrying the correct API key.
 
     Returns None when no key was presented, so the caller can fall through to
     IAP or to the anonymous identity. A *wrong* key is a different answer and is
     handled by the caller: falling through on a bad key would silently downgrade
     a failed authentication into an anonymous read, and the operator would see
     "permission denied" on a write with no hint that their key was simply wrong.
+
+    Two shapes of keyed request:
+
+      * Key alone -- a script, the seeding tools, a B2B integrator. The key is
+        the whole credential and grants API_KEY_GRANT, as it always has.
+
+      * Key plus a console session -- a person signed in to the console, whose
+        server-side proxy holds the key and forwards the session it verified. The
+        session names the person; their roles are then looked up in this
+        service's own role lists, and capped at what the key grants.
+
+    WHY THE SESSION NOW DECIDES THE ROLE, AND WHY THAT IS NOT "THE CONSOLE
+    DECIDING ITS OWN AUTHORISATION"
+
+    Before this, every signed-in person -- and, because the console attached the
+    key to anonymous reads too, every visitor -- held GOVERNANCE_ADMIN. The role
+    hierarchy existed on paper only. The earlier rule "roles are not taken from
+    the session" was right about the danger and wrong about the remedy: what must
+    never happen is a TOKEN asserting a role. Nothing here reads a role from the
+    token. The token contributes a verified email, and the mapping from email to
+    role is configuration on this service. The console can prove who someone is;
+    it cannot make them anything.
+
+    A session can therefore only NARROW the key. It cannot widen it: the ceiling
+    is API_KEY_GRANT whatever the lists say.
+
+    WHY A SESSION THAT FAILS TO VERIFY IS REFUSED
+
+    It used to fall back to the key's own identity. With the session deciding the
+    role, that fallback would turn an expired or forged session into
+    GOVERNANCE_ADMIN -- the escalation this design exists to prevent. The console
+    forwards only a session it has verified itself, so one that fails here means
+    forgery or a secret the two halves do not share, and both should be loud.
     """
     expected = api_key()
     supplied = _presented_api_key()
@@ -379,28 +477,43 @@ def _api_key_context() -> AuthContext | None:
     if not hmac.compare_digest(supplied, expected):
         return None
 
-    # The key authorises; a forwarded session says who is acting. When the console
-    # sends both, the audit trail gets the person's address instead of
-    # "service:api-key" -- which is the difference between an audit trail that can
-    # answer "who released this shipment" and one that cannot.
-    #
-    # Roles are NOT taken from the session. A session proves identity, not
-    # entitlement, and deriving permissions from it would let the console decide its
-    # own authorisation. What the key grants is what the caller gets.
+    # A blank header carries no claim at all, so it is the same as none.
+    presented = (request.headers.get(CONSOLE_SESSION_HEADER) or "").strip()
+    if not presented:
+        return AuthContext(
+            email=SERVICE_IDENTITY_EMAIL,
+            roles={API_KEY_GRANT},
+            iap_subject=None,
+            # The single implicit tenant, so a keyed request walks the same
+            # tenant-scoped store path as an IAP one rather than a separate branch.
+            tenant_id=tenant.SINGLE_TENANT_ID,
+            via_api_key=True,
+        )
+
     acting = _console_session_email()
+    if acting is None:
+        if console_session_secret() is None:
+            raise InvalidConsoleSession(
+                "This service has no VF_SESSION_SECRET (or one under 32 characters), "
+                "so it cannot verify the X-VF-Session header. The console and the "
+                "API must be configured with the same secret."
+            )
+        raise InvalidConsoleSession(
+            "The X-VF-Session header did not verify: it is expired, malformed, or "
+            "signed with a different secret. Sign in again."
+        )
 
     return AuthContext(
-        email=acting or SERVICE_IDENTITY_EMAIL,
-        roles={Role.GOVERNANCE_ADMIN},
+        email=acting,
+        roles=narrow_roles(_get_user_roles(acting), API_KEY_GRANT),
         iap_subject=None,
-        # The single implicit tenant, so a keyed request walks the same
-        # tenant-scoped store path as an IAP one rather than a separate branch.
         tenant_id=tenant.SINGLE_TENANT_ID,
         via_api_key=True,
+        via_session=True,
     )
 
 
-def authenticate_request() -> tuple[dict, int] | None:
+def authenticate_request() -> tuple[Response, int] | None:
     """
     Authenticate the current request.
 
@@ -412,10 +525,11 @@ def authenticate_request() -> tuple[dict, int] | None:
       2. An IAP JWT, when IAP is configured.
       3. Nothing, which yields the ANONYMOUS_ROLE identity -- VIEWER by default.
 
-    A fourth header, X-VF-Session, is not a credential and does not appear in that
-    order. It changes only WHO a keyed request is recorded as, never WHAT it may
-    do: see _api_key_context(). A request presenting a session and no key is
-    anonymous, exactly as if the session were absent.
+    A fourth header, X-VF-Session, is not a credential on its own: a request
+    presenting a session and no key is anonymous, exactly as if the session were
+    absent. Alongside a valid key it names the person, and that person's role is
+    looked up in this service's role lists -- see _api_key_context(). A session
+    that fails to verify alongside a valid key is refused with 401.
 
     Returns an error response tuple on failure, None on success, and sets
     g.auth_context either way it succeeds.
@@ -433,7 +547,10 @@ def authenticate_request() -> tuple[dict, int] | None:
     #    never silently demoted to a reader.
     supplied_key = _presented_api_key()
     if supplied_key:
-        context = _api_key_context()
+        try:
+            context = _api_key_context()
+        except InvalidConsoleSession as exc:
+            return jsonify({"error": "Invalid console session", "detail": str(exc)}), 401
         if context is None:
             # Presented a key and it did not match. Said plainly rather than
             # falling through, so a rotation mistake reads as a rotation mistake.
@@ -591,11 +708,19 @@ def require_auth(f: Callable) -> Callable:
         if error:
             return error
         return f(*args, **kwargs)
+    decorated._required_role = "authenticated"  # type: ignore[attr-defined]
     return decorated
 
 
 def require_role(required_role: Role) -> Callable:
-    """Decorator: require a specific role for an endpoint."""
+    """
+    Decorator: require a specific role for an endpoint.
+
+    Also records the requirement on the view as `_required_role`, which is what
+    route_policy() reads. functools.wraps copies a function's __dict__, so the
+    attribute survives any wraps-based decorator stacked above this one (the rate
+    limiter, async_route) -- and a test walks every route to prove it did.
+    """
     def decorator(f: Callable) -> Callable:
         @functools.wraps(f)
         def decorated(*args, **kwargs):
@@ -607,12 +732,83 @@ def require_role(required_role: Role) -> Callable:
             if not ctx or not ctx.has_role(required_role):
                 return jsonify({
                     "error": f"Insufficient permissions. Required role: {required_role.value}",
-                    "user_roles": [r.value for r in (ctx.roles if ctx else [])],
+                    "required_role": required_role.value,
+                    "user_roles": sorted(r.value for r in (ctx.roles if ctx else [])),
                 }), 403
 
             return f(*args, **kwargs)
+        decorated._required_role = required_role.value  # type: ignore[attr-defined]
         return decorated
     return decorator
+
+
+def route_policy(flask_app: Any) -> list[dict[str, Any]]:
+    """
+    Every route with the role it actually enforces, read from the views.
+
+    Introspected rather than written down, so the Access Control screen shows the
+    policy the service runs and cannot show a hand-copied one that has drifted.
+    `required_role` is None for a route with no role decorator -- a public one.
+    """
+    rows: list[dict[str, Any]] = []
+    for rule in flask_app.url_map.iter_rules():
+        if rule.endpoint == "static":
+            continue
+        view = flask_app.view_functions.get(rule.endpoint)
+        methods = sorted(m for m in (rule.methods or ()) if m not in ("HEAD", "OPTIONS"))
+        rows.append({
+            "path": rule.rule,
+            "methods": methods,
+            "required_role": getattr(view, "_required_role", None),
+        })
+    return sorted(rows, key=lambda r: (r["path"], r["methods"]))
+
+
+def describe_identity(ctx: AuthContext) -> dict[str, Any]:
+    """
+    What this service believes about the caller, for GET /api/v1/auth/whoami.
+
+    The console renders roles from this rather than guessing them, so a screen
+    that disables a button is disabling it for the reason the backend would give.
+    The backend still enforces every route itself; this is information, not a
+    permission.
+    """
+    if ctx.via_session:
+        method = "console_session"
+    elif ctx.via_api_key:
+        method = "api_key"
+    elif ctx.iap_subject is not None:
+        method = "iap"
+    else:
+        method = "anonymous"
+
+    top = highest_role(ctx.roles)
+    grants = sorted(
+        {implied for held in ctx.roles for implied in ROLE_HIERARCHY.get(held, set())},
+        key=ROLE_RANK.__getitem__,
+    )
+
+    if method in ("console_session", "iap"):
+        sources = role_sources(ctx.email)
+        source = sources.get(top.value) or (
+            "not listed in " + ", ".join(v for v, _ in ROLE_ASSIGNMENT_VARS)
+            + ", so viewer by default"
+        )
+    elif method == "api_key":
+        source = "VF_API_KEY"
+    else:
+        source = "ANONYMOUS_ROLE"
+
+    return {
+        "email": ctx.email,
+        "authenticated_by": method,
+        "acts_for_a_person": ctx.acts_for_a_person,
+        "role": top.value,
+        "roles": sorted((r.value for r in ctx.roles), key=lambda v: ROLE_RANK[Role(v)]),
+        "grants": [r.value for r in grants],
+        "role_source": source,
+        "tenant_id": ctx.tenant_id,
+    }
 
 
 # Convenience decorators for common role requirements

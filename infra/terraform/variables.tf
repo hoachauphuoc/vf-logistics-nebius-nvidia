@@ -10,16 +10,17 @@ variable "region" {
   default     = "asia-southeast1"
 }
 
-variable "backend_service_name" {
+variable "service_name" {
   type        = string
-  description = "Cloud Run service name for the Flask analysis API."
-  default     = "vf-logistics"
-}
+  description = <<-EOT
+    The Cloud Run service behind the load balancer.
 
-variable "console_service_name" {
-  type        = string
-  description = "Cloud Run service name for the Next.js console."
-  default     = "vf-console"
+    One service: vf-app runs the Next.js console and the Flask API in one
+    container (see the root Dockerfile), with the API under /api/v1. There used to
+    be two -- vf-logistics and vf-console -- which is why this was once a pair of
+    variables and a path-based URL map.
+  EOT
+  default     = "vf-app"
 }
 
 variable "domain" {

@@ -6,12 +6,7 @@ name: CI
 # reported `active`, but both triggers filtered on `main` while this repository's default
 # branch is `master` and no `main` branch has ever existed -- so the condition could not
 # match and GitHub had nothing to report. `gh run list` returned zero runs across the whole
-# history of the repo.
-#
-# That made the README and SUBMISSION claim of a CI pipeline aspirational rather than
-# false-by-a-hair: the jobs below are correct for this layout, they simply were not being
-# invoked. Both branch names are listed now so a future rename to `main` does not silently
-# switch it off again.
+# history of the repo. Both names are listed so a future rename does not switch it off.
 on:
   push:
     branches: [master, main]
@@ -26,25 +21,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
+      - run: pip install "ruff==0.16.9"
       # E501 is line length, left to judgement rather than enforced.
       #
       # E402 (module import not at top) is deliberate here and the code says why:
-      # app.py:27 explains that vf_logistics.auth is imported AFTER dotenv so
+      # app.py explains that vf_logistics.auth is imported AFTER dotenv so
       # IAP_ENABLED, VF_API_KEY and ANONYMOUS_ROLE are read from a loaded .env rather
-      # than a bare shell. tests/test_pure_logic.py places each import beside the test
-      # that uses it. Enforcing E402 would mean reordering for the linter's benefit and
-      # breaking the load order the comment warns about.
+      # than a bare shell. Enforcing E402 would mean reordering for the linter's
+      # benefit and breaking the load order the comment warns about.
       #
-      # W291/W293 (trailing / blank-line whitespace) fire 81 times, and 47 of those are
-      # INSIDE triple-quoted f-strings that are model prompts -- debate_agent 26,
-      # verifier 12, investigation_agent 9. Whitespace in a prompt is model input, not
-      # code formatting, so "fixing" it edits what the model is asked. Not worth it for
-      # a style rule.
+      # W291/W293 (trailing / blank-line whitespace) fire inside triple-quoted
+      # f-strings that are model prompts. Whitespace in a prompt is model input, not
+      # code formatting, so "fixing" it edits what the model is asked.
       #
       # F stays fully on, which is the part that catches real defects: undefined names
-      # and unused imports. Twenty unused imports were removed when this job first ran.
-      - run: ruff check src/ tests/ --select E,F,W --ignore E501,E402,W291,W293
+      # and unused variables. scripts/ is included -- the benchmark and seeding tools
+      # produce the numbers the README quotes, so they are held to the same bar.
+      - run: ruff check src/ tests/ scripts/ --select E,F,W --ignore E501,E402,W291,W293
 
   typecheck:
     runs-on: ubuntu-latest
@@ -54,8 +47,37 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.lock
-      - run: pip install mypy
-      - run: mypy src/vf_logistics/ --ignore-missing-imports --no-error-summary || true
+      # Pinned, like everything else here: a new mypy release adds checks, and an
+      # unpinned one would move the ratchet below without any code changing.
+      - run: pip install "mypy==2.3.1" "types-requests"
+      # Two gates, because the codebase is not yet clean and the old job reported
+      # 150+ errors behind `|| true` -- which is a job that cannot fail and so
+      # checks nothing.
+      #
+      # 1. Modules that ARE clean must stay clean: any error in them fails the job.
+      - name: mypy, strict on clean modules
+        run: |
+          mypy src/vf_logistics/verifier.py src/vf_logistics/observability.py \
+               src/vf_logistics/evaluation.py \
+               --ignore-missing-imports --follow-imports=silent
+      # 2. The whole package may not get worse. The ceiling is the count measured
+      #    at the commit that introduced it; lower it when errors are fixed. Most of
+      #    what remains is missing return annotations on Flask routes in app.py.
+      - name: mypy, ratchet on the whole package
+        run: |
+          set +e
+          mypy src/vf_logistics/ --ignore-missing-imports > mypy.txt 2>&1
+          set -e
+          tail -n 1 mypy.txt
+          count=$(grep -c ': error:' mypy.txt || true)
+          echo "mypy errors: ${count} (ceiling ${MYPY_CEILING})"
+          if [ "${count}" -gt "${MYPY_CEILING}" ]; then
+            echo "::error::mypy errors rose from ${MYPY_CEILING} to ${count}"
+            grep ': error:' mypy.txt | head -n 40
+            exit 1
+          fi
+        env:
+          MYPY_CEILING: "125"
 
   test:
     runs-on: ubuntu-latest
@@ -64,35 +86,85 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      # requirements.lock is RUNTIME only -- it has no pytest, so the first real run of
-      # this job died with "No module named pytest". The test tooling is declared in
-      # pyproject.toml's [project.optional-dependencies] dev extra; install that rather
-      # than repeating a version list that would drift from it.
+      # requirements.lock is RUNTIME only -- it has no pytest. The versions below
+      # match pyproject.toml's [project.optional-dependencies] dev extra; that extra
+      # cannot be installed directly here because installing the project would pull
+      # unpinned runtime dependencies over the locked ones.
       - run: pip install -r requirements.lock
-      - run: pip install "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-mock>=3.12.0"
-      - run: python -m pytest tests/ -v --tb=short --junitxml=test-results.xml
+      - run: pip install "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-mock>=3.12.0" "pytest-cov>=4.1.0"
+      # One run for tests and coverage together. --cov-fail-under makes the figure a
+      # gate rather than a number in an artefact nobody opens; 75 is below the 78%
+      # measured when it was introduced, so it catches a real drop, not noise.
+      - run: >-
+          python -m pytest tests/ --tb=short --junitxml=test-results.xml
+          --cov=vf_logistics --cov-report=term --cov-report=xml --cov-fail-under=75
         env:
           PYTHONPATH: src
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
-          path: test-results.xml
+          path: |
+            test-results.xml
+            coverage.xml
 
-  coverage:
+  frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-      - run: pip install -r requirements.lock
-      - run: pip install "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-mock>=3.12.0" "pytest-cov>=4.1.0"
-      - run: python -m pytest tests/ --cov=vf_logistics --cov-report=term-missing --cov-report=xml
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test
+      # The production build, with demo mode off as the Dockerfile builds it: a page
+      # that exports something Next forbids, or a route handler that fails to
+      # compile, passes tsc and fails here.
+      - run: npm run build
         env:
-          PYTHONPATH: src
-      - uses: actions/upload-artifact@v4
+          NEXT_PUBLIC_DEMO_MODE: "false"
+
+  container:
+    runs-on: ubuntu-latest
+    needs: [test, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the deployed image (API + console)
+        run: docker build -t vf-app:ci .
+      - name: Build the API-only image
+        run: docker build -f Dockerfile.backend -t vf-api:ci .
+      # Boot the real image against a memory store and exercise the paths that only
+      # exist in the combined container: Next on $PORT, Flask on loopback behind it,
+      # the pass-through API, the console proxy, and anonymous access as a viewer.
+      - name: Smoke test the deployed image
+        run: |
+          docker run -d --name vf -p 8080:8080 \
+            -e STORE_BACKEND=memory -e WORKER_MODE=ondemand -e ANONYMOUS_ROLE=viewer \
+            -e VF_SESSION_SECRET=ci-session-secret-0123456789abcdefghijkl \
+            -e VF_API_KEY=ci-api-key-0123456789 -e VF_PUBLIC_READS=true \
+            vf-app:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          set -x
+          curl -fsS http://127.0.0.1:8080/health | grep -q '"status"'
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          curl -fsS "http://127.0.0.1:8080/api/proxy/orchestrator/state?limit=1&drain=0" | grep -q '"cases"'
+          curl -fsS http://127.0.0.1:8080/api/v1/auth/whoami | grep -q '"role": *"viewer"'
+          # An anonymous write reaches Flask and is refused there, not by a login page.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8080/api/v1/simulate)" = "403"
+          # Flask listens on loopback only (port 9090 = 0x2382, state 0A = LISTEN,
+          # 0100007F = 127.0.0.1). Checked inside the container, because from the
+          # host an unpublished port is unreachable whatever it is bound to.
+          docker exec vf python -c "import sys; rows=[l.split() for l in open('/proc/net/tcp').read().splitlines()[1:]]; bound=[r[1] for r in rows if r[1].endswith(':2382') and r[3]=='0A']; print(bound); sys.exit(0 if bound and all(b.startswith('0100007F') for b in bound) else 1)"
+      - name: Container logs
         if: always()
-        with:
-          name: coverage-report
-          path: coverage.xml
+        run: docker logs vf || true

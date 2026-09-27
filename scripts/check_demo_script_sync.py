@@ -90,7 +90,7 @@ def main() -> int:
     total = sum(actual)
     stated = re.findall(r"\*\*(\d+)s\*\*", doc) + re.findall(r"total (\d+)s", doc)
     if not stated:
-        print(f"  NO MATCH  could not find any stated total in the document")
+        print("  NO MATCH  could not find any stated total in the document")
         problems += 1
     else:
         wrong = [s for s in stated if int(s) != total]

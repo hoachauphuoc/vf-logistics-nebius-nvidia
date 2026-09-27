@@ -89,8 +89,11 @@ class TestPrimaryUi(FlaskTestBase):
 
 class TestCORS(FlaskTestBase):
     def test_cors_allows_configured_origin(self):
-        r = self.client.get("/", headers={"Origin": "http://localhost:5000"})
-        self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), "http://localhost:5000")
+        # The Next.js dev server's origin, which is in the default list. The old
+        # default was :5000, a port nothing in this project has served from since
+        # the console moved to Next.js.
+        r = self.client.get("/", headers={"Origin": "http://localhost:3000"})
+        self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), "http://localhost:3000")
 
     def test_cors_blocks_unknown_origin(self):
         r = self.client.get("/", headers={"Origin": "https://evil.com"})

@@ -321,6 +321,11 @@ async def conduct_debate(
                         "confidence": 0.5,
                         "rationale": "Senior Auditor did not use tools. Defaulting to CONFIRM.",
                         "recommended_action": "hold",
+                        # A default the code chose, not a judgement the model made.
+                        # The orchestrator acts on the debate only when this is
+                        # False, so a default can never move a case.
+                        "forced": True,
+                        "forced_reason": "no_tool_call",
                     }
                 break
             
@@ -360,7 +365,19 @@ async def conduct_debate(
                 
                 # Check if this is the final verdict
                 if tool_name == "render_final_verdict" and not args_unparseable:
-                    final_verdict = tool_args
+                    # `forced` is this module's statement about where a verdict came
+                    # from, so a model cannot supply it: a verdict that claimed to be
+                    # forced would mislabel the trace, and one that claimed not to be
+                    # would be claiming something only this code can know.
+                    #
+                    # An empty object stays empty -- and so falsy -- rather than
+                    # becoming {"forced": False}: a call with no arguments is "did not
+                    # render", and the loop below must keep asking.
+                    verdict_args = {
+                        key: value for key, value in tool_args.items()
+                        if key not in ("forced", "forced_reason")
+                    }
+                    final_verdict = {**verdict_args, "forced": False} if verdict_args else {}
                     break
                 
                 tool_results_for_message.append({
@@ -435,6 +452,11 @@ async def conduct_debate(
             "confidence": 0.4,
             "rationale": rationale,
             "recommended_action": "hold",
+            "forced": True,
+            "forced_reason": (
+                "unparseable_verdict" if unparseable_verdict is not None
+                else "rounds_exhausted"
+            ),
         }
         forced_entry: dict[str, Any] = {
             "round": max_tool_rounds + 1,

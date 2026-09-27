@@ -267,12 +267,27 @@ export interface Reconciliation {
 
 export interface Validation {
   findings?: AuditFinding[] | null;
+  /**
+   * Context a reviewer should see that carries no weight: no floor, not counted
+   * as a finding (verifier.validate). A short trading record, freight above a
+   * per-consignment typical. Rendered apart from the findings so it is never read
+   * as a reason the shipment was held.
+   */
+  observations?: AuditFinding[] | null;
   risk_floor?: number | null;
   skip_ai?: boolean | null;
   auto_clear_by_rules?: boolean | null;
   auto_reject_by_rules?: boolean | null;
   hs_floor_effect?: number | null;
   [key: string]: unknown;
+}
+
+export interface DebateEffect {
+  escalated: boolean;
+  reason: string;
+  threshold: number;
+  risk_before: number;
+  risk_after: number;
 }
 
 export interface HumanReview {
@@ -343,6 +358,13 @@ export interface Case {
    */
   auto_debate?: Record<string, unknown> | null;
   debate?: Record<string, unknown> | null;
+  /**
+   * What the automatic debate changed (orchestrator._apply_debate_verdict). Always
+   * written when a debate ran, so "did it matter here, and why" has an answer
+   * whichever way it went.
+   */
+  debate_effect?: DebateEffect | null;
+  debate_escalated?: boolean | null;
   attempts?: number | null;
   last_error?: string | null;
   lineage_audit_id?: string | null;

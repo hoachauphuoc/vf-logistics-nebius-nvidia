@@ -400,7 +400,6 @@ def main() -> int:
             print("No results yet.", file=sys.stderr)
             return 1
         mets = []
-        prefix = "holdout_" if args.which == "holdout" else ""
         for f in sorted(RESULTS_DIR.glob("*.json")):
             if args.which == "holdout" and not f.name.startswith("holdout_"):
                 continue

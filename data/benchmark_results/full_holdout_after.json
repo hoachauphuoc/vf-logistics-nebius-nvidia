@@ -1,0 +1,156 @@
+{
+  "arm": "full",
+  "split": "holdout",
+  "split_method": "sha256(case_id)[0] % 2: 0 = dev, 1 = holdout",
+  "generated_at": "2026-09-27T06:22:22+0700",
+  "cases_run": 200,
+  "elapsed_seconds": 820.7,
+  "corpus": {
+    "file": "synthetic_test_cases.json",
+    "seed": 20260920,
+    "total_available": 1000,
+    "composition": {
+      "shell_company": 300,
+      "hs_mismatch": 300,
+      "alias_evasion": 200,
+      "clean": 200
+    }
+  },
+  "detection": {
+    "precision": 0.9027,
+    "recall": 1.0,
+    "f1": 0.9489,
+    "false_positive_rate": 0.5455,
+    "tp": 167,
+    "fp": 18,
+    "fn": 0,
+    "tn": 15
+  },
+  "rules_only_baseline": {
+    "precision": 0.9091,
+    "recall": 0.9581,
+    "f1": 0.9329,
+    "false_positive_rate": 0.4848,
+    "tp": 160,
+    "fp": 16,
+    "fn": 7,
+    "tn": 17
+  },
+  "model_contribution": {
+    "recall_delta": 0.0419,
+    "precision_delta": -0.0064,
+    "false_positive_rate_delta": 0.0607,
+    "note": "A negative false_positive_rate_delta is the win worth having: on this corpus the rules catch almost every attack and hold most of the clean traffic, so the model layer is judged on whether it releases honest shipments without releasing attacks."
+  },
+  "by_attack_type": {
+    "None": {
+      "cases": 33,
+      "detected": 18,
+      "detection_rate": 0.5455,
+      "rules_only_detected": 16
+    },
+    "hs_code_mismatch": {
+      "cases": 50,
+      "detected": 50,
+      "detection_rate": 1.0,
+      "rules_only_detected": 43
+    },
+    "sanctions_alias_evasion": {
+      "cases": 33,
+      "detected": 33,
+      "detection_rate": 1.0,
+      "rules_only_detected": 33
+    },
+    "shell_company_transshipment": {
+      "cases": 84,
+      "detected": 84,
+      "detection_rate": 1.0,
+      "rules_only_detected": 84
+    }
+  },
+  "hs_classification": {
+    "by_set": {
+      "holdout": {
+        "cases": 26,
+        "mismatch_detected": 25,
+        "detection_rate": 0.9615,
+        "redirect_correct": 21,
+        "redirect_accuracy": 0.84,
+        "verdicts": {
+          "inconsistent": 25,
+          "consistent": 1
+        }
+      },
+      "pairs": {
+        "cases": 24,
+        "mismatch_detected": 23,
+        "detection_rate": 0.9583,
+        "redirect_correct": 22,
+        "redirect_accuracy": 0.9565,
+        "verdicts": {
+          "inconsistent": 23,
+          "consistent": 1
+        }
+      }
+    },
+    "note": "`holdout` substitutions are absent from data/hs_reference.yaml. Recall there is the number that says whether the reference table generalises; `pairs` was tuned against."
+  },
+  "false_positives": {
+    "all_clean_cases": 33,
+    "flagged": 18,
+    "rate": 0.5455,
+    "hard_negatives": {
+      "cases": 26,
+      "flagged": 15,
+      "rate": 0.5769
+    },
+    "easy_negatives": {
+      "cases": 7,
+      "flagged": 3,
+      "rate": 0.4286
+    },
+    "adjacent_hs_negatives": {
+      "cases": 14,
+      "flagged": 4,
+      "hs_mismatch_claimed": 0,
+      "note": "Benign goods declared under the heading an evader would use as cover. An HS mismatch claimed here is the classifier learning the cover heading rather than the goods."
+    }
+  },
+  "zero_day": {
+    "gate_fired_on_attacks": 84,
+    "gate_fired_on_clean": 13,
+    "gate_precision": 0.866,
+    "verdicts": {
+      "no_risk_found": 97
+    },
+    "verdicts_forced": 79,
+    "real_searches": 9,
+    "stubbed_searches": 253,
+    "measurement_limit": "Stubbed searches return an EMPTY result, never a fabricated adverse finding -- inventing news would feed the corpus labels to the model through the tool and then grade it on repeating them. So adverse-media DETECTION is measured only on the --real-tavily subset; the rest measures the gate and the model's handling of absence. Tavily's free tier is 1,000 credits a month, which is why the subset exists."
+  },
+  "cost": {
+    "total_usd": 0.201926,
+    "cases_with_model_calls": 200,
+    "avg_usd_per_case": 0.00100963,
+    "avg_usd_per_case_all": 0.00100963,
+    "total_input_tokens": 771092,
+    "total_output_tokens": 648586,
+    "projected_usd_per_1000_cases": 1.0096
+  },
+  "latency": {
+    "mean_ms": 24286,
+    "median_ms": 23211,
+    "p95_ms": 53893
+  },
+  "errors": {
+    "zero_day_verdict_forced": 79,
+    "hs_parse: model reply failed HSClassification: heading_for_goods: Inpu": 1
+  },
+  "aborted_on_cost": false,
+  "verifier": "after false-positive tuning",
+  "notes": [
+    "Rules plus the HS classifier (Nemotron Nano, cot_strict) plus the zero-day radar, through the real gate. 200 holdout cases by stride.",
+    "Adverse-media detection is measured on the 9 cases that used a real Tavily search; the rest used an empty stub, never a fabricated result.",
+    "The model layer added 2 false positives, both an HS mismatch claimed against a non-controlled heading (floor 40), and caught the 7 HS substitutions the tuned rules alone missed."
+  ]
+}

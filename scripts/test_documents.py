@@ -48,8 +48,11 @@ from pathlib import Path
 #
 # Read from the environment so a fresh clone can point it anywhere:
 #   VF_TEST_BASE=http://localhost:8080 python scripts/test_documents.py
+#
+# The default is vf-app, which serves the API and the console at one URL since the
+# two Cloud Run services were merged; the API is under /api/v1 there as before.
 BASE = os.getenv(
-    "VF_TEST_BASE", "https://vf-logistics-f7rcctz26a-as.a.run.app",
+    "VF_TEST_BASE", "https://vf-app-350828852747.asia-southeast1.run.app",
 ).rstrip("/")
 
 # Resolved from this file, not the working directory, so the script runs the same
@@ -62,13 +65,16 @@ SAMPLE_DIR = Path(__file__).resolve().parent.parent / "sample_docs"
 # floor in verifier.py or a gate in governance.py, not by where the fraud model
 # happens to land.
 #
-# unknown_shipper_bol.pdf is the exception and is listed with two accepted states
+# unknown_shipper_bol.pdf is the exception and is listed with three accepted states
 # on purpose. Its outcome turns on the score_disputed trigger, which fires when
 # the deterministic floor exceeds the model score by 15 or more - so it depends on
 # a model judgement near a threshold, and it has been observed landing either side.
-# Pinning it to one state would produce a README that a judge could fairly call
-# wrong. Both states are correct behaviour: one queues the case for review, the
-# other escalates it to a human because the two sources of truth disagreed.
+# When it is disputed, the Senior Auditor reviews it, and a confident DISAGREE now
+# sends it to deep investigation (orchestrator.debate_escalation) -- ESCALATED if
+# the boundary lets the escalation run, PENDING_HUMAN with ESCALATED proposed when
+# score_disputed makes the boundary refuse it. Pinning it to one state would
+# produce a README that a judge could fairly call wrong. Every one of these is
+# correct behaviour.
 #
 # PENDING_HUMAN arrives by three different routes, which is why this script
 # reports the proposed outcome and the gate's refusal alongside the state. The
@@ -78,9 +84,10 @@ DOCUMENTS: list[tuple[str, str, tuple[str, ...], str]] = [
     ("clean_bol.pdf", "VFL-2026-88420", ("AUTO_CLEARED",),
      "shipper resolves in the counterparty book; released with no human"),
     ("unknown_shipper_bol.pdf", "VFL-2026-88431",
-     ("HELD_FOR_REVIEW", "PENDING_HUMAN"),
-     "shipper not on file and the goods are thinly priced: floor 45, and whether "
-     "the model lands within 15 of it decides review queue vs human"),
+     ("HELD_FOR_REVIEW", "PENDING_HUMAN", "ESCALATED"),
+     "shipper not on file and the goods are thinly priced: floor 45; whether the "
+     "model lands within 15 of it, and what the Senior Auditor says if not, "
+     "decides review queue vs investigation"),
     ("identity_spoof_bol.pdf", "VFL-2026-88442", ("PENDING_HUMAN",),
      "a known customer's tax ID under another company name: floor 75, disputed"),
     ("over_ceiling_bol.pdf", "VFL-2026-88453", ("PENDING_HUMAN",),

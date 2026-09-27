@@ -4,23 +4,29 @@ import { useQuery } from "@tanstack/react-query";
 import { LogIn, LogOut } from "lucide-react";
 import { useState } from "react";
 
+import { RoleChip } from "@/components/layout/RoleChip";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { roleLabel, useIdentity } from "@/lib/identity";
 
 /**
- * Who is signed in, and the way out.
+ * Who is signed in, what role the API gives them, and the way out.
  *
  * The email is shown rather than a generic "Account" because it is the value
  * written to the audit trail for every decision taken from this console. Someone
  * about to release a shipment should be able to see which name that release will
  * carry, without opening a menu.
+ *
+ * The role comes from the API's whoami, not from the session: the console knows
+ * who signed in, only the API knows what that person may do.
  */
 export function AccountMenu() {
   const [busy, setBusy] = useState(false);
+  const identity = useIdentity().data;
 
   const session = useQuery({
     queryKey: ["auth", "session"],
@@ -79,18 +85,20 @@ export function AccountMenu() {
           </a>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-[20rem]">
-          You are viewing read-only. Sign in to record a review decision; the
-          audit trail records the signed-in account.
+          You are viewing read-only, as a viewer. Sign in to act: the API decides
+          what your account may do, and the audit trail records it by name.
         </TooltipContent>
       </Tooltip>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5">
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="hidden max-w-[11rem] truncate text-[11px] text-dim sm:block">
+          {/* md, not sm: at tablet widths the address and the role chip do not both
+              fit, and the chip is the one that says what the account may do. */}
+          <span className="hidden max-w-[11rem] truncate text-[11px] text-dim md:block">
             {session.data.email}
           </span>
         </TooltipTrigger>
@@ -98,6 +106,20 @@ export function AccountMenu() {
           Decisions you record are written to the audit trail under this address.
         </TooltipContent>
       </Tooltip>
+
+      {identity?.authenticated_by === "console_session" && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a href="/admin" aria-label={`Your role: ${roleLabel(identity.role)}`}>
+              <RoleChip role={identity.role} />
+            </a>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[20rem]">
+            Assigned by the API ({identity.role_source}). Access Control shows
+            what this role can and cannot do.
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       <Tooltip>
         <TooltipTrigger asChild>

@@ -287,7 +287,7 @@ async def drift_check(
     ]
 
     sample = len(cases)
-    metrics = {
+    metrics: dict[str, Any] = {
         "sample": sample,
         "auto_release_rate": 0.0,
         "veto_rate": 0.0,

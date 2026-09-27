@@ -1,9 +1,10 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileUp, Loader2, Play, Upload } from "lucide-react";
+import { CheckCircle2, FileUp, Loader2, Lock, Play, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { Gated } from "@/components/layout/Gated";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { ErrorState } from "@/components/layout/States";
 import {
@@ -28,12 +29,16 @@ import {
 } from "@/lib/api";
 import { HelpDot } from "@/components/help/HelpDot";
 import { caseStateLabel, lowerFirst } from "@/lib/format";
+import { lockReason, useIdentity } from "@/lib/identity";
 import { useTenant } from "@/lib/tenant-context";
 import { cn } from "@/lib/utils";
 
 export default function DevOpsPage() {
   const { tenant } = useTenant();
   const queryClient = useQueryClient();
+  // Every panel here is an operator write upstream: each one creates cases and
+  // spends tokens. Computed once and passed down, so the four cannot disagree.
+  const lock = lockReason(useIdentity().data, "operator");
 
   const refreshBoard = () => {
     queryClient.invalidateQueries({ queryKey: ["snapshot", tenant.id] });
@@ -59,11 +64,21 @@ export default function DevOpsPage() {
         console could not call it even if a button were added.
       */}
 
+      {lock && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <Lock className="mt-[2px] size-4 shrink-0 text-dim" aria-hidden />
+          <p className="text-[12px] leading-relaxed text-dim">
+            Read-only for you. {lock} Every control on this page creates cases and
+            spends model tokens, so the API reserves them for operators.
+          </p>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
-        <ScriptedBatch onDone={refreshBoard} />
-        <BulkInject onDone={refreshBoard} />
-        <DocumentUpload onDone={refreshBoard} />
-        <CustomShipment onDone={refreshBoard} />
+        <ScriptedBatch onDone={refreshBoard} lock={lock} />
+        <BulkInject onDone={refreshBoard} lock={lock} />
+        <DocumentUpload onDone={refreshBoard} lock={lock} />
+        <CustomShipment onDone={refreshBoard} lock={lock} />
       </div>
     </>
   );
@@ -103,7 +118,7 @@ function Result({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ScriptedBatch({ onDone }: { onDone: () => void }) {
+function ScriptedBatch({ onDone, lock }: { onDone: () => void; lock: string | null }) {
   const inject = useMutation({
     mutationFn: injectScriptedBatch,
     onSuccess: onDone,
@@ -122,19 +137,21 @@ function ScriptedBatch({ onDone }: { onDone: () => void }) {
       title="Scripted batch"
       note="Three cases, one per outcome, fixed rather than random so two runs are comparable. A settled shipper on a direct sailing to Singapore, which should clear itself. Furniture to Busan with clean paperwork but freight under the route average from a shipper with nine prior shipments, which compliance clears and fraud still sends to a human. And frequency converters to Karachi declared as agricultural, from a company registered eleven days ago with no tax ID, at 14% of the route's normal freight, with two transhipments added after booking."
     >
-      <Button
-        size="sm"
-        disabled={inject.isPending}
-        onClick={() => inject.mutate()}
-        className="h-8 text-[12px]"
-      >
-        {inject.isPending ? (
-          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-        ) : (
-          <Play className="mr-1.5 size-3.5" />
-        )}
-        Inject the batch
-      </Button>
+      <Gated reason={lock}>
+        <Button
+          size="sm"
+          disabled={inject.isPending || lock !== null}
+          onClick={() => inject.mutate()}
+          className="h-8 text-[12px]"
+        >
+          {inject.isPending ? (
+            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+          ) : (
+            <Play className="mr-1.5 size-3.5" />
+          )}
+          Inject the batch
+        </Button>
+      </Gated>
 
       {inject.isError && (
         <div className="mt-3">
@@ -151,7 +168,7 @@ function ScriptedBatch({ onDone }: { onDone: () => void }) {
   );
 }
 
-function BulkInject({ onDone }: { onDone: () => void }) {
+function BulkInject({ onDone, lock }: { onDone: () => void; lock: string | null }) {
   const [count, setCount] = useState(10);
   const [confirm, setConfirm] = useState(false);
 
@@ -181,15 +198,17 @@ function BulkInject({ onDone }: { onDone: () => void }) {
             className="mt-1 h-8 w-24 border-white/10 bg-black/30 text-[12.5px] tabular-nums"
           />
         </div>
-        <Button
-          size="sm"
-          disabled={bulk.isPending}
-          onClick={() => setConfirm(true)}
-          className="h-8 text-[12px]"
-        >
-          {bulk.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-          Queue them
-        </Button>
+        <Gated reason={lock}>
+          <Button
+            size="sm"
+            disabled={bulk.isPending || lock !== null}
+            onClick={() => setConfirm(true)}
+            className="h-8 text-[12px]"
+          >
+            {bulk.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+            Queue them
+          </Button>
+        </Gated>
       </div>
 
       {bulk.isError && (
@@ -263,7 +282,7 @@ const ACCEPTED_LABEL = "PDF, PNG, JPG or WebP";
 // the user can avoid rather than only discover.
 const MAX_DOCUMENT_MB = 20;
 
-function DocumentUpload({ onDone }: { onDone: () => void }) {
+function DocumentUpload({ onDone, lock }: { onDone: () => void; lock: string | null }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const upload = useMutation({
@@ -272,6 +291,9 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
   });
 
   function take(files: FileList | null) {
+    // The drop zone stays visible when locked, so a dropped file must be refused
+    // here as well as the picker being disabled.
+    if (lock) return;
     const file = files?.[0];
     if (file) upload.mutate(file);
   }
@@ -301,16 +323,23 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
         )}
       >
         <FileUp className="size-5 text-dim" aria-hidden />
-        <p className="text-[12px] text-dim">
-          Drop a file here, or{" "}
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="text-brand hover:underline"
-          >
-            choose one
-          </button>
-        </p>
+        {lock ? (
+          <p className="flex items-center gap-1.5 text-[12px] text-dim">
+            <Lock className="size-3.5" aria-hidden />
+            {lock}
+          </p>
+        ) : (
+          <p className="text-[12px] text-dim">
+            Drop a file here, or{" "}
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="text-brand hover:underline"
+            >
+              choose one
+            </button>
+          </p>
+        )}
         <p className="text-[11px] text-dim/70">
           {ACCEPTED_LABEL}, up to {MAX_DOCUMENT_MB}&nbsp;MB. A PDF is read from
           its first page only.
@@ -319,6 +348,7 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
           ref={inputRef}
           type="file"
           className="sr-only"
+          disabled={lock !== null}
           // Both extensions and MIME types: a file picker filters on one, a
           // drag source reports the other, and which you get varies by OS.
           accept={ACCEPTED_ATTR}
@@ -367,7 +397,7 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
  * entirely and injects the scripted batch, so a form that posted there would
  * silently discard everything typed into it and report success.
  */
-function CustomShipment({ onDone }: { onDone: () => void }) {
+function CustomShipment({ onDone, lock }: { onDone: () => void; lock: string | null }) {
   const [form, setForm] = useState({
     shipment_id: "",
     shipper_company: "",
@@ -434,19 +464,21 @@ function CustomShipment({ onDone }: { onDone: () => void }) {
         ))}
       </div>
 
-      <Button
-        size="sm"
-        disabled={submit.isPending}
-        onClick={() => submit.mutate()}
-        className="mt-3 h-8 text-[12px]"
-      >
-        {submit.isPending ? (
-          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-        ) : (
-          <Upload className="mr-1.5 size-3.5" />
-        )}
-        Submit
-      </Button>
+      <Gated reason={lock}>
+        <Button
+          size="sm"
+          disabled={submit.isPending || lock !== null}
+          onClick={() => submit.mutate()}
+          className="mt-3 h-8 text-[12px]"
+        >
+          {submit.isPending ? (
+            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+          ) : (
+            <Upload className="mr-1.5 size-3.5" />
+          )}
+          Submit
+        </Button>
+      </Gated>
 
       {submit.isError && (
         <div className="mt-3">

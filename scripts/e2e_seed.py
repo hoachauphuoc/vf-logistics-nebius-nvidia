@@ -28,7 +28,7 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT_BASE = "https://vf-logistics-f7rcctz26a-as.a.run.app"
+DEFAULT_BASE = "https://vf-app-350828852747.asia-southeast1.run.app"
 
 # Ho Chi Minh City <-> Hanoi is in verifier.DOMESTIC_SAFE_ROUTES; 6109 is not in
 # DUAL_USE_HS_PREFIXES. Both matter for the LOW_VALUE_DOMESTIC fast path.

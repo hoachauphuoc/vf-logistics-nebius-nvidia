@@ -36,7 +36,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-DEFAULT_BASE = "https://vf-logistics-f7rcctz26a-as.a.run.app"
+DEFAULT_BASE = "https://vf-app-350828852747.asia-southeast1.run.app"
 
 # Values that must match the deployed prefilter rules and reference data. Quoted
 # from verifier.PrefilterRules.defaults() and data/sanctions_seed.json rather
@@ -163,8 +163,9 @@ CASES: list[tuple[str, str, list[str], dict]] = [
             # and never exercise the sanctions index at all -- the branch under
             # test was shadowed by a cheaper one that runs first.
             shipper_tax_id="0302556611",
-            # 3900 USD would be 325% of the 1200 USD lane baseline, tripping the
-            # over-invoicing arm of the freight check as an unintended finding.
+            # 3900 USD would be 325% of the 1200 USD lane baseline -- recorded now
+            # as a FREIGHT_ABOVE_LANE_TYPICAL observation, not scored, but still a
+            # line on the case this one is not about.
             declared_value=184_000, weight_kg=2_100, shipping_cost=2_600,
         ),
     ),
@@ -322,8 +323,13 @@ CASES: list[tuple[str, str, list[str], dict]] = [
         ),
     ),
     (
-        "FULL-20-THINHISTORY", "counterparty with only a handful of shipments",
-        ["SHIPPER_THIN_HISTORY", "RECENTLY_REGISTERED_SHIPPER"],
+        # Context, not a finding, since the false-positive tuning: 2-9 prior
+        # shipments separated nothing on the corpus (tests/test_false_positive_
+        # tuning.py). Kept on the board to show a short record reaching the
+        # reviewer as context rather than holding the shipment. `~` marks an
+        # observation in the coverage report below.
+        "FULL-20-THINHISTORY", "a handful of prior shipments, recorded as context",
+        ["~SHIPPER_THIN_HISTORY"],
         _base(
             shipper_name="Bao Tin Shipping JSC",
             shipper_company="Bao Tin Shipping JSC",
@@ -426,10 +432,15 @@ def detail(base: str, case_id: str) -> dict:
 
 
 def findings_of(case: dict) -> list[str]:
+    """Finding codes, then observation codes marked with a leading `~`."""
     validation = case.get("validation") or {}
-    return sorted({
+    found = sorted({
         f.get("code") for f in (validation.get("findings") or []) if f.get("code")
     })
+    context = sorted({
+        f"~{o.get('code')}" for o in (validation.get("observations") or []) if o.get("code")
+    })
+    return found + context
 
 
 def main() -> int:
@@ -514,7 +525,7 @@ def main() -> int:
     by_shipment = {c.get("shipment_id"): c for c in cases}
 
     print("\n" + "=" * 74)
-    print("coverage: intended finding vs what the pipeline produced")
+    print("coverage: intended finding vs what the pipeline produced (~ = observation)")
     print("=" * 74)
 
     produced: set[str] = set()

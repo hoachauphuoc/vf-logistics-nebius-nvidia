@@ -28,7 +28,7 @@ import urllib.request
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from e2e_seed import SEEDS  # noqa: E402
 
-DEFAULT_BASE = "https://vf-logistics-f7rcctz26a-as.a.run.app"
+DEFAULT_BASE = "https://vf-app-350828852747.asia-southeast1.run.app"
 
 B2B_PATHS = [
     "/api/v1/compliance/audit",

@@ -40,6 +40,19 @@ screenshots/
 pyproject.toml
 Makefile
 
+# Frontend build output and host dependencies. The image runs `npm ci` and
+# `npm run build` itself; copying a Windows host's node_modules over that would
+# replace Linux binaries with ones that cannot run in the container.
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/coverage/
+
+# Local benchmark output (gitignored too)
+artifacts/
+benchmark_report*.json
+
 # Test files
 tests/
 scripts/

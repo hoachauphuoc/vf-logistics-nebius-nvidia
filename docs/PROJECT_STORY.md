@@ -123,8 +123,10 @@ run spends about `$0.068` on models and 90 to 106 Tavily searches, so on the fre
 tier the search quota runs out roughly 200 cases in while the model spend is still
 negligible. Every figure we had published was a model-cost figure.
 
-The rest is **Cloud Run** for two services — the Flask API and a separate Next.js
-console — **Firestore** for case state, **Pub/Sub** for the work queue, **Cloud
+The rest is **Cloud Run** for one service that runs the Flask API and the Next.js
+console in one container — they began as two and were merged, so there is one URL
+and the API is reachable only through the console's own process — **Firestore** for
+case state, **Pub/Sub** for the work queue, **Cloud
 Storage** for document archival, and **Google Cloud Model Armor** for injection
 screening. `WORKER_MODE=ondemand` advances cases inside the request handler, which
 lets the service run at `--min-instances=0` and scale to zero between judged runs
@@ -313,14 +315,22 @@ URL. The risk floor cannot be talked down, because no model participates in
 computing it. The delegation boundary means the honest answer to "what can this
 thing do without asking" is a document with a version and a human's name on it.
 
-**The HS classifier is the one place we have a measured accuracy number rather than
-an impression.** Asked to judge whether a declared tariff heading matches the goods
-described, Nano started at 40.0% recall on our holdout. Adding a chain-of-thought
-prompt made it *worse* — 26.7%, because the model talked itself out of correct
-answers. What fixed it was neither prompting nor a bigger model: it was giving it a
-reference block of real HS headings to check against, which took recall to **91.7%**
-on the same holdout. The lesson we would keep is that a retrieval problem dressed as
-a reasoning problem does not respond to reasoning.
+**The HS classifier is where we have the most carefully measured accuracy number.**
+Asked to judge whether a declared tariff heading matches the goods described, Nano
+started at 40.0% recall on our 30-case pairs set and 50.0% on a 24-case holdout. Two
+worked examples made it *worse* — 26.7% and 33.3% — because they taught it caution
+rather than classification. Asking it to reason before answering changed little. What
+fixed it was neither prompting nor a bigger model: it was giving it the published
+contents of the real HS headings to check against, which took recall to **92.9%** on
+the pairs and **91.7%** with no false alarms on the holdout, whose substitutions the
+reference never mentions. The lesson we would keep is that a retrieval problem
+dressed as a reasoning problem does not respond to examples.
+
+The detection benchmark came later and was less flattering. On a held-out half of a
+1,000-case synthetic corpus, the deterministic rules held **76.7%** of clean shipments
+for a person. Two signals that separated nothing were demoted to context, chosen on
+the other half only, and that figure fell to **38.4%** with detection of the sanctions
+and shell-company attacks unchanged. It is still high, and we say so.
 
 And the failure modes are legible. When Model Armor was returning 403, the system
 told us so in the response body instead of pretending. We would rather ship

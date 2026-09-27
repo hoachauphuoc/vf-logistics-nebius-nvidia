@@ -64,6 +64,10 @@ LANE_BASELINES_USD: dict[tuple[str, str], float] = {
 
 DEFAULT_LANE_BASELINE_USD = 1_800.0
 
+# lane_baseline()'s name for a baseline taken from the shipment record itself --
+# the one kind that describes comparable consignments rather than a typical one.
+STATED_BASELINE_SOURCE = "avg_route_cost on the record"
+
 # --------------------------------------------------------------------------
 # SQL Pre-processing Rules: Whitelist / Blacklist / Low-value auto-clear
 #
@@ -366,7 +370,7 @@ def lane_baseline(shipment: dict[str, Any]) -> tuple[float, str]:
     """
     stated = _num(shipment.get("avg_route_cost"))
     if stated and stated > 0:
-        return stated, "avg_route_cost on the record"
+        return stated, STATED_BASELINE_SOURCE
 
     origin = _country(shipment.get("origin"))
     dest = _country(shipment.get("destination"))
@@ -578,7 +582,43 @@ def check_freight_ratio(
     elif ratio < 0.70:
         sev, floor = "MEDIUM", 50
     elif ratio > 3.0:
-        # Grossly overpriced is its own typology: over-invoicing to move value.
+        # Grossly overpriced is its own typology: over-invoicing to move value --
+        # but only measurable against a like-for-like baseline.
+        #
+        # The lane table and the corridor default are a typical charge for ONE
+        # commercial consignment on the lane. They do not scale with the size or
+        # value of the shipment, so "3x the lane figure" mostly measures how big
+        # the consignment is. Measured on the dev half of the synthetic corpus
+        # (scripts/analyse_false_positives.py): this branch fired on 60 of 114
+        # clean shipments and 169 of 433 attacks. Freight/value on the clean ones
+        # was 3.1-8.7%, ordinary for sea and air; on the attacks, 1.3-6.0%. It
+        # separated nothing, and it was the single largest cause of clean
+        # shipments held for review.
+        #
+        # So against those figures it is reported as an observation -- visible
+        # to the reviewer, with the numbers -- and does not raise the floor.
+        # Against `avg_route_cost` from the record, which is this lane's own
+        # history for comparable consignments, it is still a MEDIUM finding.
+        # The underpriced branches above are unaffected at every scale: a charge
+        # far below even a single consignment's typical is not explained by size.
+        if source != STATED_BASELINE_SOURCE:
+            return {
+                "code": "FREIGHT_ABOVE_LANE_TYPICAL",
+                "observation": True,
+                "severity": "INFO",
+                "floor": 0,
+                "detail": (
+                    f"Freight {cost:,.0f} USD is {ratio:.0%} of the {baseline:,.0f} USD "
+                    f"per-consignment figure ({source}). Recorded, not scored: that "
+                    "figure does not scale with the size or value of the shipment."
+                ),
+                "measured": {
+                    "shipping_cost": cost, "baseline": baseline, "ratio": round(ratio, 3),
+                    "freight_to_value": (
+                        round(cost / value, 4) if value and value > 0 else None
+                    ),
+                },
+            }
         sev, floor = "MEDIUM", 50
     else:
         return None
@@ -758,6 +798,29 @@ def check_hs_description_consistency(
     confidence = float(hs_verdict.get("confidence") or 0.0)
     reasoning = str(hs_verdict.get("reasoning") or "").strip()
     obfuscation = hs_verdict.get("obfuscation")
+
+    # "Inconsistent", naming the DECLARED heading as the one the goods belong to.
+    # The reply contradicts itself, so there is no mismatch to act on -- seen live
+    # on a furniture consignment: "does not match declared HS 9403; the goods
+    # appear to belong to 9403". Scoring it put a floor of 40 on a clean shipment
+    # on the strength of a sentence that disagrees with itself. Recorded as an
+    # observation so the reply is still visible; a contradiction removes only the
+    # model's own finding and cannot touch a deterministic one.
+    suggested_prefix = re.sub(r"\D", "", str(suggested or ""))[:4]
+    if declared and suggested_prefix == declared:
+        return [{
+            "code": "HS_DESCRIPTION_CHECK_CONTRADICTORY",
+            "observation": True,
+            "severity": "INFO",
+            "floor": 0,
+            "detail": (
+                f"The classifier called the description inconsistent with HS {declared} "
+                f"but named {declared} as the heading the goods belong to. A reply that "
+                "contradicts itself is not acted on."
+            ),
+            "measured": {"declared_hs": declared, "suggested_hs": suggested,
+                         "confidence": confidence},
+        }]
 
     if confidence < min_confidence:
         return [{
@@ -1085,10 +1148,20 @@ def check_counterparty(shipment: dict[str, Any]) -> list[dict[str, Any]]:
             "measured": {"shipper_tx_count": int(tx)},
         })
     elif tx < 10:
+        # An observation, not a finding.
+        #
+        # Measured on the dev half of the synthetic corpus: 2-9 prior shipments
+        # was carried by 57 clean shipments and 93 attacks, and on its own it held
+        # 25 clean shipments for review. The four attacks it was the ONLY signal
+        # for had 5-9 prior shipments, squarely inside the clean range of 2-7, so
+        # no threshold keeps them without keeping the clean ones too. A shipper
+        # with a short record is not evidence of anything; one with NO record
+        # still is, which is why SHIPPER_NO_HISTORY above stays a HIGH finding.
         findings.append({
             "code": "SHIPPER_THIN_HISTORY",
-            "severity": "MEDIUM",
-            "floor": 45,
+            "observation": True,
+            "severity": "INFO",
+            "floor": 0,
             "detail": f"Shipper has only {int(tx)} prior shipments on file.",
             "measured": {"shipper_tx_count": int(tx)},
         })
@@ -1238,8 +1311,20 @@ def validate(
     if screening is not None:
         findings.extend(check_sanctions_screening(shipment, screening))
 
+    # Observations are context a reviewer should see -- a short trading record, a
+    # freight charge above a per-consignment typical -- and carry no weight: no
+    # floor, no corroboration count, and not part of finding_count, which is what
+    # governance's require_zero_deterministic_findings reads. Kept apart here, in
+    # one place, so no check has to know how the floor is computed.
+    observations = [f for f in findings if f.get("observation")]
+    findings = [f for f in findings if not f.get("observation")]
+
     deterministic_only = list(findings)
-    hs_findings = check_hs_description_consistency(shipment, hs_verdict)
+    # The model checks can yield observations too (a self-contradicting HS reply),
+    # so their output is split the same way before it reaches the arithmetic.
+    hs_all = check_hs_description_consistency(shipment, hs_verdict)
+    observations.extend(f for f in hs_all if f.get("observation"))
+    hs_findings = [f for f in hs_all if not f.get("observation")]
     findings.extend(hs_findings)
     model_findings = list(hs_findings)
     zero_day_findings = check_zero_day(shipment, zero_day)
@@ -1266,6 +1351,7 @@ def validate(
         "risk_floor": floor,
         "findings": findings,
         "finding_count": len(findings),
+        "observations": observations,
         "high_severity_count": high_count,
         "skip_ai": bool(skip_ai_findings) and not any(
             f["severity"] in ("HIGH", "CRITICAL") 
@@ -1503,20 +1589,22 @@ def prefilter_diff(
             "added": sorted(added), "removed": sorted(removed),
         }
 
-    added = set(after.vip_registry) - set(before.vip_registry)
-    removed = set(before.vip_registry) - set(after.vip_registry)
-    if added or removed:
+    # Pairs, not strings, hence names of their own: reusing `added` for both
+    # types was a type error mypy caught and a reading hazard it did not.
+    vip_added = set(after.vip_registry) - set(before.vip_registry)
+    vip_removed = set(before.vip_registry) - set(after.vip_registry)
+    if vip_added or vip_removed:
         diff["vip_registry"] = {
-            "added": [{"company": c, "tax_id": t} for c, t in sorted(added)],
-            "removed": [{"company": c, "tax_id": t} for c, t in sorted(removed)],
+            "added": [{"company": c, "tax_id": t} for c, t in sorted(vip_added)],
+            "removed": [{"company": c, "tax_id": t} for c, t in sorted(vip_removed)],
         }
 
-    added = set(after.safe_routes) - set(before.safe_routes)
-    removed = set(before.safe_routes) - set(after.safe_routes)
-    if added or removed:
+    routes_added = set(after.safe_routes) - set(before.safe_routes)
+    routes_removed = set(before.safe_routes) - set(after.safe_routes)
+    if routes_added or routes_removed:
         diff["safe_routes"] = {
-            "added": [{"origin": o, "destination": d} for o, d in sorted(added)],
-            "removed": [{"origin": o, "destination": d} for o, d in sorted(removed)],
+            "added": [{"origin": o, "destination": d} for o, d in sorted(routes_added)],
+            "removed": [{"origin": o, "destination": d} for o, d in sorted(routes_removed)],
         }
 
     if before.low_value_threshold_usd != after.low_value_threshold_usd:

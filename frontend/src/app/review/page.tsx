@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, Loader2, Lock, LogIn, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { PageHeading } from "@/components/layout/PageHeading";
 import { EmptyState, ErrorState } from "@/components/layout/States";
 import { CaseCard } from "@/components/pipeline/CaseCard";
+import { DebatePanel } from "@/components/review/DebatePanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,8 @@ import {
   humaniseCode,
   lowerFirst,
 } from "@/lib/format";
+import { type Identity, lockReason, roleLabel, useIdentity } from "@/lib/identity";
+import { helpFor } from "@/lib/help-content";
 import { useTenant } from "@/lib/tenant-context";
 import {
   HUMAN_ACTION_RESULT,
@@ -202,57 +205,7 @@ export default function ReviewQueuePage() {
  * the second is an operator's deployment gap, and an empty frame invites a
  * reviewer to conclude the shipment arrived with no paperwork.
  */
-/**
- * CONFIRM or DISAGREE, legible without reading JSON.
- *
- * The debate payload was rendered only as a `JSON.stringify` dump, and grepping the
- * whole console for CONFIRM or DISAGREE returned nothing rendered anywhere -- so the
- * one hop that runs Nemotron Ultra, and the only hop whose verdict the deterministic
- * floor does not override, was the least readable thing on the screen.
- *
- * The dump stays. It is the honest artefact and this badge is a convenience over it,
- * which is also why extraction is defensive rather than typed: `debate` is
- * `Record<string, unknown>` on the wire, the verdict has lived at two different depths
- * across versions, and if none of the known shapes match this renders nothing at all
- * rather than guessing. A badge that invents a verdict would be worse than no badge on
- * a screen whose whole purpose is that a human can check the machine.
- */
-function DebateVerdictBadge({ debate }: { debate: Record<string, unknown> }) {
-  function pick(source: unknown): string | null {
-    if (!source || typeof source !== "object") return null;
-    const v = (source as Record<string, unknown>).verdict;
-    if (typeof v === "string") return v;
-    if (v && typeof v === "object") {
-      const inner = (v as Record<string, unknown>).verdict;
-      if (typeof inner === "string") return inner;
-    }
-    return null;
-  }
-
-  const verdict = pick(debate) ?? pick(debate.result);
-  if (verdict !== "CONFIRM" && verdict !== "DISAGREE") return null;
-
-  const confirmed = verdict === "CONFIRM";
-  return (
-    <span
-      className={cn(
-        "rounded border px-1.5 py-0.5 font-mono text-[10.5px] uppercase tracking-wide",
-        confirmed
-          ? "border-risk-clear/40 bg-risk-clear/[0.12] text-risk-clear"
-          : "border-risk-critical/40 bg-risk-critical/[0.12] text-risk-critical",
-      )}
-      title={
-        confirmed
-          ? "The Senior Auditor agreed with the Junior Analyst's assessment."
-          : "The Senior Auditor found something the Junior Analyst missed."
-      }
-    >
-      {verdict}
-    </span>
-  );
-}
-
-function Paperwork({ case: c }: { case: Case }) {
+function Paperwork({ case: c, identity }: { case: Case; identity: Identity | null | undefined }) {
   const provenance = (c.provenance ?? {}) as Record<string, unknown>;
   const uri = typeof provenance.uri === "string" ? provenance.uri : null;
   const generated = provenance.generated === true;
@@ -260,6 +213,10 @@ function Paperwork({ case: c }: { case: Case }) {
     typeof provenance.reason === "string" ? provenance.reason : null;
   const filename =
     typeof provenance.filename === "string" ? provenance.filename : null;
+  // The archived original is reviewer-only upstream: it is a customer's bill of
+  // lading, not a derived record. Without the role the <object> below would load a
+  // 403 body into the frame -- so say what is there and who may open it instead.
+  const locked = lockReason(identity, "reviewer");
 
   return (
     <div className="bento-card overflow-hidden p-0">
@@ -267,7 +224,28 @@ function Paperwork({ case: c }: { case: Case }) {
         Paperwork
       </h3>
 
-      {uri ? (
+      {uri && locked ? (
+        <div className="flex items-start gap-2 border-t border-white/[0.06] px-4 py-5">
+          <Lock className="mt-[2px] size-3.5 shrink-0 text-dim" aria-hidden />
+          <div className="min-w-0">
+            <p className="text-[12px] leading-relaxed text-dim">
+              {generated
+                ? "A rendered reconstruction of this case's bill of lading is archived"
+                : `The original document${filename ? ` (${filename})` : ""} is archived`}
+              , and opening it needs the Reviewer role. {locked}
+            </p>
+            {identity?.authenticated_by === "anonymous" && (
+              <a
+                href={`/login?next=${encodeURIComponent("/review")}`}
+                className="mt-2.5 inline-flex h-8 items-center gap-1.5 rounded-md border border-white/15 px-3 text-[12px] text-white/90 transition-colors hover:border-white/30"
+              >
+                <LogIn className="size-3.5" aria-hidden />
+                Sign in
+              </a>
+            )}
+          </div>
+        </div>
+      ) : uri ? (
         <>
           <p className="px-4 pb-3 text-[11.5px] leading-relaxed text-dim">
             {generated ? (
@@ -361,24 +339,19 @@ function ReviewPanel({
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeep, setConfirmDeep] = useState(false);
 
-  // Who this decision will be recorded as.
+  // Who this decision will be recorded as, and whether they may record one.
   //
   // This used to be a text input the reviewer typed, and the typed value was what
   // went onto the audit trail. That is worse than recording nothing: it reads as
   // accountability while being unverifiable, and nothing stopped someone entering a
-  // colleague's name. The server now takes the address from the verified session and
-  // ignores anything sent in the body, so this is display only -- shown because a
-  // person about to release a shipment should see whose name it will carry.
-  const identity = useQuery({
-    queryKey: ["auth", "session"],
-    queryFn: async () => {
-      const response = await fetch("/api/auth/session", { cache: "no-store" });
-      if (response.status === 401) return null;
-      if (!response.ok) throw new Error(`session: ${response.status}`);
-      return (await response.json()) as { email: string };
-    },
-    retry: false,
-  });
+  // colleague's name. The server takes the address from the verified session and
+  // ignores anything sent in the body, so this is display only.
+  //
+  // Read from the API's whoami rather than the console session, because the role
+  // is the API's to assign: signing in does not make someone a reviewer.
+  const identityQuery = useIdentity();
+  const identity = identityQuery.data;
+  const decideLock = lockReason(identity, "reviewer");
 
   const decide = useMutation({
     mutationFn: (action: HumanAction) =>
@@ -434,6 +407,7 @@ function ReviewPanel({
   const debateWasAutomatic = detail?.auto_debate != null;
 
   const findings = c.validation?.findings ?? [];
+  const observations = c.validation?.observations ?? [];
 
   function submit(action: HumanAction) {
     // Validated here as well as server-side, so the reviewer is told what is
@@ -519,6 +493,28 @@ function ReviewPanel({
                 ))}
               </ul>
             )}
+
+            {observations.length > 0 && (
+              <div className="mt-3">
+                <p className="text-[10.5px] uppercase tracking-wide text-faint">
+                  Context &middot; recorded, not scored
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {observations.map((o, i) => (
+                    <li
+                      key={`${o.code}-${i}`}
+                      className="rounded-md border border-dashed border-white/[0.08] px-2.5 py-1.5"
+                    >
+                      <span className="flex items-center gap-1.5 text-[11px] text-white/75">
+                        {helpFor(`finding:${o.code}`)?.title ?? humaniseCode(o.code)}
+                        <HelpDot id={`finding:${o.code}`} />
+                      </span>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-faint">{o.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -529,33 +525,48 @@ function ReviewPanel({
           <HelpDot id="review.decision" />
         </div>
 
-        {/* Signed out: explain, do not offer.
+        {/* Not permitted: explain, do not offer.
             Reads are public on this deployment, so somebody can reach this panel
-            with no session. Rendering the buttons anyway would mean their first
-            information about the login is a 401 on a release they thought they had
-            recorded -- and for a shipment release, believing you acted when you did
-            not is the worst possible failure. `isLoading` is excluded so the panel
-            does not flicker through this state on every load. */}
-        {!identity.isLoading && !identity.data ? (
+            with no session, or with a session that does not hold the reviewer role.
+            Rendering the buttons anyway would mean their first information about
+            the role is a 401 or 403 on a release they thought they had recorded --
+            and for a shipment release, believing you acted when you did not is the
+            worst possible failure. `isLoading` is excluded so the panel does not
+            flicker through this state on every load. */}
+        {!identityQuery.isLoading && decideLock ? (
           <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
             <p className="text-[12px] leading-relaxed text-dim">
-              You are viewing this queue read-only. Recording a decision needs a
-              signed-in account, because the audit trail names the person who
-              decided rather than the service that called the API.
+              {identity?.authenticated_by === "anonymous" ? (
+                <>
+                  You are viewing this queue read-only. Recording a decision needs a
+                  signed-in account with the Reviewer role, because the audit trail
+                  names the person who decided rather than the service that called
+                  the API.
+                </>
+              ) : (
+                <>
+                  Signed in as <span className="font-mono text-white/85">{identity?.email}</span>{" "}
+                  ({roleLabel(identity?.role)}). Recording a decision needs the Reviewer
+                  role, which the API assigns from its own list of reviewers — ask a
+                  governance admin to add this account.
+                </>
+              )}
             </p>
-            <a
-              href={`/login?next=${encodeURIComponent("/review")}`}
-              className="mt-2.5 inline-flex h-8 items-center rounded-md border border-white/15 px-3 text-[12px] text-white/90 transition-colors hover:border-white/30"
-            >
-              Sign in to record a decision
-            </a>
+            {identity?.authenticated_by === "anonymous" && (
+              <a
+                href={`/login?next=${encodeURIComponent("/review")}`}
+                className="mt-2.5 inline-flex h-8 items-center rounded-md border border-white/15 px-3 text-[12px] text-white/90 transition-colors hover:border-white/30"
+              >
+                Sign in to record a decision
+              </a>
+            )}
           </div>
         ) : (
         <div className="mt-3 space-y-3">
           <div>
             <Label className="text-[11.5px] text-dim">Recorded as</Label>
             <p className="mt-1 truncate rounded-md border border-white/10 bg-black/30 px-2.5 py-[7px] font-mono text-[12px] text-white/90">
-              {identity.data?.email ?? "your signed-in account"}
+              {identity?.acts_for_a_person ? identity.email : "your signed-in account"}
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-faint">
               Taken from your session, not typed. The audit trail records this
@@ -636,25 +647,14 @@ function ReviewPanel({
       </div>
 
       {debate != null && (
-        <div className="bento-card p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-[12px] font-medium text-white">
-              Senior auditor debate
-            </h3>
-            <DebateVerdictBadge debate={debate} />
-            {debateWasAutomatic && (
-              <span className="text-[10.5px] uppercase tracking-wide text-faint">
-                fired automatically
-              </span>
-            )}
-          </div>
-          <pre className="code-surface mt-2 max-h-64 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-white/80 scrollbar-thin">
-            {JSON.stringify(debate, null, 2)}
-          </pre>
-        </div>
+        <DebatePanel
+          debate={debate}
+          effect={debateWasAutomatic ? detail?.debate_effect : null}
+          automatic={debateWasAutomatic}
+        />
       )}
 
-      <Paperwork case={c} />
+      <Paperwork case={c} identity={identity} />
 
       {/* Confirm on the decision, because it is not reversible from here. */}
       <AlertDialog

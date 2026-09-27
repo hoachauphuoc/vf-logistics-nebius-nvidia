@@ -377,6 +377,11 @@ class DebateVerdict(AgentOutput):
     rationale: str
     recommended_action: Literal["release", "hold", "escalate"]
     adjusted_risk_score: float | None = Field(None, ge=0, le=100)
+    # Set by debate_agent, never by the model: True for the defaults it fills in
+    # when no usable verdict was rendered. orchestrator._apply_debate_verdict acts
+    # only on a verdict with forced=False.
+    forced: bool = False
+    forced_reason: str | None = None
 
 
 class ZeroDayVerdict(AgentOutput):

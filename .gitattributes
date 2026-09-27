@@ -1,0 +1,7 @@
+# Shell scripts run inside the Linux container. With core.autocrlf=true (the Git
+# for Windows default) a checkout would otherwise turn entrypoint.sh into CRLF,
+# and bash then fails on the first line with "bad interpreter" -- the container
+# never starts, and `gcloud run deploy --source .` uploads the working tree as-is.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
