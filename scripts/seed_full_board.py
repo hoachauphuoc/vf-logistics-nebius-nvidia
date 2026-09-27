@@ -396,25 +396,36 @@ def get(base, path, timeout=180):
     return _request(base, path, "GET", None, timeout)
 
 
-def settle(base: str, timeout_s: int = 240, interval_s: int = 5) -> list[dict]:
+def settle(base: str, timeout_s: int = 240, interval_s: int = 5,
+           advance: bool = True) -> list[dict]:
     """
     Wait until no case is mid-flight, then return the board.
 
     Reading immediately after a POST is not safe: the response can arrive while
     the case is still short of a terminal state, so a tally taken then misses it.
+
+    Waiting alone is not enough either. In WORKER_MODE=ondemand a case whose
+    chain was cut short -- the chain budget, a slow model call -- moves again only
+    when an operator's poll drains it, and since roles became real an anonymous
+    board poll no longer does. Seen on the live board: two cases sat at
+    SPECIALISTS_DONE for the whole wait, and the reviewer decision queued for one
+    of them was refused as "not awaiting review". This script holds the operator
+    key, so with `advance` it drains while it waits. `--report-only` passes False,
+    because it promises to leave the board exactly as it is.
     """
     in_flight = {"INGESTED", "SPECIALISTS_DONE", "INVESTIGATED"}
-    waited = 0
+    deadline = time.monotonic() + timeout_s
     while True:
         _, page = get(base, "/api/v1/cases?limit=100")
         cases = page.get("items") or []
         if not any(c.get("state") in in_flight for c in cases):
             return cases
-        if waited >= timeout_s:
-            print(f"  warn  still in flight after {waited}s; continuing")
+        if time.monotonic() >= deadline:
+            print(f"  warn  still in flight after {timeout_s}s; continuing")
             return cases
+        if advance:
+            post(base, "/api/v1/orchestrator/drain", {"cases": 3}, 180)
         time.sleep(interval_s)
-        waited += interval_s
 
 
 def detail(base: str, case_id: str) -> dict:
@@ -521,7 +532,7 @@ def main() -> int:
             print(f"  {sid:22} {action:8} -> {got}")
 
     # ---- coverage report -------------------------------------------------
-    cases = settle(args.base)
+    cases = settle(args.base, advance=not args.report_only)
     by_shipment = {c.get("shipment_id"): c for c in cases}
 
     print("\n" + "=" * 74)

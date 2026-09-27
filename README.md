@@ -107,8 +107,9 @@ the 3.3× the rate implies: *[Why Ultra is on the debate agent and nowhere else]
 This project began as a Google Cloud submission for a different hackathon (All
 Things Agentic 2026), built entirely on Vertex AI Gemini. Every claim below is
 checkable against this repository's git history: `6bb1e59` is the initial commit,
-and `git diff --shortstat 6bb1e59 HEAD` reports **297 files changed, 171,915
-insertions** across 48 commits.
+and `git diff --shortstat 6bb1e59 b52ea52` reports **297 files changed, 171,921
+insertions** across 49 commits. The end of the range is pinned to a commit rather than
+`HEAD`, which would make the figure wrong again with the next commit.
 
 The deterministic governance layer — risk floor, untrusted-input boundary,
 delegation boundary, shipper identity verification — was carried over deliberately
@@ -1389,6 +1390,23 @@ it. The guard that caught it was a deterministic one: a reply naming the declare
 as the goods' own is recorded as `HS_DESCRIPTION_CHECK_CONTRADICTORY`, an observation
 with floor 0, so it raised no risk floor. The fix sends the classifier the 4-digit
 heading, the shape the numbers were measured on, and a test and a mutation now pin it.
+
+The fix is a trade, and it was measured rather than assumed. On the live model, four runs
+per input over the seed board's declarations:
+
+| | Before | After |
+|---|---|---|
+| The seeded mismatch (furniture declared 9403.60) caught | 0 / 4 | 3 / 4 |
+| Four honest declarations given a floor | 4 / 16 | 7 / 14 (2 timeouts) |
+
+Before, the classifier was close to switched off for any code with a subheading: nearly
+every reply was "inconsistent" naming the declared heading, which the guard zeroes, so a
+real substitution written as `9403.60` went through too. After, production runs the
+configuration the 91.7% holdout figure describes, and it queries more of the seed's loosely
+described goods — "ceramic tableware" sits between 6911 and 6912, and "woven cotton
+garments" does not say shirts. A query costs a person ten minutes and a missed
+substitution releases the cargo, which is the asymmetry the whole design rests on, so the
+fix stays. The samples are small; what they establish is the direction, not the rate.
 
 **Token Factory has 24 models and not one of them is a safety model.** Measured
 against the live `/v1/models` endpoint: four NVIDIA models, all chat
