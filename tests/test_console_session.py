@@ -11,8 +11,9 @@ forwarded request and there was no other identity in the system -- no login, no
 user record, no session. "Who released this shipment" had no answer.
 
 The console now signs a session and forwards it. These tests hold the line on the
-one property that makes that safe: a session says WHO is acting, and never WHAT
-they may do.
+properties that make that safe: a session says WHO is acting; this service -- not
+the token -- decides what that person may do; and a session can only ever narrow
+what the console's key grants, never widen it.
 
 THE BOUNDARY THESE TESTS GUARD
 
@@ -22,6 +23,17 @@ carrying a person's address, it would have stopped counting as a service identit
 -- and `/internal/execute`'s permission to name a tenant would have silently
 vanished with it. `via_api_key` separates them. Several tests below exist only to
 keep them separate.
+
+WHAT CHANGED, AND WHY SOME OF THESE TESTS WERE REWRITTEN
+
+This file used to pin "a session never changes a role" and "a session that fails
+to verify falls back to the key". Together those meant every signed-in person, of
+any job, held GOVERNANCE_ADMIN -- the role hierarchy was decorative. The role now
+comes from ADMIN_EMAILS / OPERATOR_EMAILS / REVIEWER_EMAILS on this service,
+looked up by the verified email. With the session deciding the role, falling back
+to the key on a bad session would turn an expired token into admin, so a session
+that fails to verify is now refused with 401. Those tests were rewritten to say
+so; none was deleted.
 
 CLASS NAMING
 
@@ -155,13 +167,14 @@ class TestSessionNamesThePerson(unittest.TestCase):
         self.assertFalse(anonymous.acts_for_a_person)
 
 
-class TestSessionGrantsNothing(unittest.TestCase):
+class TestSessionNeverWidensTheKey(unittest.TestCase):
     """
     A session is identity, not entitlement.
 
-    If any of these fail, the console has been handed the ability to decide its own
-    authorisation, and a stolen session becomes a privilege escalation rather than
-    a misattributed audit row.
+    The role a session ends up with is looked up on this service and capped at
+    what the key grants. If any of these fail, a token has been handed the ability
+    to decide its own authorisation, and a stolen session becomes a privilege
+    escalation rather than a misattributed audit row.
     """
 
     def test_session_without_a_key_is_anonymous(self):
@@ -185,12 +198,41 @@ class TestSessionGrantsNothing(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertEqual(error[1], 401)
 
-    def test_roles_are_unchanged_by_a_session(self):
+    def test_a_listed_admin_gets_exactly_what_the_key_grants(self):
+        """
+        Compared as effective permissions, not as raw sets: a listed person also
+        holds the viewer role everyone holds, which changes nothing they can do.
+        """
+        def grants(ctx):
+            return {i for held in ctx.roles for i in auth.ROLE_HIERARCHY[held]}
+
         keyed, _ = context_for({"X-VF-API-Key": TEST_KEY})
         with_session, _ = context_for(
-            {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint()}
+            {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint()}, ADMIN_EMAILS=PERSON
         )
-        self.assertEqual(with_session.roles, keyed.roles)
+        self.assertEqual(grants(with_session), grants(keyed))
+        self.assertEqual(auth.highest_role(with_session.roles), auth.API_KEY_GRANT)
+
+    def test_an_unlisted_person_is_narrowed_to_viewer(self):
+        """
+        The change this rewrite exists for. Signing in used to make anyone a
+        governance admin; an account nobody granted anything is now a reader.
+        """
+        ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint()})
+        self.assertIsNone(error)
+        self.assertEqual(ctx.roles, {auth.Role.VIEWER})
+        self.assertFalse(ctx.has_role(auth.Role.REVIEWER))
+
+    def test_a_session_is_never_wider_than_the_key(self):
+        """
+        The cap itself, tested directly because today's key grants the top role
+        and so cannot show it: a person listed above the ceiling gets the ceiling.
+        """
+        capped = auth.narrow_roles({auth.Role.GOVERNANCE_ADMIN}, auth.Role.OPERATOR)
+        self.assertEqual(capped, {auth.Role.OPERATOR})
+        kept = auth.narrow_roles({auth.Role.VIEWER, auth.Role.REVIEWER}, auth.Role.OPERATOR)
+        self.assertEqual(kept, {auth.Role.VIEWER, auth.Role.REVIEWER})
+        self.assertEqual(auth.narrow_roles(set(), auth.Role.OPERATOR), {auth.Role.VIEWER})
 
     def test_tenant_is_unchanged_by_a_session(self):
         """
@@ -220,27 +262,31 @@ class TestSessionGrantsNothing(unittest.TestCase):
         self.assertFalse(with_session.is_development_identity)
 
 
-class TestForgedSessionsAreIgnored(unittest.TestCase):
+class TestForgedSessionsAreRefused(unittest.TestCase):
     """
-    Every malformed or untrusted session must fall back to the service identity.
+    Every malformed or untrusted session alongside a valid key is refused with 401.
 
-    Falling back rather than refusing is deliberate: the API key authorised the
-    request, so refusing it would turn a cosmetic problem into an outage. What must
-    never happen is the forged name being believed.
+    It used to fall back to the service identity, on the reasoning that the key
+    authorised the request. That was safe only while the session could not affect
+    the role. It now does, and the fallback identity is GOVERNANCE_ADMIN -- so a
+    fallback would make an expired session strictly MORE powerful than a valid
+    one. The console forwards only sessions it has verified, so one that fails
+    here is forgery or a secret mismatch, and neither should pass quietly.
     """
 
-    def _falls_back(self, token: str, **env: str) -> None:
+    def _is_refused(self, token: str, **env: str) -> None:
         ctx, error = context_for(
             {"X-VF-API-Key": TEST_KEY, "X-VF-Session": token}, **env
         )
-        self.assertIsNone(error)
-        self.assertEqual(ctx.email, auth.SERVICE_IDENTITY_EMAIL)
+        self.assertIsNotNone(error, "a bad session must be refused, not tolerated")
+        self.assertEqual(error[1], 401)
+        self.assertIsNone(ctx)
 
     def test_wrong_secret_is_rejected(self):
-        self._falls_back(mint(secret="another-secret-entirely-0123456789abcd"))
+        self._is_refused(mint(secret="another-secret-entirely-0123456789abcd"))
 
     def test_expired_session_is_rejected(self):
-        self._falls_back(mint(exp=time.time() - 1))
+        self._is_refused(mint(exp=time.time() - 1))
 
     def test_tampered_email_is_rejected(self):
         """
@@ -252,18 +298,27 @@ class TestForgedSessionsAreIgnored(unittest.TestCase):
         forged_body = b64url(
             json.dumps({"email": "ceo@forwarder.example", "exp": time.time() + 3600}).encode()
         )
-        self._falls_back(f"{forged_body}.{signature}")
+        self._is_refused(f"{forged_body}.{signature}", ADMIN_EMAILS="ceo@forwarder.example")
 
     def test_unsigned_token_is_rejected(self):
         """A payload with no signature at all, in case a `.` check is missing."""
         body = b64url(json.dumps({"email": PERSON, "exp": time.time() + 3600}).encode())
-        self._falls_back(body)
-        self._falls_back(f"{body}.")
+        self._is_refused(body)
+        self._is_refused(f"{body}.")
 
     def test_garbage_is_rejected_without_raising(self):
-        for token in ("", "   ", "not-a-token", "a.b", "...", "%%%.%%%", "a." + "x" * 500):
+        for token in ("not-a-token", "a.b", "...", "%%%.%%%", "a." + "x" * 500):
             with self.subTest(token=token[:20]):
-                self._falls_back(token)
+                self._is_refused(token)
+
+    def test_a_blank_header_is_the_same_as_none(self):
+        """An empty header names nobody, so the key alone decides, as it always did."""
+        for token in ("", "   "):
+            with self.subTest(token=repr(token)):
+                ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": token})
+                self.assertIsNone(error)
+                self.assertEqual(ctx.email, auth.SERVICE_IDENTITY_EMAIL)
+                self.assertEqual(ctx.roles, {auth.API_KEY_GRANT})
 
     def test_missing_exp_is_rejected(self):
         """An unbounded session is not a session."""
@@ -271,7 +326,7 @@ class TestForgedSessionsAreIgnored(unittest.TestCase):
         signature = hmac.new(
             TEST_SECRET.encode(), body.encode(), hashlib.sha256
         ).digest()
-        self._falls_back(f"{body}.{b64url(signature)}")
+        self._is_refused(f"{body}.{b64url(signature)}")
 
     def test_missing_email_is_rejected(self):
         for payload in ({"exp": time.time() + 3600}, {"email": "", "exp": time.time() + 3600}):
@@ -280,7 +335,7 @@ class TestForgedSessionsAreIgnored(unittest.TestCase):
                 signature = hmac.new(
                     TEST_SECRET.encode(), body.encode(), hashlib.sha256
                 ).digest()
-                self._falls_back(f"{body}.{b64url(signature)}")
+                self._is_refused(f"{body}.{b64url(signature)}")
 
     def test_non_object_payload_is_rejected(self):
         """A signed JSON array would crash a .get() on an unguarded path."""
@@ -288,22 +343,26 @@ class TestForgedSessionsAreIgnored(unittest.TestCase):
         signature = hmac.new(
             TEST_SECRET.encode(), body.encode(), hashlib.sha256
         ).digest()
-        self._falls_back(f"{body}.{b64url(signature)}")
+        self._is_refused(f"{body}.{b64url(signature)}")
 
 
 class TestSecretConfiguration(unittest.TestCase):
     """What happens when VF_SESSION_SECRET is missing or too weak."""
 
-    def test_no_secret_means_no_attribution(self):
+    def test_no_secret_refuses_a_presented_session(self):
         """
-        Degraded, not unsafe. With no secret the service cannot verify anything, so
-        it keeps the old behaviour rather than trusting an unverifiable header.
+        Fail closed, and say why. With no secret this service cannot tell who the
+        session names, so it cannot choose their role -- and choosing the key's
+        role instead would make every signed-in person an admin whenever the
+        secret goes missing.
         """
-        ctx, _ = context_for(
+        ctx, error = context_for(
             {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint()},
             VF_SESSION_SECRET="",
         )
-        self.assertEqual(ctx.email, auth.SERVICE_IDENTITY_EMAIL)
+        self.assertIsNone(ctx)
+        self.assertEqual(error[1], 401)
+        self.assertIn("VF_SESSION_SECRET", error[0].get_json()["detail"])
 
     def test_short_secret_is_treated_as_absent(self):
         """
@@ -314,11 +373,12 @@ class TestSecretConfiguration(unittest.TestCase):
         self.assertIsNone(
             self._secret_under(weak), "a secret under 32 chars must not be used"
         )
-        ctx, _ = context_for(
+        ctx, error = context_for(
             {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(secret=weak)},
             VF_SESSION_SECRET=weak,
         )
-        self.assertEqual(ctx.email, auth.SERVICE_IDENTITY_EMAIL)
+        self.assertIsNone(ctx)
+        self.assertEqual(error[1], 401)
 
     @staticmethod
     def _secret_under(value: str):
@@ -379,22 +439,20 @@ class TestWireFormatAgreement(unittest.TestCase):
 
         # The same instant expressed in milliseconds: refused, not honoured.
         as_milliseconds = time.time() * 1000
-        ctx2, _ = context_for(
+        ctx2, error = context_for(
             {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(exp=as_milliseconds)}
         )
-        self.assertEqual(
-            ctx2.email,
-            auth.SERVICE_IDENTITY_EMAIL,
-            "a millisecond exp must be rejected, not treated as the year 56000",
-        )
+        self.assertIsNone(ctx2, "a millisecond exp must be rejected, not treated as the year 56000")
+        self.assertEqual(error[1], 401)
 
     def test_expiry_beyond_the_ceiling_is_rejected(self):
         """A session cannot outlive the ceiling even with a valid signature."""
         beyond = time.time() + auth.MAX_SESSION_LIFETIME_SECONDS + 60
-        ctx, _ = context_for(
+        ctx, error = context_for(
             {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(exp=beyond)}
         )
-        self.assertEqual(ctx.email, auth.SERVICE_IDENTITY_EMAIL)
+        self.assertIsNone(ctx)
+        self.assertEqual(error[1], 401)
 
     def test_console_ttl_is_inside_the_ceiling(self):
         """
@@ -424,13 +482,16 @@ class TestReviewerAttribution(unittest.TestCase):
     there is no person behind the request.
     """
 
-    def _reviewer_passed_to_orchestrator(self, headers: dict, body: dict) -> str | None:
+    def _decide(self, headers: dict, body: dict) -> tuple[str | None, int]:
         """
-        Call the route and capture the `reviewer` argument it forwards.
+        Call the route and capture the `reviewer` argument it forwards, and the status.
 
         Patches human_decide rather than asserting on a stored case, because the
         question here is precisely which value the route chooses -- not what the
         orchestrator then does with it.
+
+        PERSON is listed in REVIEWER_EMAILS: deciding a case needs the reviewer
+        role, and an unlisted person is now a viewer.
         """
         from vf_logistics.app import app
 
@@ -445,16 +506,20 @@ class TestReviewerAttribution(unittest.TestCase):
             "VF_SESSION_SECRET": TEST_SECRET,
             "IAP_ENABLED": "false",
             "MULTI_TENANT": "false",
+            "REVIEWER_EMAILS": PERSON,
         }
         with patch.dict(os.environ, env):
             with patch(
                 "vf_logistics.orchestrator.human_decide", side_effect=fake_human_decide
             ):
                 client = app.test_client()
-                client.post(
+                response = client.post(
                     "/api/v1/review/CASE-1/decide", json=body, headers=headers
                 )
-        return captured.get("reviewer")  # type: ignore[return-value]
+        return captured.get("reviewer"), response.status_code  # type: ignore[return-value]
+
+    def _reviewer_passed_to_orchestrator(self, headers: dict, body: dict) -> str | None:
+        return self._decide(headers, body)[0]
 
     def test_a_verified_session_supplies_the_reviewer(self):
         who = self._reviewer_passed_to_orchestrator(
@@ -474,20 +539,30 @@ class TestReviewerAttribution(unittest.TestCase):
         )
         self.assertEqual(who, PERSON)
 
-    def test_a_forged_session_does_not_supply_a_reviewer(self):
+    def test_a_forged_session_is_refused_and_records_nobody(self):
         """
-        A forged token falls back to the service identity, which does not act for a
-        person -- so the body is consulted, and the caller is a script as far as this
-        route is concerned.
+        A forged token used to fall back to the service identity, which let the
+        body name the reviewer. It is now refused outright: no decision is made and
+        nobody is written to the audit trail under any name.
         """
-        who = self._reviewer_passed_to_orchestrator(
+        who, status = self._decide(
             {
                 "X-VF-API-Key": TEST_KEY,
                 "X-VF-Session": mint(secret="wrong-secret-0123456789abcdefghij"),
             },
             {"action": "release", "note": "checked", "reviewer": "script@x.com"},
         )
-        self.assertEqual(who, "script@x.com")
+        self.assertEqual(status, 401)
+        self.assertIsNone(who)
+
+    def test_an_unlisted_person_cannot_decide(self):
+        """Signing in is not the reviewer role. A viewer's decide is a 403."""
+        who, status = self._decide(
+            {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint("nobody@forwarder.example")},
+            {"action": "release", "note": "checked"},
+        )
+        self.assertEqual(status, 403)
+        self.assertIsNone(who)
 
     def test_a_keyed_script_may_still_name_a_reviewer(self):
         """

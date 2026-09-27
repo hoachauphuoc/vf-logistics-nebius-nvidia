@@ -24,6 +24,11 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly kind: "unreachable" | "http" | "parse",
+    /**
+     * The role a 403 said it needed (`required_role` in auth.py's refusal), so a
+     * screen can say "needs the operator role" instead of a bare "forbidden".
+     */
+    readonly requiredRole: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -106,15 +111,18 @@ function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
     // Prefer the upstream's own error text; a bare status code tells an operator
     // nothing about whether the API is down or the request was wrong.
     let detail = `HTTP ${status}`;
+    let requiredRole: string | null = null;
     try {
       const parsed = JSON.parse(text) as {
         error?: string;
         detail?: string;
         details?: string[];
         supported?: string[];
+        required_role?: string;
       };
       detail =
         parsed.details?.join("; ") ?? parsed.detail ?? parsed.error ?? detail;
+      requiredRole = parsed.required_role ?? null;
 
       // A 415 from the document route answers "what should I have sent?" in a
       // `supported` array. Appended rather than dropped: without it the message
@@ -127,7 +135,12 @@ function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
     } catch {
       /* keep the status */
     }
-    throw new ApiError(detail, status, status === 502 ? "unreachable" : "http");
+    throw new ApiError(
+      detail,
+      status,
+      status === 502 ? "unreachable" : "http",
+      requiredRole,
+    );
   }
 
   try {
@@ -400,7 +413,6 @@ export async function fetchBoundaries(): Promise<{
 
 export async function publishBoundary(args: {
   permissions: Record<string, unknown>;
-  author: string;
   note: string;
 }): Promise<{ published: boolean; boundary: DelegationBoundary }> {
   if (DEMO_MODE) liveOnly("Publishing a delegation boundary");
@@ -410,17 +422,17 @@ export async function publishBoundary(args: {
 /**
  * The kill switch.
  *
- * The response is flat -- `{revoked, reason, agent}` -- not `{result, agent}`.
- * `author` is required upstream and a missing one is a 400, which is why the form
- * checks for it before calling.
+ * No `author` is sent. The backend records the signed-in identity (app.py,
+ * governance_revoke), and a typed name it would then ignore -- or, with no
+ * verified identity, record unverified -- is worse than no field.
  */
 export async function revokeBoundary(args: {
-  author: string;
   note: string;
 }): Promise<{
   revoked: boolean;
   reason: string;
-  agent: AgentReadiness;
+  agent_state: string | null;
+  boundary: DelegationBoundary | null;
 }> {
   if (DEMO_MODE) liveOnly("Revoking a delegation boundary");
   return postJson("governance/revoke", args);
@@ -476,6 +488,30 @@ export async function verifyEntity(args: {
 }> {
   if (DEMO_MODE) liveOnly("Entity verification");
   return postJson("governance/verify-entity", args);
+}
+
+/** One result from the sanctions-news sweep. */
+export interface TavilyScanAlert {
+  title: string;
+  snippet: string;
+  url: string;
+}
+
+/**
+ * Search recent news for sanctions and enforcement updates (governance admin).
+ *
+ * Up to five Tavily searches per call, metered against the monthly quota, and
+ * rate-limited to 5/min upstream. With no queries the backend runs its own three
+ * defaults. Returns what was found; it changes nothing on the service.
+ */
+export async function runTavilyScan(queries?: string[]): Promise<{
+  scan_count: number;
+  alerts: TavilyScanAlert[];
+  alert_count: number;
+  summary: string;
+}> {
+  if (DEMO_MODE) liveOnly("The sanctions-news scan");
+  return postJson("governance/tavily-scan", queries?.length ? { queries } : {});
 }
 
 // --------------------------------------------------------------------------
@@ -579,6 +615,72 @@ export async function screenText(
 ): Promise<Record<string, unknown>> {
   if (DEMO_MODE) liveOnly("Manual injection screening");
   return postJson("security/screen", { text });
+}
+
+// --------------------------------------------------------------------------
+// Evaluation
+// --------------------------------------------------------------------------
+
+export interface Detection {
+  precision: number;
+  recall: number;
+  f1: number;
+  false_positive_rate: number;
+  tp: number;
+  fp: number;
+  fn: number;
+  tn: number;
+}
+
+/** One committed report from data/benchmark_results/ (evaluation.py). */
+export interface PipelineResult {
+  id: string;
+  arm: "rules" | "hs" | "full";
+  split: "dev" | "holdout" | "all";
+  split_method?: string;
+  generated_at?: string;
+  cases_run: number;
+  verifier: string;
+  detection: Detection;
+  rules_only_baseline?: Detection;
+  by_attack_type?: Record<string, { cases: number; detected: number; detection_rate: number }>;
+  false_positives?: {
+    all_clean_cases: number;
+    flagged: number;
+    rate: number;
+    hard_negatives?: { cases: number; flagged: number; rate: number };
+    easy_negatives?: { cases: number; flagged: number; rate: number };
+  };
+  cost?: { total_usd: number; projected_usd_per_1000_cases: number };
+  zero_day?: { real_searches?: number; stubbed_searches?: number };
+  notes?: string[];
+}
+
+/** One HS classifier arm from data/eval_results/. */
+export interface HsResult {
+  arm: string;
+  model: string | null;
+  n: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  false_positive_rate: number;
+  redirect_accuracy: number;
+  total_cost_usd: number;
+  avg_latency_ms: number;
+  measured_at?: string | null;
+}
+
+export interface EvaluationSummary {
+  pipeline: PipelineResult[];
+  hs_classifier: { pairs: HsResult[]; holdout: HsResult[] };
+  caveats: string[];
+}
+
+/** The committed measurements, served by the API that produced them. */
+export async function fetchEvaluation(): Promise<EvaluationSummary> {
+  if (DEMO_MODE) liveOnly("The evaluation results");
+  return getJson<EvaluationSummary>("evaluation");
 }
 
 // --------------------------------------------------------------------------

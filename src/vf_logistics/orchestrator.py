@@ -99,6 +99,10 @@ ARCHIVE_PREFIX = "shipping-documents/"
 # --- Decision thresholds. Env-overridable so the policy is not buried in code.
 FRAUD_CLEAR_BELOW = int(os.getenv("FRAUD_CLEAR_BELOW", "40"))
 INVESTIGATE_AT = int(os.getenv("INVESTIGATE_AT", "70"))
+
+# How sure the Senior Auditor must be before a DISAGREE changes a case's route.
+# Read per call (debate_escalate_confidence) so it can be tuned without a deploy.
+DEBATE_ESCALATE_CONFIDENCE_DEFAULT = 0.7
 MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "3"))
 POLL_SECONDS = float(os.getenv("POLL_SECONDS", "1.5"))
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "3"))
@@ -1245,12 +1249,23 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         if adj != 0:
             feedback = await get_shipper_feedback(shipper_name, tenant_id=tenant) or {}
             old_risk = reconciled["effective_risk"]
-            reconciled["effective_risk"] = max(0, min(100, old_risk + adj))
-            reconciled["learning_adjustment"] = adj
+            # Clamped at the deterministic floor, not at 0. The comment above always
+            # promised this and the code did not keep it: a shipper with five human
+            # releases took -10 from a floor of 75, landing at 65 -- below
+            # INVESTIGATE_AT, so a case the rules said to investigate was queued
+            # instead. History may discount the model's opinion; it may not
+            # discount a finding.
+            floor = int(reconciled.get("risk_floor") or 0)
+            reconciled["effective_risk"] = max(floor, min(100, old_risk + adj))
+            reconciled["learning_adjustment"] = reconciled["effective_risk"] - old_risk
             reconciled["learning_note"] = (
-                f"Risk {old_risk} -> {reconciled['effective_risk']} ({adj:+d}) from "
+                f"Risk {old_risk} -> {reconciled['effective_risk']} ({adj:+d} proposed) from "
                 f"{feedback.get('released', 0)} human release(s) and "
                 f"{feedback.get('blocked', 0)} human block(s) on this shipper"
+                + (
+                    f"; held at the deterministic floor of {floor}"
+                    if old_risk + adj < floor else ""
+                )
             )
 
         case["validation"] = validation
@@ -1309,6 +1324,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                         agent="debate",
                         tenant_id=tenant,
                     )
+                    await _apply_debate_verdict(case, verdict, tenant)
                 except Exception as exc:
                     log.warning(
                         "Auto-debate failed for %s: %s", case_id, exc, exc_info=True
@@ -1349,7 +1365,12 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             and not model_failed
         )
         needs_investigation = (
-            status in ("BLOCKED", "REVIEW_REQUIRED") or risk >= INVESTIGATE_AT
+            status in ("BLOCKED", "REVIEW_REQUIRED")
+            or risk >= INVESTIGATE_AT
+            # A confident, genuine DISAGREE from the Senior Auditor: see
+            # _apply_debate_verdict. Upward only -- it can send a case to the
+            # investigation it would otherwise have skipped, never away from one.
+            or bool(case.get("debate_escalated"))
         )
 
         if model_failed:
@@ -1408,11 +1429,19 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 ],
             )
         else:
+            escalated_by_debate = bool(case.get("debate_escalated")) and not (
+                status in ("BLOCKED", "REVIEW_REQUIRED") or risk >= INVESTIGATE_AT
+            )
             await emit(
                 case_id,
                 "agent_start",
-                f"Compliance {status} at risk {risk}, opening deep investigation "
-                "on Nemotron 3 Super",
+                (
+                    f"Senior Auditor disagreed with the junior analyst at risk {risk}; "
+                    "opening deep investigation on Nemotron 3 Super"
+                    if escalated_by_debate else
+                    f"Compliance {status} at risk {risk}, opening deep investigation "
+                    "on Nemotron 3 Super"
+                ),
                 agent="investigation",
                 tenant_id=tenant,
             )
@@ -1489,6 +1518,131 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
     return case
 
 
+def debate_escalate_confidence() -> float:
+    """
+    The confidence a DISAGREE needs before it changes routing.
+
+    Per call, from DEBATE_ESCALATE_CONFIDENCE. An unreadable or out-of-range value
+    falls back to the default rather than to 0: a typo must not turn every
+    low-confidence disagreement into an escalation, nor -- at 1.1 -- silently
+    switch the whole mechanism off.
+    """
+    raw = os.getenv("DEBATE_ESCALATE_CONFIDENCE", "")
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEBATE_ESCALATE_CONFIDENCE_DEFAULT
+    return value if 0.0 <= value <= 1.0 else DEBATE_ESCALATE_CONFIDENCE_DEFAULT
+
+
+def debate_escalation(verdict: dict[str, Any] | None) -> tuple[bool, str]:
+    """
+    Whether an auto-debate verdict escalates the case, and why or why not.
+
+    The auto-debate only runs when the deterministic floor outscored the junior
+    analyst by 15 points or more, and it asks the Senior Auditor one question:
+    did the junior analyst miss something? DISAGREE means yes. Until this
+    function existed the answer was recorded on the case and read by nothing --
+    routing used the floor alone, so the most expensive model call in the
+    pipeline could not change a single outcome.
+
+    It now can, in ONE direction. A DISAGREE the model genuinely rendered, at or
+    above debate_escalate_confidence(), sends the case to the investigation it
+    would otherwise have skipped. Nothing else here can move a case:
+
+      * CONFIRM does nothing. It agrees with a junior analyst the floor had
+        already outvoted, and the floor stands either way.
+      * A forced verdict does nothing. debate_agent fills one in when the model
+        produced no usable answer, and a default is not a judgement.
+      * A DISAGREE below the threshold does nothing, and says so on the case.
+
+    So a manipulated or mistaken Senior Auditor can at worst cost an
+    investigation on a case a human was already going to see. It cannot release
+    one. That asymmetry is the same argument verifier.check_hs_description_
+    consistency() makes for the HS classifier.
+    """
+    if not isinstance(verdict, dict) or not verdict:
+        return False, "no verdict was returned"
+    if verdict.get("forced"):
+        return False, (
+            "the verdict was a default filled in by the system "
+            f"({verdict.get('forced_reason') or 'unspecified'}), not a judgement"
+        )
+    if verdict.get("verdict") != "DISAGREE":
+        return False, "the Senior Auditor confirmed the junior analyst's assessment"
+    raw_confidence = verdict.get("confidence")
+    if raw_confidence is None:
+        return False, "DISAGREE with no readable confidence"
+    try:
+        confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        return False, "DISAGREE with no readable confidence"
+    if not 0.0 <= confidence <= 1.0:
+        return False, f"DISAGREE with an out-of-range confidence ({confidence})"
+    threshold = debate_escalate_confidence()
+    if confidence < threshold:
+        return False, (
+            f"DISAGREE at {confidence:.2f}, below the {threshold:.2f} needed to act on it"
+        )
+    return True, f"DISAGREE at {confidence:.2f} (threshold {threshold:.2f})"
+
+
+async def _apply_debate_verdict(
+    case: dict[str, Any], verdict: dict[str, Any] | None, tenant: str | None,
+) -> None:
+    """
+    Record what the auto-debate changed, and change it.
+
+    `case["debate_effect"]` is written whether or not anything changed, so a case
+    trace always answers "did the debate matter here, and why". When the verdict
+    escalates, the case is marked for investigation and its risk may rise to the
+    auditor's adjusted_risk_score -- never fall to it. The auditor's number is an
+    opinion about the junior analyst's score; the effective risk is already at
+    least the deterministic floor, and an opinion does not lower a floor.
+    """
+    escalates, reason = debate_escalation(verdict)
+    before = int(case.get("risk_score") or 0)
+    after = before
+
+    if escalates:
+        adjusted = (verdict or {}).get("adjusted_risk_score")
+        try:
+            proposed = int(round(float(adjusted))) if adjusted is not None else None
+        except (TypeError, ValueError):
+            proposed = None
+        if proposed is not None:
+            after = max(before, min(100, proposed))
+
+        # The invariant, stated where it is established rather than hoped for:
+        # nothing in this function may lower the risk a case already carried.
+        if after < before:
+            raise AssertionError(f"debate lowered risk {before} -> {after}")
+
+        case["debate_escalated"] = True
+        case["risk_score"] = after
+        reconciled = case.get("reconciliation") or {}
+        reconciled["effective_risk"] = after
+        if after > before:
+            reconciled["raised_by"] = "debate"
+        await emit(
+            case["case_id"],
+            "debate_escalation",
+            f"Senior Auditor disagreed ({reason}); routed to deep investigation"
+            + (f", effective risk {before} -> {after}" if after > before else ""),
+            agent="debate",
+            risk_score=after,
+            tenant_id=tenant,
+        )
+
+    case["debate_effect"] = {
+        "escalated": escalates,
+        "reason": reason,
+        "threshold": debate_escalate_confidence(),
+        "risk_before": before,
+        "risk_after": after,
+    }
+
+
 def _investigation_payload(case: dict[str, Any]) -> dict[str, Any]:
     """Build the nested case envelope the investigation agent expects."""
     shipment = case.get("shipment", {})
@@ -1502,6 +1656,12 @@ def _investigation_payload(case: dict[str, Any]) -> dict[str, Any]:
     compliance_result = compliance_step.get("result", {})
 
     triggers = []
+    # First, when it is the reason this investigation exists at all: the case's
+    # scores alone would have queued it for review instead.
+    if case.get("debate_escalated"):
+        verdict = ((case.get("auto_debate") or {}).get("verdict")) or {}
+        rationale = str(verdict.get("rationale") or "no rationale given")[:400]
+        triggers.append(f"Senior Auditor disagreed with the junior analyst: {rationale}")
     for flag in fraud_result.get("flags", []) or []:
         triggers.append(flag if isinstance(flag, str) else str(flag.get("description") or flag))
     for factor in compliance_result.get("risk_factors", []) or []:

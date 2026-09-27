@@ -1,10 +1,21 @@
 # =============================================================================
-# Unified container: Flask backend + Next.js console on one Cloud Run service.
+# One container, one Cloud Run service: Flask API + Next.js console.
 #
-# Next.js listens on $PORT (Cloud Run sets this, default 8080) and proxies
-# /api/proxy/* to Flask on an internal port (9090). The browser never reaches
-# Flask directly -- the same BFF proxy pattern the split deployment used,
-# except localhost instead of a second Cloud Run URL.
+# Next.js listens on $PORT (Cloud Run sets it; 8080 by default) and is the only
+# thing reachable from outside. Flask listens on 127.0.0.1:9090 behind it and is
+# reached two ways, both in frontend/src/lib/upstream.ts:
+#
+#   /api/proxy/*                   the console's allow-listed BFF, which attaches
+#                                  the console's credential for a signed-in user
+#   /api/v1/*, /health, /metrics,  the public API, passed through with the
+#   /demo                          caller's own credential and nothing added
+#
+# entrypoint.sh starts Flask, waits for /health, then starts Next.js.
+#
+# Every base image is pinned by digest, and the runtime stage installs nothing
+# from a package repository: Node is copied out of the pinned node image rather
+# than fetched from NodeSource, so a build cannot silently pick up a different
+# binary. Dockerfile.backend is the API-only image, for running Flask alone.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -26,53 +37,59 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # ---------------------------------------------------------------------------
 # Stage 2: Next.js build (standalone output)
 # ---------------------------------------------------------------------------
-FROM node:22-slim AS node-builder
+FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS node-builder
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY frontend/ .
+# Inlined into the client bundle at build time; a runtime variable cannot
+# change it afterwards. See frontend/src/lib/config.ts.
 ENV NEXT_PUBLIC_DEMO_MODE=false
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 3: Runtime -- Python 3.11 + Node 22 in one image
+# Stage 3: Runtime -- Python 3.11 + the Node binary, nothing else installed
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9 AS runtime
 
-# Install Node.js 22.x from NodeSource
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg wget bash && \
-    mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
-      > /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && apt-get install -y --no-install-recommends nodejs && \
-    rm -rf /var/lib/apt/lists/*
+# The standalone server needs only the node executable. Its shared libraries
+# (libstdc++, libgcc_s, glibc) are already in this Debian base -- apt itself
+# links libstdc++ -- and the check below fails the build if that ever changes.
+COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
+RUN node --version
 
 WORKDIR /app
 
-# Python
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
 ENV PATH="/opt/venv/bin:$PATH"
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=py-builder /opt/venv /opt/venv
 COPY src/ src/
+# hs_reference.py resolves data/hs_reference.yaml relative to the repo root and
+# reads it at import with no fallback, so a missing file stops the boot.
 COPY data/hs_reference.yaml data/hs_reference.yaml
+# The committed evaluation reports GET /api/v1/evaluation serves (evaluation.py).
+# Aggregates only -- a few tens of KB -- so the console can show what was measured
+# without a second deployment of anything.
+COPY data/benchmark_results/ data/benchmark_results/
+COPY data/eval_results/ data/eval_results/
 
-# Next.js standalone
+# Next.js standalone output
 COPY --from=node-builder /app/.next/standalone ./console/
 COPY --from=node-builder /app/.next/static ./console/.next/static/
 COPY --from=node-builder /app/public ./console/public/
 
-# Entrypoint
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# CRs stripped in case the file was checked out with CRLF endings on Windows;
+# .gitattributes prevents that, this makes the image independent of it.
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# Non-root user
 RUN groupadd --gid 1000 appgroup && \
     useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser && \
     chown -R appuser:appgroup /app
@@ -81,7 +98,9 @@ USER appuser
 ENV PORT=8080
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD wget -q -O /dev/null http://localhost:${PORT}/ || exit 1
+# Through Next.js to Flask, so it reports both processes. Cloud Run ignores
+# HEALTHCHECK; `docker run` and CI's container smoke test do not.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT', '8080'), timeout=5)" || exit 1
 
 CMD ["/app/entrypoint.sh"]

@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 
 import { KpiCards } from "@/components/dashboard/KpiCards";
+import { ApiError } from "@/lib/api";
 import { NO_VALUE } from "@/lib/format";
 import type { ComplianceAuditResponse, TenantUsageResponse } from "@/lib/types";
 
@@ -80,6 +81,28 @@ describe("KpiCards when the billing read fails", () => {
     expect(
       screen.getByText(/rules-versus-model split cannot be shown/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("KpiCards when billing is refused for this role", () => {
+  // Billing is operator upstream. A visitor's 403 is a permission, not an outage,
+  // and saying "the billing read failed" would report it as one.
+  const refused = {
+    usageError: new ApiError("Insufficient permissions", 403, "http", "operator"),
+    usage: undefined,
+  };
+
+  it("names the role instead of reporting a failure", () => {
+    renderCards({ audits: [audit("CLEARED")], loading: false, ...refused });
+    // Twice on purpose: the spend tile and the clearance split both come from
+    // billing, and each says why it is empty.
+    expect(screen.getAllByText(/needs the operator role/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/billing read failed/i)).toBeNull();
+  });
+
+  it("still does not render $0 for a spend it was not shown", () => {
+    renderCards({ audits: [audit("CLEARED")], loading: false, ...refused });
+    expect(screen.queryByText("$0")).toBeNull();
   });
 });
 

@@ -57,7 +57,7 @@ from datetime import datetime, timedelta, timezone
 # so a seed run would have filled someone else's board and reported success. See the
 # comment in test_documents.py for the full account.
 BASE = os.getenv(
-    "VF_TEST_BASE", "https://vf-logistics-f7rcctz26a-as.a.run.app",
+    "VF_TEST_BASE", "https://vf-app-350828852747.asia-southeast1.run.app",
 ).rstrip("/")
 EVENT_URL = f"{BASE}/api/v1/events/shipment"
 STATE_URL = f"{BASE}/api/v1/orchestrator/state"

@@ -6,6 +6,17 @@ Run
     python scripts/run_massive_benchmark.py --arm rules                 # free
     python scripts/run_massive_benchmark.py --arm full --limit 120
     python scripts/run_massive_benchmark.py --arm full --real-tavily 20
+    python scripts/run_massive_benchmark.py --arm rules --split dev     # tune here
+    python scripts/run_massive_benchmark.py --arm full --split holdout  # report here
+
+Splits
+------
+`--split dev` and `--split holdout` divide the corpus in two by a hash of the case
+id, so the division is fixed, reproducible and independent of the file's order
+(the corpus is written attack type by attack type, so "the first half" would be
+mostly one attack). Any threshold is tuned on dev only. Holdout is what gets
+reported, because a number measured on the cases a threshold was chosen against
+says how well it was chosen, not how well it works.
 
 Arms
 ----
@@ -60,7 +71,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import collections
+import hashlib
 import json
+import os
 import pathlib
 import statistics
 import sys
@@ -79,6 +92,13 @@ REPORT_FILE = ROOT / "benchmark_report.json"
 # The risk floor at or above which a shipment is held rather than auto-cleared.
 # Matches the orchestrator's own banding.
 REVIEW_THRESHOLD = 40
+
+SPLITS = ("all", "dev", "holdout")
+
+
+def split_of(case_id: str) -> str:
+    """`dev` or `holdout`, decided by the first byte of the id's SHA-256."""
+    return "dev" if hashlib.sha256(case_id.encode("utf-8")).digest()[0] % 2 == 0 else "holdout"
 
 
 # --------------------------------------------------------------------------
@@ -247,6 +267,7 @@ async def run_case(
 
     return {
         "case_id": case["case_id"],
+        "split": split_of(case["case_id"]),
         "attack": case["attack"],
         "expected_flagged": case["expected_flagged"],
         "hard_negative": case.get("hard_negative", False),
@@ -260,6 +281,13 @@ async def run_case(
             base["auto_reject_by_rules"] or base["risk_floor"] >= REVIEW_THRESHOLD
         ),
         "codes": codes,
+        # Floor and severity per finding, so a false positive can be traced to the
+        # rule that produced it (scripts/analyse_false_positives.py) rather than
+        # guessed at from the list of codes.
+        "findings": [
+            {"code": f["code"], "floor": f.get("floor", 0), "severity": f["severity"]}
+            for f in final["findings"]
+        ],
         "expected_codes": case.get("expected_codes") or [],
         "sanctions_status": final.get("sanctions_screening"),
         "hs_verdict": (hs_verdict or {}).get("verdict"),
@@ -312,7 +340,7 @@ def score(results: list[dict[str, Any]], key: str = "flagged") -> dict[str, floa
 
 def build_report(
     results: list[dict[str, Any]], arm: str, meta: dict[str, Any],
-    ledger: TavilyLedger, elapsed: float,
+    ledger: TavilyLedger, elapsed: float, split: str = "all",
 ) -> dict[str, Any]:
     overall = score(results)
     rules_only = score(results, key="rules_only_flagged")
@@ -379,6 +407,8 @@ def build_report(
 
     return {
         "arm": arm,
+        "split": split,
+        "split_method": "sha256(case_id)[0] % 2: 0 = dev, 1 = holdout",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "cases_run": len(results),
         "elapsed_seconds": round(elapsed, 1),
@@ -512,8 +542,8 @@ def build_report(
 
 def print_report(report: dict[str, Any]) -> None:
     d, r = report["detection"], report["rules_only_baseline"]
-    print(f"\n=== {report['arm']} arm, {report['cases_run']} cases, "
-          f"{report['elapsed_seconds']}s ===\n")
+    print(f"\n=== {report['arm']} arm, {report.get('split', 'all')} split, "
+          f"{report['cases_run']} cases, {report['elapsed_seconds']}s ===\n")
     print(f"{'':<26}{'pipeline':>10}{'rules only':>12}{'delta':>10}")
     for label, key in (
         ("precision", "precision"), ("recall", "recall"), ("f1", "f1"),
@@ -568,6 +598,10 @@ async def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arm", choices=["rules", "hs", "full"], default="rules")
     ap.add_argument("--limit", type=int, default=0, help="0 means all cases")
+    ap.add_argument(
+        "--split", choices=SPLITS, default="all",
+        help="dev to tune thresholds against, holdout to report; see the docstring",
+    )
     ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument(
         "--real-tavily", type=int, default=0,
@@ -581,8 +615,21 @@ async def main() -> int:
     ap.add_argument("--out", default=str(REPORT_FILE))
     args = ap.parse_args()
 
+    # A model arm with no model key does not fail -- every call errors, is caught as
+    # an "unknown" verdict, and the run finishes in seconds reporting the RULES
+    # arm's numbers under the name "full". That happened once, from a shell where
+    # .env had not been loaded, and the only tell was USD 0.0000 in the progress
+    # line. Refused up front instead.
+    if args.arm in ("hs", "full") and not os.getenv("NEBIUS_API_KEY", "").strip():
+        print(f"REFUSING: --arm {args.arm} calls Nebius and NEBIUS_API_KEY is not set. "
+              "Load .env into the environment first; a keyless run would report the "
+              "rules arm under this arm's name.")
+        return 2
+
     payload = json.loads(pathlib.Path(args.cases).read_text(encoding="utf-8"))
     cases = payload["cases"]
+    if args.split != "all":
+        cases = [c for c in cases if split_of(c["case_id"]) == args.split]
     if args.limit:
         # Stride rather than head, so a limited run keeps the corpus mix instead of
         # measuring whichever bucket happened to be shuffled to the front.
@@ -595,7 +642,7 @@ async def main() -> int:
     if args.arm == "full":
         install_tavily_stub(ledger, current_case)
 
-    print(f"running {len(cases)} cases, arm={args.arm}, "
+    print(f"running {len(cases)} cases, arm={args.arm}, split={args.split}, "
           f"concurrency={args.concurrency}, real Tavily budget={args.real_tavily}")
 
     semaphore = asyncio.Semaphore(args.concurrency)
@@ -627,8 +674,20 @@ async def main() -> int:
     await asyncio.gather(*(worker(c) for c in cases))
 
     elapsed = time.monotonic() - started
-    report = build_report(results, args.arm, payload["meta"], ledger, elapsed)
+    report = build_report(
+        results, args.arm, payload["meta"], ledger, elapsed, split=args.split,
+    )
     report["aborted_on_cost"] = aborted
+
+    # The second way a model arm reports the rules arm under its own name: a key
+    # that is set but rejected. Every call then raises AuthenticationError, is
+    # caught per case, and the run "succeeds". Refused rather than written, because
+    # a report file is what gets quoted.
+    if args.arm in ("hs", "full") and results and not any(r["input_tokens"] for r in results):
+        errors = collections.Counter(e for r in results for e in r["errors"])
+        print(f"\nREFUSING TO WRITE: no case made a successful model call "
+              f"({dict(errors.most_common(3))}). This is not a {args.arm}-arm result.")
+        return 3
 
     out = pathlib.Path(args.out)
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")

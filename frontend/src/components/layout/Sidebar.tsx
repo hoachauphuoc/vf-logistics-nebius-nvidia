@@ -4,6 +4,7 @@ import {
   Activity,
   ChevronLeft,
   FileClock,
+  FlaskConical,
   Inbox,
   KeyRound,
   LayoutGrid,
@@ -30,18 +31,20 @@ export interface NavItem {
 }
 
 /**
- * The six operational sections, plus Risk Radar.
+ * Every section of the console, in the order a new reader needs them.
  *
  * Order follows the old dashboard's sidebar so that muscle memory survives the
- * port, with two deliberate differences:
+ * port, with deliberate differences:
  *
  * - "Dashboard" is called Pipeline, because that is what it shows. A section
  *   named Dashboard in a console that is entirely a dashboard tells a reader
- *   nothing about which of six screens they are on.
+ *   nothing about which screen they are on.
  * - Risk Radar is new rather than ported: it reads the published B2B audit
  *   contract (`/compliance/reports`) rather than the internal case store, so it
  *   is the view an integrator's data actually appears in. It sits second because
  *   it answers "what did we decide" while Pipeline answers "what is happening".
+ * - Evaluation and Access Control come last: one says how well the system does
+ *   its job, the other who may do what with it. Neither is operational.
  */
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -87,10 +90,16 @@ export const NAV_ITEMS: NavItem[] = [
     blurb: "Models, cost and injection probes",
   },
   {
+    href: "/evaluation",
+    label: "Evaluation",
+    icon: FlaskConical,
+    blurb: "Measured detection, false alarms, cost",
+  },
+  {
     href: "/admin",
     label: "Access Control",
     icon: KeyRound,
-    blurb: "Auth posture, roles, proxy rules",
+    blurb: "Your role, the policy, the proxy",
   },
 ];
 

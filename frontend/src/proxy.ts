@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { COOKIE_NAME, loginRequired, publicReads, verifySession } from "@/lib/session";
+import { isApiPassThrough } from "@/lib/upstream";
 
 /**
  * The door.
@@ -38,7 +39,11 @@ const PUBLIC_PATHS = new Set([
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_PATHS.has(pathname)) return NextResponse.next();
+  // The public API is authorised by Flask, not by a console session: see
+  // isApiPassThrough in lib/upstream.ts. Also excluded by the matcher below.
+  if (PUBLIC_PATHS.has(pathname) || isApiPassThrough(pathname)) {
+    return NextResponse.next();
+  }
 
   // Development convenience only: with no VF_SESSION_SECRET configured and not
   // running a production build, there is no login. loginRequired() returns true
@@ -84,15 +89,19 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   /**
-   * Everything except Next's own static output and the files browsers request
-   * unprompted.
+   * Everything except Next's own static output, the files browsers request
+   * unprompted, and the public API pass-through.
    *
    * `_next/static` and `_next/image` are excluded because they are public build
    * artefacts and running an HMAC over every one of them would cost latency on
-   * every page load for no gain. Note what is NOT excluded: `/api/*` is inside
-   * the matcher, which is the point.
+   * every page load for no gain. The API pass-through (`api/v1/`, `health`,
+   * `metrics`, `demo`) is excluded because Flask authorises it and because a
+   * matched request has its body buffered for this function -- a document upload
+   * to the API should stream straight through. Note what is NOT excluded:
+   * `/api/proxy/*`, the console's own BFF, is inside the matcher, which is the
+   * point.
    */
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/v1/|health$|metrics$|demo$).*)",
   ],
 };

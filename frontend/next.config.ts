@@ -4,6 +4,18 @@ const nextConfig: NextConfig = {
   output: "standalone",
   allowedDevOrigins: ["127.0.0.1", "localhost"],
 
+  experimental: {
+    // Next buffers a request body so proxy.ts can read it, and silently keeps only
+    // the first 10 MB by default (next/dist/server/body-streams.js: "Only the first
+    // 10MB will be available"). The console's document upload goes through
+    // proxy.ts on its way to /api/proxy/events/document, and the backend accepts
+    // MAX_DOCUMENT_MB=20 plus 2 MB of multipart overhead -- so an 11-20 MB bill of
+    // lading reached Flask truncated and failed as a malformed upload. Matched to
+    // the backend's MAX_CONTENT_LENGTH so this hop never refuses what Flask would
+    // accept, and Flask stays the one place the limit is enforced and reported.
+    proxyClientMaxBodySize: "22mb",
+  },
+
   async headers() {
     return [
       {
@@ -40,7 +52,14 @@ const nextConfig: NextConfig = {
               // has no nonce hook that survives static prerendering. Removing it means
               // moving off inline bootstrap entirely, which is a larger change than a
               // header.
-              "script-src 'self' 'unsafe-inline'",
+              //
+              // 'unsafe-eval' in development ONLY. React's dev build uses eval() to
+              // rebuild callstacks and reported "eval() is not supported" as an error
+              // on every page, which hides real errors behind a permanent one. The
+              // production bundle never evals, so the deployed policy is unchanged.
+              process.env.NODE_ENV === "production"
+                ? "script-src 'self' 'unsafe-inline'"
+                : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
               // Tailwind and next/font both emit inline <style>. No external stylesheet
               // origin is needed, unlike the backend.
               "style-src 'self' 'unsafe-inline'",

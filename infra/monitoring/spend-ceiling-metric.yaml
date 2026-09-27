@@ -5,5 +5,5 @@ description: >-
   this filter.
 filter: >-
   resource.type="cloud_run_revision"
-  AND resource.labels.service_name="vf-logistics"
+  AND resource.labels.service_name="vf-app"
   AND "TENANT SPEND CEILING REACHED"

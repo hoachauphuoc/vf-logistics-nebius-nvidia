@@ -1,4 +1,4 @@
-$baseUrl = "https://vf-logistics-350828852747.asia-southeast1.run.app"
+$baseUrl = "https://vf-app-350828852747.asia-southeast1.run.app"
 $data = Get-Content -Raw -Path "$PSScriptRoot\e2e_test_data.json" | ConvertFrom-Json
 
 $results = @()

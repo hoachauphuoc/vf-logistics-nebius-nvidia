@@ -36,7 +36,7 @@ export const NAV_HELP: Record<string, HelpEntry> = {
       "Columns fold several internal states together. Cleared holds shipments released automatically and shipments a reviewer released, because both mean cleared to ship.",
   },
   "/radar": {
-    title: "Radar",
+    title: "Risk Radar",
     body:
       "Completed audits, newest first, with the risk verdict and what drove it. Use this to look back at decisions; use Pipeline to watch work in progress.",
   },
@@ -60,14 +60,28 @@ export const NAV_HELP: Record<string, HelpEntry> = {
       "Changes can be simulated against recent cases before publishing, so you can see what a new boundary would have changed without writing anything.",
   },
   "/devops": {
-    title: "Operations",
+    title: "DevOps",
     body:
-      "Submit a shipment or upload a document to watch it run end to end, and inspect the health of the worker and the model layer.",
+      "Put work into the real pipeline: the scripted batch, a bulk load, a hand-written shipment or an uploaded document. Every control here is an operator action, because each one creates cases and spends model tokens.",
   },
   "/agents": {
-    title: "Agents",
+    title: "Agent Console",
     body:
       "Which model answered which question, how many tokens it used, and what it cost. Also the prompt-injection screen that every uploaded document passes through.",
+  },
+  "/evaluation": {
+    title: "Evaluation",
+    body:
+      "Detection, false alarms and cost, measured by the benchmark harness on a fixed synthetic corpus and served from the reports committed with the code. Nothing on the page is typed in.",
+    note:
+      "Thresholds were chosen on the dev half of the corpus; the holdout half is what is reported. The caveats at the top of the page travel with every number.",
+  },
+  "/admin": {
+    title: "Access Control",
+    body:
+      "Who you are to the API, which role that gives you and why, and the role every API route actually enforces -- read from the running service rather than written down.",
+    note:
+      "Roles are assigned by email on the API. Signing in proves who you are; it does not make you anything.",
   },
 };
 
@@ -215,9 +229,11 @@ export const FINDING_HELP: Record<string, HelpEntry> = {
     body: "This counterparty has no prior shipments on file.",
   },
   SHIPPER_THIN_HISTORY: {
-    title: "Thin shipping history",
+    title: "Short trading record",
     body:
-      "Only a handful of prior shipments, which is not enough of a pattern for an anomaly to stand out against.",
+      "Between two and nine prior shipments on file. Shown as context, not scored: it raises no floor and holds no shipment on its own.",
+    note:
+      "Measured on the benchmark corpus, a record this short was as common among honest shippers as among the attacks it was meant to catch. No record at all is still a HIGH finding.",
   },
   SHIPPER_HISTORY_UNVERIFIED: {
     title: "History unverified",
@@ -271,6 +287,11 @@ export const FINDING_HELP: Record<string, HelpEntry> = {
     body:
       "The description-to-heading check could not run, so the declared code was accepted as given.",
   },
+  HS_DESCRIPTION_CHECK_CONTRADICTORY: {
+    title: "Classification reply contradicted itself",
+    body:
+      "The classifier called the description inconsistent with the declared heading, then named that same heading as the right one. Shown as context and not acted on: a reply that disagrees with itself is not a finding.",
+  },
   FREIGHT_MISSING: {
     title: "No freight charge",
     body:
@@ -279,9 +300,16 @@ export const FINDING_HELP: Record<string, HelpEntry> = {
   FREIGHT_ANOMALY: {
     title: "Freight out of line",
     body:
-      "The freight charge is far from the baseline for this lane. Below 70% is a concern, below 50% is serious, and below 25% is treated as critical; more than three times the baseline is also flagged, as over-invoicing is its own way of moving value.",
+      "The freight charge is far below the baseline for this lane: below 70% is a concern, below 50% serious, below 25% critical. Far above the record's own route average is also flagged, as over-invoicing is its own way of moving value.",
     note:
       "Skipped entirely below the low-value threshold. A parcel is not an underpriced container, and applying the lane baseline to one made the low-value fast path unreachable.",
+  },
+  FREIGHT_ABOVE_LANE_TYPICAL: {
+    title: "Freight above the lane figure",
+    body:
+      "More than three times the typical charge for one consignment on this lane. Shown as context, not scored: that figure does not scale with the size or value of the shipment, so a large consignment exceeds it in the ordinary course.",
+    note:
+      "Scored as a finding when the record carries its own route average, which describes comparable consignments.",
   },
   VALUE_DENSITY_HIGH: {
     title: "Value per kilogram too high",
@@ -514,6 +542,45 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
     title: "Completed audits",
     body:
       "Finished verdicts, newest first. The badge shows the risk state; hover or open a row for what drove it.",
+  },
+
+  // Access Control screen
+  "access.you": {
+    title: "You, as the API sees you",
+    body:
+      "The identity and role the API resolved for your requests, and which setting gave it. Every locked control in the console is locked for the reason shown here.",
+  },
+  "access.posture": {
+    title: "Sign-in posture",
+    body:
+      "What the console requires before it forwards a request. Reads are public on this deployment for the judging window; writes always need a signed-in session.",
+  },
+  "access.roles": {
+    title: "Roles",
+    body:
+      "Each role includes the ones below it. Who holds which is configuration on the API -- ADMIN_EMAILS, OPERATOR_EMAILS, REVIEWER_EMAILS -- shown here as counts, never as names.",
+  },
+  "access.matrix": {
+    title: "Effective access",
+    body:
+      "Every API route with the role its code enforces, read from the running service. A route marked Console is reachable from these screens; the rest need an API key.",
+  },
+
+  // Evaluation screen
+  "evaluation.tuning": {
+    title: "Before and after tuning",
+    body:
+      "The deterministic checks alone, on holdout cases that played no part in choosing the change. The false-alarm rate is the number the tuning was for; the recall it cost is shown beside it.",
+  },
+  "evaluation.full": {
+    title: "Full pipeline",
+    body:
+      "Rules plus the HS classifier and the zero-day radar, through the real gate. The difference from the rules-alone figures is what the model layer contributes -- in both directions.",
+  },
+  "evaluation.hs": {
+    title: "HS classifier",
+    body:
+      "Controlled goods declared under a benign heading, which rules cannot catch because the declared code is the evader's choice. The holdout substitutions appear nowhere in the material the method was developed on.",
   },
 };
 

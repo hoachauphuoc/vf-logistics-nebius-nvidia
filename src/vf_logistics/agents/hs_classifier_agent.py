@@ -21,6 +21,7 @@ can put base, few-shot and fine-tuned variants side by side in one process.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from vf_logistics import config as model_config
@@ -165,13 +166,23 @@ async def classify_hs(
         elif mode == "cot_strict":
             system += hs_reference.reference_block(include_excludes=False)
 
+    # Reduced to the 4-digit heading, the unit the prompt compares at. Told "6205.20"
+    # and asked whether the goods' heading equals the declared one, Nano answered
+    # 6205 and "inconsistent" -- three clean shipments in three on the live board,
+    # while every evaluation set declares plain headings like "8414", which is why
+    # no measurement saw it. A code with fewer than four digits is passed as
+    # declared: there is no heading to reduce it to, and verifier's
+    # HS_CODE_MALFORMED is what answers it.
+    digits = re.sub(r"\D", "", declared_hs)
+    declared_heading = digits[:4] if len(digits) >= 4 else declared_hs
+
     # Delimited so that instruction-looking text inside a cargo description is
     # read as cargo data. untrusted.screen_text() is the actual defence against
     # injection; this only stops accidental prompt bleed.
     user_text = (
         "<<<BEGIN GOODS RECORD>>>\n"
         f"Description: {cargo_description}\n"
-        f"Declared heading: {declared_hs}\n"
+        f"Declared heading: {declared_heading}\n"
         "<<<END GOODS RECORD>>>\n\n"
         f"{closing}"
     )

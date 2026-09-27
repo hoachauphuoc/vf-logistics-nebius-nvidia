@@ -38,11 +38,13 @@ param(
     [switch] $DeployOnly,
     [string] $Project = 'vf-fraud-detection-phuochoa',
     [string] $Region  = 'asia-southeast1',
-    [string] $Service = 'vf-logistics'
+    # vf-app serves the API and the console from one container, so this is the
+    # only service that reads NEBIUS_API_KEY and TAVILY_API_KEY.
+    [string] $Service = 'vf-app'
 )
 
 $ErrorActionPreference = 'Stop'
-$BackendUrl   = 'https://vf-logistics-f7rcctz26a-as.a.run.app'
+$BackendUrl   = 'https://vf-app-350828852747.asia-southeast1.run.app'
 $NebiusUrl    = 'https://api.tokenfactory.nebius.com/v1/chat/completions'
 $NebiusModel  = 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B'
 $TavilyUrl    = 'https://api.tavily.com/search'
@@ -203,11 +205,13 @@ Write-Host 'dang deploy lai de revision moi nhan khoa moi...' -ForegroundColor C
 # Same stderr trap as Add-SecretVersion: `gcloud run deploy` streams all of its
 # build progress to stderr, so under 'Stop' the very first progress line would
 # kill the script mid-deploy.
+# Only --source and --quiet. The memory, instance and secret settings already on
+# the service are kept by `gcloud run deploy` when not restated, and restating
+# them here was how a rotation would have shrunk the combined container to the
+# 512Mi the API-only service used to run in.
 $deploy = & {
     $ErrorActionPreference = 'Continue'
-    gcloud run deploy $Service --source . --region=$Region --project=$Project `
-        --allow-unauthenticated --memory=512Mi --timeout=300 `
-        --min-instances=0 --max-instances=2 --quiet 2>&1
+    gcloud run deploy $Service --source . --region=$Region --project=$Project --quiet 2>&1
 }
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'DEPLOY THAT BAI' -ForegroundColor Red

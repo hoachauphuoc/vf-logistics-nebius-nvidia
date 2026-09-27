@@ -37,11 +37,12 @@ Tavily search call before every screening decision.
 
 ## Hosted project URL
 
-**Console (start here):** https://vf-console-f7rcctz26a-as.a.run.app
-**API:** https://vf-logistics-f7rcctz26a-as.a.run.app
+**Live demo:** https://vf-app-350828852747.asia-southeast1.run.app
+**API:** the same URL, under `/api/v1` — `GET /health`, `GET /api/v1/openapi.json`
 
-The console is readable without signing in. Recording a review decision needs an
-account; credentials are in the private testing-instructions field below.
+One Cloud Run service runs the console and the API in one container. The console is
+readable without signing in: an anonymous visitor is a real `viewer`. Recording a review
+decision needs an account; credentials are in the private testing-instructions field below.
 
 ---
 
@@ -79,7 +80,7 @@ lowered it. That runs on every call.
 This began as a Google Cloud submission for a different hackathon (All Things
 Agentic 2026), on Vertex AI Gemini. Everything below is checkable against the
 repository: `6bb1e59` is the initial commit, and `git diff --shortstat 6bb1e59 HEAD`
-reports **243 files changed, 156,525 insertions** across 23 commits.
+reports **297 files changed, 171,915 insertions** across 48 commits.
 
 One thing was deliberately *not* changed: the deterministic governance layer — risk
 floor, untrusted-input boundary, delegation boundary, shipper identity verification.
@@ -90,21 +91,27 @@ which model reasons. Everything else was rebuilt.
 |---|---|---|---|
 | **Models** | 4 agents on Gemini 3.5 Flash + Flash-Lite, Vertex AI | 7 agents, 4 models on Token Factory: Nano ×4 hops, Super, **Ultra**, MiniCPM-V | The floor overrides a score but not a verdict, so reasoning capacity is only worth paying for on the debate — measured `$0.0198` vs `$0.0015` |
 | **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,656 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
-| **Console** | one static HTML page served by Flask | Next.js 16 on a second Cloud Run service — 67 files, 12,672 lines, 7 screens | The static page could not carry a session, and recording a decision had to be attributable |
+| **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 67 files, 12,672 lines, 7 screens, since joined by Access Control and Evaluation | The static page could not carry a session, and recording a decision had to be attributable |
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
-| **Anonymous authority** | any visitor held `GOVERNANCE_ADMIN` on the live console; unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method | Found by doing it. Splitting on method rather than a path list means a route added later is covered by default |
+| **Anonymous authority** | any visitor held `GOVERNANCE_ADMIN` on the live console; unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
 | **Cost control** | none; `max_tokens` set on **no agent**, and the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **zero** unit tests (one HTTP script) | **800** tests, 32 files, 77% coverage | — |
-| **CI** | existed but filtered on branch `main` while the repo uses `master`, so it had **never run once** | four jobs, green | A documented pipeline that does not execute is the same defect as an undocumented one |
+| **Tests** | **zero** unit tests (one HTTP script) | **854** backend tests in 37 files at 79% coverage, 114 frontend tests, and a mutation check that breaks 31 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **CI** | existed but filtered on branch `main` while the repo uses `master`, so it had **never run once** | five jobs: ruff, mypy (strict on clean modules, a ratchet on the rest), tests with a 75% coverage floor, frontend, and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 17 modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
 
-Two measured results worth stating plainly, because both corrected an assumption we
-had published:
+Three measured results worth stating plainly, because each corrected an assumption we
+had published or would have:
 
-- **HS classification recall went 40.0% → 26.7% → 91.7%.** Chain-of-thought
-  prompting made it *worse*; what fixed it was giving the model a reference block of
-  real HS headings. A retrieval problem dressed as a reasoning problem does not
-  respond to reasoning.
+- **HS classification recall went 40.0% → 26.7% → 92.9%.** Two worked examples
+  made Nano *worse* (few-shot, 26.7%); what fixed it was reasoning against a reference
+  extract of the published HS headings — 92.9% at 100% precision on the 30-case pairs
+  set, and **91.7% with no false alarms** on a 24-case holdout of substitutions the
+  reference never mentions. A retrieval problem dressed as a reasoning problem does not
+  respond to examples.
+- **The deterministic layer held 76.7% of clean shipments.** Measured on a held-out split
+  of a 1,000-case synthetic corpus, then tuned on the other half only: **38.4%** on the
+  holdout, precision 84.1% → 91.2%, recall 95.1% → 93.5%, sanctions-alias and shell-company
+  detection unchanged at 100%. Still high, and stated as such in the README.
 - **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
   about `$0.068` on inference and 90–106 Tavily searches, so the free search tier
   runs out around 200 cases while model spend is still negligible. Every cost figure
@@ -161,7 +168,11 @@ agent that can afford a larger model.
 fraud agent's assessment through native function calling, with three tools it may
 choose to invoke: request re-evaluation, search Tavily, render verdict. It fires
 **automatically** when the deterministic floor and the model disagree by 15 points
-or more, and a reviewer can also trigger it manually via *Deep Review*.
+or more, and a reviewer can also trigger it manually via *Deep Review*. Its verdict
+is decisive in one direction only: a DISAGREE the model genuinely rendered, at
+confidence 0.7 or above, sends the case to deep investigation, while a CONFIRM, a
+low-confidence verdict or a forced default leaves the routing to the floor. It can
+escalate a case and can never clear one.
 
 **HS Classification Agent** — **NVIDIA Nemotron 3 Nano**. The deterministic checks
 in `verifier.py` can compare a declared HS code against a dual-use prefix list, but
@@ -223,8 +234,8 @@ Tavily is woven throughout the pipeline, not just compliance:
    what actually changed, rather than only against what a model remembers.
 
 5. **Multi-agent debate** -- `debate_agent.py` exposes `search_tavily` as a tool
-   that Nemotron Super can invoke during function-calling debate rounds. Super
-   decides at runtime whether to search -- it's a genuine tool call, not scripted.
+   that the Senior Auditor (Nemotron Ultra) can invoke during function-calling debate
+   rounds. It decides at runtime whether to search -- a genuine tool call, not scripted.
 
 A missing API key or a Tavily outage degrades each integration to pre-Tavily
 behaviour rather than blocking the pipeline.
@@ -354,9 +365,9 @@ the live service once destroyed the seeded demo board.
 | State | Firestore Native mode — `cases`, `events`, `audit_log`, `delegation_boundaries` |
 | Messaging | Pub/Sub — `shipment-events` inbound, `case-decisions` outbound |
 | Documents | Cloud Storage |
-| Web | Flask + gunicorn (1 worker, 8 threads), flask-cors |
-| Console | Next.js 16 (App Router, React 19, Tailwind, TanStack Query) on a second Cloud Run service |
-| Container | python:3.11-slim |
+| Web | Flask + gunicorn (1 worker, 8 threads) on `127.0.0.1:9090`, behind the console |
+| Console | Next.js 16 (App Router, React 19, Tailwind, TanStack Query) on `$PORT`, in the same container |
+| Container | One image, one Cloud Run service (`vf-app`): python:3.11-slim with Node copied from a digest-pinned image; `entrypoint.sh` starts Flask, waits for `/health`, then starts Next.js |
 
 Hackathon requirements this satisfies, per the Official Rules: a functional runtime
 call to Nebius Token Factory (all seven agents) · at least one NVIDIA open source
@@ -495,8 +506,7 @@ openai-sdk, python, flask, gunicorn, asyncio, nextjs, react, typescript,
 tailwindcss, docker
 
 **"Try it out" links:**
-- https://vf-console-f7rcctz26a-as.a.run.app (console — start here)
-- https://vf-logistics-f7rcctz26a-as.a.run.app (API)
+- https://vf-app-350828852747.asia-southeast1.run.app (console and API, one service)
 - https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia
 
 ### Additional info
@@ -508,7 +518,7 @@ tailwindcss, docker
 | **Category** | Best Apps and Agents |
 | **Public code repo URL** | https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | **Reproducible Testing instructions in README?** | **Yes** — README → *Reproducible testing* |
-| **Testing instructions (private)** | **Console:** https://vf-console-f7rcctz26a-as.a.run.app — the board, any case, the audit trail and the cost figures are all readable **without signing in**, so nothing is needed to assess the product. To record a review decision, sign in at `/login` as `judge@vf-logistics.demo` with the password supplied alongside this submission; the audit trail will then name that account, which is the point of requiring it. **API only:** `GET /health` to warm it, then `POST /api/v1/simulate` and poll `GET /api/v1/orchestrator/state`. Full walkthrough in the README. |
+| **Testing instructions (private)** | **Console:** https://vf-app-350828852747.asia-southeast1.run.app — the board, any case, the review queue, the audit trail and the evaluation figures are readable **without signing in**, because an anonymous visitor is a real viewer, so nothing is needed to assess the product. Two accounts are provided, with the passwords supplied alongside this submission. `judge@vf-logistics.demo` is a **governance admin**: it can record a review decision, see the spend figures and publish policy. `reviewer@vf-logistics.demo` holds only the **Reviewer** role: it can decide a case and open its document, and the spend figures, document upload and policy publishing stay locked for it, naming the role that would unlock each — sign in with it to watch the access control refuse something. The audit trail names whichever account acted. **API only:** `GET /health` to warm it, `GET /api/v1/auth/policy` for what every route enforces, then read `GET /api/v1/orchestrator/state`. Full walkthrough in the README. |
 
 **Which model provider(s) did you use?** → **Nebius Token Factory**, hosting
 **NVIDIA Nemotron 3 Nano** (`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`), **NVIDIA
@@ -520,11 +530,11 @@ offer on Token Factory.
 **Which bonus integrations did you use?** -> **Tavily** -- 5 real, runtime
 search integrations: compliance screening, investigation enrichment, route
 validation, governance watchlist scanner, and multi-agent debate tool calling.
-Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
+Verifiable via `GET /api/v1/agents`, the per-case trace UI, or the raw case document
 (`external_search_used` / `external_search_results`).
 
 > Both the Nebius and Tavily calls are verifiable on the live service:
-> `GET /agents` reports the model per agent, and every compliance response
+> `GET /api/v1/agents` reports the model per agent, and every compliance response
 > carries `external_search_used` and the search result titles/links, which
 > the dashboard renders directly in the case trace.
 
@@ -539,22 +549,24 @@ Verifiable via `GET /agents`, the per-case trace UI, or the raw case document
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
-| Hosted project URL | done -- console https://vf-console-f7rcctz26a-as.a.run.app, API https://vf-logistics-f7rcctz26a-as.a.run.app |
+| Hosted project URL | done -- https://vf-app-350828852747.asia-southeast1.run.app, console and API in one service |
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 800 tests passing (pytest) |
-| CI pipeline | GitHub Actions — lint + test + coverage gate the build; typecheck runs `mypy … \|\| true`, so it reports but cannot fail it |
-| Auto-debate on score disputes | done -- fires without human intervention |
+| Automated test suite | 854 backend tests (pytest, 79% coverage), 114 frontend tests (vitest), mutation check 31/31 |
+| CI pipeline | GitHub Actions, five jobs, every one able to fail the build: ruff; mypy, strict on clean modules and a ceiling on the rest that may only fall; pytest with `--cov-fail-under=75`; frontend typecheck, lint, tests and build; and a container job that builds both images and smoke-tests the deployed one |
+| Auto-debate on score disputes | done -- fires without human intervention; a confident DISAGREE escalates the case, upward only |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |
 | Adversarial demo scenarios | 3 one-click demos in DevOps |
 | Red Team panel | paste any attack, see the real screen verdict |
 | Governance kill switch | `/api/v1/governance/revoke` -- agent goes SUSPENDED |
 | Policy dry run | preview which cases a boundary would flip before publishing |
 | Per-hop model I/O | exact prompt, raw response, tokens and cost per agent call |
-| Cost dashboard | real-time token spend + rules savings |
+| Cost dashboard | real-time token spend + rules savings (operator and above) |
 | Per-tenant spend ceiling | soft ceiling at the single model-call chokepoint |
 | Console login + audit attribution | a decision records the signed-in account, not a typed name |
+| Role-based access | anonymous viewer, reviewer, operator, governance admin; a session narrows the key and never widens it |
+| Measured evaluation | detection benchmark on a held-out split, HS classifier on a holdout set, both served at `/evaluation` |
 
 The repository is public, so no judging-instruction share is required. The one
 outstanding item is the video.
@@ -661,7 +673,9 @@ on this codebase. The first two are the ones we would fix first.
    that agent's input, since the variable part is one cargo description. We measured what
    the block buys before considering trimming it: base Nemotron Nano reaches **40.0%**
    recall on deliberately evasive misclassification cases, naive few-shot prompting makes
-   it **worse at 26.7%**, and the same model with this reference block reaches **91.7%**.
+   it **worse at 26.7%**, and the same model reasoning against this reference block
+   reaches **92.9%** on those cases and **91.7%** on a holdout of substitutions the block
+   never mentions.
    The block is the capability, not overhead, so it stays — and we pay full `prompt` rate
    for an identical prefix 16 times per 20-case run. Either a documented cached-input rate
    or a populated `cached_tokens` would let a builder reason about this instead of
@@ -724,10 +738,9 @@ on this codebase. The first two are the ones we would fix first.
 
 ## Cost note
 
-Both services run with `--min-instances=0`, so they scale to zero when idle. After
-judging closes they can be deleted:
+The one service runs with `--min-instances=0`, so it scales to zero when idle. After
+judging closes it can be deleted:
 
 ```bash
-gcloud run services delete vf-logistics --region asia-southeast1
-gcloud run services delete vf-console   --region asia-southeast1
+gcloud run services delete vf-app --region asia-southeast1
 ```

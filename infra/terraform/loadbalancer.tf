@@ -9,38 +9,25 @@
  * requires a load balancer. That chain is the entire reason this file exists and
  * the entire reason the feature costs money: the policy itself is cheap, the
  * load balancer in front of it is not.
+ *
+ * One backend. vf-app serves the console and the API from one container, so the
+ * load balancer no longer splits paths between two services; every path goes to
+ * the same backend and the container routes it (Next.js owns the public paths and
+ * passes /api/v1/*, /health, /metrics and /demo to Flask on loopback).
  */
 
-# ---------------------------------------------------------------------------
-# Serverless NEGs -- one per Cloud Run service
-# ---------------------------------------------------------------------------
-
-resource "google_compute_region_network_endpoint_group" "backend" {
-  name                  = "vf-logistics-neg"
+resource "google_compute_region_network_endpoint_group" "app" {
+  name                  = "vf-app-neg"
   network_endpoint_type = "SERVERLESS"
   region                = var.region
 
   cloud_run {
-    service = var.backend_service_name
+    service = var.service_name
   }
 }
 
-resource "google_compute_region_network_endpoint_group" "console" {
-  name                  = "vf-console-neg"
-  network_endpoint_type = "SERVERLESS"
-  region                = var.region
-
-  cloud_run {
-    service = var.console_service_name
-  }
-}
-
-# ---------------------------------------------------------------------------
-# Backend services -- where the security policy actually attaches
-# ---------------------------------------------------------------------------
-
-resource "google_compute_backend_service" "backend" {
-  name                  = "vf-logistics-backend"
+resource "google_compute_backend_service" "app" {
+  name                  = "vf-app-backend"
   load_balancing_scheme = "EXTERNAL_MANAGED"
   protocol              = "HTTPS"
 
@@ -49,28 +36,12 @@ resource "google_compute_backend_service" "backend" {
   security_policy = google_compute_security_policy.vf_logistics.id
 
   backend {
-    group = google_compute_region_network_endpoint_group.backend.id
+    group = google_compute_region_network_endpoint_group.app.id
   }
 
-  # Sampled rather than complete: full logging on a polled dashboard API is a
+  # Sampled rather than complete: full logging on a polled dashboard is a
   # meaningful log bill, and 10% is enough to see an attack pattern. Raise it
   # while investigating an incident.
-  log_config {
-    enable      = true
-    sample_rate = 0.1
-  }
-}
-
-resource "google_compute_backend_service" "console" {
-  name                  = "vf-console-backend"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  protocol              = "HTTPS"
-  security_policy       = google_compute_security_policy.vf_logistics.id
-
-  backend {
-    group = google_compute_region_network_endpoint_group.console.id
-  }
-
   log_config {
     enable      = true
     sample_rate = 0.1
@@ -82,13 +53,8 @@ resource "google_compute_backend_service" "console" {
 # ---------------------------------------------------------------------------
 
 resource "google_compute_url_map" "main" {
-  name = "vf-logistics-urlmap"
-
-  # The console is the front door; the API is reached under /api and a few
-  # service paths. This mirrors what the application already does -- the backend
-  # redirects "/" to CONSOLE_URL -- so the LB does not introduce a second,
-  # different idea of where the root is.
-  default_service = google_compute_backend_service.console.id
+  name            = "vf-logistics-urlmap"
+  default_service = google_compute_backend_service.app.id
 
   host_rule {
     hosts        = [var.domain]
@@ -97,12 +63,7 @@ resource "google_compute_url_map" "main" {
 
   path_matcher {
     name            = "main"
-    default_service = google_compute_backend_service.console.id
-
-    path_rule {
-      paths   = ["/api/*", "/health", "/metrics", "/agents", "/legacy"]
-      service = google_compute_backend_service.backend.id
-    }
+    default_service = google_compute_backend_service.app.id
   }
 }
 
@@ -132,8 +93,8 @@ resource "google_compute_global_forwarding_rule" "https" {
   ip_address            = google_compute_global_address.main.id
 }
 
-# Plain HTTP exists only to redirect. Serving the API over it would undo the HSTS
-# header the application now sets.
+# Plain HTTP exists only to redirect. Serving over it would undo the HSTS header
+# the application sets.
 resource "google_compute_url_map" "redirect" {
   name = "vf-logistics-http-redirect"
 
@@ -169,12 +130,9 @@ output "load_balancer_ip" {
 output "ingress_lockdown_command" {
   description = <<-EOT
     Run this AFTER the load balancer is serving traffic and the certificate is
-    ACTIVE. Until it runs, the *.run.app URLs still answer directly and every
-    rule in armor.tf is bypassable by addressing them -- which is the failure
-    mode that makes a WAF look like it is working when it is not.
+    ACTIVE. Until it runs, the *.run.app URL still answers directly and every
+    rule in armor.tf is bypassable by addressing it -- which is the failure mode
+    that makes a WAF look like it is working when it is not.
   EOT
-  value = join("\n", [
-    for svc in [var.backend_service_name, var.console_service_name] :
-    "gcloud run services update ${svc} --region=${var.region} --ingress=internal-and-cloud-load-balancing"
-  ])
+  value       = "gcloud run services update ${var.service_name} --region=${var.region} --ingress=internal-and-cloud-load-balancing"
 }

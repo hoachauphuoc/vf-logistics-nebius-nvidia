@@ -9,6 +9,7 @@ Hackathon: Nebius x NVIDIA Global AI Hackathon
 
 import asyncio
 import base64
+import concurrent.futures
 import json
 import os
 import re
@@ -16,7 +17,7 @@ import threading
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import Flask, redirect, request, jsonify, send_from_directory
+from flask import Flask, Response, redirect, request, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -138,14 +139,18 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
-# CORS: restrict to known origins (wildcard CORS allows any site to call our API)
+# CORS: restrict to known origins (wildcard CORS allows any site to call our API).
+#
+# The console is served from the same origin as the API, so it needs no CORS at
+# all; a server-to-server integrator needs none either. This list only matters to
+# a browser app on ANOTHER origin calling /api/v1/* directly, and the default
+# names nothing beyond the service itself and local development.
 _ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()
 ] or [
-    "https://vf-logistics-f7rcctz26a-as.a.run.app",
-    "https://vf-logistics-350828852747.asia-southeast1.run.app",
-    "http://localhost:5000",
-    "http://127.0.0.1:5000",
+    "https://vf-app-350828852747.asia-southeast1.run.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 CORS(app, origins=_ALLOWED_ORIGINS)
 
@@ -348,6 +353,54 @@ def _on_worker(coro):
     return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=120)
 
 
+# How long a board poll waits for the drain step it triggers, in seconds.
+#
+# Well below the console proxy's 15s read timeout on purpose. The poll used to
+# wait up to 120s for the drain, so a case whose model calls ran long -- a Nebius
+# timeout and a retry is enough -- made the proxy abandon the poll at 15s and the
+# board show "unreachable", and past 120s the read itself failed with a 500. The
+# drain is not cancelled when the wait ends: it keeps running on the worker loop,
+# and the next poll waits on the same one rather than starting a second.
+#
+# 4s rather than something closer to 15: each waiting poll holds one of
+# gunicorn's 8 threads, and every open board polls. Measured locally, a model
+# step takes 20-60s, so a longer wait bought almost nothing but held threads.
+_DRAIN_WAIT_SECONDS = float(os.getenv("DRAIN_WAIT_SECONDS", "4"))
+_drain_in_flight: dict[str, concurrent.futures.Future] = {}
+_drain_guard = threading.Lock()
+
+
+def _drain_step(tenant_id: str | None) -> tuple[dict | None, str | None]:
+    """
+    Advance the pipeline by one case, or join the step already running.
+
+    Returns (drained, status). `status` is None when the step finished in time,
+    "in_progress" when it is still running, or the error's type name when it
+    failed. A failed drain is reported, never raised: the caller is a read, and a
+    board that errors because a background step did is a board that stops
+    showing the cases it could have shown.
+
+    One step in flight per tenant. Polls arrive every few seconds from every open
+    board; starting a drain per poll would stack model calls on the same cases
+    and produce exactly the optimistic-lock conflicts the claim step prevents.
+    """
+    key = tenant_id or ""
+    with _drain_guard:
+        future = _drain_in_flight.get(key)
+        if future is None or future.done():
+            future = asyncio.run_coroutine_threadsafe(
+                orchestrator.drain(max_cases=1, tenant_id=tenant_id), _ensure_worker(),
+            )
+            _drain_in_flight[key] = future
+    try:
+        return future.result(timeout=_DRAIN_WAIT_SECONDS), None
+    except concurrent.futures.TimeoutError:
+        return None, "in_progress"
+    except Exception as exc:  # noqa: BLE001 -- reported on the snapshot instead
+        logger.warning("drain step failed: %s", exc, exc_info=True)
+        return None, type(exc).__name__
+
+
 # Helper to run async functions in Flask
 def async_route(f):
     @wraps(f)
@@ -382,20 +435,17 @@ def after_request_hook(response):
 @app.route("/", methods=["GET"])
 def index():
     """
-    The primary UI.
+    Flask's own root, which a deployed visitor never reaches.
 
-    Redirects to the Next.js console when CONSOLE_URL is set, which is how the
-    new console becomes the front door without this service having to host it --
-    the two run as separate Cloud Run services, so "serve the console from /" is
-    not available; pointing at it is.
+    In the container (Dockerfile + entrypoint.sh) Next.js owns every public path
+    and Flask listens on 127.0.0.1 behind it, so `/` is the console. This route
+    answers only when Flask runs on its own -- `python -m vf_logistics.app` or
+    Dockerfile.backend -- where it redirects to CONSOLE_URL if one is set, and
+    otherwise serves the bundled dashboard so an API-only deployment still has a
+    page at its root.
 
-    Falls back to the bundled dashboard when CONSOLE_URL is absent, so a
-    deployment that has not been given one is unchanged rather than broken.
-
-    The bundled dashboard is kept rather than deleted, at /legacy. It has no
-    dependency on the console's build or its env, which makes it the thing to
-    open when the console itself is the suspect -- and several of its panels
-    (Cost Monitor, the red-team sampler) have no port yet.
+    The bundled dashboard is kept rather than deleted, at /legacy, for the same
+    standalone case. It is deliberately not passed through by the console.
     """
     console = os.getenv("CONSOLE_URL", "").strip().rstrip("/")
     if console:
@@ -435,6 +485,10 @@ def metrics():
 
 
 @app.route("/agents", methods=["GET"])
+# The same list under /api/v1 as well. In the container Next.js owns `/agents` --
+# it is the Agent Console page -- so the JSON is reachable from outside only at
+# this second path. Both are kept so a standalone backend answers the old URL.
+@app.route("/api/v1/agents", methods=["GET"])
 def list_agents():
     """List all available agents and their capabilities."""
     return jsonify({
@@ -467,7 +521,7 @@ async def fraud_analyze():
         return _safe_error(e)
 
 
-def _bounded_batch(value: object, field: str) -> tuple[list, tuple[dict, int] | None]:
+def _bounded_batch(value: object, field: str) -> tuple[list, tuple[Response, int] | None]:
     """
     A batch array that is actually a list and actually bounded.
 
@@ -714,13 +768,18 @@ def orchestrator_state():
         may_drain = bool(context and context.has_role(auth.Role.OPERATOR))
 
         drained = None
+        drain_status = None
         if drain and may_drain and orchestrator.WORKER_MODE != "poll":
-            drained = _on_worker(orchestrator.drain(max_cases=1, tenant_id=_tenant()))
+            drained, drain_status = _drain_step(_tenant())
 
         snapshot = _on_worker(orchestrator.snapshot(limit, tenant_id=_tenant()))
         if drained:
             snapshot["drained_this_request"] = drained
-        elif drain and not may_drain:
+        if drain_status == "in_progress":
+            snapshot["drain_in_progress"] = True
+        elif drain_status:
+            snapshot["drain_error"] = drain_status
+        if drain and not may_drain:
             # Said rather than silently ignored: a board that stops advancing
             # with no explanation is the kind of thing debugged for an hour.
             snapshot["drain_skipped"] = "operator credential required to advance the pipeline"
@@ -1510,7 +1569,9 @@ def update_prefilter_rules():
         before = _prefilter_rules()
         after, errors = verifier.apply_prefilter_update(before, body)
 
-        if errors:
+        # `after` is None exactly when there are errors; checked as well so the
+        # type narrows rather than relying on the pairing staying true.
+        if errors or after is None:
             return jsonify({"error": "Validation failed", "details": errors}), 400
 
         payload = after.to_dict()
@@ -1535,10 +1596,64 @@ def update_prefilter_rules():
         return _safe_error(e)
 
 
+# ============== IDENTITY AND ACCESS ==============
+
+@app.route("/api/v1/auth/whoami", methods=["GET"])
+@require_viewer
+def auth_whoami():
+    """
+    Who this service believes the caller is, and what they may therefore do.
+
+    The console renders every role-dependent control from this answer, so a
+    disabled button is disabled for the reason this service would give. Viewer,
+    so an anonymous visitor can ask too; the answer is "viewer, anonymously".
+    """
+    context = get_auth_context()
+    if context is None:  # require_viewer has already refused this case
+        return jsonify({"error": "not authenticated"}), 401
+    return jsonify(auth.describe_identity(context))
+
+
+@app.route("/api/v1/auth/policy", methods=["GET"])
+@require_viewer
+def auth_policy():
+    """
+    The access policy this service enforces, read from its own routes.
+
+    Route requirements come from the role decorators (auth.route_policy), not
+    from a list someone keeps. The role lists are reported by size only: who holds
+    which role is not something a viewer needs to see.
+    """
+    floor = auth.anonymous_role()
+    return jsonify({
+        "roles": [r.value for r in auth.ROLES_BY_RANK],
+        "hierarchy": {
+            r.value: sorted(
+                (i.value for i in auth.ROLE_HIERARCHY[r]),
+                key=lambda v: auth.ROLE_RANK[auth.Role(v)],
+            )
+            for r in auth.ROLES_BY_RANK
+        },
+        "anonymous_role": floor.value if floor else None,
+        "api_key_grant": auth.API_KEY_GRANT.value,
+        "role_assignment": [
+            {"variable": variable, "role": role.value,
+             "accounts": len(auth._email_list(variable))}
+            for variable, role in auth.ROLE_ASSIGNMENT_VARS
+        ],
+        "routes": auth.route_policy(app),
+    })
+
+
 # ============== HUMAN REVIEW ==============
 
 @app.route("/api/v1/review/queue", methods=["GET"])
-@require_reviewer
+# Viewer, not reviewer. The queue is a filtered view of cases that
+# /orchestrator/state and /orchestrator/case/<id> already serve to a viewer, so
+# requiring reviewer here protected nothing -- it only made the console attach
+# its admin key to anonymous reads so the Review screen could render. Deciding a
+# case, and opening its original document, still need reviewer.
+@require_viewer
 def review_queue():
     """Cases the agent could not close on its own. Cursor-paginated."""
     try:
@@ -2184,6 +2299,23 @@ def billing_usage():
         # asking the second.
         usage["budget"] = _on_worker(budget.status(scope))
         return jsonify(usage), 200
+    except Exception as e:
+        return _safe_error(e)
+
+
+@app.route("/api/v1/evaluation", methods=["GET"])
+@require_viewer
+def evaluation_summary():
+    """
+    What was measured, on which split, at what cost -- the committed reports.
+
+    Viewer, like the other reads. See evaluation.py for what is and is not served
+    (aggregates only) and why the results live beside the code.
+    """
+    try:
+        from vf_logistics import evaluation
+
+        return jsonify(evaluation.summary()), 200
     except Exception as e:
         return _safe_error(e)
 

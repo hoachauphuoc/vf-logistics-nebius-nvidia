@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 
 import { ErrorState } from "@/components/layout/States";
+import { DebatePanel } from "@/components/review/DebatePanel";
 import {
   Sheet,
   SheetContent,
@@ -85,6 +86,17 @@ export function CaseTraceSheet({
               <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
                 <Verdict case={c} />
               </motion.section>
+              {(c.auto_debate ?? c.debate) != null && (
+                // The Senior Auditor's verdict and what it changed, beside the
+                // verdict it may have changed. See DebatePanel.
+                <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
+                  <DebatePanel
+                    debate={(c.auto_debate ?? c.debate) as Record<string, unknown>}
+                    effect={c.auto_debate != null ? c.debate_effect : null}
+                    automatic={c.auto_debate != null}
+                  />
+                </motion.section>
+              )}
               <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
                 <Economics case={c} />
               </motion.section>

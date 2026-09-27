@@ -115,11 +115,13 @@ export function loginRequired(): boolean {
  * variable is locked, not open. Turning it on is a deliberate act with a stated
  * reason, and the reason here is the judging window ending 15 December 2026.
  *
- * ONE CONSEQUENCE, ACCEPTED KNOWINGLY: an anonymous GET still carries VF_API_KEY
- * upstream, so an anonymous reader sees `review/queue` and `billing/usage`, both
- * of which sit above `viewer` on the backend. That is wanted here -- the review
- * queue and the cost figure are the demo -- and it is exactly why this must be
- * off before a paying customer's data is in the store.
+ * WHAT AN ANONYMOUS READER GETS: exactly what the API gives any anonymous caller,
+ * ANONYMOUS_ROLE (viewer). The BFF attaches the console's API key only alongside a
+ * verified session (app/api/proxy/[...path]/route.ts), so a visitor reads the
+ * board, the review queue and the audit trail, and is refused billing and the
+ * archived original documents -- the API's own decision, not this file's. That
+ * was not always so: the key used to go on every forwarded request, which made
+ * every visitor a governance admin upstream.
  */
 export function publicReads(): boolean {
   return (process.env.VF_PUBLIC_READS ?? "").trim().toLowerCase() === "true";

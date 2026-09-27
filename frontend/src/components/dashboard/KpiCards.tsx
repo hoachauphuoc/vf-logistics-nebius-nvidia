@@ -15,7 +15,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ApiError } from "@/lib/api";
 import { NO_VALUE, formatLatency, formatUsd } from "@/lib/format";
+import { roleLabel } from "@/lib/identity";
 import { unverifiedChecks } from "@/lib/risk";
 import type { ComplianceAuditResponse, TenantUsageResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -68,6 +70,17 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
   // an em dash, which is the honest answer: the figure was not measured. Coercing to 0
   // here would defeat the guard those helpers exist to provide.
   const usageFailed = usageError != null;
+  // A refusal is not a failure. Billing is operator upstream, so a visitor or a
+  // reviewer gets a 403 here by design -- and "the billing read failed" would
+  // report a permission as an outage.
+  const usageRefused =
+    usageError instanceof ApiError && (usageError.status === 401 || usageError.status === 403);
+  const neededRole = roleLabel(
+    (usageError instanceof ApiError && usageError.requiredRole) || "operator",
+  );
+  const usageNote = usageRefused
+    ? `Needs the ${neededRole} role — sign in to see spend`
+    : "Billing read failed — this is not a measured zero";
   const rulesOnly = usageFailed ? null : usage?.cleared_by_rules ?? 0;
   const byAi = usageFailed ? null : usage?.cleared_by_ai ?? 0;
   // Clearances the *agent* reached on its own. Deliberately not `cleared`:
@@ -114,7 +127,7 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
         value={formatUsd(usage?.estimated_cost_usd)}
         sub={
           usageFailed
-            ? "Billing read failed — this is not a measured zero"
+            ? usageNote
             : `${formatUsd(usage?.cost_per_call_usd)} per agent call · ${
                 usage?.agent_calls ?? NO_VALUE
               } calls`
@@ -154,10 +167,12 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
         <div className="mt-3 flex items-start gap-4">
           <div className="min-w-0 flex-1">
         {usageFailed ? (
-          <p className="text-[13px] text-risk-warn">
-            The billing read failed, so the rules-versus-model split cannot be shown.
+          <p className={cn("text-[13px]", usageRefused ? "text-dim" : "text-risk-warn")}>
+            {usageRefused
+              ? `The rules-versus-model split comes from billing, which needs the ${neededRole} role. Sign in with an account that holds it to see how clearances were reached.`
+              : <>The billing read failed, so the rules-versus-model split cannot be shown.
             An empty bar here would read as &ldquo;no automatic clearances&rdquo;, which
-            is a claim about the pipeline rather than about the request that failed.
+            is a claim about the pipeline rather than about the request that failed.</>}
           </p>
         ) : autoCleared === 0 ? (
           <p className="text-[13px] text-faint">

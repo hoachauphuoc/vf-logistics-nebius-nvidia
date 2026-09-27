@@ -5,7 +5,7 @@
 param(
     [switch]$SkipExternal,
     [switch]$SkipE2E,
-    [string]$BaseUrl = "https://vf-logistics-f7rcctz26a-as.a.run.app"
+    [string]$BaseUrl = "https://vf-app-350828852747.asia-southeast1.run.app"
 )
 
 $root = Split-Path $PSScriptRoot -Parent

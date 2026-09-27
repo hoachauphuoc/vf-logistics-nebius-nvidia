@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { CircleSlash, Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
 import { HelpDot } from "@/components/help/HelpDot";
+import { Gated } from "@/components/layout/Gated";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { ErrorState } from "@/components/layout/States";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
   screenText,
 } from "@/lib/api";
 import { NO_VALUE, formatUsd, humaniseAgent } from "@/lib/format";
+import { lockReason, useIdentity } from "@/lib/identity";
 import { useTenant } from "@/lib/tenant-context";
 import { cn } from "@/lib/utils";
 
@@ -309,18 +311,24 @@ export default function AgentConsolePage() {
 /**
  * Run one text through both input filters by hand.
  *
- * Reports a single `blocked` field rather than two, matching the backend: either
- * stage is sufficient to stop the text, so showing them separately invites
- * reading a pass from one as an overall pass.
+ * The overall line follows the backend's single `blocked` field: either stage is
+ * sufficient to stop the text, so a pass from one is never read as an overall
+ * pass. Each stage is then reported on its own line, because "passed" and "did
+ * not run" are different answers and the raw dump this replaced made a reader
+ * work out which one Model Armor had given.
  */
 function InjectionProbe() {
   const [text, setText] = useState("");
+  // Operator upstream, rate-limited to 20/min: every call is a Model Armor request.
+  const lock = lockReason(useIdentity().data, "operator");
 
   const probe = useMutation({
     mutationFn: () => screenText(text),
   });
 
-  const blocked = probe.data?.blocked === true;
+  const result = probe.data as ProbeResult | undefined;
+  const blocked = result?.blocked === true;
+  const armorRan = result?.model_armor?.available === true;
 
   return (
     <div className="bento-card p-4">
@@ -341,15 +349,17 @@ function InjectionProbe() {
         className="mt-2 border-white/10 bg-black/30 font-mono text-[11.5px]"
       />
 
-      <Button
-        size="sm"
-        disabled={!text.trim() || probe.isPending}
-        onClick={() => probe.mutate()}
-        className="mt-2 h-8 text-[12px]"
-      >
-        {probe.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-        Screen it
-      </Button>
+      <Gated reason={lock}>
+        <Button
+          size="sm"
+          disabled={!text.trim() || probe.isPending || lock !== null}
+          onClick={() => probe.mutate()}
+          className="mt-2 h-8 text-[12px]"
+        >
+          {probe.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+          Screen it
+        </Button>
+      </Gated>
 
       {probe.isError && (
         <div className="mt-3">
@@ -357,38 +367,131 @@ function InjectionProbe() {
         </div>
       )}
 
-      {probe.data && (
+      {result && (
         <>
           <div
             className={cn(
               "mt-3 flex items-start gap-2 rounded-md border px-2.5 py-2",
               blocked
                 ? "border-risk-critical/30 bg-risk-critical/[0.07]"
-                : "border-risk-clear/25 bg-risk-clear/[0.06]",
+                : armorRan
+                  ? "border-risk-clear/25 bg-risk-clear/[0.06]"
+                  : "border-risk-warn/30 bg-risk-warn/[0.07]",
             )}
           >
             {blocked ? (
               <ShieldAlert className="mt-[1px] size-3.5 shrink-0 text-risk-critical" aria-hidden />
-            ) : (
+            ) : armorRan ? (
               <ShieldCheck className="mt-[1px] size-3.5 shrink-0 text-risk-clear" aria-hidden />
+            ) : (
+              <CircleSlash className="mt-[1px] size-3.5 shrink-0 text-risk-warn" aria-hidden />
             )}
             <p
               className={cn(
                 "text-[11.5px] leading-relaxed",
-                blocked ? "text-risk-critical" : "text-risk-clear",
+                blocked ? "text-risk-critical" : armorRan ? "text-risk-clear" : "text-risk-warn",
               )}
             >
               {blocked
                 ? "Blocked. At least one stage refused this text, which is enough — the document would never reach a model."
-                : "Passed both stages. Note that passing is not a guarantee: these are filters, not proofs."}
+                : armorRan
+                  ? "Passed both stages. Passing is not a guarantee: these are filters, not proofs."
+                  : "Passed the pattern screen only. Model Armor did not run, so this is one filter's answer, not two — in the pipeline a document in this state goes to a person."}
             </p>
           </div>
-          <pre className="code-surface mt-2 max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-[10.5px] text-white/75 scrollbar-thin">
-            {JSON.stringify(probe.data, null, 2)}
-          </pre>
+
+          <ul className="mt-2 space-y-1.5">
+            <StageRow
+              name="Pattern screen"
+              state={result.injection?.blocked ? "blocked" : "passed"}
+              detail={
+                (result.injection?.findings ?? []).length > 0
+                  ? (result.injection?.findings ?? [])
+                      .map((f) => `${f.type}${f.excerpt ? `: “${f.excerpt}”` : ""}`)
+                      .join(" · ")
+                  : `no pattern matched across ${result.text_length} characters`
+              }
+            />
+            <StageRow
+              name="Model Armor"
+              state={
+                !armorRan ? "unavailable" : result.model_armor?.blocked ? "blocked" : "passed"
+              }
+              detail={
+                result.model_armor?.detail ??
+                (armorRan ? "no prompt injection detected" : "did not return a verdict")
+              }
+              meta={
+                armorRan
+                  ? `${result.model_armor?.windows_screened ?? 0} pass(es) screened${
+                      result.model_armor?.confidence ? ` · ${result.model_armor.confidence}` : ""
+                    }`
+                  : result.model_armor?.template
+                    ? `template ${result.model_armor.template}`
+                    : undefined
+              }
+            />
+          </ul>
+
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[11px] text-faint hover:text-white">
+              Raw response
+            </summary>
+            <pre className="code-surface mt-1 max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 text-[10.5px] text-white/75 scrollbar-thin">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </details>
         </>
       )}
     </div>
+  );
+}
+
+/** security/screen, as app.py's security_screen returns it. */
+interface ProbeResult {
+  text_length: number;
+  blocked: boolean;
+  injection?: {
+    blocked?: boolean;
+    findings?: Array<{ type: string; excerpt?: string }>;
+  };
+  model_armor?: {
+    available?: boolean;
+    blocked?: boolean;
+    detail?: string | null;
+    confidence?: string | null;
+    windows_screened?: number;
+    template?: string | null;
+  };
+}
+
+function StageRow({
+  name,
+  state,
+  detail,
+  meta,
+}: {
+  name: string;
+  state: "passed" | "blocked" | "unavailable";
+  detail: string;
+  meta?: string;
+}) {
+  return (
+    <li className="rounded-md border border-white/[0.07] bg-black/25 px-2.5 py-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11.5px] font-medium text-white/90">{name}</span>
+        <span
+          className={cn(
+            "badge-risk shrink-0",
+            state === "blocked" ? "badge-critical" : state === "passed" ? "badge-clear" : "badge-warn",
+          )}
+        >
+          {state === "unavailable" ? "did not run" : state}
+        </span>
+      </div>
+      <p className="mt-0.5 break-words text-[11px] leading-relaxed text-dim">{detail}</p>
+      {meta && <p className="mt-0.5 font-mono text-[10.5px] text-faint">{meta}</p>}
+    </li>
   );
 }
 

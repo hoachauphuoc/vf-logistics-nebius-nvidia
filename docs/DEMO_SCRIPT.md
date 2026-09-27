@@ -62,7 +62,7 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 800 tests, a measured HS recall of 91.7%, citations reproduced rather than
+  on camera.** 854 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
   summarised — a judge scoring Technological Implementation had to read the repository to
   find any of it. Clip 5 also carries the **Tavily bonus award**, which the old script
   showed nowhere at all.
@@ -81,10 +81,10 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
 
 - [ ] Screen recorder at **1920x1080**. A previous take was 852x480 and the case cards
       were unreadable on playback.
-- [ ] Chrome at **90% zoom**, on the console: https://vf-console-f7rcctz26a-as.a.run.app
-- [ ] **Warm both services.** Cloud Run runs at `--min-instances=0`, so the first request
+- [ ] Chrome at **90% zoom**, on the console: https://vf-app-350828852747.asia-southeast1.run.app
+- [ ] **Warm the service.** Cloud Run runs at `--min-instances=0`, so the first request
       after an idle period takes 10–20 seconds and will ruin clip 1. Open
-      https://vf-logistics-f7rcctz26a-as.a.run.app/health, then the console root, and wait
+      https://vf-app-350828852747.asia-southeast1.run.app/health, then the console root, and wait
       for the board to paint.
 - [ ] **Close devtools.** The board polls a large state payload every 1–2 seconds and an
       open Network tab is the noisiest thing on screen.
@@ -286,10 +286,10 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 ## Clip 9 — Tests and CI (2:24 → 2:32, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on `800 passed`. Then the GitHub
-Actions run page for `master`, with four green jobs visible.
+tail of a real run — `python -m pytest tests/ -q` ending on `854 passed`. Then the GitHub
+Actions run page for `master`, with five green jobs visible.
 
-> 800 tests pass at 77 percent coverage. Continuous integration runs them on every push.
+> 854 tests pass at 79 percent coverage. Continuous integration runs them on every push.
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight

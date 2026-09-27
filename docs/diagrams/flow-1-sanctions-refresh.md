@@ -1,51 +1,57 @@
 # Flow 1 — Weekly sanctions refresh
 
-Cloud Scheduler wakes a job that rebuilds the sanctions index from OpenSanctions,
+`scripts/refresh_sanctions.py` rebuilds the sanctions index from OpenSanctions,
 publishes it to GCS, and measures a Nemotron Super parse against the deterministic
 one on a sample.
+
+It is written to run weekly and is **run by hand**: nothing schedules it. Cloud
+Scheduler is not enabled on the project and the service exposes no refresh route, so
+"weekly" is an intention, not a job. The service needs no call to pick up a new index:
+`sanctions.load()` rereads the object from GCS every `SANCTIONS_RELOAD_SECONDS`
+(900 s), so a published refresh is live within fifteen minutes.
 
 ## Sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant CS as Cloud Scheduler<br/>(weekly)
-    participant RUN as Cloud Run<br/>vf-logistics
+    participant OP as Operator<br/>(by hand)
+    participant JOB as scripts/<br/>refresh_sanctions.py
     participant OS as OpenSanctions<br/>entities.ftm.json
     participant CODE as parse_deterministic()
     participant SUP as Nemotron Super<br/>(sample only)
     participant GCS as GCS<br/>sanctions/index.json.gz
-    participant IDX as sanctions.load()<br/>in-process cache
+    participant IDX as vf-app sanctions.load()<br/>in-process cache
 
-    CS->>RUN: POST /api/v1/sanctions/refresh<br/>(Cloud Run IAM, no public auth)
-    RUN->>OS: GET, streamed
-    Note over RUN,OS: httpx.stream + stream_jsonl().<br/>Never materialises the feed:<br/>tens of MB against a 512Mi container.
+    OP->>JOB: python scripts/refresh_sanctions.py
+    JOB->>OS: GET, streamed
+    Note over JOB,OS: httpx.stream + stream_jsonl().<br/>Never materialises the feed:<br/>tens of MB, read record by record.
 
     loop each record
-        OS-->>RUN: one FTM entity
-        RUN->>CODE: parse
-        CODE-->>RUN: entity, or None if not screenable
+        OS-->>JOB: one FTM entity
+        JOB->>CODE: parse
+        CODE-->>JOB: entity, or None if not screenable
         Note right of CODE: Vessels, aircraft, addresses dropped.<br/>An index row screening can never<br/>match costs memory on every lookup.
     end
 
     rect rgb(245, 245, 235)
-        Note over RUN,SUP: Divergence audit — sample only, never the full feed.<br/>USD 0.00089 per record means USD 80 for a 90k feed<br/>against a USD 50 total credit. It is an audit, not a parser.
+        Note over JOB,SUP: Divergence audit — sample only, never the full feed.<br/>USD 0.00089 per record means USD 80 for a 90k feed<br/>against a USD 50 total credit. It is an audit, not a parser.
         loop every Nth record
-            RUN->>SUP: the raw record, "extract name/aliases/ids/topics"
-            SUP-->>RUN: JSON
-            RUN->>RUN: compare() on name, aliases, identifiers, topics
+            JOB->>SUP: the raw record, "extract name/aliases/ids/topics"
+            SUP-->>JOB: JSON
+            JOB->>JOB: compare() on name, aliases, identifiers, topics
         end
     end
 
     alt index has entities
-        RUN->>GCS: upload gzipped index + meta.divergence
-        RUN->>IDX: load(force=True)
+        JOB->>GCS: upload gzipped index + meta.divergence
     else index is empty
-        RUN--xGCS: REFUSE to publish
-        Note right of RUN: An empty index answers CLEAN to every<br/>query. Publishing one would clear every<br/>shipment while producing paperwork<br/>saying a check was performed.
+        JOB--xGCS: REFUSE to publish
+        Note right of JOB: An empty index answers CLEAN to every<br/>query. Publishing one would clear every<br/>shipment while producing paperwork<br/>saying a check was performed.
     end
 
-    RUN-->>CS: 200 with entity_count, divergence, licence
+    JOB-->>OP: entity_count, divergence, licence
+    IDX->>GCS: reread within 900 s (SANCTIONS_RELOAD_SECONDS)
 ```
 
 ## What the divergence audit found

@@ -151,6 +151,122 @@ MUTATIONS = [
         '    ".webp": "image/webp",\n    ".html": "text/html",',
         "tests/test_network_defence.py::SecurityHeaderTests::test_document_content_type_is_pinned_to_the_upload_allow_list",
     ),
+    # --- Real RBAC ---
+    # Each of these puts back, in one line, a way the role hierarchy was decorative
+    # before: everyone admin, a bad session tolerated, a list entry unmatchable, the
+    # queue locked so the console had to lend anonymous readers its key.
+    (
+        "every signed-in person gets the key's admin role again",
+        "src/vf_logistics/auth.py",
+        "roles=narrow_roles(_get_user_roles(acting), API_KEY_GRANT),",
+        "roles={API_KEY_GRANT},",
+        "tests/test_rbac.py::TestRoleMatrix",
+    ),
+    (
+        "a session that fails to verify is tolerated instead of refused",
+        "src/vf_logistics/auth.py",
+        "    acting = _console_session_email()\n    if acting is None:",
+        "    acting = _console_session_email() or SERVICE_IDENTITY_EMAIL\n    if acting is None:",
+        "tests/test_console_session.py::TestForgedSessionsAreRefused",
+    ),
+    (
+        "role list entries are compared without trimming or case-folding",
+        "src/vf_logistics/auth.py",
+        "        entry.strip().lower()\n        for entry in os.getenv(variable, \"\").split(\",\")",
+        "        entry\n        for entry in os.getenv(variable, \"\").split(\",\")",
+        "tests/test_rbac.py::TestRoleLists",
+    ),
+    (
+        "the review queue is locked back to reviewers",
+        "src/vf_logistics/app.py",
+        "# case, and opening its original document, still need reviewer.\n@require_viewer",
+        "# case, and opening its original document, still need reviewer.\n@require_reviewer",
+        "tests/test_rbac.py::TestReviewQueueIsReadable",
+    ),
+    (
+        "the published policy loses the role a route enforces",
+        "src/vf_logistics/auth.py",
+        "        decorated._required_role = required_role.value  # type: ignore[attr-defined]",
+        "        pass",
+        "tests/test_rbac.py::TestRoutePolicy",
+    ),
+    # --- The auto-debate verdict acts, upward only ---
+    # The first is the bug itself -- a verdict nothing reads. The rest are each a way
+    # the fix could let the debate act when it must not, or lower what it must not.
+    (
+        "routing ignores the Senior Auditor's verdict again",
+        "src/vf_logistics/orchestrator.py",
+        "            or bool(case.get(\"debate_escalated\"))\n        )",
+        "            or False\n        )",
+        "tests/test_debate_routing.py::TestTheVerdictNowActs",
+    ),
+    (
+        "a forced default verdict is treated as a judgement",
+        "src/vf_logistics/orchestrator.py",
+        "    if verdict.get(\"forced\"):\n        return False, (",
+        "    if False:\n        return False, (",
+        "tests/test_debate_routing.py::TestItNeverLowersAnything::test_a_forced_verdict_changes_nothing",
+    ),
+    (
+        "a low-confidence disagreement escalates anyway",
+        "src/vf_logistics/orchestrator.py",
+        "    if confidence < threshold:\n        return False, (",
+        "    if False:\n        return False, (",
+        "tests/test_debate_routing.py::TestItNeverLowersAnything::test_a_timid_disagree_changes_nothing_and_says_why",
+    ),
+    (
+        "the auditor's adjusted score may lower the effective risk",
+        "src/vf_logistics/orchestrator.py",
+        "            after = max(before, min(100, proposed))",
+        "            after = min(100, proposed)",
+        "tests/test_debate_routing.py::TestItNeverLowersAnything::test_a_lower_adjusted_score_does_not_lower_risk",
+    ),
+    (
+        "shipper history discounts risk below the deterministic floor",
+        "src/vf_logistics/orchestrator.py",
+        "            reconciled[\"effective_risk\"] = max(floor, min(100, old_risk + adj))",
+        "            reconciled[\"effective_risk\"] = max(0, min(100, old_risk + adj))",
+        "tests/test_debate_routing.py::TestLearningLoopRespectsTheFloor",
+    ),
+    # --- False-positive tuning ---
+    # Each undoes one half of the change, or lets an observation back into the
+    # arithmetic by the side door. The last is the one that matters most: a finding
+    # quietly demoted to context would lower recall and nothing else would notice.
+    (
+        "a thin trading record is scored as a finding again",
+        "src/vf_logistics/verifier.py",
+        "            \"code\": \"SHIPPER_THIN_HISTORY\",\n            \"observation\": True,",
+        "            \"code\": \"SHIPPER_THIN_HISTORY\",",
+        "tests/test_false_positive_tuning.py::TestAShortTradingRecordIsContext",
+    ),
+    (
+        "freight above the lane figure is scored as a finding again",
+        "src/vf_logistics/verifier.py",
+        "        if source != STATED_BASELINE_SOURCE:",
+        "        if False:",
+        "tests/test_false_positive_tuning.py::TestFreightAboveTheLaneFigureIsContext",
+    ),
+    (
+        "observations are counted with the findings",
+        "src/vf_logistics/verifier.py",
+        "    findings = [f for f in findings if not f.get(\"observation\")]",
+        "    pass",
+        "tests/test_false_positive_tuning.py",
+    ),
+    (
+        "underpriced freight is demoted along with overpriced",
+        "src/vf_logistics/verifier.py",
+        "    if ratio < 0.25:\n        sev, floor = \"CRITICAL\", 90",
+        "    if ratio < 0.25 and source == STATED_BASELINE_SOURCE:\n        sev, floor = \"CRITICAL\", 90",
+        "tests/test_false_positive_tuning.py::TestFreightAboveTheLaneFigureIsContext::test_underpriced_freight_is_still_a_finding_against_the_lane_table",
+    ),
+    (
+        "the classifier is told the subheading instead of the heading",
+        "src/vf_logistics/agents/hs_classifier_agent.py",
+        "        f\"Declared heading: {declared_heading}\\n\"",
+        "        f\"Declared heading: {declared_hs}\\n\"",
+        "tests/test_decision_paths.py::HsDeclaredHeadingTests",
+    ),
 ]
 
 

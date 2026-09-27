@@ -25,19 +25,23 @@ export function Header({ display }: { display?: Tenant }) {
             before the product name rather than after. */}
         <TenantSwitcher display={display} />
 
+        {/* From xl only. Between sm and xl the header also carries the tenant, the
+            help and live pills, the signed-in address and the role chip, and the
+            product name wrapped onto three lines and pushed the role chip off the
+            edge. The sidebar and the mobile bar already name the product. */}
         <Separator
           orientation="vertical"
-          className="mx-1 hidden !h-7 bg-white/10 sm:block"
+          className="mx-1 hidden !h-7 bg-white/10 xl:block"
         />
 
-        <div className="hidden items-center gap-2 sm:flex">
+        <div className="hidden shrink-0 items-center gap-2 xl:flex">
           <ShieldCheck className="size-4 text-brand" aria-hidden />
-          <span className="text-[13px] font-medium tracking-display text-white/90">
+          <span className="whitespace-nowrap text-[13px] font-medium tracking-display text-white/90">
             Trade Compliance Auditor
           </span>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           <HelpModeToggle />
           {DEMO_MODE ? <DemoPill /> : <LivePill />}
           <AccountMenu />

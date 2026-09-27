@@ -3,9 +3,8 @@
 # Without this file gcloud generates one that pulls in the ROOT .gitignore via
 # #!include, and nothing else. Nested ignore files are not read -- so
 # frontend/.gitignore, which excludes 496 MB of node_modules across 35,000
-# files, has no effect on the upload. The console is a separate Cloud Run
-# service built from frontend/ with its own .gcloudignore, so none of it belongs
-# in the backend's build context.
+# files, has no effect on the upload; the frontend/ entries below do that job.
+# frontend/.gcloudignore is likewise never read by this deploy.
 
 .gcloudignore
 .git
@@ -14,9 +13,9 @@
 # Honour the root ignore rules (venv, __pycache__, .env, coverage).
 #!include:.gitignore
 
-# The console's build artefacts and dependencies. The source files are needed
-# by Dockerfile.unified (unified deploy). The backend-only Dockerfile does not
-# COPY frontend/ so including the source is harmless to that build.
+# The console's build artefacts and dependencies. Its SOURCE is uploaded: the
+# root Dockerfile builds frontend/ into the same image as the API. The image runs
+# `npm ci` itself, so a host's node_modules would only be dead weight.
 frontend/node_modules/
 frontend/.next/
 frontend/out/
@@ -28,8 +27,8 @@ benchmark_report*.json
 .coverage
 .pytest_cache/
 
-# Not used at runtime. The Dockerfile copies only src/ and
-# data/hs_reference.yaml.
+# Not used at runtime. Both Dockerfiles copy src/ and data/hs_reference.yaml;
+# the root one also builds frontend/ and copies entrypoint.sh.
 tests/
 scripts/
 sample_docs/
@@ -41,7 +40,8 @@ venv/
 *.md
 !README.md
 
-# Everything under the top-level data/ except the one file the runtime reads.
+# Everything under the top-level data/ except what the runtime reads: the HS
+# reference, and the committed evaluation reports GET /api/v1/evaluation serves.
 #
 # The leading slash is load-bearing. gcloud's ignore matcher does not anchor
 # `data/*` to this directory the way git does -- it matched src/vf_logistics/data/
@@ -51,3 +51,5 @@ venv/
 # designation get routed to a human instead.
 /data/*
 !/data/hs_reference.yaml
+!/data/benchmark_results/
+!/data/eval_results/

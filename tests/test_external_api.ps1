@@ -3,7 +3,7 @@
 ## Usage: powershell tests/test_external_api.ps1
 
 param(
-    [string]$BaseUrl = "https://vf-logistics-f7rcctz26a-as.a.run.app"
+    [string]$BaseUrl = "https://vf-app-350828852747.asia-southeast1.run.app"
 )
 
 $evidenceDir = "$PSScriptRoot\evidence"

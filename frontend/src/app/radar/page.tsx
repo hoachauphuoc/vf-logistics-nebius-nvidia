@@ -8,6 +8,7 @@ import { AuditLogsTable } from "@/components/dashboard/AuditLogsTable";
 import { KpiCards } from "@/components/dashboard/KpiCards";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { fetchAudits, fetchUsage, queryKeys } from "@/lib/api";
+import { useIdentity } from "@/lib/identity";
 import { displayTenant, useTenant } from "@/lib/tenant-context";
 
 export default function RiskRadarPage() {
@@ -24,14 +25,19 @@ export default function RiskRadarPage() {
   const usage = useQuery({
     queryKey: queryKeys.usage(tenant.id),
     queryFn: () => fetchUsage(tenant.id),
+    // Billing is operator upstream, so a visitor's 403 is the answer, not a fault
+    // to retry three times while the spend tiles sit on skeletons.
+    retry: false,
   });
 
   const rows = audits.data ?? [];
+  const identity = useIdentity();
 
   // The tenant used for cache keys and the tenant shown to the reader are not
   // the same thing in live mode: the key is a local label, the display name has
-  // to be whatever the API says the authenticated session resolves to.
-  const display = displayTenant(tenant, usage.data?.tenant_id, usage.isError);
+  // to be whatever the API says the authenticated session resolves to. Read from
+  // whoami rather than billing, which only an operator may see.
+  const display = displayTenant(tenant, identity.data?.tenant_id, identity.isError);
 
   // Derived, not stored. Holding the audit object in state would need an effect
   // to clear it when the tenant changes, and forgetting that effect would leave

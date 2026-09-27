@@ -162,6 +162,11 @@ class Metrics:
     """
 
     _instance: "Metrics | None" = None
+    # Declared on the class so the attributes __new__ sets are known to exist
+    # for every method; mypy reported every read of them as a missing attribute.
+    _counters: dict[tuple[str, tuple[tuple[str, str], ...]], int]
+    _histograms: dict[tuple[str, tuple[tuple[str, str], ...]], dict[str, float]]
+    _gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float]
 
     def __new__(cls) -> "Metrics":
         if cls._instance is None:

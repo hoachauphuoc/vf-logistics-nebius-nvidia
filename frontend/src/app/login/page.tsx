@@ -60,17 +60,18 @@ function Frame({ children }: { children?: React.ReactNode }) {
             useless if it only appears after the form does -- and this text depends on
             no form state, so nothing keeps it there.
             
-            The board, every case trace, the audit trail and the cost figures are all
+            The board, every case trace, the review queue and the audit trail are
             readable anonymously: VF_PUBLIC_READS on the console and ANONYMOUS_ROLE on
-            the backend govern it, and the split is on the HTTP method rather than a
-            path list, so reads are public and writes never are. */}
+            the backend govern it. Billing and the archived original documents are not
+            -- the API reserves them for operators and reviewers, and the console no
+            longer lends a visitor its key to get round that. */}
         <p className="mt-5 rounded-md border border-sky-500/20 bg-sky-500/[0.07] px-2.5 py-2 text-[11px] leading-relaxed text-sky-100/80">
           <span className="font-medium text-sky-100">
             You do not need an account to look around.
           </span>{" "}
-          The board, every case trace, the audit trail and the cost figures are public.
-          Signing in is only required to <em>record</em> a review decision, because the
-          audit trail names the person who made it.
+          The board, every case trace, the review queue and the audit trail are public.
+          Signing in is required to <em>act</em> — the API gives each account a role,
+          and the audit trail names the person who made each decision.
         </p>
 
         {children}

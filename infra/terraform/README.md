@@ -44,16 +44,16 @@ for a `*.run.app` hostname, so a placeholder leaves the certificate stuck in
 ### The second step is the one that matters
 
 After the load balancer serves traffic and the certificate is `ACTIVE`, lock the
-services down so the load balancer is the only way in:
+service down so the load balancer is the only way in:
 
 ```bash
-gcloud run services update vf-logistics --region=asia-southeast1 \
-  --ingress=internal-and-cloud-load-balancing
-gcloud run services update vf-console --region=asia-southeast1 \
+gcloud run services update vf-app --region=asia-southeast1 \
   --ingress=internal-and-cloud-load-balancing
 ```
 
-`terraform output ingress_lockdown_command` prints these.
+`terraform output ingress_lockdown_command` prints this. One service, because
+vf-app runs the console and the API in one container; the load balancer sends
+every path to it.
 
 **Skipping this makes the whole policy decorative.** Cloud Run's `*.run.app` URL
 keeps answering directly, so every rule in `armor.tf` is bypassed by addressing it

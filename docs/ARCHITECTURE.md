@@ -31,19 +31,21 @@ granted by publication, not earned by reasoning well.
 
 ```mermaid
 flowchart LR
-    Browser["Operator browser"]
+    Browser["Browser or API caller"]
 
-    subgraph console [Cloud Run vf-console]
-        Login["HMAC session login, cookie vf_session, 12h"]
-        Proxy["/api/proxy allow-list, per-method"]
-    end
-
-    subgraph backend [Cloud Run vf-logistics]
-        Flask["gunicorn to Flask, WORKER_MODE=ondemand"]
-        Gate["untrusted.py plus model_armor.py"]
-        Agents["7 model-calling agents"]
-        Verifier["verifier.py deterministic floor"]
-        Governance["governance.py execution gate"]
+    subgraph app [Cloud Run vf-app, one container]
+        subgraph next [Next.js on PORT]
+            Login["HMAC session login, cookie vf_session, 12h"]
+            Proxy["/api/proxy BFF allow-list, per-method"]
+            Pass["/api/v1, /health, /metrics, /demo pass-through"]
+        end
+        subgraph flask [Flask on 127.0.0.1:9090]
+            Auth["auth.py roles: key, session, anonymous viewer"]
+            Gate["untrusted.py plus model_armor.py"]
+            Agents["7 model-calling agents"]
+            Verifier["verifier.py deterministic floor"]
+            Governance["governance.py execution gate"]
+        end
     end
 
     Nebius["Nebius Token Factory"]
@@ -54,9 +56,11 @@ flowchart LR
     PS["Pub/Sub case-decisions"]
 
     Browser --> Login
-    Login --> Proxy
-    Proxy -->|"X-VF-API-Key + X-VF-Session"| Flask
-    Flask --> Gate
+    Browser --> Proxy
+    Browser -->|"caller's own credential"| Pass
+    Proxy -->|"X-VF-API-Key + X-VF-Session, only with a verified session"| Auth
+    Pass --> Auth
+    Auth --> Gate
     Gate --> Armor
     Gate --> Agents
     Agents --> Nebius
@@ -64,12 +68,20 @@ flowchart LR
     Agents --> Verifier
     Verifier --> Governance
     Governance --> PS
-    Flask --> FS
-    Flask --> GCS
+    Auth --> FS
+    Auth --> GCS
 ```
 
 Region is `asia-southeast1` throughout, except Model Armor which is configured at
 `us-central1`.
+
+One image, two processes. `entrypoint.sh` starts gunicorn on `127.0.0.1:9090`, waits
+for `/health`, then starts Next.js on `$PORT`, the only port Cloud Run routes to, so
+Flask is reachable only through Next. Two doors lead in, and they differ in whose
+credential travels: `/api/proxy/*` is the console's backend-for-frontend, allow-listed
+in `frontend/src/lib/proxy-policy.ts` and the only place the console's key is attached;
+`/api/v1/*`, `/health`, `/metrics` and `/demo` are the public API, passed through by
+`frontend/src/lib/upstream.ts` with the caller's own credential and nothing added.
 
 ### Why the console has its own login and not Cloud IAP
 
@@ -99,26 +111,52 @@ GET https://vf-console-.../api/proxy/billing/usage   -> 200   data returned
 GET https://vf-logistics-.../api/v1/billing/usage    -> 403   backend refuses
 ```
 
-The backend authorisation was right. The console defeated it.
+(Those were the two services this deployment then had; they have since merged into
+`vf-app`.) The backend authorisation was right. The console defeated it.
 
-**Writes are now closed and reads are deliberately still open.** `POST` and `PUT` on
-the proxy refuse without a verified session -- measured, an anonymous
-`POST /api/proxy/governance/simulate` returns 401. `GET` is governed separately by
-`VF_PUBLIC_READS`, which is **on** in this deployment:
+### What replaced the lent key
+
+The login closed writes and, for a while, left reads lent the key: an anonymous GET
+still carried `VF_API_KEY` upstream, so an anonymous reader held `governance_admin` on
+every read, and every signed-in person held it on everything. Roles were decorative.
+
+Now the key travels **only alongside a session that verifies**, and a session can only
+narrow what the key grants. `auth._api_key_context` resolves four cases:
+
+| Caller presents | Resolved as |
+| --- | --- |
+| nothing | `ANONYMOUS_ROLE`, `viewer` here |
+| the key alone | `governance_admin`, a service identity (the scripts) |
+| the key and a verified session | the person's role from `ADMIN_EMAILS` / `OPERATOR_EMAILS` / `REVIEWER_EMAILS`, capped at what the key grants; unlisted is `viewer` |
+| the key and a session that fails to verify | **401**, never a fallback to admin |
+
+Each route declares its role by decorator, and `GET /api/v1/auth/policy` reads the table
+back from the running routes: 6 public, 21 viewer, 3 reviewer, 23 operator, 4
+governance admin. `GET /api/v1/auth/whoami` says what the caller resolved to, and the
+console renders every role-dependent control from that answer. Measured on the live
+service after the change:
 
 ```
-POST /api/proxy/governance/simulate   -> 401   writes need a session
-GET  /api/proxy/billing/usage         -> 200   reads are public by configuration
+GET  /api/v1/review/queue              anonymous      -> 200   viewer, by design
+GET  /api/proxy/billing/usage          anonymous      -> 403   operator
+POST /api/proxy/review/<id>/decide     anonymous      -> 403   reviewer
+GET  /api/v1/auth/whoami               key + forged session -> 401
+GET  /api/proxy/billing/usage          reviewer session     -> 403
+GET  /api/proxy/billing/usage          admin session        -> 200
 ```
 
-That split is the same line the backend draws in `anonymous_role()`: reads are public,
-writes need a credential. `VF_PUBLIC_READS` defaults to false, and the default is the
-point -- a deployment that forgets it is locked, not open. It is on here for a stated
-reason, the judging window, and one consequence is accepted knowingly: an anonymous
-GET still carries `VF_API_KEY` upstream, so an anonymous reader sees `review/queue` and
-`billing/usage`, both of which sit above `viewer` on the backend.
+The review queue moved to `viewer` on purpose: it is a filtered view of cases that
+`/orchestrator/state` already serves a viewer, so gating it protected nothing and was the
+reason the console lent its key to anonymous reads in the first place.
 
-**This must be turned off before a paying customer's data is in the store.**
+`VF_PUBLIC_READS` still defaults to false, so a deployment that forgets it is locked,
+not open. It is on here for a stated reason, the judging window, over synthetic data.
+**Anonymous reads must be turned off before a paying customer's data is in the store.**
+
+The proxy also refuses every write without a verified session, before the backend is
+asked, so an anonymous `POST /api/proxy/governance/simulate` is 401 even though the
+route itself is `viewer`: the dry run reads nothing a viewer cannot, but a write-shaped
+request from nobody is refused at the first door.
 
 ---
 
@@ -281,6 +319,18 @@ flowchart TD
 anywhere else in the codebase. Any diagram drawn from that docstring inherits the
 error; the previous `architecture.html` did.
 
+### What the debate's verdict does
+
+For a long time, nothing: the verdict was recorded on the case and routing read the
+floor alone, so the pipeline's most expensive call could not change an outcome.
+`orchestrator.debate_escalation()` now lets exactly one answer matter. A DISAGREE the
+model genuinely rendered, at or above `DEBATE_ESCALATE_CONFIDENCE` (0.7), sends the case
+to investigation whatever the floor would have done. A CONFIRM, a low-confidence
+verdict, or a default the loop had to force when the auditor never rendered one
+(`forced: true`, with `forced_reason`) leaves routing to the floor. It can only move a
+case up: nothing the debate says can clear one. `case["debate_effect"]` is written
+either way, so the case trace says whether the debate changed the route and why.
+
 ### Two naming traps in the state set
 
 `TERMINAL` has seven members but is a misnomer its own comment admits: three of them
@@ -326,6 +376,20 @@ lookup floors at 85, the semantic mismatch at 80.
 
 One caveat the module header does not carry: `validate()` triggers a sanctions index
 read on the first call in a container's life, so "no I/O" is true only afterwards.
+
+### Observations are not findings
+
+Three signals are reported to the reviewer and scored as nothing:
+`FREIGHT_ABOVE_LANE_TYPICAL`, `SHIPPER_THIN_HISTORY` and
+`HS_DESCRIPTION_CHECK_CONTRADICTORY`. They sit in `validation.observations` with floor 0
+and are not counted towards corroboration. The first two were findings until a
+false-positive analysis (`scripts/analyse_false_positives.py`) showed they separated
+nothing on the synthetic corpus — overpriced freight fired on 60 of 114 clean dev-split
+shipments — and demoting them took the holdout false-positive rate from 76.7% to 38.4%.
+Underpriced freight is still a finding: only the direction that separated nothing was
+demoted. The third is a classifier reply that contradicts itself, calling the goods
+inconsistent with the declared heading while naming that same heading; it is shown so
+the reply stays visible and is not acted on.
 
 ---
 
@@ -433,7 +497,10 @@ the Pub/Sub storage handler skip it, or the pipeline would process its own outpu
 
 **There is no background loop by default.** `WORKER_MODE=ondemand` means the pipeline
 is driven by request handlers -- the Pub/Sub push handler advances a case to terminal,
-and polling `/api/v1/orchestrator/state` drains one case. Cloud Run freezes the
+and an operator's poll of `/api/v1/orchestrator/state` drains one step. That wait is
+bounded at `DRAIN_WAIT_SECONDS` (4 s) with one drain in flight per tenant; it used to
+block for up to 120 s while the console abandoned a read after 15. An anonymous or
+reviewer poll is a pure read with no side effect. Cloud Run freezes the
 container once a response is sent, so a real loop would need
 `--no-cpu-throttling --min-instances=1`.
 
@@ -566,16 +633,14 @@ about one.
 An architecture document that omits these is marketing.
 
 - **No end-user identity store.** The console session proves *an* email, but there is
-  no user record, sign-up, password reset, or role assignment per person. Roles come
-  from three comma-separated environment variables read only in the unusable IAP
-  branch, are global rather than tenant-scoped, and need a redeploy to change. The
-  split on those variables has no `.strip()`, so `"a@x.com, b@y.com"` silently never
-  grants the second address.
-- **`ANONYMOUS_ROLE=viewer` on a service open to the internet** means case and audit
-  reads need no credential, and `VF_PUBLIC_READS=true` on the console means an
-  anonymous GET is additionally lent the platform API key, so a reader reaches
-  `review/queue` and `billing/usage`. Both are deliberate for a demo and both must
-  change before a customer's data is in the store.
+  no user record, sign-up or password reset. Roles come from three comma-separated
+  environment variables (`ADMIN_EMAILS`, `OPERATOR_EMAILS`, `REVIEWER_EMAILS`), are
+  global rather than tenant-scoped, and need a new revision to change.
+- **`ANONYMOUS_ROLE=viewer` on a service open to the internet** means case, review-queue
+  and audit reads need no credential. The console no longer lends its key to anonymous
+  reads, so a visitor holds exactly `viewer`, but that is still every case on the board.
+  Deliberate for a demo over synthetic data, and it must change before a customer's data
+  is in the store.
 - **The document-intake vision step bypasses the billing rollups.** It is inserted
   straight into `steps` and never passes through `_record_step`, so the audit row
   prices it and `/api/v1/billing/usage` does not. MiniCPM-V has the highest input rate
@@ -608,8 +673,7 @@ An architecture document that omits these is marketing.
 | | |
 | --- | --- |
 | Project | `vf-fraud-detection-phuochoa` (number `350828852747`), `asia-southeast1` |
-| Backend | `vf-logistics` — https://vf-logistics-f7rcctz26a-as.a.run.app |
-| Console | `vf-console` — https://vf-console-f7rcctz26a-as.a.run.app |
+| Service | `vf-app` — https://vf-app-350828852747.asia-southeast1.run.app, console and API in one container, 1 GiB, 1 CPU, 0–2 instances |
 | Store | Firestore native, `STORE_BACKEND=firestore` |
 | Worker | `WORKER_MODE=ondemand` |
 | Text model | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` — fraud, compliance, HS, zero-day |
@@ -617,7 +681,8 @@ An architecture document that omits these is marketing.
 | Debate | `nvidia/Nemotron-3-Ultra-550b-a55b` |
 | Vision | `openbmb/MiniCPM-V-4_5` |
 | Spend ceiling | `VF_TENANT_SPEND_CEILING_USD=50`, soft |
-| Anonymous floor | `viewer` on the backend, `VF_PUBLIC_READS=true` on the console |
+| Anonymous floor | `viewer` (`ANONYMOUS_ROLE=viewer`, `VF_PUBLIC_READS=true`) |
+| Role lists | `ADMIN_EMAILS` 2 accounts, `REVIEWER_EMAILS` 1, `OPERATOR_EMAILS` none |
 | Console writes | session required, verified |
 | Multi-tenancy | off |
 
@@ -625,9 +690,9 @@ Revision numbers are deliberately not pinned here. They change on every deploy, 
 table that named them would be wrong within the hour; `gcloud run services describe`
 is the answer to that question.
 
-Both Cloud Run services carry `roles/run.invoker` for `allUsers`. On the console the
-session login gates every write; on the backend the API key and the role hierarchy are
-the only boundary.
+The service carries `roles/run.invoker` for `allUsers`. The session login gates every
+write through the console; the API key and the role hierarchy are the boundary on the
+public API.
 
 Cloud IAP is not part of this and cannot be: enabling `iapEnabled` on a Cloud Run
 service in a project with no organisation serves an empty 502 to every visitor, which
