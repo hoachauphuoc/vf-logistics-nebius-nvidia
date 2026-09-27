@@ -79,8 +79,8 @@ lowered it. That runs on every call.
 
 This began as a Google Cloud submission for a different hackathon (All Things
 Agentic 2026), on Vertex AI Gemini. Everything below is checkable against the
-repository: `6bb1e59` is the initial commit, and `git diff --shortstat 6bb1e59 HEAD`
-reports **297 files changed, 171,915 insertions** across 48 commits.
+repository: `6bb1e59` is the initial commit, and `git diff --shortstat 6bb1e59 b52ea52`
+reports **297 files changed, 171,921 insertions** across 49 commits.
 
 One thing was deliberately *not* changed: the deterministic governance layer — risk
 floor, untrusted-input boundary, delegation boundary, shipper identity verification.
