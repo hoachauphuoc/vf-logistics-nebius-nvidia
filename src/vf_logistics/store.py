@@ -54,6 +54,7 @@ def utcnow() -> str:
 # and another worker picks the case up. Without this a redeploy strands
 # in-flight cases forever.
 from vf_logistics import tenant
+from vf_logistics.config import gcp_project
 
 CLAIM_LEASE_SECONDS = int(os.getenv("CLAIM_LEASE_SECONDS", "180"))
 
@@ -727,7 +728,7 @@ class FirestoreStore:
 
     backend = "firestore"
 
-    def __init__(self, project: str) -> None:
+    def __init__(self, project: str | None) -> None:
         from google.cloud import firestore  # imported lazily so memory mode
                                             # never needs the dependency
 
@@ -1516,7 +1517,6 @@ def get_store():
         return _store
 
     requested = store_backend()
-    project = os.getenv("PROJECT_ID", "project-93ded24f-21c3-4f1b-a7d")
 
     if requested == "memory":
         _store = MemoryStore()
@@ -1524,7 +1524,9 @@ def get_store():
         return _store
 
     try:
-        _store = FirestoreStore(project)
+        # None when no project can be resolved: the client then raises, and the
+        # fallback below records that as the reason rather than writing anywhere.
+        _store = FirestoreStore(gcp_project())
         _init_note = "firestore connected"
     except Exception as exc:  # noqa: BLE001 - degrade, never fail to boot
         _store = MemoryStore()

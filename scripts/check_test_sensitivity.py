@@ -267,6 +267,22 @@ MUTATIONS = [
         "        f\"Declared heading: {declared_hs}\\n\"",
         "tests/test_decision_paths.py::HsDeclaredHeadingTests",
     ),
+    (
+        "an unset PROJECT_ID falls back to a named project again",
+        "src/vf_logistics/config.py",
+        'configured = os.getenv("PROJECT_ID", "").strip()',
+        'configured = os.getenv("PROJECT_ID", "another-deployments-project").strip()',
+        "tests/test_pure_logic.py::TestGcpProject",
+    ),
+    (
+        "a decision is published with no project to publish to",
+        "src/vf_logistics/tools.py",
+        "            if not project:\n"
+        '                raise RuntimeError("no Google Cloud project to publish to: set PROJECT_ID")',
+        "            if False:\n"
+        '                raise RuntimeError("no Google Cloud project to publish to: set PROJECT_ID")',
+        "tests/test_pure_logic.py::TestNoProjectIsRefusedNotGuessed",
+    ),
 ]
 
 

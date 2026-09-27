@@ -53,9 +53,9 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 # Same stale-URL defect as scripts/test_documents.py: this pointed at
-# `vf-fraud-detection-304507056252`, a service in a different project that is still live,
-# so a seed run would have filled someone else's board and reported success. See the
-# comment in test_documents.py for the full account.
+# `vf-fraud-detection-304507056252`, the predecessor build's service in another project
+# and still live, so a seed run would have filled that deployment's board and reported
+# success. See the comment in test_documents.py for the full account.
 BASE = os.getenv(
     "VF_TEST_BASE", "https://vf-app-350828852747.asia-southeast1.run.app",
 ).rstrip("/")

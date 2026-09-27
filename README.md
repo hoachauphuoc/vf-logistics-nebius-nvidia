@@ -104,19 +104,38 @@ the 3.3× the rate implies: *[Why Ultra is on the debate agent and nowhere else]
 
 ## What was significantly updated during the Submission Period
 
-This project began as a Google Cloud submission for a different hackathon (All
-Things Agentic 2026), built entirely on Vertex AI Gemini. Every claim below is
-checkable against this repository's git history: `6bb1e59` is the initial commit,
-and `git diff --shortstat 6bb1e59 b52ea52` reports **297 files changed, 171,921
-insertions** across 49 commits. The end of the range is pinned to a commit rather than
-`HEAD`, which would make the figure wrong again with the next commit.
+This project began as a Google Cloud entry to a different hackathon, All Things
+Agentic 2026, built on Vertex AI Gemini. That entry is public, in the same author's
+earlier repository under a second GitHub account:
+[CHAUPHUOCHOA/vf-logistics-hackathon-google](https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google).
+Its first commit is dated 29 Aug 2026, after this hackathon's Submission Period opened
+on 26 Aug, and `755d998` (31 Aug) is its last. Every **Before** below describes
+`755d998` unless it names a commit of this repository.
+
+The work is measured in two ranges, because this repository does not start where that
+one ends. Its first commit, `6bb1e59` (17 Sep), already holds the first step of the
+port: the four agents moved to Nebius Token Factory, the Tavily client and the MIT
+licence added. Both ranges can be checked from a clone of this repository:
+
+```bash
+git fetch https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google.git main
+git diff --shortstat 755d998 6bb1e59   # the first port step: 32 files, +1,833 / -1,380
+git diff --shortstat 6bb1e59 b52ea52   # everything since: 297 files, +171,921, in 49 commits
+```
+
+The end of the second range is pinned to a commit rather than `HEAD`, which would make
+the figure wrong again with the next commit.
 
 The deterministic governance layer — risk floor, untrusted-input boundary,
-delegation boundary, shipper identity verification — was carried over deliberately
-and is the one thing that did not change, because none of it is model-specific. It
-is what keeps the system honest regardless of which model is reasoning.
+delegation boundary, shipper identity verification — was carried over rather than
+rebuilt, because none of it is model-specific. It is what keeps the system honest
+regardless of which model is reasoning. Carried over is not the same as untouched:
+`untrusted.py` is byte-for-byte the `755d998` file and `shipper_registry.py` differs
+by eleven lines added and two removed, while `verifier.py` grew from 487 lines to
+1,618 (+1,151 / −20) and `governance.py` from 492 to 659 (+184 / −17). The
+false-positive tuning below is one of the changes to `verifier.py`.
 
-Everything else was rebuilt.
+The areas below were rebuilt.
 
 ### The model layer
 
@@ -189,10 +208,12 @@ account.
 
 ### Who could act on the live service
 
-**Before:** any anonymous visitor held `GOVERNANCE_ADMIN` on the deployed console,
-because the proxy attached the operator API key and there was no login. An
-unauthenticated `POST /orchestrator/reset` cleared 307 real cases — found by doing
-it.
+**Before:** no authentication at all. Every endpoint of `755d998`,
+`POST /orchestrator/reset` included, answered anyone who had the URL. Mid-port it was
+no better: the console's proxy attached the operator API key to every request and
+there was no login yet, so any anonymous visitor held `GOVERNANCE_ADMIN` on the
+deployed console, and an unauthenticated `POST /orchestrator/reset` cleared 307 real
+cases — found by doing it.
 
 The login closed writes and left the roles decorative. The console still attached its
 key to every request, anonymous reads included, and that key grants `governance_admin`
@@ -212,9 +233,12 @@ request-size caps, batch caps and rate limits.
 
 ### Cost, which turned out not to be where we assumed
 
-**Before:** no metering. `max_tokens` was set on **no agent at all**, and Token
-Factory's default is 8,192 — two runaway calls hit that ceiling and both returned
-unparseable output after spending for it.
+**Before:** an estimate, not metering. `755d998` priced each step's tokens for
+whichever cases the dashboard had fetched, so the total changed with the page size;
+nothing capped spend, and no agent capped its output. That last gap survived the port:
+`max_tokens` was set on **no agent at all**, Token Factory's default is 8,192, and two
+runaway calls hit that ceiling and both returned unparseable output after spending
+for it.
 
 **Now:** per-hop cost attribution (`lineage.py`), a per-tenant soft ceiling checked
 at the single chokepoint every model call passes through (`budget.py`), a ratchet
@@ -229,9 +253,9 @@ a model-cost figure.
 
 ### False positives, measured on a held-out split
 
-**Before:** the deterministic layer caught nearly every attack in the synthetic corpus
-and held most of the clean traffic with it — on the holdout split, a false-positive
-rate of 76.7%.
+**Before the tuning in `afb3be3`:** the deterministic layer caught nearly every attack
+in the synthetic corpus and held most of the clean traffic with it — on the holdout
+split, a false-positive rate of 76.7%.
 
 **Now:** 38.4%, with precision 84.1% → 91.2% and recall 95.1% → 93.5%, and
 sanctions-alias and shell-company detection unchanged at 100%. Two signals that
@@ -244,21 +268,23 @@ how well it was chosen, not how well it works. Detail and caveats:
 
 ### Tests and CI
 
-**Before:** zero unit tests. The initial commit contains exactly one test file,
-`scripts/test_documents.py`, which drives a deployed service over HTTP.
+**Before:** no unit tests in `755d998`, only a self-check script for the counterparty
+book. This repository's first commit added one test file, `scripts/test_documents.py`,
+which drives a deployed service over HTTP.
 
-**Now:** **854 backend tests** at 79% line coverage, 114 frontend tests, and a
-mutation check — `scripts/check_test_sensitivity.py` breaks 31 lines on purpose and
-the suite catches all 31. Five GitHub Actions jobs run on every push to `master`:
+**Now:** **862 backend tests** at 79% line coverage, 114 frontend tests, and a
+mutation check — `scripts/check_test_sensitivity.py` breaks 33 lines on purpose and
+the suite catches all 33. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
-builds both images and smoke-tests the deployed one. The workflow existed earlier but
-filtered on a branch named `main` while this repository uses `master`, so it had never
-executed once.
+builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
+added here on 19 Sep (`a452fd6`) filtered on a branch named `main` while this
+repository uses `master`, so it never executed until `64c9e6d` fixed the trigger on
+24 Sep.
 
 ### Structure
 
 **Before:** a flat repository root — `main.py`, `orchestrator.py`, `agents/` and
-seventeen other modules at top level.
+fifteen other modules at top level.
 
 **Now:** a `src/vf_logistics/` package with ten modules that did not exist at all:
 `auth.py`, `budget.py`, `tenant.py`, `b2b.py`, `openapi.py`, `sanctions.py`,
@@ -1118,10 +1144,10 @@ What the table says:
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 854, at 79% line coverage. CI fails below 75%.
+# Unit + integration tests: 862, at 79% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
-# The mutation check: breaks 31 lines on purpose, one at a time, and requires the
+# The mutation check: breaks 33 lines on purpose, one at a time, and requires the
 # suite to fail on every one. It edits source in place and restores it, so it
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
@@ -1161,7 +1187,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Suite | Count | What it covers |
 |-------|-------|----------------|
 | Sanctions & zero-day | 64 | Sanctions matching, list freshness, unseen-pattern handling |
-| Pure logic | 61 | auth, config, schemas, simulator, untrusted, agents._common |
+| Pure logic | 69 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
 | Decision paths | 57 | Every route a shipment can take through the state machine, and the heading the HS classifier is told was declared |
 | Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
 | Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
@@ -1197,7 +1223,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
 | Evaluation endpoint | 5 | The committed reports served as written, each naming its split and verifier, and never the per-case rows that carry the labels |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **854** | |
+| **Total** | **862** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1271,7 +1297,7 @@ collection.
 | `TAVILY_ENTITY_CACHE_TTL_SECONDS` | TTL for the shipper/receiver adverse-media searches. Shorter because these carry a counterparty — though Tavily is *not* the sanctions control. `0` disables. | `3600` (1h) |
 | `ZERO_DAY_MIN_DIVERSION_HUBS` | How many **distinct** transhipment hubs a route needs before zero-day screening opens. Two, matching the verifier's `MULTIPLE_DIVERSION_HUBS`. | `2` |
 | `ZERO_DAY_NEWS_DAYS` | How far back the zero-day news search looks; older designations are the official list's job | `45` |
-| `PROJECT_ID` | GCP project used for Firestore, Pub/Sub, Cloud Storage | `project-93ded24f-21c3-4f1b-a7d` |
+| `PROJECT_ID` | GCP project for Firestore, Pub/Sub, Cloud Storage and Model Armor. There is no built-in default: with none resolvable, Firestore falls back to memory and publishing and Model Armor refuse, each saying why | unset — the project Application Default Credentials resolve to, which on Cloud Run is the service's own |
 | `WORKER_MODE` | `ondemand` (advance inside requests) or `poll` (always-on loop) | `ondemand` |
 | `STORE_BACKEND` | `firestore` or `memory` | `firestore` |
 | `CLAIM_LEASE_SECONDS` | How long a claimed case stays claimed | `180` |
@@ -1548,7 +1574,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        37 files, 854 tests
+├── tests/                        37 files, 862 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
