@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from vf_logistics import executor_client
+from vf_logistics.config import gcp_project
 from vf_logistics.store import get_store, new_id, utcnow
 
 # Optional outbound webhook (Slack / Teams / Google Chat / any HTTP endpoint).
@@ -27,7 +28,6 @@ NOTIFY_WEBHOOK_URL = os.getenv("NOTIFY_WEBHOOK_URL", "").strip()
 
 # Optional Pub/Sub topic that downstream systems subscribe to for decisions.
 DECISIONS_TOPIC = os.getenv("DECISIONS_TOPIC", "case-decisions").strip()
-PROJECT_ID = os.getenv("PROJECT_ID", "project-93ded24f-21c3-4f1b-a7d")
 
 
 async def _audit(
@@ -223,8 +223,14 @@ async def publish_decision_direct(
         from google.cloud import pubsub_v1
 
         def _publish() -> str:
+            # Resolved here, on the worker thread, because it can probe the metadata
+            # server. No project means no topic path: refused and recorded as a failed
+            # publish, rather than built against a project someone guessed.
+            project = gcp_project()
+            if not project:
+                raise RuntimeError("no Google Cloud project to publish to: set PROJECT_ID")
             publisher = pubsub_v1.PublisherClient()
-            topic = publisher.topic_path(PROJECT_ID, DECISIONS_TOPIC)
+            topic = publisher.topic_path(project, DECISIONS_TOPIC)
             future = publisher.publish(topic, json.dumps(body).encode("utf-8"))
             return future.result(timeout=15)
 

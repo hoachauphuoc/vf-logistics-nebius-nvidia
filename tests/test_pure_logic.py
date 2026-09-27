@@ -118,6 +118,166 @@ class TestConfig(unittest.TestCase):
             self.assertIn("id", m)
 
 
+import asyncio
+import contextlib
+import re
+import sys
+import types
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+from google.auth.exceptions import DefaultCredentialsError
+
+from vf_logistics import config as config_mod
+from vf_logistics.config import gcp_project
+
+
+def _no_adc():
+    """ADC with no credentials, the way a CI runner or a fresh laptop has it."""
+    return patch("google.auth.default", side_effect=DefaultCredentialsError("none"))
+
+
+@contextlib.contextmanager
+def _project_id_unset():
+    """
+    PROJECT_ID absent rather than empty.
+
+    conftest sets it for every test. Setting it to "" here would not do: getenv returns
+    the empty string for a variable that exists, so a named default slipped back into
+    the code would never be reached and these tests would pass straight over it.
+    """
+    with patch.dict(os.environ):
+        os.environ.pop("PROJECT_ID", None)
+        yield
+
+
+def _fake_google_cloud(**modules):
+    """
+    Stand-ins for google.cloud client modules, whether or not they are installed.
+
+    CI installs requirements.lock and has them; a bare checkout may not, and then
+    patching `google.cloud.storage.Client` by name fails before the test starts.
+    """
+    cloud = types.ModuleType("google.cloud")
+    entries = {"google.cloud": cloud}
+    for name, module in modules.items():
+        setattr(cloud, name, module)
+        entries[f"google.cloud.{name}"] = module
+    return patch.dict(sys.modules, entries)
+
+
+class TestGcpProject(unittest.TestCase):
+    """
+    Which Google Cloud project the process writes to.
+
+    Four modules used to default PROJECT_ID to the predecessor deployment's project,
+    which is still live, so a deploy that left the variable out aimed Firestore,
+    Pub/Sub, Cloud Storage and Model Armor at that deployment. These pin what replaced
+    it: the variable when set, the environment's own project when not, and a refusal
+    rather than a guess when there is neither.
+    """
+
+    def setUp(self):
+        config_mod._adc_project.cache_clear()
+        self.addCleanup(config_mod._adc_project.cache_clear)
+
+    def test_project_id_wins_and_adc_is_not_consulted(self):
+        with patch.dict(os.environ, {"PROJECT_ID": "  configured-project "}), \
+             patch("google.auth.default") as adc:
+            self.assertEqual(gcp_project(), "configured-project")
+        adc.assert_not_called()
+
+    def test_unset_project_id_takes_the_environments_own_project(self):
+        with _project_id_unset(), \
+             patch("google.auth.default", return_value=(object(), "adc-project")):
+            self.assertEqual(gcp_project(), "adc-project")
+
+    def test_no_project_anywhere_is_none_rather_than_a_guess(self):
+        with _project_id_unset(), _no_adc():
+            self.assertIsNone(gcp_project())
+
+    def test_no_module_defaults_project_id_to_a_named_project(self):
+        """
+        The defect itself, wherever it might come back. An empty default is fine --
+        observability.py uses one to build a log field -- a named project is not.
+        """
+        pattern = re.compile(
+            r"""(?:getenv|environ\.get)\(\s*["']PROJECT_ID["']\s*,\s*["'][^"']+["']"""
+        )
+        src = Path(__file__).resolve().parent.parent / "src" / "vf_logistics"
+        offenders = sorted(
+            str(path.relative_to(src)) for path in src.rglob("*.py")
+            if pattern.search(path.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(offenders, [], "PROJECT_ID defaulted to a named project")
+
+    def test_the_firestore_store_is_built_for_the_resolved_project(self):
+        from vf_logistics import store as store_mod
+
+        saved = (store_mod._store, store_mod._init_note)
+        self.addCleanup(lambda: setattr(store_mod, "_store", saved[0]))
+        self.addCleanup(lambda: setattr(store_mod, "_init_note", saved[1]))
+        store_mod._store = None
+        with patch.dict(os.environ, {"STORE_BACKEND": "firestore",
+                                     "PROJECT_ID": "resolved-project"}), \
+             patch.object(store_mod, "FirestoreStore") as firestore_store:
+            store_mod.get_store()
+        firestore_store.assert_called_once_with("resolved-project")
+
+    def test_the_document_archive_client_is_built_for_the_resolved_project(self):
+        from vf_logistics import document_store
+
+        saved = (document_store._client, document_store._client_error)
+        self.addCleanup(lambda: setattr(document_store, "_client", saved[0]))
+        self.addCleanup(lambda: setattr(document_store, "_client_error", saved[1]))
+        document_store._client = None
+        document_store._client_error = None
+        storage = MagicMock()
+        with patch.dict(os.environ, {"PROJECT_ID": "resolved-project"}), \
+             _fake_google_cloud(storage=storage):
+            document_store._get_client()
+        storage.Client.assert_called_once_with(project="resolved-project")
+
+
+class TestNoProjectIsRefusedNotGuessed(unittest.TestCase):
+    """
+    The two callers that cannot pass None on to a client, because the project is part
+    of the resource name they build: a Pub/Sub topic path and a Model Armor template
+    path. With no project they must say so and call nothing.
+    """
+
+    def setUp(self):
+        config_mod._adc_project.cache_clear()
+        self.addCleanup(config_mod._adc_project.cache_clear)
+        for patcher in (_project_id_unset(), _no_adc()):
+            patcher.__enter__()
+            self.addCleanup(patcher.__exit__, None, None, None)
+
+    def test_a_decision_publish_fails_with_the_reason_and_builds_no_client(self):
+        from vf_logistics import tools
+
+        pubsub_v1 = MagicMock()
+        with _fake_google_cloud(pubsub_v1=pubsub_v1):
+            receipt = asyncio.run(
+                tools.publish_decision_direct("CASE-NO-PROJECT", {"decision": "HOLD"})
+            )
+        self.assertEqual(receipt["status"], "failed")
+        self.assertIn("PROJECT_ID", receipt["detail"]["error"])
+        pubsub_v1.PublisherClient.assert_not_called()
+
+    def test_model_armor_asks_for_a_person_and_calls_nothing(self):
+        from vf_logistics import model_armor
+
+        with patch.object(model_armor, "TEMPLATE", "a-template"), \
+             patch.object(model_armor, "_access_token", return_value="tok"), \
+             patch.object(model_armor, "_sanitize_once", new_callable=AsyncMock) as once:
+            verdict = asyncio.run(model_armor.screen("x" * 50, "test"))
+        self.assertTrue(verdict["requires_human"])
+        self.assertFalse(verdict["available"])
+        self.assertIn("PROJECT_ID", verdict["detail"])
+        once.assert_not_called()
+
+
 # ────────────────────────────────────────────────────────────────
 # 3. untrusted.py
 # ────────────────────────────────────────────────────────────────

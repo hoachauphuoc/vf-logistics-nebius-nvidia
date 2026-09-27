@@ -18,7 +18,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-PROJECT_ID = os.getenv("PROJECT_ID", "project-93ded24f-21c3-4f1b-a7d")
+from vf_logistics.config import gcp_project
+
 BUCKET = os.getenv("DOCUMENT_BUCKET", "").strip()
 
 _client = None
@@ -32,7 +33,9 @@ def _get_client():
     try:
         from google.cloud import storage
 
-        _client = storage.Client(project=PROJECT_ID)
+        # None is accepted: object reads and writes name the bucket and need no
+        # project, so the archive still works where no project can be resolved.
+        _client = storage.Client(project=gcp_project())
     except Exception as exc:  # noqa: BLE001
         _client_error = f"{type(exc).__name__}: {exc}"
     return _client

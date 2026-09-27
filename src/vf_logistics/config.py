@@ -16,6 +16,7 @@ calls; reach for Ultra when you need serious reasoning."
 
 import logging
 import os
+from functools import lru_cache
 from threading import Lock
 
 log = logging.getLogger(__name__)
@@ -278,3 +279,44 @@ def get_all_models() -> list[dict]:
         {"id": model_id, **info}
         for model_id, info in PRICING.items()
     ]
+
+
+def gcp_project() -> str | None:
+    """
+    The Google Cloud project Firestore, Pub/Sub, Cloud Storage and Model Armor use.
+
+    `PROJECT_ID` when it is set; otherwise the project Application Default
+    Credentials resolve to, which on Cloud Run is the project the service runs in;
+    otherwise None, and each caller refuses rather than guessing.
+
+    THERE IS NO HARD-CODED FALLBACK, AND THERE USED TO BE. Four modules defaulted to
+    the project the predecessor build ran in -- the All Things Agentic 2026 entry,
+    still live -- so a deployment that left PROJECT_ID out aimed every write at
+    another deployment's project. On Cloud Run that surfaced as 403s the health check
+    did not show; from a machine whose credentials do have rights there, the owner's,
+    it would have written into that deployment's data. A default is right for one
+    deployment and silently wrong for every other, while the environment's own
+    project is right wherever the code runs.
+    """
+    configured = os.getenv("PROJECT_ID", "").strip()
+    if configured:
+        return configured
+    return _adc_project()
+
+
+@lru_cache(maxsize=1)
+def _adc_project() -> str | None:
+    """
+    The project Application Default Credentials resolve to, looked up once.
+
+    Cached because the lookup can probe the metadata server and Model Armor asks for
+    the project on every screen. A miss is cached too: credentials that appear later
+    need a restart, as a changed PROJECT_ID already does.
+    """
+    try:
+        import google.auth
+
+        _, project = google.auth.default()
+    except Exception:  # noqa: BLE001 - no credentials is an answer here, not a fault
+        return None
+    return str(project) if project else None

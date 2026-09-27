@@ -64,6 +64,11 @@ def _no_real_api_calls(monkeypatch) -> Generator[None, None, None]:
     # though the tests here run as admin.
     monkeypatch.setenv("ANONYMOUS_ROLE", "governance_admin")
     monkeypatch.setenv("STORE_BACKEND", "memory")
+    # A project no request can land in: the underscores make it an invalid project
+    # ID, so nothing can ever exist under it. Left unset, config.gcp_project() would
+    # take the developer's own gcloud project, and a pipeline test that publishes a
+    # decision would publish it there.
+    monkeypatch.setenv("PROJECT_ID", "no_project_in_tests")
     monkeypatch.delenv("VF_API_KEY", raising=False)
     monkeypatch.delenv("IAP_ENABLED", raising=False)
 

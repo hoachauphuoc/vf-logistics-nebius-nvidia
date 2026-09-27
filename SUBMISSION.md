@@ -77,15 +77,27 @@ lowered it. That runs on every call.
 
 ### What was significantly updated during the Submission Period
 
-This began as a Google Cloud submission for a different hackathon (All Things
-Agentic 2026), on Vertex AI Gemini. Everything below is checkable against the
-repository: `6bb1e59` is the initial commit, and `git diff --shortstat 6bb1e59 b52ea52`
-reports **297 files changed, 171,921 insertions** across 49 commits.
+This began as a Google Cloud entry to a different hackathon, All Things Agentic 2026,
+on Vertex AI Gemini. That entry is public, in the same author's earlier repository
+under a second GitHub account:
+[CHAUPHUOCHOA/vf-logistics-hackathon-google](https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google),
+first commit 29 Aug 2026 (after this Submission Period opened on 26 Aug), last commit
+`755d998` on 31 Aug. The **Before** column describes `755d998` unless it names a commit
+of this repository.
 
-One thing was deliberately *not* changed: the deterministic governance layer — risk
-floor, untrusted-input boundary, delegation boundary, shipper identity verification.
-None of it is model-specific, and it is what constrains the system regardless of
-which model reasons. Everything else was rebuilt.
+This repository's first commit, `6bb1e59` (17 Sep), already contains the first step of
+the port, so the work is measured in two ranges. From a clone of this repository, after
+`git fetch https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google.git main`:
+`git diff --shortstat 755d998 6bb1e59` reports **32 files, +1,833 / −1,380** for that
+first step, and `git diff --shortstat 6bb1e59 b52ea52` reports **297 files changed,
+171,921 insertions** across 49 commits for everything since.
+
+One thing was deliberately carried over rather than rebuilt: the deterministic
+governance layer — risk floor, untrusted-input boundary, delegation boundary, shipper
+identity verification. None of it is model-specific, and it is what constrains the
+system regardless of which model reasons. Carried over, not frozen: `untrusted.py` is
+byte-for-byte the `755d998` file, while `verifier.py` grew from 487 lines to 1,618 and
+`governance.py` from 492 to 659. The rows below were rebuilt.
 
 | | Before | Now | Why |
 |---|---|---|---|
@@ -93,11 +105,11 @@ which model reasons. Everything else was rebuilt.
 | **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,656 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
 | **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 67 files, 12,672 lines, 7 screens, since joined by Access Control and Evaluation | The static page could not carry a session, and recording a decision had to be attributable |
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
-| **Anonymous authority** | any visitor held `GOVERNANCE_ADMIN` on the live console; unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
-| **Cost control** | none; `max_tokens` set on **no agent**, and the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **zero** unit tests (one HTTP script) | **854** backend tests in 37 files at 79% coverage, 114 frontend tests, and a mutation check that breaks 31 lines and sees every one caught | A test nobody has seen fail is not evidence |
-| **CI** | existed but filtered on branch `main` while the repo uses `master`, so it had **never run once** | five jobs: ruff, mypy (strict on clean modules, a ratchet on the rest), tests with a 75% coverage floor, frontend, and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
-| **Structure** | flat root: `main.py` and 17 modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
+| **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
+| **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
+| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **862** backend tests in 37 files at 79% coverage, 114 frontend tests, and a mutation check that breaks 33 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **CI** | none in `755d998`; the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (strict on clean modules, a ratchet on the rest), tests with a 75% coverage floor, frontend, and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
+| **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
 
 Three measured results worth stating plainly, because each corrected an assumption we
 had published or would have:
@@ -371,9 +383,10 @@ the live service once destroyed the seeded demo board.
 
 Hackathon requirements this satisfies, per the Official Rules: a functional runtime
 call to Nebius Token Factory (all seven agents) · at least one NVIDIA open source
-model (three Nemotron 3 sizes) · fits the **Best Apps and Agents** track · existed
-before the Submission Period and was significantly updated inside it, with the
-explanation given above · (bonus) a functional runtime Tavily call.
+model (three Nemotron 3 sizes) · fits the **Best Apps and Agents** track · entered
+in another hackathon first, on code begun after this Submission Period opened, and
+significantly updated inside it, with the explanation given above · (bonus) a
+functional runtime Tavily call.
 
 This line previously read "multi-step autonomous workflow · meaningful action taken
 on the user's behalf", which are criteria from the **predecessor** hackathon and
@@ -553,7 +566,7 @@ Verifiable via `GET /api/v1/agents`, the per-case trace UI, or the raw case docu
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 854 backend tests (pytest, 79% coverage), 114 frontend tests (vitest), mutation check 31/31 |
+| Automated test suite | 862 backend tests (pytest, 79% coverage), 114 frontend tests (vitest), mutation check 33/33 |
 | CI pipeline | GitHub Actions, five jobs, every one able to fail the build: ruff; mypy, strict on clean modules and a ceiling on the rest that may only fall; pytest with `--cov-fail-under=75`; frontend typecheck, lint, tests and build; and a container job that builds both images and smoke-tests the deployed one |
 | Auto-debate on score disputes | done -- fires without human intervention; a confident DISAGREE escalates the case, upward only |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |

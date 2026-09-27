@@ -33,8 +33,8 @@ from typing import Any
 import httpx
 
 from vf_logistics import untrusted
+from vf_logistics.config import gcp_project
 
-PROJECT_ID = os.getenv("PROJECT_ID", "project-93ded24f-21c3-4f1b-a7d")
 LOCATION = os.getenv("MODEL_ARMOR_LOCATION", "asia-southeast1")
 TEMPLATE = os.getenv("MODEL_ARMOR_TEMPLATE", "vf-document-intake").strip()
 
@@ -91,10 +91,10 @@ def extract_pdf_text(document_bytes: bytes) -> tuple[str, str | None]:
         return "", f"{type(exc).__name__}: {exc}"
 
 
-async def _sanitize_once(text: str, token: str) -> dict[str, Any]:
+async def _sanitize_once(text: str, token: str, project: str) -> dict[str, Any]:
     """One sanitizeUserPrompt call. Returns the parsed filter outcome."""
     url = (
-        f"{ENDPOINT}/projects/{PROJECT_ID}/locations/{LOCATION}"
+        f"{ENDPOINT}/projects/{project}/locations/{LOCATION}"
         f"/templates/{TEMPLATE}:sanitizeUserPrompt"
     )
     async with httpx.AsyncClient(timeout=30) as http:
@@ -216,12 +216,20 @@ async def screen(text: str, stage: str) -> dict[str, Any]:
         verdict["requires_human"] = True
         return verdict
 
+    # The template lives under a project, so without one there is nothing to call.
+    # Same outcome as having no credentials: unscreened, so a person looks at it.
+    project = await asyncio.to_thread(gcp_project)
+    if not project:
+        verdict["detail"] = "no Google Cloud project for Model Armor: set PROJECT_ID"
+        verdict["requires_human"] = True
+        return verdict
+
     windows = _windows(text)
     errors: list[str] = []
 
     for index, window in enumerate(windows):
         try:
-            outcome = await _sanitize_once(window, token)
+            outcome = await _sanitize_once(window, token, project)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{type(exc).__name__}: {exc}")
             continue
