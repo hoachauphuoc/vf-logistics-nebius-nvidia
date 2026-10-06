@@ -168,6 +168,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   publish_delegation_boundary: "Publish delegation boundary",
   revoke_delegation_boundary: "Revoke delegation boundary",
   update_prefilter_rules: "Update pre-filter rules",
+  board_reset: "Board cleared",
   superseded: "Superseded by a newer write",
   retry: "Retry scheduled",
   dead_letter: "Abandoned after retries",

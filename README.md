@@ -272,9 +272,9 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **862 backend tests** at 79% line coverage, 114 frontend tests, and a
-mutation check — `scripts/check_test_sensitivity.py` breaks 33 lines on purpose and
-the suite catches all 33. Five GitHub Actions jobs run on every push to `master`:
+**Now:** **875 backend tests** at 79% line coverage, 137 frontend tests, and a
+mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
+the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
 builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
 added here on 19 Sep (`a452fd6`) filtered on a branch named `main` while this
@@ -724,7 +724,7 @@ before; only the `model` field in each response envelope changed.
 | `/api/v1/orchestrator/state` | GET | Full dashboard projection: cases, events, audit, counters |
 | `/api/v1/orchestrator/case/<case_id>` | GET | One case with every agent hop, latency and action receipt |
 | `/api/v1/orchestrator/tick` | POST | Advance the pipeline one step |
-| `/api/v1/orchestrator/reset` | POST | Clear all cases, events and audit records |
+| `/api/v1/orchestrator/reset` | POST | Clear the tenant's cases and events (operator, **password sign-in only**). The audit trail is kept, and the reset is written to it as a `board_reset` row naming who did it |
 | `/api/v1/orchestrator/drain` | POST | Run every pending case to a terminal state |
 | `/api/v1/events/document` | POST | Document intake. Multipart `file` (PDF or image). Screens for injection, transcribes, archives the original, then runs the case to a terminal state in the same request. |
 | `/api/v1/events/storage` | POST | Cloud Storage notification sink |
@@ -1011,6 +1011,27 @@ gcloud secrets versions access latest \
 For a submission review both are supplied in the private testing-instructions field, so
 a judge never has to touch `gcloud`.
 
+### One click for judges
+
+The login page and the board's **Start here** strip offer **Continue as guest judge**:
+one click, no password, and the session is `guest-judge@vf-logistics.demo`, a separate
+account listed in `ADMIN_EMAILS`. It can do everything the judge account can — inject
+shipments, decide cases, publish policy — **except clear the board**.
+
+That one exception is enforced twice, not hidden. The session token carries an `amr`
+claim (`password` or `one_click`) inside the same HMAC as the email, so it cannot be
+edited. The console's BFF refuses `orchestrator/reset` to any session that does not say
+`password`, and the API refuses it again with `auth.require_password_session`, which
+returns 403 with `required_auth: "password"`. A token without the claim — one minted
+before it existed — counts as *not* a password. A script holding only the API key still
+passes, because it has no session to ask about.
+
+Every decision, publish and reset records `actor_auth` beside the name, so the Audit
+Trail can tag what was done from the public guest session. The button is off unless
+`VF_ONE_CLICK_JUDGE=true`, and `VF_ONE_CLICK_UNTIL` closes it on a date; an end date it
+cannot parse closes it too. The session lasts four hours, and the route is POST-only and
+rate-limited to 10 a minute per address.
+
 ### Creating your own account
 
 There is no self-service sign-up. Accounts live in `VF_OPERATORS` as
@@ -1144,15 +1165,15 @@ What the table says:
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 862, at 79% line coverage. CI fails below 75%.
+# Unit + integration tests: 875, at 79% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
-# The mutation check: breaks 33 lines on purpose, one at a time, and requires the
+# The mutation check: breaks 36 lines on purpose, one at a time, and requires the
 # suite to fail on every one. It edits source in place and restores it, so it
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: typecheck, lint, 114 unit tests, production build
+# Frontend: typecheck, lint, 137 unit tests, production build
 cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build
 
 # Counterparty book, offline
@@ -1192,7 +1213,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
 | Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
 | Document upload | 33 | Accepted types, the PDF branch, injection screening |
-| Console session | 35 | HMAC signing, forged tokens, reviewer attribution, and what a forwarded session may and may not change |
+| Console session | 41 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
 | Network defence | 34 | Rate limits, request size, header hygiene, CSP content, content-type allow-list |
 | Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
 | B2B contract | 28 | The published response shape callers depend on |
@@ -1211,7 +1232,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Observability | 16 | Logging, metrics, request context |
 | Security screen logic | 16 | Window arithmetic, and that an unreachable screen fails closed instead of reporting a clean document |
 | Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
-| RBAC | 14 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — and whether the routes honour it |
+| RBAC | 21 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board |
 | Debate routing | 13 | A genuine, confident DISAGREE sends the case to investigation; a forced verdict does not; risk only moves up |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
 | False-positive tuning | 12 | Which signals are findings and which are context: observations carry no floor and are not counted |
@@ -1223,7 +1244,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
 | Evaluation endpoint | 5 | The committed reports served as written, each naming its split and verifier, and never the per-case rows that carry the labels |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **862** | |
+| **Total** | **875** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1330,6 +1351,9 @@ collection.
 | `VF_SESSION_SECRET` | HMAC key for session cookies. Must be at least 32 characters; a shorter one is treated as absent. | unset — **required in production**, where a missing value takes the console offline rather than opening it |
 | `VF_OPERATORS` | Semicolon-separated `email:iterations:salt:hash` records, PBKDF2-SHA256. Generate with `node frontend/scripts/make-operator.mjs <email> --out <dir>`, which writes the password to a file rather than printing it. | unset |
 | `VF_PUBLIC_READS` | `true` lets anonymous visitors read the console. Writes are never covered by it — the split is on the HTTP method, not a path list. Defaults to false so a deployment that forgets it is locked, not open. | `false` |
+| `VF_ONE_CLICK_JUDGE` | `true` offers the one-click guest-judge sign-in. Off unless set, like `VF_PUBLIC_READS`. | unset |
+| `VF_ONE_CLICK_EMAIL` | The account the button signs in as. Its role comes from the API's `ADMIN_EMAILS` / `OPERATOR_EMAILS` / `REVIEWER_EMAILS`, not from here. | unset |
+| `VF_ONE_CLICK_UNTIL` | Optional end date (any `Date.parse` value, e.g. `2026-12-16`). After it, or if it cannot be parsed, the button is gone. | unset |
 | `NEXT_PUBLIC_DEMO_MODE` | Build-time, not runtime: `NEXT_PUBLIC_*` is inlined by `next build`, so setting it with `gcloud run deploy --set-env-vars` has no effect on an already-built bundle. `frontend/.env.production` is what actually turns demo fixtures off. | `false` in `.env.production` |
 
 `config.py` holds the shared model registry and per-token pricing for fraud
@@ -1574,7 +1598,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        37 files, 862 tests
+├── tests/                        37 files, 875 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports

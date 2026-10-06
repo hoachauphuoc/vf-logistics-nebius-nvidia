@@ -71,7 +71,7 @@ export function PipelineKpis({
       />
       <Tile
         icon={DollarSign}
-        label="Spend"
+        label="Estimated spend"
         value={`$${(snapshot?.estimated_cost_usd ?? 0).toFixed(4)}`}
         helpId="kpi.spend"
         hint="Estimated from token counts and per-model pricing. Rules-cleared cases contribute nothing, which is the point of the pre-filter."
@@ -135,7 +135,11 @@ function Tile({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="bento-card border-glow cursor-default px-3.5 py-3">
+        <div
+          // Focusable so the hint is reachable from the keyboard, not only on hover.
+          tabIndex={0}
+          className="bento-card border-glow cursor-default px-3.5 py-3 focus-visible:outline-2 focus-visible:outline-brand"
+        >
           <div className="flex items-center gap-1.5">
             <Icon className={cn("size-3.5", ICON_TONE[tone])} aria-hidden />
             <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
@@ -143,7 +147,7 @@ function Tile({
             </p>
             {pulse && (
               <span className="relative ml-auto flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-risk-critical opacity-75" />
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-risk-critical opacity-75 motion-reduce:animate-none" />
                 <span className="relative inline-flex size-2 rounded-full bg-risk-critical" />
               </span>
             )}

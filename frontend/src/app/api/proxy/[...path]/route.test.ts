@@ -66,7 +66,7 @@ describe("BFF credential attachment", () => {
   });
 
   it("attaches the key and the session together for a signed-in person", async () => {
-    const token = await signSession("reviewer@forwarder.example");
+    const token = await signSession("reviewer@forwarder.example", "password");
     await GET(
       new Request("https://vf.example/api/proxy/review/queue", {
         headers: { cookie: `vf_session=${token}` },
@@ -94,6 +94,56 @@ describe("BFF credential attachment", () => {
       params("simulate"),
     );
     expect(response.status).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Clear board needs a password sign-in", () => {
+  let spy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv("VF_API_KEY", "console-secret-key");
+    vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    vi.stubEnv("FLASK_API_BASE", "http://127.0.0.1:9090");
+    spy = vi.fn(async () => Response.json({ cleared: 3 }));
+    globalThis.fetch = spy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  async function reset(token: string | null) {
+    return POST(
+      new Request("https://vf.example/api/proxy/orchestrator/reset", {
+        method: "POST",
+        headers: token ? { cookie: `vf_session=${token}` } : {},
+      }),
+      params("orchestrator/reset"),
+    );
+  }
+
+  it("refuses a one-click session without calling the API", async () => {
+    const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
+    const response = await reset(token);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      required_auth: "password",
+      session_method: "one_click",
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("forwards a password session with the key attached", async () => {
+    const token = await signSession("judge@vf-logistics.demo", "password");
+    const response = await reset(token);
+    expect(response.status).toBe(200);
+    expect(sentHeaders(spy).get("x-vf-api-key")).toBe("console-secret-key");
+  });
+
+  it("still turns away an anonymous caller first", async () => {
+    expect((await reset(null)).status).toBe(401);
     expect(spy).not.toHaveBeenCalled();
   });
 });

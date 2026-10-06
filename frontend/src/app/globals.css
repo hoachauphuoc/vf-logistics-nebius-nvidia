@@ -31,7 +31,10 @@
   --color-risk-unknown: #94a3b8;
 
   --color-dim: #9ca3af;
-  --color-faint: #6b7280;
+  /* Was #6b7280, which measured about 4.2:1 on the cards -- under the WCAG AA
+     4.5:1 minimum for the 10-11px text it is used for (timestamps, captions,
+     table headers). #7c8493 is about 5.2:1 and still reads as a step below dim. */
+  --color-faint: #7c8493;
   --color-hairline: rgba(255, 255, 255, 0.1);
   --color-hairline-lit: rgba(255, 255, 255, 0.14);
 

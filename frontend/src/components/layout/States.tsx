@@ -63,6 +63,28 @@ export function ErrorState({
     );
   }
 
+  if (api?.status === 403 && api.requiredAuth === "password") {
+    // Not a role problem: the account has the role, but this session was signed
+    // in with the one-click judge button, and this action asks for a password.
+    return (
+      <Shell className={className} tone="warn" icon={Lock} title="This needs a password sign-in">
+        <p>
+          You are signed in with one click, which can do everything this account
+          can except this. Sign in with your email and password to continue.
+        </p>
+        <a
+          href={`/login?next=${encodeURIComponent(
+            typeof window === "undefined" ? "/" : window.location.pathname,
+          )}`}
+          className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.04] px-3 text-[12px] text-dim transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          <LogIn className="size-3.5" aria-hidden />
+          Sign in with a password
+        </a>
+      </Shell>
+    );
+  }
+
   if (api?.status === 401 || api?.status === 403) {
     // The API names the role it wanted (auth.py's refusal carries required_role),
     // so the message can say which one instead of guessing -- and a 401 from the

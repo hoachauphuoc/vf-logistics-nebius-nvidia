@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Circle, FileText, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, FileText, Loader2, ShieldAlert } from "lucide-react";
 
 import {
   casePriority,
@@ -10,6 +10,7 @@ import {
   type SlaTone,
 } from "@/lib/pipeline";
 import { severityLabel } from "@/lib/format";
+import { injectionCaught, RISK_FILL, RISK_TEXT, riskBand } from "@/lib/risk-band";
 import type { Case } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -59,14 +60,16 @@ export function CaseCard({
   const processing = c.claimed === true && active;
 
   const risk = c.risk_score;
-  const riskTone =
-    risk == null
-      ? "unknown"
-      : risk >= 70
-        ? "high"
-        : risk >= 40
-          ? "medium"
-          : "low";
+  const band = riskBand(risk);
+  const injected = injectionCaught(c);
+
+  // The two numbers the effective score is the higher of. Shown on the card so
+  // the product's central rule -- the model may raise a score, never lower it --
+  // is visible on the board, not only once a case is opened.
+  const rec = c.reconciliation;
+  const modelRisk = typeof rec?.model_risk === "number" ? rec.model_risk : null;
+  const floor = typeof rec?.risk_floor === "number" ? rec.risk_floor : null;
+  const floorApplied = modelRisk !== null && floor !== null && floor > modelRisk;
 
   // Route and value come off the *shipment*, not off the case. The old board
   // read c.origin_country / c.destination_country, which exist on neither, so
@@ -103,9 +106,11 @@ export function CaseCard({
     <button
       type="button"
       onClick={() => onOpen(c.case_id)}
+      aria-label={`Open ${c.shipment_id || c.case_id}${risk != null ? `, risk ${risk}` : ""}${injected ? ", prompt injection caught" : ""}`}
       className={cn(
         "w-full rounded-lg border border-l-2 border-white/[0.07] bg-black/30 p-2.5 text-left",
-        "transition-all active:scale-[0.98] hover:border-white/15 hover:bg-white/[0.04]",
+        "transition-all hover:border-white/15 hover:bg-white/[0.04] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
         STATE_ACCENT[c.state] ?? "border-l-white/20",
         selected && "border-glow border-white/25 bg-white/[0.06]",
       )}
@@ -113,7 +118,7 @@ export function CaseCard({
       <div className="flex items-start gap-1.5">
         <span className="mt-[2px] shrink-0 text-dim">
           {processing ? (
-            <Loader2 className="size-3.5 animate-spin text-brand" aria-label="processing" />
+            <Loader2 className="size-3.5 animate-spin text-brand motion-reduce:animate-none" aria-label="processing" />
           ) : active ? (
             <Circle className="size-3.5" aria-hidden />
           ) : (
@@ -123,6 +128,17 @@ export function CaseCard({
         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-white/90">
           {c.shipment_id || c.case_id}
         </span>
+        {injected && (
+          // The case the governance screen counts toward injection drift, and the
+          // one the demo ends on. Tagged so it can be found without opening cards.
+          <span
+            className="badge-risk badge-critical shrink-0 px-1.5 py-0 text-[10px]"
+            title="Intake caught instructions aimed at the agents in this document"
+          >
+            <ShieldAlert className="size-3" aria-hidden />
+            Injection
+          </span>
+        )}
         <span className={cn("badge-risk shrink-0 px-1.5 py-0 text-[10px]", PRIORITY_CLASS[priority])}>
           {severityLabel(priority)}
         </span>
@@ -152,28 +168,21 @@ export function CaseCard({
       <div className="mt-2 flex items-center gap-2">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
           <div
-            className={cn(
-              "h-full rounded-full transition-[width] duration-300",
-              riskTone === "high" && "bg-risk-critical",
-              riskTone === "medium" && "bg-risk-warn",
-              riskTone === "low" && "bg-risk-clear",
-              riskTone === "unknown" && "bg-risk-unknown",
-            )}
+            className={cn("h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none", RISK_FILL[band])}
             style={{ width: risk == null ? "4%" : `${Math.max(risk, 2)}%` }}
           />
         </div>
-        <span
-          className={cn(
-            "w-7 shrink-0 text-right font-mono text-[12px] tabular-nums",
-            riskTone === "high" && "text-risk-critical",
-            riskTone === "medium" && "text-risk-warn",
-            riskTone === "low" && "text-risk-clear",
-            riskTone === "unknown" && "text-risk-unknown",
-          )}
-        >
+        <span className={cn("w-7 shrink-0 text-right font-mono text-[12px] tabular-nums", RISK_TEXT[band])}>
           {risk ?? "—"}
         </span>
       </div>
+
+      {(modelRisk !== null || floor !== null) && (
+        <p className="mt-1 font-mono text-[10.5px] tabular-nums text-dim">
+          model {modelRisk ?? "—"} · floor {floor ?? "—"}
+          {floorApplied && <span className="text-risk-warn"> · floor applied</span>}
+        </p>
+      )}
 
       <div className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px]">
         <span className={SLA_CLASS[sla.tone]}>{sla.text}</span>

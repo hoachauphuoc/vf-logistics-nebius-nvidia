@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toaster";
 import {
   fetchAgentReadiness,
   fetchBoundaries,
@@ -137,6 +138,16 @@ export default function GovernancePage() {
             >
               {suspended ? "Agent suspended" : `Operating under ${agent?.boundary?.boundary_id}`}
             </p>
+            {!suspended && agent?.boundary?.published_by && (
+              // Who granted the authority the agent is acting on, in the banner
+              // rather than only in History: "under whose say-so" is the first
+              // question about an agent that acts on its own.
+              <p className="mt-0.5 text-[11.5px] text-dim">
+                Published by{" "}
+                <span className="font-mono text-white/85">{agent.boundary.published_by}</span>
+                {agent.boundary.published_at ? ` on ${formatDay(agent.boundary.published_at)}` : ""}
+              </p>
+            )}
             <p className="mt-0.5 text-[12px] leading-relaxed text-dim">
               {agent?.reason}
             </p>
@@ -246,6 +257,13 @@ function pct(v: number): string {
   return `${Math.round(v * 100)}%`;
 }
 
+function formatDay(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 // --------------------------------------------------------------------------
 // Boundary
 // --------------------------------------------------------------------------
@@ -319,22 +337,35 @@ function BoundaryTab() {
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
 
+  const toast = useToast();
   const publish = useMutation({
     mutationFn: (permissions: Record<string, unknown>) =>
       publishBoundary({ permissions, note }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setFormError(null);
       setSimulation(null);
       invalidate();
+      toast({
+        title: `Published ${data.boundary?.boundary_id ?? "the boundary"}`,
+        description: "The agent now acts under it. The change is on the audit trail under your name.",
+        action: { label: "Open the audit trail", href: "/audit" },
+      });
     },
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
 
   const revoke = useMutation({
     mutationFn: () => revokeBoundary({ note }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setFormError(null);
       invalidate();
+      toast({
+        title: data.revoked ? "Boundary revoked — the agent is suspended" : "Nothing to revoke",
+        description: data.revoked
+          ? "Every outcome now stays a proposal and goes to a person."
+          : data.reason,
+        tone: data.revoked ? "warn" : "success",
+      });
     },
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
@@ -652,9 +683,12 @@ function SimulationResult({
     <div className="bento-card p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-[12px] font-medium text-white">
-            What this boundary would change
-          </h3>
+          <span className="flex items-center gap-1.5">
+            <h3 className="text-[12px] font-medium text-white">
+              What this boundary would change
+            </h3>
+            <HelpDot id="governance.simulate" />
+          </span>
           <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
             Replayed against {evaluated ?? "recent"} case(s) for{" "}
             <span>{actionLabel(String(result.action ?? "release_shipment"))}</span>
@@ -765,6 +799,7 @@ function PrefilterTab() {
 
   const [draft, setDraft] = useState<PrefilterRules | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const save = useMutation({
     mutationFn: (patch: Partial<PrefilterRules>) => savePrefilterRules(patch),
@@ -772,6 +807,11 @@ function PrefilterTab() {
       setError(null);
       setDraft(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.prefilter(tenant.id) });
+      toast({
+        title: "Pre-filter rules saved",
+        description: "New shipments are screened against them now. The change is on the audit trail.",
+        action: { label: "Open the audit trail", href: "/audit" },
+      });
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
@@ -791,9 +831,12 @@ function PrefilterTab() {
   return (
     <div className="space-y-4">
       <div className="bento-card p-4">
-        <h3 className="text-[12px] font-medium text-white">
-          Pre-AI screening rules
-        </h3>
+        <span className="flex items-center gap-1.5">
+          <h3 className="text-[12px] font-medium text-white">
+            Pre-AI screening rules
+          </h3>
+          <HelpDot id="governance.prefilter" />
+        </span>
         <p className="mt-1 max-w-2xl text-[11.5px] leading-relaxed text-dim">
           These decide which shipments never reach a model: a blacklist match is
           an immediate floor of 100, a VIP match with a matching tax ID can skip
@@ -1044,10 +1087,11 @@ function VerifyTab() {
           fast-tracking.
         </p>
 
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex gap-2" role="group" aria-label="What to verify">
           <Button
             variant={type === "company" ? "default" : "outline"}
             size="sm"
+            aria-pressed={type === "company"}
             onClick={() => setType("company")}
             className="h-8 border-white/10 text-[12px]"
           >
@@ -1056,6 +1100,7 @@ function VerifyTab() {
           <Button
             variant={type === "tax_id" ? "default" : "outline"}
             size="sm"
+            aria-pressed={type === "tax_id"}
             onClick={() => setType("tax_id")}
             className="h-8 border-white/10 text-[12px]"
           >

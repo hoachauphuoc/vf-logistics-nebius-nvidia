@@ -398,7 +398,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
       "Model invocations across every case in the collection, counted exactly rather than over the fetched window.",
   },
   "kpi.spend": {
-    title: "Spend",
+    title: "Estimated spend",
     body:
       "Estimated from token counts and per-model pricing. Cases the pre-filter cleared contribute nothing, which is the point of having a pre-filter.",
   },
@@ -462,7 +462,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "review.decision": {
     title: "Decision",
     body:
-      "Release, block, or ask for more information. A reviewer name is always required, and a note is required for anything other than a plain release.",
+      "Release, block, or ask for more information. The decision is recorded under your signed-in account -- never a typed name -- and a note is required for anything other than a plain release.",
   },
 
   // Audit screen

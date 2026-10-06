@@ -7,6 +7,7 @@ import {
   describedWrites,
   matchRead,
   matchWrite,
+  PASSWORD_ONLY_POST,
 } from "./proxy-policy";
 
 describe("matchRead", () => {
@@ -38,10 +39,19 @@ describe("matchWrite", () => {
     expect(matchWrite("review/deep-review", ALLOWED_POST)).toBe(false);
   });
 
-  it("refuses a destructive route and a traversal", () => {
-    expect(matchWrite("orchestrator/reset", ALLOWED_POST)).toBe(false);
+  it("refuses the still-unproxied destructive routes and a traversal", () => {
+    expect(matchWrite("orchestrator/drain", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("admin/backfill-rollups", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/../../orchestrator/reset/decide", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/CASE-1/document", ALLOWED_POST)).toBe(false);
+  });
+
+  it("forwards Clear board, and marks it as needing a password sign-in", () => {
+    // Allowed is not the same as open: the BFF and Flask both refuse it to any
+    // session that did not sign in with a password.
+    expect(matchWrite("orchestrator/reset", ALLOWED_POST)).toBe(true);
+    expect(PASSWORD_ONLY_POST.has("orchestrator/reset")).toBe(true);
+    for (const path of PASSWORD_ONLY_POST) expect(ALLOWED_POST.has(path)).toBe(true);
   });
 
   it("forwards the sanctions-news scan the Governance screen offers", () => {

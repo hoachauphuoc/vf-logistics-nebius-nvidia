@@ -29,6 +29,11 @@ export class ApiError extends Error {
      * screen can say "needs the operator role" instead of a bare "forbidden".
      */
     readonly requiredRole: string | null = null,
+    /**
+     * The sign-in a 403 said it needed (`required_auth`), today only "password":
+     * the refusal a one-click session gets on Clear board.
+     */
+    readonly requiredAuth: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -71,9 +76,22 @@ export class DemoModeUnavailable extends ApiError {
  */
 const CLIENT_TIMEOUT_MS = 20_000;
 
+/**
+ * The ceiling for the two writes that run models before they answer: a document
+ * upload (Model Armor, extraction, then the whole workflow in on-demand mode --
+ * 30 to 60 seconds is normal) and a deep review (a multi-round Nemotron 3 Ultra
+ * debate). With the 20s default the browser gave up first and reported "the API
+ * is unreachable" while the server finished the job and created the case.
+ *
+ * A little over the BFF's own 120s write timeout, so a genuine upstream timeout
+ * still surfaces as the BFF's error rather than this one.
+ */
+export const LONG_WRITE_TIMEOUT_MS = 125_000;
+
 async function request(
   path: string,
   init?: RequestInit,
+  timeoutMs: number = CLIENT_TIMEOUT_MS,
 ): Promise<{ text: string; status: number; ok: boolean }> {
   let response: Response;
   try {
@@ -82,7 +100,7 @@ async function request(
       headers: { Accept: "application/json", ...(init?.headers ?? {}) },
       // An explicit signal on `init` wins, so a caller that wants its own cancellation
       // is not overridden.
-      signal: init?.signal ?? AbortSignal.timeout(CLIENT_TIMEOUT_MS),
+      signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     // A timeout arrives as a TimeoutError DOMException, whose message is "signal timed
@@ -91,7 +109,7 @@ async function request(
       error instanceof DOMException && error.name === "TimeoutError";
     throw new ApiError(
       timedOut
-        ? `The request took longer than ${CLIENT_TIMEOUT_MS / 1000}s and was abandoned.`
+        ? `The request took longer than ${Math.round(timeoutMs / 1000)}s and was abandoned.`
         : error instanceof Error
           ? error.message
           : String(error),
@@ -112,6 +130,7 @@ function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
     // nothing about whether the API is down or the request was wrong.
     let detail = `HTTP ${status}`;
     let requiredRole: string | null = null;
+    let requiredAuth: string | null = null;
     try {
       const parsed = JSON.parse(text) as {
         error?: string;
@@ -119,10 +138,12 @@ function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
         details?: string[];
         supported?: string[];
         required_role?: string;
+        required_auth?: string;
       };
       detail =
         parsed.details?.join("; ") ?? parsed.detail ?? parsed.error ?? detail;
       requiredRole = parsed.required_role ?? null;
+      requiredAuth = parsed.required_auth ?? null;
 
       // A 415 from the document route answers "what should I have sent?" in a
       // `supported` array. Appended rather than dropped: without it the message
@@ -140,6 +161,7 @@ function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
       status,
       status === 502 ? "unreachable" : "http",
       requiredRole,
+      requiredAuth,
     );
   }
 
@@ -155,12 +177,20 @@ async function getJson<T>(path: string): Promise<T> {
   return parseOrThrow<T>(text, status, ok);
 }
 
-async function postJson<T>(path: string, body?: unknown): Promise<T> {
-  const { text, status, ok } = await request(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
+async function postJson<T>(
+  path: string,
+  body?: unknown,
+  timeoutMs: number = CLIENT_TIMEOUT_MS,
+): Promise<T> {
+  const { text, status, ok } = await request(
+    path,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    },
+    timeoutMs,
+  );
   return parseOrThrow<T>(text, status, ok);
 }
 
@@ -314,13 +344,18 @@ export async function decideReview(args: {
   );
 }
 
-/** Nemotron Super re-reads the case. Expensive and explicitly opt-in. */
+/**
+ * The Senior Auditor (Nemotron 3 Ultra) re-reads the case. Expensive, opt-in,
+ * and slow -- a multi-round debate -- so it gets the long write timeout.
+ */
 export async function requestDeepReview(
   caseId: string,
 ): Promise<DeepReviewResult> {
   if (DEMO_MODE) liveOnly("Deep review");
   return postJson<DeepReviewResult>(
     `review/${encodeURIComponent(caseId)}/deep-review`,
+    undefined,
+    LONG_WRITE_TIMEOUT_MS,
   );
 }
 
@@ -554,24 +589,69 @@ export async function submitShipmentEvent(
 }
 
 /**
+ * What a document upload answers with.
+ *
+ * Three outcomes, and only one of them is an error:
+ *  - accepted, not blocked: a case was created and has run (202).
+ *  - accepted and blocked: Model Armor or the injection screen stopped it before
+ *    any model read it. Still a case -- a refusal is recorded, not discarded (202).
+ *  - not accepted: the document could not be transcribed, and nothing was
+ *    created (422). An answer about the file, not a failure of the service.
+ */
+export interface UploadResult {
+  accepted: boolean;
+  blocked?: boolean;
+  case_id?: string;
+  state?: string;
+  error?: string | null;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Upload a shipping document.
  *
  * multipart/form-data, streamed through the proxy rather than buffered, and with
- * a much longer timeout than a read: this runs Model Armor, extraction and two
- * agent hops before it answers.
+ * the long write timeout: in on-demand mode the route runs Model Armor,
+ * extraction and the whole workflow before it answers.
+ *
+ * A 422 is returned, not thrown. It means "this file could not be read", and
+ * throwing it rendered the generic red error card over what is an ordinary
+ * answer about the document.
  */
-export async function uploadDocument(file: File): Promise<Record<string, unknown>> {
+export async function uploadDocument(file: File): Promise<UploadResult> {
   if (DEMO_MODE) liveOnly("Document upload");
   const form = new FormData();
   form.append("file", file);
   // No content-type header: the browser must set it, because it has to append
   // the multipart boundary. Setting it by hand produces a body the server
   // cannot parse, and the failure looks like a corrupt file.
-  const { text, status, ok } = await request("events/document", {
-    method: "POST",
-    body: form,
-  });
-  return parseOrThrow<Record<string, unknown>>(text, status, ok);
+  const { text, status, ok } = await request(
+    "events/document",
+    { method: "POST", body: form },
+    LONG_WRITE_TIMEOUT_MS,
+  );
+  if (status === 422) {
+    try {
+      const refused = JSON.parse(text) as UploadResult;
+      return { ...refused, accepted: false };
+    } catch {
+      /* fall through to the ordinary error */
+    }
+  }
+  return parseOrThrow<UploadResult>(text, status, ok);
+}
+
+/**
+ * Clear the board: every case and event on this tenant.
+ *
+ * The audit trail is kept -- it is append-only -- and the reset is written to it
+ * under the caller's name. Needs the operator role AND a password sign-in; a
+ * one-click judge session is refused with `requiredAuth === "password"`.
+ */
+export async function resetBoard(): Promise<{ cleared: number }> {
+  if (DEMO_MODE) liveOnly("Clearing the board");
+  return postJson<{ cleared: number }>("orchestrator/reset");
 }
 
 // --------------------------------------------------------------------------

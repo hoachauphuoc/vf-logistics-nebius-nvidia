@@ -74,11 +74,17 @@ def _matrix_app() -> Flask:
     def admin_route():
         return jsonify(ok=True)
 
+    @app.route("/clear", methods=["POST"])
+    @auth.require_operator
+    @auth.require_password_session
+    def clear_route():
+        return jsonify(ok=True)
+
     return app
 
 
-def _session(email: str) -> dict[str, str]:
-    return {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(email)}
+def _session(email: str, amr: str | None = "password") -> dict[str, str]:
+    return {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(email, amr=amr)}
 
 
 class TestRoleMatrix(unittest.TestCase):
@@ -126,6 +132,92 @@ class TestRoleMatrix(unittest.TestCase):
             body = client.post("/operator", headers=_session(REVIEWER)).get_json()
         self.assertEqual(body["required_role"], "operator")
         self.assertEqual(body["user_roles"], ["reviewer", "viewer"])
+
+
+class TestPasswordOnlyRoute(unittest.TestCase):
+    """
+    A route that needs a password sign-in on top of its role.
+
+    The one-click judge button hands anybody an admin session, so the role alone
+    cannot keep the board from being cleared. These pin who still gets through.
+    """
+
+    CASES = {
+        "anonymous": ({}, 403),
+        # The seeding tools and the network-defence tests clear the board this way.
+        "key only": ({"X-VF-API-Key": TEST_KEY}, 200),
+        "admin, password": (_session(ADMIN), 200),
+        "operator, password": (_session(OPERATOR), 200),
+        "admin, one-click": (_session(ADMIN, amr="one_click"), 403),
+        # A token from before the claim existed, or one with a value nobody mints.
+        "admin, no claim": (_session(ADMIN, amr=None), 403),
+        "admin, unknown claim": (_session(ADMIN, amr="magic"), 403),
+        # The role check runs first, so a reviewer is refused for the role.
+        "reviewer, password": (_session(REVIEWER), 403),
+    }
+
+    def test_who_may_use_it(self):
+        client = _matrix_app().test_client()
+        with patch.dict(os.environ, ROLE_ENV):
+            for identity, (headers, want) in self.CASES.items():
+                with self.subTest(identity=identity):
+                    self.assertEqual(client.post("/clear", headers=headers).status_code, want)
+
+    def test_the_refusal_says_a_password_is_what_is_missing(self):
+        """The console turns this into 'sign in with your password', so it must say so."""
+        client = _matrix_app().test_client()
+        with patch.dict(os.environ, ROLE_ENV):
+            body = client.post("/clear", headers=_session(ADMIN, amr="one_click")).get_json()
+        self.assertEqual(body["required_auth"], "password")
+        self.assertEqual(body["session_method"], "one_click")
+        self.assertNotIn("required_role", body)
+
+    def test_the_same_session_keeps_its_other_rights(self):
+        """One-click is still the account's role everywhere else -- that is the point."""
+        client = _matrix_app().test_client()
+        with patch.dict(os.environ, ROLE_ENV):
+            self.assertEqual(
+                client.post("/admin", headers=_session(ADMIN, amr="one_click")).status_code, 200
+            )
+
+
+class TestBoardReset(unittest.TestCase):
+    """The real reset route: password-only, and it leaves a record of itself."""
+
+    def setUp(self):
+        from vf_logistics import app as app_mod
+
+        self.env = patch.dict(os.environ, dict(ROLE_ENV, STORE_BACKEND="memory"))
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        limiter_was = app_mod.limiter.enabled
+        app_mod.limiter.enabled = False
+        self.addCleanup(setattr, app_mod.limiter, "enabled", limiter_was)
+        self.client = app_mod.app.test_client()
+
+    def _latest_reset(self) -> dict | None:
+        import asyncio
+
+        from vf_logistics.store import get_store
+
+        rows = asyncio.run(get_store().list_audit(limit=20))
+        return next((r for r in rows if r.get("action") == "board_reset"), None)
+
+    def test_a_one_click_admin_cannot_clear_the_board(self):
+        response = self.client.post(
+            "/api/v1/orchestrator/reset", headers=_session(ADMIN, amr="one_click")
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["required_auth"], "password")
+
+    def test_a_password_admin_can_and_the_trail_says_who(self):
+        response = self.client.post("/api/v1/orchestrator/reset", headers=_session(ADMIN))
+        self.assertEqual(response.status_code, 200)
+        row = self._latest_reset()
+        self.assertIsNotNone(row, "a reset must write its own audit row")
+        self.assertEqual(row["actor"], ADMIN)
+        self.assertEqual(row["actor_auth"], "password")
+        self.assertEqual(row["detail"]["cleared"], response.get_json()["cleared"])
 
 
 class TestRoleLists(unittest.TestCase):
@@ -199,6 +291,16 @@ class TestWhoami(unittest.TestCase):
         me = self._whoami({"X-VF-API-Key": TEST_KEY})
         self.assertEqual(me["authenticated_by"], "api_key")
         self.assertEqual(me["role"], "governance_admin")
+        self.assertIsNone(me["session_method"])
+
+    def test_the_sign_in_method_is_reported_beside_the_role(self):
+        """The console locks Clear board from this, so it must match the decorator."""
+        one_click = self._whoami(_session(ADMIN, amr="one_click"))
+        password = self._whoami(_session(ADMIN))
+        self.assertEqual(one_click["authenticated_by"], "console_session")
+        self.assertEqual(one_click["role"], "governance_admin")
+        self.assertEqual(one_click["session_method"], "one_click")
+        self.assertEqual(password["session_method"], "password")
 
 
 class TestRoutePolicy(unittest.TestCase):
@@ -248,6 +350,15 @@ class TestRoutePolicy(unittest.TestCase):
         self.assertEqual(by_path[("/api/v1/review/<case_id>/document", ("GET",))], "reviewer")
         self.assertEqual(by_path[("/api/v1/billing/usage", ("GET",))], "operator")
         self.assertEqual(by_path[("/api/v1/governance/publish", ("POST",))], "governance_admin")
+
+    def test_only_the_board_reset_asks_for_a_password(self):
+        """
+        The flag survives the rate limiter and the role decorator above it, and it
+        is on exactly the route it was put on. Widening it would quietly take a
+        right away from the one-click judge session.
+        """
+        flagged = {r["path"] for r in self.rows if r["requires_password_session"]}
+        self.assertEqual(flagged, {"/api/v1/orchestrator/reset"})
 
     def test_policy_endpoint_reports_list_sizes_not_members(self):
         from vf_logistics.app import app

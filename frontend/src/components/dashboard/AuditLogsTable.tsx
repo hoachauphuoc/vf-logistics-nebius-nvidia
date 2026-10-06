@@ -21,6 +21,7 @@ import {
 import { ApiError } from "@/lib/api";
 import { formatRelative, formatUsd, humaniseCode } from "@/lib/format";
 import { sortFindings } from "@/lib/risk";
+import { RISK_FILL, riskBand } from "@/lib/risk-band";
 import type { ComplianceAuditResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -205,12 +206,9 @@ function AuditRow({
 function RiskMeter({ audit }: { audit: ComplianceAuditResponse }) {
   const risk = audit.effective_risk;
   const floor = audit.risk_floor;
-  const tone =
-    risk >= 80
-      ? "bg-[#ff4d4d]"
-      : risk >= 40
-        ? "bg-[#f5a524]"
-        : "bg-[#3ecf8e]";
+  // The shared bands. This table alone waited until 80 for red, so a 75 was red
+  // on the board and the case trace and amber here.
+  const tone = RISK_FILL[riskBand(risk)];
 
   return (
     <Tooltip>
@@ -245,7 +243,7 @@ function RiskMeter({ audit }: { audit: ComplianceAuditResponse }) {
           )}
         </p>
         {audit.score_disputed ? (
-          <p className="mt-1.5 text-[11px] leading-relaxed text-[#f7bc5c]">
+          <p className="mt-1.5 text-[11px] leading-relaxed text-risk-warn">
             Disputed: the model and the floor differ by 15 points or more. The
             floor stands.
           </p>
@@ -282,7 +280,7 @@ function ErrorState({ error }: { error: unknown }) {
   const unreachable = error instanceof ApiError && error.kind === "unreachable";
   return (
     <div className="grid place-items-center gap-2 px-4 py-16 text-center">
-      <AlertCircle className="size-5 text-[#f7bc5c]" aria-hidden />
+      <AlertCircle className="size-5 text-risk-warn" aria-hidden />
       {/* Never an empty table on failure. An empty table reads as "nothing was
           flagged", which is the opposite of "the results could not be loaded". */}
       <p className="text-[13px] text-white">

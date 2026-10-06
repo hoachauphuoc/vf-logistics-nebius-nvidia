@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { COOKIE_NAME, verifySession } from "@/lib/session";
+import { tokenFromCookieHeader, verifySession } from "@/lib/session";
 
 /**
  * Who is signed in.
@@ -14,19 +14,13 @@ import { COOKIE_NAME, verifySession } from "@/lib/session";
  * own token.
  */
 export async function GET(request: Request) {
-  const cookie = request.headers.get("cookie") ?? "";
-  const match = cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${COOKIE_NAME}=`));
-
-  const session = await verifySession(
-    match ? match.slice(COOKIE_NAME.length + 1) : null,
-  );
+  const session = await verifySession(tokenFromCookieHeader(request.headers.get("cookie")));
   if (!session) {
     return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
   }
 
   // `exp` is returned so the UI could warn before a session lapses mid-review.
-  return NextResponse.json({ email: session.email, exp: session.exp });
+  // `amr` (how they signed in) is null for a token that predates the claim, which
+  // the UI must read the same way the backend does: not a password sign-in.
+  return NextResponse.json({ email: session.email, exp: session.exp, amr: session.amr ?? null });
 }

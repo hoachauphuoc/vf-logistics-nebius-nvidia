@@ -158,6 +158,37 @@ asked, so an anonymous `POST /api/proxy/governance/simulate` is 401 even though 
 route itself is `viewer`: the dry run reads nothing a viewer cannot, but a write-shaped
 request from nobody is refused at the first door.
 
+### One-click sign-in, and the one thing it cannot do
+
+The console can offer judges a **one-click** sign-in (`POST /api/auth/judge`, off unless
+`VF_ONE_CLICK_JUDGE=true`, closed after `VF_ONE_CLICK_UNTIL`). It mints an ordinary
+session for a dedicated guest account, and the role still comes from the API's lists --
+the console asserts an email, never a role.
+
+What differs is a signed `amr` claim in the session body: `password` from the login
+form, `one_click` from the button. Because the button is public and its account is an
+admin, role alone cannot protect the one action a stranger could take that the next
+visitor would find undone, so `POST /orchestrator/reset` also asks how the session was
+signed in:
+
+| Caller | Clear board |
+| --- | --- |
+| password session, operator or above | allowed |
+| one-click session, any role | **403**, `required_auth: "password"` |
+| session with no or an unknown `amr` (e.g. minted before the claim) | **403**, fails closed |
+| API key alone (scripts, seeding) | allowed -- no session to ask about |
+
+It is checked in the BFF (`PASSWORD_ONLY_POST`, so the refusal costs no upstream call)
+and again in Flask (`auth.require_password_session`, stacked under `@require_operator`
+and published as `requires_password_session` in `/auth/policy`). The route counts above
+are unchanged: it is a flag on a route, not a sixth role, because "operator minus one
+route" is not nested inside anything and the hierarchy relies on roles being nested.
+
+A reset clears cases and events and keeps the audit trail, and writes a `board_reset`
+row naming the actor and `actor_auth`. Review decisions, boundary publishes and revokes,
+and pre-filter edits record `actor_auth` too, so the Audit Trail tags what was done from
+the guest session.
+
 ---
 
 ## How a case enters

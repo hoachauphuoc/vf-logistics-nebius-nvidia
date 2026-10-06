@@ -82,6 +82,7 @@ def mint(
     secret: str = TEST_SECRET,
     ttl_seconds: int = 3600,
     exp: float | None = None,
+    amr: str | None = "password",
 ) -> str:
     """
     Build a console session token the way the console does.
@@ -89,11 +90,17 @@ def mint(
     Deliberately a reimplementation rather than an import: the TypeScript minter
     and the Python verifier are two codebases that must agree on a wire format, and
     a test that shared code with one of them would not notice the other drifting.
+
+    `amr` defaults to a password sign-in, which is what the console's login form
+    mints; pass "one_click" for the judge button, or None to omit the claim the way
+    a token minted before it existed does.
     """
-    payload = {
+    payload: dict[str, object] = {
         "email": email,
         "exp": exp if exp is not None else time.time() + ttl_seconds,
     }
+    if amr is not None:
+        payload["amr"] = amr
     body = b64url(json.dumps(payload).encode("utf-8"))
     signature = hmac.new(
         secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
@@ -469,6 +476,57 @@ class TestWireFormatAgreement(unittest.TestCase):
         self.assertEqual(ctx.email, PERSON)
 
 
+class TestSignInMethod(unittest.TestCase):
+    """
+    The `amr` claim: how a session was signed in, read only from a signed token.
+
+    It exists for one decision -- whether a session may clear the board -- and the
+    property that matters is that it fails closed. Only an explicit, signed
+    "password" counts as a password sign-in.
+    """
+
+    def _method(self, token: str) -> str | None:
+        ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": token})
+        self.assertIsNone(error)
+        return ctx.session_method
+
+    def test_each_known_method_is_read(self):
+        self.assertEqual(self._method(mint(amr="password")), auth.PASSWORD_SESSION)
+        self.assertEqual(self._method(mint(amr="one_click")), auth.ONE_CLICK_SESSION)
+
+    def test_a_missing_claim_is_unknown_not_password(self):
+        """A token minted before the claim existed still names the person, nothing more."""
+        ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(amr=None)})
+        self.assertIsNone(error)
+        self.assertEqual(ctx.email, PERSON)
+        self.assertEqual(ctx.session_method, auth.UNKNOWN_SESSION)
+
+    def test_an_unrecognised_value_is_unknown(self):
+        for value in ("admin", "PASSWORD", "", "password "):
+            with self.subTest(value=value):
+                self.assertEqual(self._method(mint(amr=value)), auth.UNKNOWN_SESSION)
+
+    def test_the_claim_cannot_be_edited_without_the_secret(self):
+        """Rewriting one_click to password in the body breaks the signature."""
+        token = mint(amr="one_click")
+        body, _, signature = token.partition(".")
+        claims = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+        claims["amr"] = "password"
+        forged = f"{b64url(json.dumps(claims).encode())}.{signature}"
+        ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": forged})
+        self.assertIsNone(ctx)
+        self.assertEqual(error[1], 401)
+
+    def test_actor_auth_names_the_credential(self):
+        session_ctx, _ = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(amr="one_click")})
+        key_ctx, _ = context_for({"X-VF-API-Key": TEST_KEY})
+        anon_ctx, _ = context_for({}, ANONYMOUS_ROLE="viewer")
+        self.assertEqual(session_ctx.actor_auth, "one_click")
+        self.assertEqual(key_ctx.actor_auth, "api_key")
+        self.assertIsNone(key_ctx.session_method)
+        self.assertEqual(anon_ctx.actor_auth, "anonymous")
+
+
 class TestReviewerAttribution(unittest.TestCase):
     """
     Who `POST /review/<id>/decide` records as the reviewer.
@@ -497,8 +555,9 @@ class TestReviewerAttribution(unittest.TestCase):
 
         captured: dict[str, object] = {}
 
-        async def fake_human_decide(case_id, action, reviewer, note, tenant_id=None):
+        async def fake_human_decide(case_id, action, reviewer, note, tenant_id=None, actor_auth=None):
             captured["reviewer"] = reviewer
+            captured["actor_auth"] = actor_auth
             return {"ok": True, "case_id": case_id, "state": "RELEASED_BY_HUMAN"}
 
         env = {
@@ -517,6 +576,38 @@ class TestReviewerAttribution(unittest.TestCase):
                     "/api/v1/review/CASE-1/decide", json=body, headers=headers
                 )
         return captured.get("reviewer"), response.status_code  # type: ignore[return-value]
+
+    def test_the_sign_in_method_travels_with_the_name(self):
+        """
+        A decision taken from the public one-click button must be distinguishable
+        on the record from one taken with a password, so the method is handed to
+        the orchestrator next to the reviewer.
+        """
+        from vf_logistics.app import app
+
+        captured: dict[str, object] = {}
+
+        async def fake_human_decide(case_id, action, reviewer, note, tenant_id=None, actor_auth=None):
+            captured["actor_auth"] = actor_auth
+            return {"ok": True, "case_id": case_id, "state": "RELEASED_BY_HUMAN"}
+
+        env = {
+            "VF_API_KEY": TEST_KEY, "VF_SESSION_SECRET": TEST_SECRET,
+            "IAP_ENABLED": "false", "MULTI_TENANT": "false", "REVIEWER_EMAILS": PERSON,
+        }
+        for amr, expected in (("one_click", "one_click"), ("password", "password"), (None, "unknown")):
+            with self.subTest(amr=amr):
+                captured.clear()
+                with patch.dict(os.environ, env), patch(
+                    "vf_logistics.orchestrator.human_decide", side_effect=fake_human_decide
+                ):
+                    response = app.test_client().post(
+                        "/api/v1/review/CASE-1/decide",
+                        json={"action": "release", "note": "checked"},
+                        headers={"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(amr=amr)},
+                    )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(captured["actor_auth"], expected)
 
     def _reviewer_passed_to_orchestrator(self, headers: dict, body: dict) -> str | None:
         return self._decide(headers, body)[0]
