@@ -123,7 +123,9 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
       <StatCard
         icon={Coins}
         tone="neutral"
-        label="Token spend"
+        // The same name as the Pipeline board's tile, so one number is not called
+        // "Token spend" on one screen and "Spend" on the next.
+        label="Estimated spend"
         value={formatUsd(usage?.estimated_cost_usd)}
         sub={
           usageFailed
@@ -232,8 +234,8 @@ export function KpiCards({ audits, usage, loading, usageError }: Props) {
 }
 
 const TONE_CLASS = {
-  critical: "text-[#ff8080]",
-  warn: "text-[#f7bc5c]",
+  critical: "text-risk-critical",
+  warn: "text-risk-warn",
   clear: "text-brand",
   neutral: "text-dim",
 } as const;
@@ -254,7 +256,12 @@ function StatCard({
   hint?: string;
 }) {
   const body = (
-    <div className="bento-card border-glow p-4">
+    <div
+      // Focusable only when it carries a hint, so a keyboard user can reach the
+      // explanation a mouse user gets by hovering.
+      tabIndex={hint ? 0 : undefined}
+      className="bento-card border-glow p-4 focus-visible:outline-2 focus-visible:outline-brand"
+    >
       <div className="flex items-center gap-2">
         <Icon className={cn("size-3.5", TONE_CLASS[tone])} aria-hidden />
         <span className="text-[11px] font-medium uppercase tracking-wider text-dim">

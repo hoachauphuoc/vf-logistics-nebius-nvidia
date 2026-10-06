@@ -106,6 +106,7 @@ def proposed_boundary(reason: str = "Initial delegation proposal") -> dict[str, 
 async def publish_boundary(
     permissions: dict[str, Any], author: str, note: str,
     tenant_id: str | None = None,
+    author_auth: str | None = None,
 ) -> dict[str, Any]:
     """
     Make a boundary official.
@@ -155,6 +156,9 @@ async def publish_boundary(
             "boundary_id": boundary["boundary_id"],
             "version": version,
             "published_by": author,
+            # How the author signed in (password, one_click, api_key...). None for
+            # a caller that did not say, which keeps old call sites valid.
+            "actor_auth": author_auth,
             "note": note,
             "superseded": boundary["supersedes"],
         },
@@ -165,6 +169,7 @@ async def publish_boundary(
 
 async def revoke_boundary(
     author: str, note: str, tenant_id: str | None = None,
+    author_auth: str | None = None,
 ) -> dict[str, Any]:
     """
     Withdraw the agent's authority, leaving no active boundary behind.
@@ -201,6 +206,7 @@ async def revoke_boundary(
             "boundary_id": current.get("boundary_id"),
             "version": current.get("version"),
             "revoked_by": author,
+            "actor_auth": author_auth,
             "note": note,
         },
         "at": utcnow(),

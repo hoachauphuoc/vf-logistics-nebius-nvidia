@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { describedReads, describedWrites } from "@/lib/proxy-policy";
-import { COOKIE_NAME, loginRequired, publicReads, verifySession } from "@/lib/session";
+import { oneClickJudge } from "@/lib/one-click";
+import { loginRequired, publicReads, tokenFromCookieHeader, verifySession } from "@/lib/session";
 
 /**
  * The console half of the access posture, for the Access Control screen.
@@ -15,19 +16,19 @@ import { COOKIE_NAME, loginRequired, publicReads, verifySession } from "@/lib/se
  * lib/proxy-policy.ts, which the proxy itself enforces.
  */
 export async function GET(request: Request) {
-  const header = request.headers.get("cookie") ?? "";
-  const match = header
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${COOKIE_NAME}=`));
-  const session = await verifySession(match ? match.slice(COOKIE_NAME.length + 1) : null);
+  const session = await verifySession(tokenFromCookieHeader(request.headers.get("cookie")));
 
   return NextResponse.json({
     auth: {
       login_required: loginRequired(),
       public_reads: publicReads(),
       // Epoch seconds, under the same name the session route uses.
-      session: session ? { email: session.email, exp: session.exp } : null,
+      session: session
+        ? { email: session.email, exp: session.exp, amr: session.amr ?? null }
+        : null,
+      // Whether the login page and the board should offer the judge button.
+      // A boolean only: which account it signs in as is not the screen's business.
+      one_click_judge: oneClickJudge() !== null,
     },
     proxy: {
       reads: describedReads(),

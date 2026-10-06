@@ -2,8 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Ban, Check, RotateCw, Search, SkipForward, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
+import { HelpDot } from "@/components/help/HelpDot";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { EmptyState, ErrorState } from "@/components/layout/States";
 import { Button } from "@/components/ui/button";
@@ -25,8 +27,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fetchAuditTrail, queryKeys } from "@/lib/api";
+import { auditActor, auditActorAuth } from "@/lib/audit-actor";
+import { caseHref } from "@/lib/case-links";
 import { actionLabel, auditStatusLabel } from "@/lib/format";
 import { useTenant } from "@/lib/tenant-context";
+import { CaseParamListener } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
 
 const ALL = "all";
@@ -54,6 +59,7 @@ const ACTIONS = [
   "publish_delegation_boundary",
   "revoke_delegation_boundary",
   "update_prefilter_rules",
+  "board_reset",
 ];
 
 const STATUSES = ["done", "denied", "skipped", "failed"];
@@ -128,8 +134,21 @@ export default function AuditTrailPage() {
     setCursor(null);
   }
 
+  // ?case=<id> opens the trail filtered to that case -- the link a decision's
+  // confirmation offers. Only ever sets a filter; clearing it is the user's call.
+  const filterFromUrl = useCallback((linked: string | null) => {
+    if (!linked) return;
+    setCaseIdInput(linked);
+    setAction(null);
+    setStatus(null);
+  }, []);
+
   return (
     <>
+      <Suspense fallback={null}>
+        <CaseParamListener onChange={filterFromUrl} />
+      </Suspense>
+
       <PageHeading title="Audit Trail">
         Every action the system took, including the ones it was refused. A denial
         is recorded exactly like a success — a system that silently drops
@@ -137,6 +156,7 @@ export default function AuditTrailPage() {
       </PageHeading>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <HelpDot id="audit.trail" />
         <div className="relative min-w-0 flex-1 sm:max-w-xs">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint"
@@ -219,7 +239,7 @@ export default function AuditTrailPage() {
           disabled={trail.isFetching}
           className="h-8 border-white/10 text-[12px]"
         >
-          <RotateCw className={cn("mr-1 size-3.5", trail.isFetching && "animate-spin")} />
+          <RotateCw className={cn("mr-1 size-3.5 motion-reduce:animate-none", trail.isFetching && "animate-spin")} />
           Refresh
         </Button>
       </div>
@@ -256,6 +276,9 @@ export default function AuditTrailPage() {
                   Case
                 </TableHead>
                 <TableHead className="h-9 text-[11px] uppercase tracking-wide text-faint">
+                  Who
+                </TableHead>
+                <TableHead className="h-9 text-[11px] uppercase tracking-wide text-faint">
                   Status
                 </TableHead>
                 <TableHead className="h-9 text-[11px] uppercase tracking-wide text-faint">
@@ -279,8 +302,13 @@ export default function AuditTrailPage() {
                     {r.case_id === "-" ? (
                       <span className="text-faint">system</span>
                     ) : (
-                      r.case_id
+                      <Link href={caseHref(r.case_id)} className="hover:text-white hover:underline">
+                        {r.case_id}
+                      </Link>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <WhoCell actor={auditActor(r)} auth={auditActorAuth(r)} />
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={r.status} />
@@ -320,6 +348,30 @@ export default function AuditTrailPage() {
         </span>
       </div>
     </>
+  );
+}
+
+/**
+ * The person (or service) a row names, and a tag when they signed in with the
+ * one-click judge button -- so a decision taken from the public guest session
+ * reads differently on the record from one taken with a password.
+ */
+function WhoCell({ actor, auth }: { actor: string | null; auth: string | null }) {
+  if (!actor) return <span className="text-[11px] text-faint">agent</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="max-w-[14rem] truncate font-mono text-[11px] text-white/85" title={actor}>
+        {actor}
+      </span>
+      {auth === "one_click" && (
+        <span
+          className="shrink-0 rounded-full border border-brand/30 bg-brand/10 px-1.5 text-[10px] text-brand"
+          title="Signed in with the one-click judge button"
+        >
+          one-click
+        </span>
+      )}
+    </span>
   );
 }
 

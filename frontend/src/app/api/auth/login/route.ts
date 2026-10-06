@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifyOperator } from "@/lib/operators";
+import { clientIp, slidingWindowLimiter } from "@/lib/rate-limit";
 import { cookieOptions, COOKIE_NAME, signSession, TTL_SECONDS } from "@/lib/session";
 
 /**
@@ -13,46 +14,11 @@ export const runtime = "nodejs";
 
 const REJECTED = "Email or password is incorrect.";
 
-// ---------------------------------------------------------------------------
-// In-memory sliding-window rate limiter.
-//
 // Keyed on (IP, email): per-IP so a single source cannot exhaust the CPU with
 // PBKDF2 iterations, and per-email so a distributed credential-stuff against
 // one account is also bounded. Both halves must be present, because email-only
 // keys let an attacker lock out a legitimate user by spraying their address.
-//
-// Per-instance (not shared across Cloud Run instances), same trade-off as the
-// backend's memory:// limiter -- the real ceiling is LIMIT * instance count.
-// ---------------------------------------------------------------------------
-const WINDOW_MS = 60_000;
-const LIMIT = 5;
-const attempts = new Map<string, number[]>();
-
-function isRateLimited(ip: string, email: string): boolean {
-  const now = Date.now();
-  const key = `${ip}|${email.toLowerCase()}`;
-  let timestamps = attempts.get(key);
-  if (!timestamps) {
-    timestamps = [];
-    attempts.set(key, timestamps);
-  }
-  // Evict expired entries.
-  while (timestamps.length > 0 && timestamps[0] <= now - WINDOW_MS) {
-    timestamps.shift();
-  }
-  if (timestamps.length >= LIMIT) return true;
-  timestamps.push(now);
-  return false;
-}
-
-// Periodic cleanup so the map does not grow unbounded on a long-lived instance.
-setInterval(() => {
-  const cutoff = Date.now() - WINDOW_MS;
-  for (const [key, ts] of attempts) {
-    while (ts.length > 0 && ts[0] <= cutoff) ts.shift();
-    if (ts.length === 0) attempts.delete(key);
-  }
-}, WINDOW_MS);
+const isRateLimited = slidingWindowLimiter(60_000, 5);
 
 export async function POST(request: Request) {
   let email = "";
@@ -75,9 +41,7 @@ export async function POST(request: Request) {
   // enumeration via timing) is also skipped, but timing on a 429 is not a
   // signal because the response is instant regardless of whether the email
   // exists, and the status code already says "you are being throttled".
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  if (isRateLimited(ip, email)) {
+  if (isRateLimited(`${clientIp(request)}|${email.toLowerCase()}`)) {
     return NextResponse.json(
       { error: "Too many login attempts. Try again in a minute." },
       { status: 429 },
@@ -89,7 +53,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: REJECTED }, { status: 401 });
   }
 
-  const token = await signSession(verified);
+  // A password sign-in, and the token says so: the board can only be cleared
+  // from a session carrying this claim.
+  const token = await signSession(verified, "password");
   if (!token) {
     return NextResponse.json(
       { error: "Sign-in is not configured on this server." },

@@ -16,7 +16,9 @@ import type { Tenant } from "@/lib/types";
 
 export function Header({ display }: { display?: Tenant }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-slate-950/70 backdrop-blur-xl">
+    // Sticky from lg up only. Below that the shell's own mobile bar is the sticky
+    // one, and two bars both pinned at top-0 slid this one underneath it.
+    <header className="relative z-30 border-b border-white/[0.08] bg-slate-950/70 backdrop-blur-xl lg:sticky lg:top-0">
       {/* Full width rather than a centred max-width container: the shell's
           sidebar already sets the content's left edge, and centring inside that
           put the header controls visibly out of line with the page below. */}

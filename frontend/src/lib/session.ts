@@ -49,7 +49,37 @@ export type Session = {
   email: string;
   /** Expiry, epoch seconds. */
   exp: number;
+  /**
+   * How the session was signed in. Absent on a token minted before the claim
+   * existed, and absent is never read as "password" -- see isPasswordSession.
+   */
+  amr?: SignInMethod;
 };
+
+/**
+ * The two ways in. A password proves the person holds a credential; one click
+ * proves only that someone pressed the public judge button. Both carry the
+ * account's role, and the few hard-to-undo actions ask which one it was.
+ *
+ * MUST MATCH src/vf_logistics/auth.py (PASSWORD_SESSION, ONE_CLICK_SESSION).
+ */
+export type SignInMethod = "password" | "one_click";
+
+const SIGN_IN_METHODS: ReadonlySet<string> = new Set(["password", "one_click"]);
+
+/** True only for a session that explicitly says it was signed in with a password. */
+export function isPasswordSession(session: Session | null | undefined): boolean {
+  return session?.amr === "password";
+}
+
+/** The raw `vf_session` token from a Cookie header, or null. */
+export function tokenFromCookieHeader(header: string | null | undefined): string | null {
+  const match = (header ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${COOKIE_NAME}=`));
+  return match ? match.slice(COOKIE_NAME.length + 1) : null;
+}
 
 function b64urlEncode(bytes: Uint8Array): string {
   let binary = "";
@@ -148,14 +178,22 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 /**
  * Mint a token for an operator. Returns null when no secret is configured, which
  * callers must surface as a server misconfiguration rather than a failed login.
+ *
+ * `amr` records how they signed in and is covered by the signature like the rest
+ * of the body. `ttlSeconds` lets the one-click route mint a shorter session.
  */
-export async function signSession(email: string): Promise<string | null> {
+export async function signSession(
+  email: string,
+  amr: SignInMethod,
+  ttlSeconds: number = TTL_SECONDS,
+): Promise<string | null> {
   const rawSecret = secret();
   if (!rawSecret) return null;
 
   const payload: Session = {
     email,
-    exp: Math.floor(Date.now() / 1000) + TTL_SECONDS,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+    amr,
   };
   const body = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)));
   const signature = await crypto.subtle.sign(
@@ -203,7 +241,16 @@ export async function verifySession(
       return null;
     }
     if (typeof session.email !== "string" || !session.email) return null;
-    return session;
+    // Rebuilt rather than returned as parsed, so an unexpected field in a
+    // signed body never rides along, and an unknown `amr` is dropped rather than
+    // passed on as if it meant something.
+    const amr =
+      typeof session.amr === "string" && SIGN_IN_METHODS.has(session.amr)
+        ? session.amr
+        : undefined;
+    return amr
+      ? { email: session.email, exp: session.exp, amr }
+      : { email: session.email, exp: session.exp };
   } catch {
     return null;
   }

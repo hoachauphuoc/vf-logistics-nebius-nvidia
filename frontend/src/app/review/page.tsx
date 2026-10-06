@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Lock, LogIn, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 
 import { PageHeading } from "@/components/layout/PageHeading";
 import { EmptyState, ErrorState } from "@/components/layout/States";
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toaster";
 import {
   decideReview,
   fetchCase,
@@ -40,7 +41,9 @@ import {
 } from "@/lib/format";
 import { type Identity, lockReason, roleLabel, useIdentity } from "@/lib/identity";
 import { helpFor } from "@/lib/help-content";
+import { caseHref } from "@/lib/case-links";
 import { useTenant } from "@/lib/tenant-context";
+import { CaseParamListener, writeCaseParam } from "@/lib/url-state";
 import {
   HUMAN_ACTION_RESULT,
   type Case,
@@ -59,7 +62,23 @@ export default function ReviewQueuePage() {
   const queryClient = useQueryClient();
 
   const [cursor, setCursor] = useState<string | null>(null);
+  // Mirrored into ?case=, so a case can be linked to from the board, a toast or
+  // the audit trail, and survives a refresh.
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  const select = useCallback((caseId: string) => {
+    setSelectedId(caseId);
+    writeCaseParam(caseId);
+    // On a phone the panel is below the whole queue, so picking a case appeared
+    // to do nothing. Scrolled into view only when the layout is one column.
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      requestAnimationFrame(() =>
+        panelRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }),
+      );
+    }
+  }, []);
 
   const queue = useQuery({
     queryKey: [...queryKeys.reviewQueue(tenant.id), cursor ?? "first"],
@@ -91,6 +110,12 @@ export default function ReviewQueuePage() {
     retry: false,
   });
 
+  // A case linked to by id may not be on the page of the queue that is loaded --
+  // or may no longer be awaiting anyone. The fetched document stands in for the
+  // summary then, and the panel says what state the case is in.
+  const shown =
+    selected ?? (detail.data && detail.data.case_id === selectedId ? detail.data : null);
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue(tenant.id) });
     queryClient.invalidateQueries({ queryKey: ["case", tenant.id] });
@@ -110,6 +135,10 @@ export default function ReviewQueuePage() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <CaseParamListener onChange={setSelectedId} />
+      </Suspense>
+
       <PageHeading title="Review Queue">
         Cases the agent could not close on its own. Nothing leaves these states
         without a named reviewer and, for anything other than a plain release, a
@@ -117,7 +146,13 @@ export default function ReviewQueuePage() {
       </PageHeading>
 
       <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
-        <section className="min-w-0">
+        <section className="min-w-0" aria-label="Cases awaiting a decision">
+          <div className="mb-2 flex items-center gap-1.5">
+            <h2 className="text-[12px] font-medium text-white">
+              Waiting on a person
+            </h2>
+            <HelpDot id="review.queue" />
+          </div>
           {queue.isLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -135,7 +170,7 @@ export default function ReviewQueuePage() {
                 <CaseCard
                   key={c.case_id}
                   case={c}
-                  onOpen={setSelectedId}
+                  onOpen={select}
                   selected={c.case_id === selectedId}
                 />
               ))}
@@ -171,15 +206,22 @@ export default function ReviewQueuePage() {
           </div>
         </section>
 
-        <section className="min-w-0">
-          {selected === null ? (
-            <EmptyState title="Pick a case">
-              The decision form, the findings behind the score and the scanned
-              paperwork appear here.
-            </EmptyState>
+        <section className="min-w-0 scroll-mt-20" ref={panelRef} aria-label="Selected case">
+          {shown === null ? (
+            selectedId !== null && detail.isLoading ? (
+              <Skeleton className="h-48 rounded-xl bg-white/[0.04]" />
+            ) : selectedId !== null && detail.isError ? (
+              <ErrorState error={detail.error} />
+            ) : (
+              <EmptyState title="Pick a case">
+                The decision form, the findings behind the score and the scanned
+                paperwork appear here.
+              </EmptyState>
+            )
           ) : (
             <ReviewPanel
-              summary={selected}
+              key={shown.case_id}
+              summary={shown}
               detail={detail.data}
               detailLoading={detail.isLoading}
               detailError={detail.error}
@@ -220,9 +262,10 @@ function Paperwork({ case: c, identity }: { case: Case; identity: Identity | nul
 
   return (
     <div className="bento-card overflow-hidden p-0">
-      <h3 className="px-4 pb-2 pt-4 text-[12px] font-medium text-white">
-        Paperwork
-      </h3>
+      <div className="flex items-center gap-1.5 px-4 pb-2 pt-4">
+        <h3 className="text-[12px] font-medium text-white">Paperwork</h3>
+        <HelpDot id="review.paperwork" />
+      </div>
 
       {uri && locked ? (
         <div className="flex items-start gap-2 border-t border-white/[0.06] px-4 py-5">
@@ -352,11 +395,12 @@ function ReviewPanel({
   const identityQuery = useIdentity();
   const identity = identityQuery.data;
   const decideLock = lockReason(identity, "reviewer");
+  const toast = useToast();
 
   const decide = useMutation({
     mutationFn: (action: HumanAction) =>
       decideReview({ caseId: c.case_id, action, note }),
-    onSuccess: (result) => {
+    onSuccess: (result, action) => {
       // The backend answers {ok: false, error} with a 400 for a refused
       // decision, which is a normal outcome rather than a transport failure. So
       // it lands in onSuccess and has to be checked, not assumed.
@@ -367,6 +411,15 @@ function ReviewPanel({
       setFormError(null);
       setNote("");
       onDecided();
+      // The case leaves the queue on success, which on its own looks the same as
+      // the click doing nothing. Say what was recorded, and where to see it.
+      toast({
+        title: `${ACTION_LABEL[action]} recorded for ${c.shipment_id || c.case_id}`,
+        description: identity?.acts_for_a_person
+          ? `Written to the audit trail under ${identity.email}.`
+          : "Written to the audit trail.",
+        action: { label: "See it on the audit trail", href: `/audit?case=${encodeURIComponent(c.case_id)}` },
+      });
     },
     onError: (error) => {
       setFormError(error instanceof Error ? error.message : String(error));
@@ -376,8 +429,16 @@ function ReviewPanel({
   const deep = useMutation({
     mutationFn: () => requestDeepReview(c.case_id),
     onSuccess: (result) => {
-      if (!result.ok) setFormError(result.error ?? "Deep review was refused.");
-      else onDecided();
+      if (!result.ok) {
+        setFormError(result.error ?? "Deep review was refused.");
+        return;
+      }
+      onDecided();
+      toast({
+        title: "Deep review finished",
+        description: "The Senior Auditor's verdict is shown below the decision form.",
+        action: { label: "Open the full trace", href: caseHref(c.case_id) },
+      });
     },
     onError: (error) => {
       setFormError(error instanceof Error ? error.message : String(error));
@@ -469,7 +530,15 @@ function ReviewPanel({
             )}
 
             {findings.length > 0 && (
-              <ul className="mt-3 space-y-1.5">
+              <div className="mt-3 flex items-center gap-1.5">
+                <p className="text-[10.5px] uppercase tracking-wide text-dim">
+                  Findings &middot; each sets a minimum score
+                </p>
+                <HelpDot id="review.findings" />
+              </div>
+            )}
+            {findings.length > 0 && (
+              <ul className="mt-1.5 space-y-1.5">
                 {findings.map((f, i) => (
                   <li
                     key={`${f.code}-${i}`}
@@ -592,7 +661,10 @@ function ReviewPanel({
           </div>
 
           {formError && (
-            <p className="rounded-md border border-risk-critical/30 bg-risk-critical/[0.07] px-2.5 py-2 text-[11.5px] leading-relaxed text-risk-critical">
+            <p
+              role="alert"
+              className="rounded-md border border-risk-critical/30 bg-risk-critical/[0.07] px-2.5 py-2 text-[11.5px] leading-relaxed text-risk-critical"
+            >
               {formError}
             </p>
           )}
@@ -616,7 +688,7 @@ function ReviewPanel({
                   )}
                 >
                   {decide.isPending && pending === action && (
-                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none" />
                   )}
                   {ACTION_LABEL[action]}
                 </Button>
@@ -628,20 +700,25 @@ function ReviewPanel({
               size="sm"
               variant="outline"
               // Guarded against a double submit as well as confirmed: this spends
-              // Nemotron Super tokens, and a second click while the first is in
+              // Nemotron 3 Ultra tokens, and a second click while the first is in
               // flight bills the tenant twice for the same answer.
               disabled={deep.isPending}
               onClick={() => setConfirmDeep(true)}
               className="ml-auto h-8 border-brand/40 text-[12px] text-brand hover:bg-brand/10"
             >
               {deep.isPending ? (
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none" />
               ) : (
                 <Sparkles className="mr-1.5 size-3.5" />
               )}
-              Deep review
+              {deep.isPending ? "Deep review running" : "Deep review"}
             </Button>
           </div>
+          {deep.isPending && (
+            <p className="text-[11px] text-dim" role="status">
+              The Senior Auditor is debating the case. This usually takes a minute or two.
+            </p>
+          )}
         </div>
         )}
       </div>
@@ -705,9 +782,10 @@ function ReviewPanel({
               Run a deep review?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-[12.5px] leading-relaxed text-dim">
-              Nemotron Super re-reads the junior analyst&rsquo;s assessment and
-              may run further searches. It is the most expensive operation in the
-              system and it is billed to this tenant.
+              The Senior Auditor, on Nemotron 3 Ultra, re-reads the junior
+              analyst&rsquo;s assessment and may run further searches. It is the most
+              expensive operation in the system, takes a minute or two, and is
+              billed to this tenant.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

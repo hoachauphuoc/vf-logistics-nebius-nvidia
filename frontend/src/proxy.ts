@@ -31,6 +31,9 @@ const PUBLIC_PATHS = new Set([
   "/login",
   "/api/auth/login",
   "/api/auth/logout",
+  // The one-click judge button. A POST with no session by definition -- it is
+  // what mints one -- and it answers 404 unless VF_ONE_CLICK_JUDGE turns it on.
+  "/api/auth/judge",
   // Terms a customer can only read after signing in are terms they cannot read
   // before agreeing to them.
   "/legal",

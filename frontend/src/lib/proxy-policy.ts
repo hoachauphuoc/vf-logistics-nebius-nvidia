@@ -15,10 +15,6 @@
  *
  * What is deliberately NOT proxied, and why:
  *
- * - `orchestrator/reset` wipes every case, event and audit record for the
- *   tenant. There is no undo, and no screen needs it -- it exists for clearing a
- *   demo from a terminal. A button for it on a page a customer can open is a
- *   button that eventually gets clicked.
  * - `orchestrator/drain` and `orchestrator/tick` advance the pipeline. The
  *   Pipeline screen already advances it as a side effect of polling
  *   `orchestrator/state?drain=1`, and a second explicit advancer racing the
@@ -29,6 +25,13 @@
  * - `config/model` (POST) changes which model every subsequent audit runs on, for
  *   the whole service rather than per tenant.
  * - `demo` spends Nebius tokens and Tavily credits on a GET.
+ *
+ * `orchestrator/reset` used to head that list. It is proxied now, for the
+ * DevOps screen's Clear board, and only ever for a PASSWORD sign-in: the BFF
+ * refuses it from any other session (PASSWORD_ONLY_POST below) and Flask refuses
+ * it again (auth.require_password_session). It clears the tenant's cases and
+ * events; the audit trail is append-only and survives, and the reset is itself
+ * written to it.
  */
 
 /** Reads. Cheap, idempotent, and safe to poll. */
@@ -102,7 +105,18 @@ export const ALLOWED_POST = new Set([
   // upstream; there is no `security/redteam` route despite the old dashboard's
   // label for the panel.
   "security/screen",
+  // DevOps: Clear board. Password sign-ins only -- see PASSWORD_ONLY_POST.
+  "orchestrator/reset",
 ]);
+
+/**
+ * Writes a session must have signed in with a PASSWORD to use.
+ *
+ * The one-click judge button is public and its account is an admin, so for these
+ * the role is not enough. Checked in the BFF so a refusal costs no upstream call
+ * and reads well in the UI; Flask enforces the same rule independently.
+ */
+export const PASSWORD_ONLY_POST = new Set(["orchestrator/reset"]);
 
 export const ALLOWED_PUT = new Set(["governance/prefilter-rules"]);
 

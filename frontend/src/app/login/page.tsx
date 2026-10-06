@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, MousePointerClick, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -8,6 +8,18 @@ import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { signInAsGuestJudge, useConsolePosture } from "@/lib/console-posture";
+
+/**
+ * The published demo accounts, offered as click-to-fill. Addresses only: the
+ * passwords are in the submission's private testing instructions, and a login
+ * page that printed working credentials would make the audit trail's attribution
+ * meaningless.
+ */
+const DEMO_ACCOUNTS = [
+  { email: "judge@vf-logistics.demo", role: "Governance admin" },
+  { email: "reviewer@vf-logistics.demo", role: "Reviewer only" },
+] as const;
 
 /**
  * The console's sign-in screen.
@@ -39,7 +51,7 @@ function Frame({ children }: { children?: React.ReactNode }) {
     <div className="flex min-h-svh flex-col items-center justify-center gap-3 px-4 py-12">
       <div className="bento-card w-full max-w-sm p-7">
         <div className="flex items-center gap-2.5">
-          <span className="grid size-9 place-items-center rounded-lg bg-indigo-500/10 text-indigo-300">
+          <span className="grid size-9 place-items-center rounded-lg bg-brand/10 text-brand">
             <ShieldCheck className="size-4" />
           </span>
           <div className="min-w-0">
@@ -65,8 +77,8 @@ function Frame({ children }: { children?: React.ReactNode }) {
             the backend govern it. Billing and the archived original documents are not
             -- the API reserves them for operators and reviewers, and the console no
             longer lends a visitor its key to get round that. */}
-        <p className="mt-5 rounded-md border border-sky-500/20 bg-sky-500/[0.07] px-2.5 py-2 text-[11px] leading-relaxed text-sky-100/80">
-          <span className="font-medium text-sky-100">
+        <p className="mt-5 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-dim">
+          <span className="font-medium text-white">
             You do not need an account to look around.
           </span>{" "}
           The board, every case trace, the review queue and the audit trail are public.
@@ -112,10 +124,12 @@ function Frame({ children }: { children?: React.ReactNode }) {
 
 function LoginForm() {
   const params = useSearchParams();
+  const posture = useConsolePosture().data;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [oneClickBusy, setOneClickBusy] = useState(false);
 
   /**
    * Where to land after signing in.
@@ -163,60 +177,121 @@ function LoginForm() {
     }
   }
 
+  async function oneClick() {
+    setOneClickBusy(true);
+    setError(null);
+    const message = await signInAsGuestJudge(next);
+    // Only reached on failure; success navigates away.
+    setError(message || null);
+    setOneClickBusy(false);
+  }
+
+  const offerOneClick = posture?.auth.one_click_judge === true;
+
   return (
-    <form onSubmit={submit} className="mt-5 space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="email" className="text-[12px] text-dim">
-          Email
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          autoComplete="username"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          disabled={busy}
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="password" className="text-[12px] text-dim">
-          Password
-        </Label>
-        <Input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          disabled={busy}
-        />
-      </div>
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-rose-500/25 bg-rose-500/10 px-2.5 py-2 text-[12px] text-rose-200"
-        >
-          {error}
-        </p>
+    <div className="mt-5">
+      {/* The judge's way in, first. A judge with three minutes should not have to
+          find a password in a private field to try the product; this signs them
+          in as a guest account with every right except clearing the board. */}
+      {offerOneClick && (
+        <div className="mb-5">
+          <Button
+            type="button"
+            className="h-10 w-full text-[13px]"
+            onClick={oneClick}
+            disabled={oneClickBusy || busy}
+          >
+            {oneClickBusy ? (
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <MousePointerClick className="size-4" />
+            )}
+            Continue as guest judge
+          </Button>
+          <p className="mt-2 text-[11px] leading-relaxed text-dim">
+            One click, no password. You can inject shipments, decide cases and
+            publish policy; clearing the board needs a password sign-in below.
+          </p>
+          <div className="mt-4 flex items-center gap-2 text-[11px] text-dim" aria-hidden>
+            <span className="h-px flex-1 bg-white/10" />
+            or sign in with a password
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+        </div>
       )}
 
-      <Button type="submit" className="w-full" disabled={busy || !email || !password}>
-        {busy && <Loader2 className="size-3.5 animate-spin" />}
-        {busy ? "Signing in" : "Sign in"}
-      </Button>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-[12px] text-dim">
+            Email
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={busy}
+          />
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {DEMO_ACCOUNTS.map((account) => (
+              <button
+                key={account.email}
+                type="button"
+                onClick={() => setEmail(account.email)}
+                aria-label={`Use ${account.email} (${account.role})`}
+                className="rounded-full border border-white/10 px-2 py-0.5 text-[10.5px] text-dim transition-colors hover:border-white/25 hover:text-white focus-visible:outline-2 focus-visible:outline-brand"
+              >
+                {account.email.split("@")[0]} · {account.role}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <p className="text-[11px] leading-relaxed text-dim">
-        Every decision you record here is written to the audit trail under this
-        address. By signing in you accept the{" "}
-        <a href="/legal" className="text-brand hover:underline">
-          terms and data handling policy
-        </a>
-        .
-      </p>
-    </form>
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-[12px] text-dim">
+            Password
+          </Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={busy}
+          />
+        </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md border border-risk-critical/30 bg-risk-critical/10 px-2.5 py-2 text-[12px] text-risk-critical"
+          >
+            {error}
+          </p>
+        )}
+
+        <Button
+          type="submit"
+          variant={offerOneClick ? "outline" : "default"}
+          className="w-full"
+          disabled={busy || oneClickBusy || !email || !password}
+        >
+          {busy && <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />}
+          {busy ? "Signing in" : "Sign in"}
+        </Button>
+
+        <p className="text-[11px] leading-relaxed text-dim">
+          Every decision you record here is written to the audit trail under this
+          address. By signing in you accept the{" "}
+          <a href="/legal" className="text-brand hover:underline">
+            terms and data handling policy
+          </a>
+          .
+        </p>
+      </form>
+    </div>
   );
 }

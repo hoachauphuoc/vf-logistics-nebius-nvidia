@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type Identity, holds, lockReason, roleLabel } from "./identity";
+import { type Identity, holds, isOneClick, lockReason, passwordLockReason, roleLabel } from "./identity";
 
 function identity(overrides: Partial<Identity>): Identity {
   return {
@@ -65,5 +65,34 @@ describe("roleLabel", () => {
   it("labels the known roles and treats no role as public", () => {
     expect(roleLabel("governance_admin")).toBe("Governance admin");
     expect(roleLabel(null)).toBe("Public");
+  });
+});
+
+describe("passwordLockReason", () => {
+  const admin = (session_method: Identity["session_method"]) =>
+    identity({
+      email: "guest-judge@vf-logistics.demo",
+      authenticated_by: "console_session",
+      acts_for_a_person: true,
+      role: "governance_admin",
+      grants: ["viewer", "reviewer", "operator", "governance_admin"],
+      session_method,
+    });
+
+  it("locks a one-click session and says how to unlock it", () => {
+    expect(passwordLockReason(admin("one_click"))).toMatch(/one click/i);
+    expect(passwordLockReason(admin("one_click"))).toMatch(/password/i);
+    expect(isOneClick(admin("one_click"))).toBe(true);
+  });
+
+  it("locks a session whose method is unknown, the way the API does", () => {
+    expect(passwordLockReason(admin("unknown"))).toMatch(/password/i);
+    expect(passwordLockReason(admin(undefined))).toMatch(/password/i);
+  });
+
+  it("opens for a password session, and has nothing to say without a session", () => {
+    expect(passwordLockReason(admin("password"))).toBeNull();
+    expect(passwordLockReason(identity({ authenticated_by: "api_key" }))).toBeNull();
+    expect(passwordLockReason(null)).toBeNull();
   });
 });

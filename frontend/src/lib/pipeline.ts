@@ -64,6 +64,17 @@ export function columnFor(state: CaseState): CaseState {
 }
 
 /**
+ * The states a reviewer can decide: MUST MATCH orchestrator.AWAITING_HUMAN, which
+ * is what the decision route checks. DEAD_LETTER sits in the awaiting column but
+ * is not here -- the route refuses to decide it, so offering to would be a lie.
+ */
+export const AWAITING_STATES: ReadonlySet<string> = new Set([
+  "PENDING_HUMAN",
+  "HELD_FOR_REVIEW",
+  "ESCALATED",
+]);
+
+/**
  * The raw states that fold into each column.
  *
  * Derived from COLUMN_OF rather than written out, so the two cannot disagree --

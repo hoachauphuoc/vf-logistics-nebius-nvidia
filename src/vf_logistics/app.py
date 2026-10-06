@@ -33,6 +33,7 @@ from vf_logistics.auth import (
     require_reviewer,
     require_operator,
     require_governance_admin,
+    require_password_session,
     get_auth_context,
 )
 
@@ -1196,6 +1197,7 @@ def governance_publish():
             author = str(body.get("author") or "").strip()
         if not author:
             return jsonify({"error": "an authenticated identity is required to publish a boundary"}), 403
+        author_auth = getattr(get_auth_context(), "actor_auth", None)
 
         # An explicit null/empty permissions used to fall through to the
         # permissive default template, so a caller trying to strip the agent's
@@ -1216,7 +1218,9 @@ def governance_publish():
             )
         note = str(body.get("note") or "").strip()
 
-        boundary = _on_worker(governance.publish_boundary(permissions, author, note, tenant_id=_tenant()))
+        boundary = _on_worker(governance.publish_boundary(
+            permissions, author, note, tenant_id=_tenant(), author_auth=author_auth,
+        ))
         return jsonify({"published": True, "boundary": boundary}), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -1281,7 +1285,10 @@ def governance_revoke():
             return jsonify({"error": "an authenticated identity is required to revoke a boundary"}), 403
         note = str(body.get("note") or "").strip()
 
-        result = _on_worker(governance.revoke_boundary(author, note, tenant_id=_tenant()))
+        result = _on_worker(governance.revoke_boundary(
+            author, note, tenant_id=_tenant(),
+            author_auth=context.actor_auth if context is not None else None,
+        ))
         readiness = _on_worker(governance.agent_readiness(tenant_id=_tenant()))
         return jsonify({
             "revoked": result["revoked"],
@@ -1584,6 +1591,7 @@ def update_prefilter_rules():
             "status": "done",
             "detail": {
                 "author": author,
+                "actor_auth": context.actor_auth if context else None,
                 # What moved, not just what was submitted. See prefilter_diff.
                 "changed": verifier.prefilter_diff(before, after),
                 "new_rules": payload,
@@ -1693,8 +1701,10 @@ def review_decide(case_id: str):
 
         if context is not None and context.acts_for_a_person:
             reviewer = context.email
+            actor_auth: str | None = context.actor_auth
         else:
             reviewer = str(body.get("reviewer") or "").strip()
+            actor_auth = context.actor_auth if context is not None else None
 
         result = _on_worker(orchestrator.human_decide(
             case_id,
@@ -1702,6 +1712,7 @@ def review_decide(case_id: str):
             reviewer,
             str(body.get("note") or "").strip(),
             tenant_id=_tenant(),
+            actor_auth=actor_auth,
         ))
         return jsonify(result), (200 if result.get("ok") else 400)
     except Exception as e:
@@ -1953,15 +1964,39 @@ def bucket_sweep():
 
 @app.route("/api/v1/orchestrator/reset", methods=["POST"])
 @require_operator
+# Operator is not enough on its own: a one-click judge session holds admin, and the
+# button that mints it is public. Clearing the board is the one action a stranger
+# could take that the next judge would find undone, so it asks for a password
+# sign-in. A script holding the key alone still passes -- the seeding tools need it.
+@require_password_session
 # Low not for cost but for blast radius: this clears the tenant's board, and
 # nothing legitimate needs to do that repeatedly.
 @limiter.limit("5 per minute")
 def orchestrator_reset():
-    """Clear all cases, events and audit records so a demo starts clean."""
+    """
+    Clear the tenant's cases and events so a demo starts clean.
+
+    The audit trail is NOT cleared -- it is append-only, and store.reset() keeps it
+    by design. A reset is itself written to it, naming who cleared how many cases
+    and how they signed in, because "the board was empty when I arrived" is a
+    question the trail should be able to answer.
+    """
     try:
-        from vf_logistics.store import get_store
+        from vf_logistics.store import get_store, new_id, utcnow
 
         removed = _on_worker(get_store().reset(tenant_id=_tenant()))
+        context = get_auth_context()
+        actor = context.email if context is not None else ""
+        _on_worker(get_store().add_audit({
+            "audit_id": new_id("audit"),
+            "case_id": "-",
+            "action": "board_reset",
+            "status": "done",
+            "actor": actor,
+            "actor_auth": context.actor_auth if context is not None else None,
+            "detail": {"cleared": removed},
+            "at": utcnow(),
+        }, tenant_id=_tenant()))
         return jsonify({"cleared": removed})
     except Exception as e:
         return _safe_error(e)

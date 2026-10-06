@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AuditDetailSheet } from "@/components/dashboard/AuditDetailSheet";
 import { AuditLogsTable } from "@/components/dashboard/AuditLogsTable";
 import { KpiCards } from "@/components/dashboard/KpiCards";
+import { HelpDot } from "@/components/help/HelpDot";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { fetchAudits, fetchUsage, queryKeys } from "@/lib/api";
 import { useIdentity } from "@/lib/identity";
@@ -64,6 +65,10 @@ export default function RiskRadarPage() {
           usageError={usage.error}
         />
 
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-[12px] font-medium text-white">Completed audits</h2>
+          <HelpDot id="radar.audits" />
+        </div>
         <AuditLogsTable
           audits={rows}
           loading={audits.isLoading}

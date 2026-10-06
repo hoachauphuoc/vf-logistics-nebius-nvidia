@@ -75,6 +75,23 @@ CONSOLE_SESSION_HEADER = "X-VF-Session"
 # millisecond-versus-second unit error would produce.
 MAX_SESSION_LIFETIME_SECONDS = 48 * 60 * 60
 
+# How a console session was signed in, carried in the token's `amr` claim (the
+# name OpenID Connect uses for "authentication methods references").
+#
+# Two ways in exist. A password sign-in proves the person holds a credential; a
+# one-click sign-in, offered to hackathon judges, proves only that someone pressed a
+# public button. Both name an account and both get that account's role -- but the
+# few actions that are hard to undo ask which of the two it was. See
+# require_password_session().
+#
+# Anything else, including a token minted before the claim existed, reads as
+# UNKNOWN_SESSION, and UNKNOWN is treated like one-click: a missing claim must not
+# be the cheapest way to look like a password.
+PASSWORD_SESSION = "password"
+ONE_CLICK_SESSION = "one_click"
+UNKNOWN_SESSION = "unknown"
+_SESSION_METHODS = frozenset({PASSWORD_SESSION, ONE_CLICK_SESSION})
+
 
 def console_session_secret() -> str | None:
     """
@@ -96,8 +113,14 @@ def _b64url_decode(text: str) -> bytes:
 
 
 def _console_session_email() -> str | None:
+    """The verified email from a forwarded console session, or None."""
+    claims = _console_session_claims()
+    return claims[0] if claims else None
+
+
+def _console_session_claims() -> tuple[str, str] | None:
     """
-    The verified email from a forwarded console session, or None.
+    The verified (email, sign-in method) from a forwarded console session, or None.
 
     None covers every failure indistinguishably: header absent, no secret
     configured, malformed token, bad signature, expired, no email. This function
@@ -105,10 +128,14 @@ def _console_session_email() -> str | None:
     refuses a keyed request whose session fails, because the session is what
     decides that request's role.
 
+    The method is PASSWORD_SESSION, ONE_CLICK_SESSION or UNKNOWN_SESSION. An
+    unrecognised or absent `amr` is not a failure -- the session still names a
+    person -- it just never counts as a password sign-in.
+
     MUST MATCH frontend/src/lib/session.ts, which mints these:
 
         token   = b64url(json_payload) + "." + b64url(hmac_sha256(secret, body))
-        payload = {"email": str, "exp": int}   # exp is epoch SECONDS
+        payload = {"email": str, "exp": int, "amr": str}   # exp is epoch SECONDS
 
     The HMAC covers the base64url body text, not the decoded JSON, so neither side
     has to agree on key order or whitespace when re-serialising.
@@ -164,7 +191,10 @@ def _console_session_email() -> str | None:
     email = claims.get("email")
     if not isinstance(email, str) or not email.strip():
         return None
-    return email.strip().lower()
+
+    amr = claims.get("amr")
+    method = amr if isinstance(amr, str) and amr in _SESSION_METHODS else UNKNOWN_SESSION
+    return email.strip().lower(), method
 
 
 class Role(str, Enum):
@@ -288,6 +318,10 @@ class AuthContext:
     # True when a verified console session named the person, so `roles` came from
     # the role lists rather than from the key alone. Read by whoami.
     via_session: bool = False
+    # How that session was signed in -- PASSWORD_SESSION, ONE_CLICK_SESSION or
+    # UNKNOWN_SESSION. None when there is no session. Says nothing about the role,
+    # which still comes from the email; require_password_session() reads it.
+    session_method: str | None = None
 
     def has_role(self, required: Role) -> bool:
         """Check if user has the required role (including inherited)."""
@@ -333,6 +367,23 @@ class AuthContext:
         /internal/execute.
         """
         return self.email not in (SERVICE_IDENTITY_EMAIL, DEV_IDENTITY_EMAIL)
+
+    @property
+    def actor_auth(self) -> str:
+        """
+        How the actor got in, for the audit trail next to `actor`.
+
+        A session reports its sign-in method; otherwise the credential kind. Kept
+        apart from `email` on purpose: the email decides the role and the rate-limit
+        bucket, and a label folded into it would change both.
+        """
+        if self.via_session:
+            return self.session_method or UNKNOWN_SESSION
+        if self.via_api_key:
+            return "api_key"
+        if self.iap_subject is not None:
+            return "iap"
+        return "anonymous"
 
 
 def _verify_iap_jwt(token: str) -> dict[str, Any] | None:
@@ -490,7 +541,8 @@ def _api_key_context() -> AuthContext | None:
             via_api_key=True,
         )
 
-    acting = _console_session_email()
+    claims = _console_session_claims()
+    acting = claims[0] if claims else None
     if acting is None:
         if console_session_secret() is None:
             raise InvalidConsoleSession(
@@ -510,6 +562,7 @@ def _api_key_context() -> AuthContext | None:
         tenant_id=tenant.SINGLE_TENANT_ID,
         via_api_key=True,
         via_session=True,
+        session_method=claims[1] if claims else UNKNOWN_SESSION,
     )
 
 
@@ -742,6 +795,55 @@ def require_role(required_role: Role) -> Callable:
     return decorator
 
 
+def require_password_session(f: Callable) -> Callable:
+    """
+    Decorator: refuse a console session that was not signed in with a password.
+
+    Stacked UNDER a role decorator, so it narrows a route that already demands a
+    role rather than standing in for one:
+
+        @require_operator
+        @require_password_session
+
+    WHY NOT A ROLE. The thing being withheld is "operator, minus one route", which
+    is not nested inside anything -- and the role hierarchy, ROLE_RANK and the
+    narrowing logic all rely on roles being strictly nested. A per-route flag keeps
+    the hierarchy honest and puts the exception where it applies.
+
+    WHO PASSES. A session signed in with a password; a caller with no session at
+    all (a script holding the API key alone, which the seeding tools and the
+    network-defence tests rely on); and an IAP identity, which signed in through
+    the identity provider. WHO DOES NOT: a one-click session, and a session whose
+    method is unknown -- a token minted before the claim existed among them.
+
+    Records itself on the view as `_requires_password_session`, which
+    route_policy() publishes; functools.wraps carries it up through the role
+    decorator and the rate limiter.
+    """
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        ctx = get_auth_context()
+        if ctx is None:
+            error = authenticate_request()
+            if error:
+                return error
+            ctx = get_auth_context()
+
+        if ctx is not None and ctx.via_session and ctx.session_method != PASSWORD_SESSION:
+            return jsonify({
+                "error": "This action needs a password sign-in.",
+                "detail": (
+                    "You are signed in without a password. Sign in with your "
+                    "email and password to do this."
+                ),
+                "required_auth": PASSWORD_SESSION,
+                "session_method": ctx.session_method,
+            }), 403
+        return f(*args, **kwargs)
+    decorated._requires_password_session = True  # type: ignore[attr-defined]
+    return decorated
+
+
 def route_policy(flask_app: Any) -> list[dict[str, Any]]:
     """
     Every route with the role it actually enforces, read from the views.
@@ -760,6 +862,9 @@ def route_policy(flask_app: Any) -> list[dict[str, Any]]:
             "path": rule.rule,
             "methods": methods,
             "required_role": getattr(view, "_required_role", None),
+            "requires_password_session": bool(
+                getattr(view, "_requires_password_session", False)
+            ),
         })
     return sorted(rows, key=lambda r: (r["path"], r["methods"]))
 
@@ -808,6 +913,10 @@ def describe_identity(ctx: AuthContext) -> dict[str, Any]:
         "grants": [r.value for r in grants],
         "role_source": source,
         "tenant_id": ctx.tenant_id,
+        # How the session was signed in, or None without one. A separate field
+        # rather than a new `authenticated_by` value, so a client switching on
+        # that set keeps working.
+        "session_method": ctx.session_method,
     }
 
 

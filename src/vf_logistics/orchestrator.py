@@ -1807,6 +1807,7 @@ HUMAN_ACTIONS = {
 async def human_decide(
     case_id: str, action: str, reviewer: str, note: str,
     tenant_id: str | None = None,
+    actor_auth: str | None = None,
 ) -> dict[str, Any]:
     """
     Apply a named human's decision to a case.
@@ -1817,6 +1818,10 @@ async def human_decide(
     anonymously - `reviewer` is required, and a note is required for anything
     other than a plain release, because a refusal that nobody has to justify is
     not a control.
+
+    `actor_auth` is how the reviewer signed in (password, one_click, ...), written
+    beside their name so a decision taken from a public one-click session can be
+    told apart from one taken with a password.
     """
     store = get_store()
 
@@ -1911,6 +1916,7 @@ async def human_decide(
         # present in detail.reviewer all along, one level too deep for the column
         # that a customs officer actually looks at.
         "actor": reviewer,
+        "actor_auth": actor_auth,
         "detail": review,
         "at": utcnow(),
     }, tenant_id=tenant_id)

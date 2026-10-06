@@ -393,6 +393,10 @@ export interface AuditRecord {
   status: string;
   at: string;
   detail?: Record<string, unknown> | null;
+  /** Who acted, on the rows that name one (human decisions, board resets). */
+  actor?: string | null;
+  /** How they signed in: password, one_click, api_key... (auth.AuthContext.actor_auth). */
+  actor_auth?: string | null;
 }
 
 export interface WorkerStatus {

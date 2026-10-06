@@ -165,9 +165,34 @@ MUTATIONS = [
     (
         "a session that fails to verify is tolerated instead of refused",
         "src/vf_logistics/auth.py",
-        "    acting = _console_session_email()\n    if acting is None:",
-        "    acting = _console_session_email() or SERVICE_IDENTITY_EMAIL\n    if acting is None:",
+        "    acting = claims[0] if claims else None\n    if acting is None:",
+        "    acting = (claims[0] if claims else None) or SERVICE_IDENTITY_EMAIL\n    if acting is None:",
         "tests/test_console_session.py::TestForgedSessionsAreRefused",
+    ),
+    # --- One-click judge sign-in ---
+    # The button is public and its session is admin, so the only thing standing
+    # between a stranger and an empty board is the sign-in method. Each of these
+    # is one way that check could quietly stop meaning anything.
+    (
+        "a one-click session may clear the board",
+        "src/vf_logistics/auth.py",
+        "        if ctx is not None and ctx.via_session and ctx.session_method != PASSWORD_SESSION:",
+        "        if ctx is not None and ctx.via_session and ctx.session_method == UNKNOWN_SESSION:",
+        "tests/test_rbac.py::TestPasswordOnlyRoute",
+    ),
+    (
+        "a missing sign-in claim is read as a password",
+        "src/vf_logistics/auth.py",
+        "    method = amr if isinstance(amr, str) and amr in _SESSION_METHODS else UNKNOWN_SESSION",
+        "    method = amr if isinstance(amr, str) and amr in _SESSION_METHODS else PASSWORD_SESSION",
+        "tests/test_console_session.py::TestSignInMethod",
+    ),
+    (
+        "the published policy loses the password-only flag",
+        "src/vf_logistics/auth.py",
+        "    decorated._requires_password_session = True  # type: ignore[attr-defined]",
+        "    pass",
+        "tests/test_rbac.py::TestRoutePolicy",
     ),
     (
         "role list entries are compared without trimming or case-folding",

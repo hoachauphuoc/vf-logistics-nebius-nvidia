@@ -113,6 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     href={item.href}
                     label={item.label}
                     blurb={item.blurb}
+                    current={item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)}
                     badge={item.href === "/review" ? reviewCount : null}
                     onNavigate={() => setMobileOpen(false)}
                   />
@@ -146,12 +147,15 @@ function MobileNavLink({
   href,
   label,
   blurb,
+  current,
   badge,
   onNavigate,
 }: {
   href: string;
   label: string;
   blurb: string;
+  /** The screen being shown, so the open menu says where you are. */
+  current: boolean;
   badge: number | null;
   onNavigate: () => void;
 }) {
@@ -159,9 +163,11 @@ function MobileNavLink({
     <a
       href={href}
       onClick={onNavigate}
+      aria-current={current ? "page" : undefined}
       className={cn(
         "flex items-start gap-2 rounded-lg px-2.5 py-2",
-        "text-dim transition-colors hover:bg-white/[0.05] hover:text-white",
+        "transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-2 focus-visible:outline-brand",
+        current ? "bg-white/[0.06] text-white" : "text-dim",
       )}
     >
       <span className="min-w-0 flex-1">

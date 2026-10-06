@@ -37,6 +37,11 @@ export interface Identity {
   grants: Role[];
   role_source: string;
   tenant_id: string | null;
+  /**
+   * How a console session was signed in. "unknown" for a token minted before the
+   * claim existed; null without a session. Only "password" may clear the board.
+   */
+  session_method?: "password" | "one_click" | "unknown" | null;
 }
 
 /** GET /api/v1/auth/policy. */
@@ -46,7 +51,13 @@ export interface AccessPolicy {
   anonymous_role: Role | null;
   api_key_grant: Role;
   role_assignment: Array<{ variable: string; role: Role; accounts: number }>;
-  routes: Array<{ path: string; methods: string[]; required_role: Role | "authenticated" | null }>;
+  routes: Array<{
+    path: string;
+    methods: string[];
+    required_role: Role | "authenticated" | null;
+    /** True on the routes a one-click session is refused (auth.require_password_session). */
+    requires_password_session?: boolean;
+  }>;
 }
 
 export function roleLabel(role: string | null | undefined): string {
@@ -124,4 +135,24 @@ export function lockReason(identity: Identity | null | undefined, role: Role): s
     return `Needs the ${needed} role. You are signed in as ${roleLabel(identity.role)}.`;
   }
   return null;
+}
+
+/** True for a console session signed in with one click (the judge button). */
+export function isOneClick(identity: Identity | null | undefined): boolean {
+  return identity?.authenticated_by === "console_session" && identity.session_method === "one_click";
+}
+
+/**
+ * Why a PASSWORD-ONLY control is unavailable to this identity, or null.
+ *
+ * Asked after lockReason, which covers the role: this covers how the session was
+ * signed in. Mirrors auth.require_password_session -- a session counts only if it
+ * says "password"; a key-only caller or an IAP identity has no session to ask.
+ */
+export function passwordLockReason(identity: Identity | null | undefined): string | null {
+  if (!identity || identity.authenticated_by !== "console_session") return null;
+  if (identity.session_method === "password") return null;
+  return identity.session_method === "one_click"
+    ? "Needs a password sign-in. You signed in with one click; sign in with your email and password to use this."
+    : "Needs a password sign-in. Sign out and sign in again with your email and password.";
 }

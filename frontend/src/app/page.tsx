@@ -1,14 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 
+import { HelpDot } from "@/components/help/HelpDot";
 import { PageHeading } from "@/components/layout/PageHeading";
 import { ErrorState } from "@/components/layout/States";
 import { Board } from "@/components/pipeline/Board";
 import { BoardToolbar } from "@/components/pipeline/BoardToolbar";
 import { PipelineKpis } from "@/components/pipeline/PipelineKpis";
 import { CaseTraceSheet } from "@/components/pipeline/CaseTraceSheet";
+import { StartHere } from "@/components/pipeline/StartHere";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSnapshot, queryKeys } from "@/lib/api";
 import {
@@ -20,13 +23,27 @@ import {
   type SortKey,
 } from "@/lib/pipeline";
 import { useTenant } from "@/lib/tenant-context";
+import { CaseParamListener, useLate, writeCaseParam } from "@/lib/url-state";
+
+/**
+ * After this long on the first load, say why. The service scales to zero, so the
+ * first visit in a while waits 10-20 seconds for a container -- and a judge
+ * looking at six grey boxes with no explanation reads that as broken.
+ */
+const COLD_START_HINT_MS = 4_000;
 
 export default function PipelinePage() {
   const { tenant } = useTenant();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("newest");
   const [priority, setPriority] = useState<PriorityFilter>("");
+  // Mirrored into ?case= so an open case survives a refresh and can be linked to
+  // -- from a toast, the audit trail, or a message to a colleague.
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
+  const openCase = useCallback((caseId: string | null) => {
+    setOpenCaseId(caseId);
+    writeCaseParam(caseId);
+  }, []);
 
   /**
    * The board poll, and the only place in the console that asks for `drain=1`.
@@ -68,6 +85,8 @@ export default function PipelinePage() {
     return { ...result, boardSize: cases.length };
   }, [snapshot.data, search, priority, sort]);
 
+  const waking = useLate(snapshot.isLoading, COLD_START_HINT_MS);
+
   if (snapshot.isError) {
     return (
       <>
@@ -81,19 +100,34 @@ export default function PipelinePage() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <CaseParamListener onChange={setOpenCaseId} />
+      </Suspense>
+
       <PageHeading title="Pipeline">
-        Every declaration in flight, by workflow state. Terminal outcomes that
-        still need a person fold into{" "}
-        <span className="text-white/85">Awaiting a person</span>, and a shipment a
-        reviewer has blocked gets its own column rather than being buried in one —
-        &ldquo;the agent finished&rdquo;, &ldquo;someone must act&rdquo; and
-        &ldquo;this was refused&rdquo; are three different facts.
+        Every shipment in flight, by workflow state. Cases that still need a
+        person collect in <span className="text-white/85">Awaiting a person</span>,
+        and a shipment a reviewer has blocked gets its own column — &ldquo;the
+        agent finished&rdquo;, &ldquo;someone must act&rdquo; and &ldquo;this was
+        refused&rdquo; are three different facts.
       </PageHeading>
+
+      <StartHere />
 
       <PipelineKpis
         snapshot={snapshot.data}
         loading={snapshot.isLoading}
       />
+
+      {/* The rule the whole product rests on, stated where the scores are. */}
+      <p className="mt-3 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-dim">
+        <span>
+          <span className="text-white/85">How a score is set:</span> each case gets
+          a model score and a rules floor from deterministic checks, and its risk
+          is the higher of the two. The model can raise a score, never lower it.
+        </span>
+        <HelpDot id="board.columns" />
+      </p>
 
       <div className="mt-4">
         <BoardToolbar
@@ -107,6 +141,14 @@ export default function PipelinePage() {
           totalFetched={boardSize}
         />
 
+        {waking && (
+          <p className="mb-3 flex items-center gap-2 text-[12px] text-dim" role="status">
+            <Loader2 className="size-3.5 animate-spin text-brand motion-reduce:animate-none" aria-hidden />
+            Waking the service. It scales to zero when nobody is using it, so the
+            first load takes 10–20 seconds.
+          </p>
+        )}
+
         {snapshot.isLoading ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -116,7 +158,7 @@ export default function PipelinePage() {
         ) : (
           <Board
             buckets={buckets}
-            onOpen={setOpenCaseId}
+            onOpen={openCase}
             selectedCaseId={openCaseId}
           />
         )}
@@ -125,7 +167,7 @@ export default function PipelinePage() {
       <CaseTraceSheet
         caseId={openCaseId}
         onOpenChange={(open) => {
-          if (!open) setOpenCaseId(null);
+          if (!open) openCase(null);
         }}
       />
     </>

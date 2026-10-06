@@ -1,7 +1,18 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileUp, Loader2, Lock, Play, Upload } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileUp,
+  Loader2,
+  Lock,
+  Play,
+  ShieldAlert,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { Gated } from "@/components/layout/Gated";
@@ -20,25 +31,31 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/toaster";
 import {
+  fetchMetrics,
   injectBulk,
   injectScriptedBatch,
   queryKeys,
+  resetBoard,
   submitShipmentEvent,
   uploadDocument,
+  type UploadResult,
 } from "@/lib/api";
 import { HelpDot } from "@/components/help/HelpDot";
+import { caseHref } from "@/lib/case-links";
 import { caseStateLabel, lowerFirst } from "@/lib/format";
-import { lockReason, useIdentity } from "@/lib/identity";
+import { lockReason, passwordLockReason, useIdentity } from "@/lib/identity";
 import { useTenant } from "@/lib/tenant-context";
 import { cn } from "@/lib/utils";
 
 export default function DevOpsPage() {
   const { tenant } = useTenant();
   const queryClient = useQueryClient();
+  const identity = useIdentity().data;
   // Every panel here is an operator write upstream: each one creates cases and
   // spends tokens. Computed once and passed down, so the four cannot disagree.
-  const lock = lockReason(useIdentity().data, "operator");
+  const lock = lockReason(identity, "operator");
 
   const refreshBoard = () => {
     queryClient.invalidateQueries({ queryKey: ["snapshot", tenant.id] });
@@ -52,17 +69,6 @@ export default function DevOpsPage() {
         governance gate and audit trail as a production shipment — there is no
         test path.
       </PageHeading>
-
-      {/*
-        No "Clear board" control, unlike the old dashboard.
-
-        POST /api/v1/orchestrator/reset deletes every case, event and audit record
-        for the tenant with no undo. It exists so a demo can be reset from a
-        terminal; a button for it on a page a customer can open is a button that
-        eventually gets clicked, and the audit trail it destroys is the artefact
-        this whole system exists to produce. It is also not proxied, so this
-        console could not call it even if a button were added.
-      */}
 
       {lock && (
         <div className="mb-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
@@ -80,6 +86,13 @@ export default function DevOpsPage() {
         <DocumentUpload onDone={refreshBoard} lock={lock} />
         <CustomShipment onDone={refreshBoard} lock={lock} />
       </div>
+
+      <ClearBoard
+        // Everything on the board changes, so everything cached is stale.
+        onDone={() => queryClient.invalidateQueries()}
+        lock={lock ?? passwordLockReason(identity)}
+        needsPassword={lock === null && passwordLockReason(identity) !== null}
+      />
     </>
   );
 }
@@ -107,21 +120,63 @@ function Panel({
   );
 }
 
-function Result({ children }: { children: React.ReactNode }) {
+function Result({
+  children,
+  tone = "clear",
+}: {
+  children: React.ReactNode;
+  /** "warn" for an outcome that is an answer, not a success: a blocked or unreadable upload. */
+  tone?: "clear" | "warn";
+}) {
+  const warn = tone === "warn";
+  const Icon = warn ? AlertTriangle : CheckCircle2;
   return (
-    <div className="mt-3 flex items-start gap-2 rounded-md border border-risk-clear/25 bg-risk-clear/[0.06] px-2.5 py-2">
-      <CheckCircle2 className="mt-[1px] size-3.5 shrink-0 text-risk-clear" aria-hidden />
-      <div className="min-w-0 text-[11.5px] leading-relaxed text-risk-clear">
+    <div
+      role="status"
+      className={cn(
+        "mt-3 flex items-start gap-2 rounded-md border px-2.5 py-2",
+        warn
+          ? "border-risk-warn/30 bg-risk-warn/[0.06]"
+          : "border-risk-clear/25 bg-risk-clear/[0.06]",
+      )}
+    >
+      <Icon
+        className={cn("mt-[1px] size-3.5 shrink-0", warn ? "text-risk-warn" : "text-risk-clear")}
+        aria-hidden
+      />
+      <div
+        className={cn(
+          "min-w-0 text-[11.5px] leading-relaxed",
+          warn ? "text-risk-warn" : "text-risk-clear",
+        )}
+      >
         {children}
       </div>
     </div>
   );
 }
 
+/** "Open CASE-123", linking to the case trace on the board. */
+function CaseLink({ caseId }: { caseId: string }) {
+  return (
+    <Link href={caseHref(caseId)} className="font-medium underline underline-offset-2 hover:text-white">
+      {caseId}
+    </Link>
+  );
+}
+
 function ScriptedBatch({ onDone, lock }: { onDone: () => void; lock: string | null }) {
+  const toast = useToast();
   const inject = useMutation({
     mutationFn: injectScriptedBatch,
-    onSuccess: onDone,
+    onSuccess: (data) => {
+      onDone();
+      toast({
+        title: `Queued ${data.injected} case(s)`,
+        description: "They advance in the background.",
+        action: { label: "Watch them on the Pipeline board", href: "/" },
+      });
+    },
   });
 
   // The note below is kept honest against `simulator.scripted_shipments`, which returns
@@ -160,8 +215,11 @@ function ScriptedBatch({ onDone, lock }: { onDone: () => void; lock: string | nu
       )}
       {inject.data && (
         <Result>
-          Queued {inject.data.injected} case(s). They advance in the background —
-          watch them cross the Pipeline board.
+          Queued {inject.data.injected} case(s). They advance in the background —{" "}
+          <Link href="/" className="font-medium underline underline-offset-2 hover:text-white">
+            watch them cross the Pipeline board
+          </Link>
+          .
         </Result>
       )}
     </Panel>
@@ -171,10 +229,18 @@ function ScriptedBatch({ onDone, lock }: { onDone: () => void; lock: string | nu
 function BulkInject({ onDone, lock }: { onDone: () => void; lock: string | null }) {
   const [count, setCount] = useState(10);
   const [confirm, setConfirm] = useState(false);
+  const toast = useToast();
 
   const bulk = useMutation({
     mutationFn: () => injectBulk(count),
-    onSuccess: onDone,
+    onSuccess: (data) => {
+      onDone();
+      toast({
+        title: `Queued ${data.queued} case(s)`,
+        description: data.note,
+        action: { label: "Open the Pipeline board", href: "/" },
+      });
+    },
   });
 
   return (
@@ -285,9 +351,18 @@ const MAX_DOCUMENT_MB = 20;
 function DocumentUpload({ onDone, lock }: { onDone: () => void; lock: string | null }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
   const upload = useMutation({
     mutationFn: (file: File) => uploadDocument(file),
-    onSuccess: onDone,
+    onSuccess: (data) => {
+      onDone();
+      const outcome = uploadOutcome(data);
+      toast({
+        title: outcome.title,
+        tone: outcome.tone === "warn" ? "warn" : "success",
+        action: data.case_id ? { label: `Open ${data.case_id}`, href: caseHref(data.case_id) } : undefined,
+      });
+    },
   });
 
   function take(files: FileList | null) {
@@ -355,10 +430,10 @@ function DocumentUpload({ onDone, lock }: { onDone: () => void; lock: string | n
           onChange={(e) => take(e.target.files)}
         />
         {upload.isPending && (
-          <p className="flex items-center gap-1.5 text-[11.5px] text-brand">
-            <Loader2 className="size-3.5 animate-spin" />
-            Screening, extracting and running the workflow. This takes longer than
-            a read.
+          <p className="flex items-center gap-1.5 text-[11.5px] text-brand" role="status">
+            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            Screening, extracting and running the workflow. Usually 30–60 seconds —
+            the case is created even if you leave this page.
           </p>
         )}
       </div>
@@ -368,25 +443,48 @@ function DocumentUpload({ onDone, lock }: { onDone: () => void; lock: string | n
           <ErrorState error={upload.error} />
         </div>
       )}
-      {upload.data != null && (
-        <Result>
-          {upload.data.accepted === false ? (
-            <>
-              Refused:{" "}
-              {String(upload.data.reason ?? upload.data.error ?? "see the case trace")}.
-              A refusal is recorded as a case, not discarded.
-            </>
-          ) : (
-            <>
-              Created {String(upload.data.case_id ?? "a case")}
-              {upload.data.state
-                ? ` · now ${lowerFirst(caseStateLabel(String(upload.data.state)))}`
-                : ""}.
-            </>
-          )}
-        </Result>
-      )}
+      {upload.data != null && <UploadOutcome data={upload.data} />}
     </Panel>
+  );
+}
+
+/**
+ * The three things an upload can come back with, in words. See UploadResult.
+ *
+ * A blocked document is not a failure: it is the screening doing its job, and the
+ * refusal is recorded as a case. It used to render in the same green box as a
+ * clean result, saying "Created CASE-...", which hid the most interesting outcome
+ * the panel has.
+ */
+function uploadOutcome(data: UploadResult): { title: string; tone: "clear" | "warn" } {
+  if (!data.accepted) {
+    return {
+      title: `Could not read this document: ${String(data.error ?? data.reason ?? "no shipment found in it")}. Nothing was created.`,
+      tone: "warn",
+    };
+  }
+  if (data.blocked) {
+    return {
+      title: `Blocked at intake: ${data.case_id ?? "the case"} was stopped by Model Armor before any model read it. No tokens spent.`,
+      tone: "warn",
+    };
+  }
+  const state = data.state ? ` · now ${lowerFirst(caseStateLabel(String(data.state)))}` : "";
+  return { title: `Created ${data.case_id ?? "a case"}${state}.`, tone: "clear" };
+}
+
+function UploadOutcome({ data }: { data: UploadResult }) {
+  const outcome = uploadOutcome(data);
+  return (
+    <Result tone={outcome.tone}>
+      {outcome.title}
+      {data.case_id && (
+        <>
+          {" "}
+          <CaseLink caseId={data.case_id} />
+        </>
+      )}
+    </Result>
   );
 }
 
@@ -409,6 +507,7 @@ function CustomShipment({ onDone, lock }: { onDone: () => void; lock: string | n
     declared_value: "",
     shipping_cost: "",
   });
+  const toast = useToast();
 
   const submit = useMutation({
     mutationFn: () => {
@@ -426,7 +525,14 @@ function CustomShipment({ onDone, lock }: { onDone: () => void; lock: string | n
       }
       return submitShipmentEvent(payload);
     },
-    onSuccess: onDone,
+    onSuccess: (data) => {
+      onDone();
+      const caseId = data.case_id ? String(data.case_id) : null;
+      toast({
+        title: `Created ${caseId ?? "a case"}`,
+        action: caseId ? { label: `Open ${caseId}`, href: caseHref(caseId) } : undefined,
+      });
+    },
   });
 
   const fields: Array<[keyof typeof form, string, string]> = [
@@ -487,12 +593,145 @@ function CustomShipment({ onDone, lock }: { onDone: () => void; lock: string | n
       )}
       {submit.data != null && (
         <Result>
-          Created {String(submit.data.case_id ?? "a case")}
+          Created{" "}
+          {submit.data.case_id ? <CaseLink caseId={String(submit.data.case_id)} /> : "a case"}
           {submit.data.state
             ? ` · now ${lowerFirst(caseStateLabel(String(submit.data.state)))}`
             : ""}.
         </Result>
       )}
     </Panel>
+  );
+}
+
+/**
+ * Clear board: delete every case and event on this tenant, so a demo starts clean.
+ *
+ * Back after being left out of this console on purpose, because it now has the
+ * two things it lacked. It cannot destroy the record: the audit trail is
+ * append-only and survives a reset, which is itself written to the trail under
+ * the person who did it. And the public judge button cannot reach it: it needs a
+ * PASSWORD sign-in on top of the operator role, enforced by the BFF and again by
+ * the API (auth.require_password_session). A one-click session sees the button
+ * locked, with the reason and the way to unlock it.
+ */
+function ClearBoard({
+  onDone,
+  lock,
+  needsPassword,
+}: {
+  onDone: () => void;
+  lock: string | null;
+  /** The role is fine and only the sign-in method is missing: offer the password sign-in. */
+  needsPassword: boolean;
+}) {
+  const { tenant } = useTenant();
+  const [confirm, setConfirm] = useState(false);
+  const toast = useToast();
+
+  // Counted when the dialog opens, so the question names what it will delete.
+  const metrics = useQuery({
+    queryKey: queryKeys.metrics(tenant.id),
+    queryFn: fetchMetrics,
+    enabled: confirm,
+    staleTime: 0,
+  });
+  const total = metrics.data
+    ? Object.values(metrics.data.counts ?? {}).reduce((sum, n) => sum + (n ?? 0), 0)
+    : null;
+
+  const reset = useMutation({
+    mutationFn: resetBoard,
+    onSuccess: (data) => {
+      onDone();
+      toast({
+        title: `Cleared ${data.cleared} case(s) from the board`,
+        description: "The audit trail is kept, and this reset is recorded in it under your name.",
+        action: { label: "Open the audit trail", href: "/audit" },
+      });
+    },
+  });
+
+  return (
+    <div className="mt-4 rounded-xl border border-risk-critical/25 bg-risk-critical/[0.03] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-2xl">
+          <h3 className="flex items-center gap-1.5 text-[12px] font-medium text-white">
+            <ShieldAlert className="size-3.5 text-risk-critical" aria-hidden />
+            Clear the board
+          </h3>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
+            Deletes every case and event on this tenant so a demo starts clean. The
+            audit trail is not deleted, and the reset is written to it under your
+            name. Needs the Operator role and a password sign-in: the one-click judge
+            session can do everything else, but not this.
+          </p>
+          {lock && (
+            <p className="mt-2 flex items-start gap-1.5 text-[11.5px] text-dim">
+              <Lock className="mt-[2px] size-3.5 shrink-0" aria-hidden />
+              <span>
+                {lock}{" "}
+                {needsPassword && (
+                  <a href="/login?next=/devops" className="text-brand hover:underline">
+                    Sign in with a password
+                  </a>
+                )}
+              </span>
+            </p>
+          )}
+        </div>
+        <Gated reason={lock}>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={reset.isPending || lock !== null}
+            onClick={() => setConfirm(true)}
+            className="h-8 text-[12px]"
+          >
+            {reset.isPending ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Trash2 className="mr-1.5 size-3.5" />
+            )}
+            Clear board
+          </Button>
+        </Gated>
+      </div>
+
+      {reset.isError && (
+        <div className="mt-3">
+          <ErrorState error={reset.error} />
+        </div>
+      )}
+
+      <AlertDialog open={confirm} onOpenChange={setConfirm}>
+        <AlertDialogContent className="border-white/10 bg-slate-950">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[15px]">
+              {total === null
+                ? "Clear every case on the board?"
+                : `Clear ${total} case${total === 1 ? "" : "s"} from the board?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[12.5px] leading-relaxed text-dim">
+              Cases and their events are deleted for everyone using this tenant, and
+              there is no undo. The audit trail stays, and records that you cleared
+              the board.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-white/10 text-[12.5px]">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-[12.5px] text-white hover:bg-destructive/90"
+              onClick={() => {
+                setConfirm(false);
+                reset.mutate();
+              }}
+            >
+              Clear board
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

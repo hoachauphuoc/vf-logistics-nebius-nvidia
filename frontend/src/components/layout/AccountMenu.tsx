@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LogIn, LogOut } from "lucide-react";
+import { LogIn, LogOut, MousePointerClick } from "lucide-react";
 import { useState } from "react";
 
 import { RoleChip } from "@/components/layout/RoleChip";
@@ -37,7 +37,11 @@ export function AccountMenu() {
       // render.
       if (response.status === 401) return null;
       if (!response.ok) throw new Error(`session: ${response.status}`);
-      return (await response.json()) as { email: string; exp: number };
+      return (await response.json()) as {
+        email: string;
+        exp: number;
+        amr: "password" | "one_click" | null;
+      };
     },
     retry: false,
     // Refetched so an expired session stops showing a name it no longer has. A
@@ -117,6 +121,29 @@ export function AccountMenu() {
           <TooltipContent side="bottom" className="max-w-[20rem]">
             Assigned by the API ({identity.role_source}). Access Control shows
             what this role can and cannot do.
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* How they got in, when it matters: a one-click session can do everything
+          its role allows except the password-only actions, and should be told so
+          before it meets a locked button, with the way to unlock it. */}
+      {session.data.amr === "one_click" && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a
+              href="/login?next=/devops"
+              className="inline-flex h-6 items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2 text-[10.5px] text-brand transition-colors hover:border-brand/50"
+            >
+              <MousePointerClick className="size-3" aria-hidden />
+              <span className="hidden sm:inline">One-click</span>
+              <span className="sr-only sm:hidden">Signed in with one click</span>
+            </a>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[20rem]">
+            Signed in with the judge button. You can do everything this account
+            can, except clear the board, which needs a password sign-in. Click to
+            sign in with a password.
           </TooltipContent>
         </Tooltip>
       )}

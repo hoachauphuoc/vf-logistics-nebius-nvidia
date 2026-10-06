@@ -7,11 +7,14 @@ import {
   FORWARDED_PARAMS,
   matchRead,
   matchWrite,
+  PASSWORD_ONLY_POST,
 } from "@/lib/proxy-policy";
 import {
-  COOKIE_NAME,
+  isPasswordSession,
   loginRequired,
   publicReads,
+  type Session,
+  tokenFromCookieHeader,
   verifySession,
 } from "@/lib/session";
 import { forwardedHeaders } from "@/lib/upstream";
@@ -96,25 +99,40 @@ function notProxied(joined: string, method: string) {
 }
 
 /**
- * The caller's VERIFIED session token, or null.
+ * The caller's VERIFIED session and its token, or null.
  *
  * Authorisation is checked here, not delegated to a middleware layer. The route
  * does not rely on any external matcher to protect its write paths.
  */
+async function verified(
+  request: Request,
+): Promise<{ token: string; session: Session } | null> {
+  const token = tokenFromCookieHeader(request.headers.get("cookie"));
+  const session = await verifySession(token);
+  return token && session ? { token, session } : null;
+}
+
 async function verifiedToken(request: Request): Promise<string | null> {
-  const header = request.headers.get("cookie") ?? "";
-  const match = header
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${COOKIE_NAME}=`));
-  const token = match ? match.slice(COOKIE_NAME.length + 1) : null;
-  return (await verifySession(token)) ? token : null;
+  return (await verified(request))?.token ?? null;
 }
 
 function notAuthenticated() {
   return NextResponse.json(
     { error: "not_authenticated", detail: "Sign in to continue." },
     { status: 401 },
+  );
+}
+
+/** Shaped like Flask's own refusal, so the UI reads one message either way. */
+function passwordRequired(session: Session) {
+  return NextResponse.json(
+    {
+      error: "password_session_required",
+      detail: "This action needs a password sign-in. Sign in with your email and password.",
+      required_auth: "password",
+      session_method: session.amr ?? "unknown",
+    },
+    { status: 403 },
   );
 }
 
@@ -232,12 +250,19 @@ export async function POST(
 
   if (!matchWrite(joined, ALLOWED_POST)) return notProxied(joined, "POST");
 
-  const token = await verifiedToken(request);
+  const caller = await verified(request);
   // Deliberately NOT relaxed by publicReads(). Every route below either moves
   // cargo, changes the rules that decide what auto-clears, or spends money.
-  if (loginRequired() && !token) return notAuthenticated();
+  if (loginRequired() && !caller) return notAuthenticated();
 
-  return forward(request, joined, "POST", token);
+  // Clearing the board wants a password sign-in on top of the role. A caller
+  // with no session at all only gets here in development without a secret, and
+  // then reaches Flask without the key, as a viewer, and is refused there.
+  if (PASSWORD_ONLY_POST.has(joined) && caller && !isPasswordSession(caller.session)) {
+    return passwordRequired(caller.session);
+  }
+
+  return forward(request, joined, "POST", caller?.token ?? null);
 }
 
 export async function PUT(

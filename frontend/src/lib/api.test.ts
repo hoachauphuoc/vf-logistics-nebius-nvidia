@@ -121,3 +121,64 @@ describe("client request timeout", () => {
     await expect(fetchAuditTrail()).rejects.toThrow(/Failed to fetch/);
   });
 });
+
+describe("writes that answer slowly or with a refusal", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = ORIGINAL_FETCH;
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("returns an unreadable document as an answer, not an error", async () => {
+    // 422 is "this file could not be transcribed". Throwing it put the generic red
+    // failure card over an ordinary answer about the document.
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ accepted: false, error: "document could not be transcribed" }, 422),
+    ) as unknown as typeof fetch;
+
+    const { uploadDocument } = await import("@/lib/api");
+    const result = await uploadDocument(new File(["x"], "scan.png", { type: "image/png" }));
+    expect(result.accepted).toBe(false);
+    expect(result.error).toMatch(/could not be transcribed/);
+  });
+
+  it("gives an upload the long timeout, not the 20-second read ceiling", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      globalThis.fetch = vi.fn(async () =>
+        jsonResponse({ accepted: true, case_id: "CASE-1" }, 202),
+      ) as unknown as typeof fetch;
+
+      const { uploadDocument, LONG_WRITE_TIMEOUT_MS } = await import("@/lib/api");
+      await uploadDocument(new File(["x"], "scan.png", { type: "image/png" }));
+      expect(timeout).toHaveBeenCalledWith(LONG_WRITE_TIMEOUT_MS);
+      expect(LONG_WRITE_TIMEOUT_MS).toBeGreaterThan(120_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("carries a password-required refusal through to the screen", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse(
+        {
+          error: "password_session_required",
+          detail: "This action needs a password sign-in.",
+          required_auth: "password",
+          session_method: "one_click",
+        },
+        403,
+      ),
+    ) as unknown as typeof fetch;
+
+    const { resetBoard, ApiError } = await import("@/lib/api");
+    const failure = await resetBoard().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as InstanceType<typeof ApiError>).requiredAuth).toBe("password");
+    expect((failure as InstanceType<typeof ApiError>).status).toBe(403);
+  });
+});

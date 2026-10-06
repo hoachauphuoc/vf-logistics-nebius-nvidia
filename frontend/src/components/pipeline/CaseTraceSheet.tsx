@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Check, ChevronRight, Clipboard, ClipboardCheck, ExternalLink } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, Check, ChevronRight, Clipboard, ClipboardCheck, ExternalLink, Link2 } from "lucide-react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useState } from "react";
 
 import { ErrorState } from "@/components/layout/States";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchCase, queryKeys } from "@/lib/api";
+import { caseHref, reviewHref } from "@/lib/case-links";
 import {
   actionLabel,
   auditStatusLabel,
@@ -24,6 +26,8 @@ import {
   humaniseAgent,
   lowerFirst,
 } from "@/lib/format";
+import { AWAITING_STATES } from "@/lib/pipeline";
+import { RISK_FILL, riskBand } from "@/lib/risk-band";
 import { useTenant } from "@/lib/tenant-context";
 import type { ActionReceipt, Case, CaseStep } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -61,13 +65,31 @@ export function CaseTraceSheet({
             <SheetTitle className="font-mono text-[14px] text-white">
               {c?.shipment_id || caseId}
             </SheetTitle>
-            {caseId && <CopyButton text={caseId} />}
+            {caseId && <CopyButton text={caseId} label="Copy the case id" />}
+            {caseId && (
+              <CopyButton
+                text={typeof window === "undefined" ? caseHref(caseId) : new URL(caseHref(caseId), window.location.origin).toString()}
+                label="Copy a link to this case"
+                icon="link"
+              />
+            )}
           </div>
           <SheetDescription className="text-[12px] text-dim">
             {c
               ? `${caseStateLabel(c.state)} · ${c.steps?.length ?? 0} agent hop(s)`
               : "Loading the trace"}
           </SheetDescription>
+          {/* The way from "why did it stop" to "decide it", which used to be
+              a trip back through the sidebar and a search of the queue. */}
+          {c && AWAITING_STATES.has(c.state) && (
+            <Link
+              href={reviewHref(c.case_id)}
+              className="mt-2 inline-flex h-8 w-fit items-center gap-1.5 rounded-md bg-brand px-3 text-[12px] font-medium text-brand-ink transition-colors hover:bg-brand-dim"
+            >
+              Decide it in the Review Queue
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          )}
         </SheetHeader>
 
         <div className="space-y-5 px-5 py-5">
@@ -171,13 +193,9 @@ function Verdict({ case: c }: { case: Case }) {
           label="Effective risk"
           value={c.risk_score ?? "not scored"}
           tone={
-            c.risk_score == null
-              ? "neutral"
-              : c.risk_score >= 70
-                ? "critical"
-                : c.risk_score >= 40
-                  ? "warn"
-                  : "clear"
+            (
+              { high: "critical", medium: "warn", low: "clear", unknown: "neutral" } as const
+            )[riskBand(c.risk_score)]
           }
         />
         {c.risk_score != null && (
@@ -566,19 +584,13 @@ function Mono({ label, value }: { label: string; value: string | number }) {
 }
 
 function RiskMeter({ score, floor }: { score: number; floor: number | null }) {
-  const tone =
-    score >= 70 ? "critical" : score >= 40 ? "warn" : "clear";
-  const barColor = {
-    critical: "bg-risk-critical",
-    warn: "bg-risk-warn",
-    clear: "bg-risk-clear",
-  }[tone];
+  const barColor = RISK_FILL[riskBand(score)];
 
   return (
     <div className="mt-1 mb-1">
       <div className="relative h-2 overflow-hidden rounded-full bg-white/[0.07]">
         <div
-          className={cn("h-full rounded-full transition-[width] duration-500", barColor)}
+          className={cn("h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", barColor)}
           style={{ width: `${Math.max(score, 2)}%` }}
         />
         {floor != null && floor > 0 && (
@@ -615,8 +627,17 @@ function StructuredResult({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({
+  text,
+  label,
+  icon = "clipboard",
+}: {
+  text: string;
+  label: string;
+  icon?: "clipboard" | "link";
+}) {
   const [copied, setCopied] = useState(false);
+  const Icon = icon === "link" ? Link2 : Clipboard;
 
   return (
     <button
@@ -626,13 +647,16 @@ function CopyButton({ text }: { text: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }}
-      className="shrink-0 rounded p-1 text-faint transition-colors hover:bg-white/[0.06] hover:text-white"
-      title="Copy to clipboard"
+      // An icon-only button needs a name; the title alone is not announced
+      // reliably, and a screen reader heard "button".
+      aria-label={copied ? `${label}: copied` : label}
+      title={label}
+      className="shrink-0 rounded p-1 text-dim transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-2 focus-visible:outline-brand"
     >
       {copied ? (
-        <ClipboardCheck className="size-3.5 text-risk-clear" />
+        <ClipboardCheck className="size-3.5 text-risk-clear" aria-hidden />
       ) : (
-        <Clipboard className="size-3.5" />
+        <Icon className="size-3.5" aria-hidden />
       )}
     </button>
   );
