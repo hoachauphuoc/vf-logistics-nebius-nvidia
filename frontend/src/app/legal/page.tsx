@@ -30,7 +30,7 @@ export default function LegalPage() {
         Terms, privacy and data handling
       </h1>
       <p className="mt-1 text-[12px] text-faint">
-        Trade Compliance Auditor &mdash; VF Logistics. Last updated 22 September
+        Floorline &mdash; operated by VF Logistics. Last updated 22 September
         2026.
       </p>
 

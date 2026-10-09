@@ -104,7 +104,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className="w-[16rem] border-white/[0.08] bg-[#050914] p-0"
             >
               <SheetTitle className="px-4 pt-4 text-[13px] font-semibold tracking-display text-white">
-                VF Logistics
+                Floorline
               </SheetTitle>
               <nav className="space-y-0.5 p-2">
                 {NAV_ITEMS.map((item) => (
@@ -122,7 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
           <span className="text-[13px] font-medium tracking-display text-white/90">
-            VF Logistics
+            Floorline
           </span>
         </div>
 

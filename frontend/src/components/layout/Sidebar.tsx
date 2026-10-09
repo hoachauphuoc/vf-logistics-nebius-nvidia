@@ -123,10 +123,10 @@ export function Sidebar({ reviewCount }: { reviewCount?: number | null }) {
         {!collapsed && (
           <span className="min-w-0">
             <span className="block truncate text-[13px] font-semibold tracking-display text-white">
-              VF Logistics
+              Floorline
             </span>
             <span className="block truncate text-[10.5px] leading-tight text-faint">
-              Trade Compliance
+              Shipment-fraud agents
             </span>
           </span>
         )}

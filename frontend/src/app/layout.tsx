@@ -21,11 +21,13 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Trade Compliance Auditor",
+  // Floorline: the product's central rule is a risk floor the agents may raise
+  // and never lower. VF Logistics is the operator in the demo, not the product.
+  title: "Floorline",
   description:
-    "Autonomous screening for import and export declarations: sanctions, " +
-    "dual-use classification and adverse media, with the provenance to defend " +
-    "every verdict.",
+    "Shipment-fraud agents on NVIDIA Nemotron 3 via Nebius Token Factory: " +
+    "sanctions, dual-use classification and adverse media, with a risk floor " +
+    "the agents may raise but never lower.",
 };
 
 // Typed explicitly rather than with Next's global LayoutProps<"/">. That global

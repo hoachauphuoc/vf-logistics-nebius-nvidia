@@ -1,4 +1,14 @@
-# VF Logistics — Autonomous Fraud Detection Agents
+# Floorline — shipment-fraud agents that can raise risk, never lower it
+
+The name is the design rule. Deterministic checks set a risk **floor** for every
+shipment; the agents may argue a case above that line, and nothing they say can take it
+below. (VF Logistics is the freight operator in the demo; the repository, the Cloud Run
+service `vf-app` and the API keep that name.)
+
+**Built on:** **Nebius Token Factory** for every model call, running **NVIDIA Nemotron 3
+Nano** (fraud, compliance, HS classification, zero-day radar), **NVIDIA Nemotron 3
+Super** (investigation) and **NVIDIA Nemotron 3 Ultra** (the Senior Auditor debate),
+plus MiniCPM-V-4.5 for reading scanned documents.
 
 **Hackathon:** Nebius x NVIDIA Global AI Hackathon
 **Track:** Best Apps and Agents
@@ -16,9 +26,10 @@ figures (operator) and the archived original documents (reviewer), because an an
 visitor is a real `viewer` and both sit above it. **Recording a decision needs an
 account**, because the audit trail names the person who released a shipment rather than
 the service that called the API, and a free-text name field would make that record
-worthless. Judges: the credentials are in the Devpost submission's testing-instructions
-field — a governance-admin account, and one that holds only the Reviewer role, so you
-can watch the access control refuse something.
+worthless. Judges: **Continue as guest judge** on the login page signs you in with one
+click and can do everything except clear the board; the password accounts are in the
+Devpost submission's testing-instructions field — a governance-admin account, and one
+that holds only the Reviewer role, so you can watch the access control refuse something.
 
 ## The problem
 
@@ -34,11 +45,30 @@ surfaces weeks later in a reconciliation, or an analyst spending 20+ minutes
 manually re-deriving a judgment call the agents below make in seconds, for
 every one of hundreds of shipments a day.
 
+**Who it is for:** the compliance desk at a freight forwarder or customs broker — the
+people who must screen every shipment before it moves and answer for each release to a
+customs authority afterwards. Floorline closes the clear cases inside limits that desk
+publishes, sends the rest to a person with the findings, live sources and the document
+attached, and keeps an append-only record naming who or what allowed each action. Model
+spend is about a third of a cent per case (`$0.068` for a 20-case run); the measured
+detection figures, on held-out synthetic data, are in [Measured results](#measured-results).
+
 A shipment event arrives and nobody touches it again. A background worker scores
 it for fraud, decides on that score whether compliance screening is warranted,
 decides on the screening whether to open a deep investigation, and then acts:
 releasing the shipment, assigning an analyst, or holding the cargo and drafting a
 suspicious activity report for human signature.
+
+End to end, for one case:
+
+> scanned document → Model Armor → document intake (MiniCPM-V) → deterministic risk
+> floor and pre-filter → fraud + compliance (NVIDIA Nemotron 3 Nano, live Tavily search)
+> → investigation (Nemotron 3 Super, Tavily) → auto-debate when floor and model disagree
+> (Nemotron 3 Ultra, calling tools) → delegation gate → release / hold / assign analyst /
+> draft SAR / webhook / Pub/Sub → audit trail
+
+The case trace opens on this chain for the case in front of you, with the model that ran
+each hop (`frontend/src/lib/case-chain.ts`).
 
 The AI model layer runs on **Nebius Token Factory**: **NVIDIA Nemotron 3 Nano**
 for fraud, compliance, HS classification and zero-day screening, **NVIDIA Nemotron 3

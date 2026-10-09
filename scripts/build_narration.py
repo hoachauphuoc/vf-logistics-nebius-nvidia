@@ -56,7 +56,7 @@ GAP_AFTER_SENTENCE_S = 0.25
 
 # (scene name, recorded clip length in seconds, narration)
 #
-# TEN scenes, 164 seconds -- 2:44. Three deliberate changes from the nine-scene, 180s
+# TEN scenes, 165 seconds -- 2:45. Three deliberate changes from the nine-scene, 180s
 # version, and the enabling fact is that NOTHING had been shot: build/ did not exist, the
 # repository held no media, and the clip lengths previously in this list were measured on
 # 31/08 against footage of the PREDECESSOR system, before the Nebius port landed on 17/09.
@@ -88,29 +88,36 @@ GAP_AFTER_SENTENCE_S = 0.25
 # sentence costs 0.25s even if no words are added. And an overrun is not local: clip_start
 # advances by max(clip_seconds, spoken), so one long scene pushes every later scene off its
 # cut.
+#
+# Pitch, not tutorial (the organisers' own guidance): scene 1 now names the product and who
+# it is for in its first sentence, and NVIDIA is said aloud -- scenes 3 and 10 name "NVIDIA
+# Nemotron" and "Nebius Token Factory" together. Before this, "NVIDIA" was never spoken and
+# Nebius only in the closing line. Scene 3 dropped "Spend is metered per agent, in dollars"
+# to make room; the dollar column is still on screen. Clips 1 and 3 grew a second each and
+# clip 2, which had the most headroom, gave one back: 165s.
 SCENES: list[tuple[str, float, str]] = [
     (
         "1 - The problem",
-        16.0,
-        "A forwarder clears thousands of shipments a week. "
+        17.0,
+        "Floorline is for freight forwarders clearing thousands of shipments a week. "
         "Any one can hide under-invoicing, a sanctioned buyer, or dual-use cargo "
         "on farm paperwork. "
         "Checking by hand is impossible; letting a model release them is reckless.",
     ),
     (
         "2 - A real document",
-        15.0,
-        "This is a real bill of lading, dropped the way a mailroom would drop it. "
+        14.0,
+        "A real bill of lading, dropped the way a mailroom would drop it. "
         "Model Armor screens the file before any model reads it. "
         "Then an intake agent transcribes it.",
     ),
     (
         "3 - The design rule",
-        20.0,
+        21.0,
+        "Floorline runs on NVIDIA Nemotron 3, through Nebius Token Factory. "
         "Rules set a risk floor an agent may raise, never lower. "
         "So fraud and compliance run on Nano: a stronger model cannot change it. "
-        "Ultra runs one hop, the debate, where its verdict is the answer. "
-        "Spend is metered per agent, in dollars.",
+        "Ultra runs one hop, the debate, where its verdict is the answer.",
     ),
     (
         "4 - A case that cleared itself",
@@ -159,13 +166,13 @@ SCENES: list[tuple[str, float, str]] = [
     (
         "9 - Tests and CI",
         8.0,
-        "862 tests pass at 79 percent coverage. "
+        "875 tests pass at 79 percent coverage. "
         "Continuous integration runs them on every push.",
     ),
     (
         "10 - Close",
         12.0,
-        "Seven agents on Nebius Token Factory, with Nemotron picked per hop. "
+        "Floorline: seven agents on NVIDIA Nemotron, through Nebius Token Factory. "
         "Agents that act, inside limits a person set. "
         "And stop when they should.",
     ),
