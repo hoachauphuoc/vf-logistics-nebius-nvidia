@@ -1,11 +1,16 @@
-# Demo video shooting script — ten clips, 164 seconds
+# Demo video shooting script — ten clips, 165 seconds
 
 One shooting document. There used to be two that disagreed with each other, which is the
 same class of defect this script exists to avoid on camera.
 
-**164 seconds, not 180.** The rules ask for a video "less than three (3) minutes", and the
+**165 seconds, not 180.** The rules ask for a video "less than three (3) minutes", and the
 previous version of this script targeted exactly 180.0s — landing on the boundary for no
-gain. 2:44 also sits inside the 2:30–2:45 window this was planned to.
+gain. 2:45 also sits at the end of the 2:30–2:45 window this was planned to.
+
+**A pitch, not a tutorial.** The organisers' guidance is to lead with the problem, say who
+it is for, show it working, and name Nebius and the NVIDIA model clearly *in the audio*.
+So clip 1 opens on the product name and its user, and clips 3 and 10 say "NVIDIA Nemotron"
+and "Nebius Token Factory" aloud. Until this revision "NVIDIA" was never spoken at all.
 
 The narration is **generated, not spoken live**. `scripts/build_narration.py` synthesises
 `build/narration.wav` plus `build/narration.srt` from the ten scenes below, per sentence,
@@ -43,9 +48,9 @@ its cut.
 
 | Clip | Scene | Length | Screen |
 |---|---|---|---|
-| 1 | The problem | 16s | Pipeline `/` |
-| 2 | A real document | 15s | DevOps `/devops` → *Upload a document* |
-| 3 | The design rule | 20s | Agent Console `/agents` |
+| 1 | The problem | 17s | Pipeline `/` |
+| 2 | A real document | 14s | DevOps `/devops` → *Upload a document* |
+| 3 | The design rule | 21s | Agent Console `/agents` |
 | 4 | A case that cleared itself | 20s | Pipeline → a case → trace sheet, the three risk rows |
 | 5 | Live evidence | 14s | Same sheet, scrolled to *Live evidence* |
 | 6 | The review queue | 16s | Review `/review` |
@@ -53,7 +58,7 @@ its cut.
 | 8 | Prompt injection blocked | 15s | Review → the blocked case |
 | 9 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
 | 10 | Close | 12s | Pipeline `/` |
-| | | **164s** | |
+| | | **165s** | |
 
 ### What changed from the nine-clip version, and why
 
@@ -62,7 +67,7 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 862 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
+  on camera.** 875 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
   summarised — a judge scoring Technological Implementation had to read the repository to
   find any of it. Clip 5 also carries the **Tavily bonus award**, which the old script
   showed nowhere at all.
@@ -104,6 +109,15 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
       near-identical numbers spread across two columns and they were impossible to tell
       apart on screen. `dirty_bol.pdf` alone carries the document story.
 - [ ] Scroll to the top of the Pipeline board before the first frame.
+- [ ] **Sign in for clip 2.** Uploading needs the operator role. On `/login` press
+      **Continue as guest judge** — one click, no password — then return to `/`. The
+      header shows a *One-click* chip; that is fine on camera and true. Do not press
+      **Clear board** on DevOps: it is locked for this session anyway, and it would wipe
+      the seeded board.
+- [ ] **Shoot against a deployed revision that has the latest console.** The header chip
+      *NVIDIA Nemotron 3 · Nebius Token Factory*, the *Start here* strip and the *End to
+      end* chain at the top of every case trace only exist once this work is committed
+      and deployed. They are what makes the required tools visible in every frame.
 
 ### Three things that must be deployed before clips 3, 4 and 5 will film
 
@@ -150,14 +164,16 @@ a Pub/Sub IAM error. That is fixed — it now reads `done`. Nothing to avoid.
 
 ---
 
-## Clip 1 — The problem (0:00 → 0:16, 16s)
+## Clip 1 — The problem (0:00 → 0:17, 17s)
 
-**Screen:** Pipeline board at `/`, fully seeded, signed out. No interaction. Scroll down
-slowly a little, just for motion.
+**Screen:** Pipeline board at `/`, fully seeded. No interaction. Scroll down
+slowly a little, just for motion. Let the header chip naming NVIDIA Nemotron 3 and Nebius
+Token Factory be in frame for the whole clip; close the *Start here* strip before
+recording if it crowds the board.
 
-> A forwarder clears thousands of shipments a week. Any one can hide under-invoicing, a
-> sanctioned buyer, or dual-use cargo on farm paperwork. Checking by hand is impossible;
-> letting a model release them is reckless.
+> Floorline is for freight forwarders clearing thousands of shipments a week. Any one can
+> hide under-invoicing, a sanctioned buyer, or dual-use cargo on farm paperwork. Checking
+> by hand is impossible; letting a model release them is reckless.
 
 Worth letting the six columns be visible: eleven escalated, two blocked by a person, two
 released by a person, two cleared automatically. The spread is the point — this is not a
@@ -165,13 +181,13 @@ demo where everything is suspicious.
 
 ---
 
-## Clip 2 — A real document (0:16 → 0:31, 15s)
+## Clip 2 — A real document (0:17 → 0:31, 14s)
 
 **Action:** Go to `/devops`, find **Upload a document**. Drag `dirty_bol.pdf` from Explorer
 onto it — drag *slowly*, wait for the drop target to highlight, then release. Cut as soon
 as the transcribing state appears. Do not record the wait.
 
-> This is a real bill of lading, dropped the way a mailroom would drop it. Model Armor
+> A real bill of lading, dropped the way a mailroom would drop it. Model Armor
 > screens the file before any model reads it. Then an intake agent transcribes it.
 
 The case takes 30–60 seconds to reach a terminal state. Clip 6 needs it finished, so shoot
@@ -179,15 +195,15 @@ the clips out of order if you like — just lay them back in order on the timeli
 
 ---
 
-## Clip 3 — The design rule (0:31 → 0:51, 20s)
+## Clip 3 — The design rule (0:31 → 0:52, 21s)
 
 **Action:** Go to `/agents`. Stop on the **Cost by agent** card. Let the dollar column be
 readable, and let it be visible that the debate agent sits high on spend with very few
 calls while Nano has many calls and little cost.
 
-> Rules set a risk floor an agent may raise, never lower. So fraud and compliance run on
-> Nano: a stronger model cannot change it. Ultra runs one hop, the debate, where its verdict
-> is the answer. Spend is metered per agent, in dollars.
+> Floorline runs on NVIDIA Nemotron 3, through Nebius Token Factory. Rules set a risk floor
+> an agent may raise, never lower. So fraud and compliance run on Nano: a stronger model
+> cannot change it. Ultra runs one hop, the debate, where its verdict is the answer.
 
 This is the clip that earns *Quality of the Idea*, and the argument is the one thing in the
 submission a judge is unlikely to have seen before: **model capacity is spent only where it
@@ -199,9 +215,11 @@ number said loosely is a number they will check.
 
 ---
 
-## Clip 4 — A case that cleared itself (0:51 → 1:11, 20s)
+## Clip 4 — A case that cleared itself (0:52 → 1:12, 20s)
 
-**Action:** Back to `/`. Open a case in the **Cleared** column. Scroll so the three risk
+**Action:** Back to `/`. Open a case in the **Cleared** column. The sheet opens on the
+**End to end** chain — every hop with the NVIDIA model that ran it, then the delegation
+gate and the actions — so hold on it for a beat, then scroll so the three risk
 rows — *Effective risk*, *Model alone*, *Rules floor* — are in frame together, and hold
 there. If a veto paragraph is present, keep it in shot: *"The model may raise risk but never
 lower it, so this score is arithmetic rather than judgement."*
@@ -217,7 +235,7 @@ The last two sentences are the thesis of the whole submission. Do not rush them.
 
 ---
 
-## Clip 5 — Live evidence (1:11 → 1:25, 14s)
+## Clip 5 — Live evidence (1:12 → 1:26, 14s)
 
 **Action:** Stay in the same sheet. Scroll to **Live evidence**. The heading reads
 *COMPLIANCE READ 5 SOURCES*. Hover one anchor so the hostname is legible, then click it and
@@ -233,7 +251,7 @@ point — it proves the citation resolves rather than decorates.
 
 ---
 
-## Clip 6 — The review queue (1:25 → 1:41, 16s)
+## Clip 6 — The review queue (1:26 → 1:42, 16s)
 
 **Only shoot this once `dirty_bol.pdf` has settled.** It should be in the queue as an
 escalated document case.
@@ -253,7 +271,7 @@ it — if you want it as its own beat, re-record at 22–24s, change that scene'
 
 ---
 
-## Clip 7 — The delegation boundary (1:41 → 2:09, 28s)
+## Clip 7 — The delegation boundary (1:42 → 2:10, 28s)
 
 **Action:** Go to `/governance`. Hold on the line naming the active boundary and the person
 who published it, then scroll to the permissions block.
@@ -271,7 +289,7 @@ two. The remaining four carry the argument.
 
 ---
 
-## Clip 8 — Prompt injection blocked (2:09 → 2:24, 15s)
+## Clip 8 — Prompt injection blocked (2:10 → 2:25, 15s)
 
 **Action:** In `/review`, open the blocked case created during preparation.
 
@@ -283,13 +301,13 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 
 ---
 
-## Clip 9 — Tests and CI (2:24 → 2:32, 8s)
+## Clip 9 — Tests and CI (2:25 → 2:33, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on `862 passed`. Then the GitHub
+tail of a real run — `python -m pytest tests/ -q` ending on `875 passed`. Then the GitHub
 Actions run page for `master`, with five green jobs visible.
 
-> 862 tests pass at 79 percent coverage. Continuous integration runs them on every push.
+> 875 tests pass at 79 percent coverage. Continuous integration runs them on every push.
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight
@@ -302,12 +320,12 @@ now.
 
 ---
 
-## Clip 10 — Close (2:32 → 2:44, 12s)
+## Clip 10 — Close (2:33 → 2:45, 12s)
 
-**Action:** Back to `/`. Let the board fill the frame.
+**Action:** Back to `/`. Let the board fill the frame, header chip included.
 
-> Seven agents on Nebius Token Factory, with Nemotron picked per hop. Agents that act,
-> inside limits a person set. And stop when they should.
+> Floorline: seven agents on NVIDIA Nemotron, through Nebius Token Factory. Agents that
+> act, inside limits a person set. And stop when they should.
 
 End on the board, not on a slide.
 
@@ -328,8 +346,8 @@ End on the board, not on a slide.
 Clip lengths currently in `SCENES`:
 
 ```
-1: 16s   2: 15s   3: 20s   4: 20s   5: 14s
-6: 16s   7: 28s   8: 15s   9:  8s  10: 12s     total 164s
+1: 17s   2: 14s   3: 21s   4: 20s   5: 14s
+6: 16s   7: 28s   8: 15s   9:  8s  10: 12s     total 165s
 ```
 
 ## Regenerating the narration

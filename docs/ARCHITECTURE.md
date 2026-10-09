@@ -1,7 +1,9 @@
 # Architecture
 
-VF Logistics screens freight shipments for fraud and sanctions exposure, and acts on
-what it finds without asking a human per shipment. It runs on Google Cloud for
+Floorline screens freight shipments for fraud and sanctions exposure, and acts on
+what it finds without asking a human per shipment. (VF Logistics is the operator in the
+demo; the repository, the Cloud Run service `vf-app` and the API's service name keep
+that name.) It runs on Google Cloud for
 infrastructure and on Nebius Token Factory for inference. No Google AI model is used
 anywhere; `requirements.txt` carries only `google-cloud-firestore`,
 `google-cloud-pubsub` and `google-cloud-storage`.

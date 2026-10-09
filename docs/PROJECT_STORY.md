@@ -29,6 +29,9 @@ Nano is the *correct* choice on those hops, not the affordable one. Nemotron 3 U
 runs in exactly one place, the auto-debate, because that is the only hop whose
 output is a verdict the floor does not override rather than a score it does.
 
+That rule is also the name. **Floorline** is the line the agents may climb above and
+never cross below.
+
 ## What it does
 
 VF Logistics is an autonomous compliance pipeline for shipping documents. Work

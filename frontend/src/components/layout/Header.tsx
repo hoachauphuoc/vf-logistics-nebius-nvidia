@@ -1,6 +1,7 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { Cpu, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 import { AccountMenu } from "@/components/layout/AccountMenu";
 import { HelpModeToggle } from "@/components/layout/HelpModeToggle";
@@ -39,11 +40,12 @@ export function Header({ display }: { display?: Tenant }) {
         <div className="hidden shrink-0 items-center gap-2 xl:flex">
           <ShieldCheck className="size-4 text-brand" aria-hidden />
           <span className="whitespace-nowrap text-[13px] font-medium tracking-display text-white/90">
-            Trade Compliance Auditor
+            Floorline
           </span>
         </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
+          <ModelsChip />
           <HelpModeToggle />
           {DEMO_MODE ? <DemoPill /> : <LivePill />}
           <AccountMenu />
@@ -90,6 +92,36 @@ function LivePill() {
       <TooltipContent side="bottom" className="max-w-[20rem]">
         Reading the audit API for the tenant your session is authenticated
         against.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * What every case on screen is reasoned by, on every screen.
+ *
+ * The models were named only on the Agent Console, so a visitor -- or a video
+ * frame -- on any other screen could not tell what the agents run on. Links to
+ * that console, where each agent's model and spend are shown.
+ */
+function ModelsChip() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          href="/agents"
+          className="hidden h-7 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-[11px] text-dim transition-colors hover:border-white/25 hover:text-white focus-visible:outline-2 focus-visible:outline-brand lg:inline-flex"
+        >
+          <Cpu className="size-3.5 text-brand" aria-hidden />
+          <span className="whitespace-nowrap">
+            NVIDIA Nemotron 3 <span className="text-faint">·</span> Nebius Token Factory
+          </span>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[22rem]">
+        Every agent runs on Nebius Token Factory. Nemotron 3 Nano screens fraud,
+        compliance and HS codes; Super investigates; Ultra argues the disputed
+        cases. Documents are read by MiniCPM-V, also on Token Factory.
       </TooltipContent>
     </Tooltip>
   );

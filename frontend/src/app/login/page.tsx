@@ -56,7 +56,7 @@ function Frame({ children }: { children?: React.ReactNode }) {
           </span>
           <div className="min-w-0">
             <h1 className="truncate text-[15px] font-semibold tracking-display text-white">
-              Trade Compliance Auditor
+              Floorline
             </h1>
             <p className="truncate text-[11px] text-faint">
               Sign in to record decisions

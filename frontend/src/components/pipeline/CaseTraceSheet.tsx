@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ErrorState } from "@/components/layout/States";
+import { CaseChain } from "@/components/pipeline/CaseChain";
 import { DebatePanel } from "@/components/review/DebatePanel";
 import {
   Sheet,
@@ -106,6 +107,9 @@ export function CaseTraceSheet({
           {c && (
             <>
               <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
+                <CaseChain case={c} />
+              </motion.section>
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}>
                 <Verdict case={c} />
               </motion.section>
               {(c.auto_debate ?? c.debate) != null && (

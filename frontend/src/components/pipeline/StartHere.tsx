@@ -112,9 +112,11 @@ export function StartHere() {
         Start here
       </h2>
       <p className="mt-0.5 max-w-3xl text-[11.5px] leading-relaxed text-dim">
-        An agent screens each shipment for fraud, sanctions and misdeclared goods. It
-        acts only inside a boundary a person published, and stops for a person on
-        anything else. Three steps show the whole loop.
+        Floorline&rsquo;s agents run on NVIDIA Nemotron 3 via Nebius Token Factory and
+        screen each shipment for fraud, sanctions and misdeclared goods. Rules set a risk
+        floor they may raise but never lower. They act only inside a boundary a person
+        published, and stop for a person on anything else. Three steps show the whole
+        loop.
       </p>
 
       {offerOneClick && (

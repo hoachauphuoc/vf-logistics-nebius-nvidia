@@ -1,4 +1,4 @@
-# Devpost Submission — VF Logistics Autonomous Fraud Detection
+# Devpost Submission — Floorline
 
 Copy-paste material for the Devpost form. The shooting script for the demo video is
 `docs/DEMO_SCRIPT.md`, and the narration it is timed to lives in
@@ -8,13 +8,22 @@ Copy-paste material for the Devpost form. The shooting script for the demo video
 
 ## Project name
 
-VF Logistics — Fraud Detection an Operator Can Delegate To
+Floorline
+
+Named for the design rule: deterministic checks set a risk floor for every shipment,
+and the agents may argue a case above that line but never below it. (VF Logistics is
+the freight operator in the demo; the repository and the Cloud Run service keep that
+name.)
 
 ## Elevator pitch (200 char limit on Devpost)
 
 <!--
-198 characters. Counted, not estimated -- there is no headroom here, so check before
-editing: python -c "print(len(open('SUBMISSION.md').read().split(chr(10))[N-1]))"
+183 characters. Counted, not estimated -- check before editing:
+python -c "print(len(open('SUBMISSION.md', encoding='utf-8').read().split(chr(10))[N-1]))"
+
+It now opens with the name and names NVIDIA as well as Nebius: the organisers ask that
+the required tools be impossible to miss, and the previous pitch said "Nemotron" without
+ever saying "NVIDIA".
 
 The previous version spent its whole budget on mechanism ("Senior Auditor debates Junior
 Analyst with function calling. A Delegation Boundary, not the agents, decides.") and never
@@ -24,7 +33,15 @@ stated nowhere a judge reads first, which made the one non-obvious decision in t
 invisible at the point of first contact.
 -->
 
-Shipment-fraud agents on Nebius Token Factory. A deterministic floor lets them raise risk but never lower it: Nano screens every case, Ultra (Nemotron) debates only where its verdict is the outcome.
+Floorline: shipment-fraud agents on NVIDIA Nemotron 3 via Nebius Token Factory. Rules set a risk floor the agents may raise, never lower; Ultra debates only where its verdict decides.
+
+**Built on:** **Nebius Token Factory** for every model call (seven agents), running
+**NVIDIA Nemotron 3 Nano** (`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`) on fraud,
+compliance, HS classification and the zero-day radar, **NVIDIA Nemotron 3 Super**
+(`nvidia/nemotron-3-super-120b-a12b`) on investigation, and **NVIDIA Nemotron 3 Ultra**
+(`nvidia/Nemotron-3-Ultra-550b-a55b`) on the Senior Auditor debate. Scanned documents are
+read by MiniCPM-V-4.5, also on Token Factory, because no NVIDIA vision model is offered
+there.
 
 ## Track
 
@@ -145,6 +162,35 @@ But detecting fraud is only half the problem. The harder question is: **who
 decides what the agent may do about it?** An agent that reasons well is not the
 same as an agent you can hand authority to.
 
+### Who it is for
+
+**The compliance desk at a freight forwarder or customs broker** — the few people who
+must screen every shipment that crosses their books before it moves, against sanctions
+lists, export controls and their own fraud history, and who answer for each release to a
+customs authority afterwards.
+
+What Floorline changes for them, in figures measured in this repository rather than
+estimated:
+
+- **The clear cases close themselves, inside limits the desk sets.** The agent releases
+  only what the published delegation boundary allows, and every release records the
+  boundary version and rule that permitted it.
+- **What stops reaches a person with its evidence attached** — the findings with the floor
+  each one forces, the live sources the compliance screen read, and the document itself.
+  On a held-out synthetic split the deterministic layer catches 93.5% of fraud at 91.2%
+  precision, and the HS classifier catches 91.7% of disguised controlled goods on a
+  holdout with no false alarms. It still holds 38.4% of clean shipments for a person,
+  which is the open weakness and is reported as one.
+- **Screening costs cents, not analyst hours.** Model spend on a 20-case run is about
+  `$0.068`, roughly a third of a cent per case; the binding cost is web search, and the
+  pre-filter resolves the plainest cases with no model call at all.
+- **The record stands up afterwards.** Every decision names the signed-in person or the
+  boundary that allowed it, refusals are recorded like successes, and the audit trail is
+  append-only.
+
+The synthetic corpus is stated as such: these are the system's measured behaviour on
+held-out data, not field results from a customer.
+
 ### What we built
 
 A multi-agent system on Cloud Run where **seven** specialised agents share one
@@ -152,6 +198,18 @@ shipment record — six running NVIDIA Nemotron models on **Nebius Token
 Factory**, one running a vision model for document reading — and a
 **governance layer** that determines which of those agents' recommendations
 actually execute.
+
+One case, end to end, with no person in the loop until the boundary says so:
+
+> scanned document → **Model Armor** → document intake (MiniCPM-V) → deterministic
+> **risk floor** and pre-filter → fraud + compliance (**NVIDIA Nemotron 3 Nano**, live
+> **Tavily** search) → investigation (**Nemotron 3 Super**, Tavily) → auto-debate when
+> floor and model disagree (**Nemotron 3 Ultra**, calling tools: re-ask Nano, search
+> again) → **delegation gate** → tools: release, hold, assign analyst, draft SAR,
+> webhook, Pub/Sub → audit trail with per-hop lineage
+
+The case trace in the console opens on exactly this chain for the case in front of
+you, with the model that ran each hop, so it can be checked rather than believed.
 
 **Document Intake Agent** — reads a real shipping document (bill of lading,
 commercial invoice, packing list). Rasterises the PDF's first page and sends
@@ -471,12 +529,14 @@ investigation agent.
 
 ## Video script
 
-The shooting script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): nine scenes,
+The shooting script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): ten scenes,
 each with the click path and the narration line it is timed against. The narration
 itself lives in [`scripts/build_narration.py`](scripts/build_narration.py), which
 synthesises the audio track and matching SRT subtitles per sentence, so caption
 timings are measured from real audio rather than interpolated from word counts. The
-nine scene lengths sum to exactly 180 seconds, the hard limit.
+ten scene lengths sum to 165 seconds, under the three-minute limit. It is written as a
+pitch: the first sentence names Floorline and who it is for, and NVIDIA Nemotron and
+Nebius Token Factory are named aloud, not only on screen.
 
 An earlier `docs/video-script.txt` described the retired vanilla-HTML dashboard, a
 `DEMO_MODE` sidebar that no longer exists, and pointed at a service in a different
@@ -513,9 +573,10 @@ just a slide claim.
 
 ### Project details
 
-**Built with** (tags): nebius, nvidia, nemotron, token-factory, tavily,
-google-cloud, cloud-run, firestore, pub-sub, cloud-storage, model-armor,
-openai-sdk, python, flask, gunicorn, asyncio, nextjs, react, typescript,
+**Built with** (tags, the required tools first): nebius-token-factory, nebius,
+nvidia-nemotron, nemotron-3-nano, nemotron-3-super, nemotron-3-ultra, nvidia,
+minicpm-v, tavily, google-cloud, cloud-run, firestore, pub-sub, cloud-storage,
+model-armor, openai-sdk, python, flask, gunicorn, asyncio, nextjs, react, typescript,
 tailwindcss, docker
 
 **"Try it out" links:**
@@ -557,8 +618,9 @@ Verifiable via `GET /api/v1/agents`, the per-case trace UI, or the raw case docu
 
 | Item | Status |
 |---|---|
-| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The shooting script is `docs/DEMO_SCRIPT.md` (nine scenes, 180s) and the narration track is generated by `scripts/build_narration.py`. |
+| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The shooting script is `docs/DEMO_SCRIPT.md` (ten scenes, 165s) and the narration track is generated by `scripts/build_narration.py`. |
 | Public code repository | done -- https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
+| Secrets out of the repository | done -- scanned the tracked files, the untracked working tree and the full git history for Tavily, Google, Nebius and private-key patterns: no hit. `.env` is git-ignored and was never committed; `.env.example` holds placeholders only; on Cloud Run the keys come from Secret Manager |
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
