@@ -77,7 +77,7 @@ jobs:
             exit 1
           fi
         env:
-          MYPY_CEILING: "125"
+          MYPY_CEILING: "123"
 
   test:
     runs-on: ubuntu-latest

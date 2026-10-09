@@ -756,7 +756,7 @@ def assert_write_access_is_guarded() -> None:
 def require_auth(f: Callable) -> Callable:
     """Decorator: require authentication for an endpoint."""
     @functools.wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Any:
         error = authenticate_request()
         if error:
             return error
@@ -776,7 +776,7 @@ def require_role(required_role: Role) -> Callable:
     """
     def decorator(f: Callable) -> Callable:
         @functools.wraps(f)
-        def decorated(*args, **kwargs):
+        def decorated(*args: Any, **kwargs: Any) -> Any:
             error = authenticate_request()
             if error:
                 return error
@@ -821,7 +821,7 @@ def require_password_session(f: Callable) -> Callable:
     decorator and the rate limiter.
     """
     @functools.wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Any:
         ctx = get_auth_context()
         if ctx is None:
             error = authenticate_request()
