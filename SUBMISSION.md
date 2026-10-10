@@ -142,7 +142,7 @@ had published or would have:
   holdout, precision 84.1% → 91.2%, recall 95.1% → 93.5%, sanctions-alias and shell-company
   detection unchanged at 100%. Still high, and stated as such in the README.
 - **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
-  about `$0.068` on inference and 90–106 Tavily searches, so the free search tier
+  `$0.068`–`$0.088` on inference and 90–106 Tavily searches, so the free search tier
   runs out around 200 cases while model spend is still negligible. Every cost figure
   we had published before measuring this was a model-cost figure.
 
@@ -181,8 +181,8 @@ estimated:
   precision, and the HS classifier catches 91.7% of disguised controlled goods on a
   holdout with no false alarms. It still holds 38.4% of clean shipments for a person,
   which is the open weakness and is reported as one.
-- **Screening costs cents, not analyst hours.** Model spend on a 20-case run is about
-  `$0.068`, roughly a third of a cent per case; the binding cost is web search, and the
+- **Screening costs cents, not analyst hours.** Model spend on a 20-case run is
+  `$0.068`–`$0.088`, under half a cent per case; the binding cost is web search, and the
   pre-filter resolves the plainest cases with no model call at all.
 - **The record stands up afterwards.** Every decision names the signed-in person or the
   boundary that allowed it, refusals are recorded like successes, and the audit trail is

@@ -313,7 +313,7 @@ async def tenant_usage(
         # Tavily, reported beside the model spend because it is the tighter ceiling and
         # was invisible. `estimated_cost_usd` above is Nebius only, and measured at
         # 4.5-5.3 searches per case the free tier's 1,000 credits a month run out after
-        # roughly 200 cases -- while the same traffic costs about seven cents of
+        # roughly 200 cases -- while the same traffic costs under a dollar of
         # Nemotron. A dashboard showing only the dollars shows the looser constraint.
         #
         # Three numbers, not one. `searches` is what the pipeline attempted, `cached` is
