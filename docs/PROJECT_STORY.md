@@ -34,7 +34,7 @@ never cross below.
 
 ## What it does
 
-VF Logistics is an autonomous compliance pipeline for shipping documents. Work
+Floorline is an autonomous compliance pipeline for shipping documents. Work
 arrives several ways — a PDF dropped on the intake card, a shipment event posted
 to an endpoint, a Pub/Sub message, a batch simulation — and the case runs to a
 terminal state with no further input:
@@ -184,7 +184,8 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 800.
+test file, and it drives a deployed service over HTTP. There are now 885 backend
+tests and 142 frontend tests.
 
 ## Challenges we ran into
 
@@ -214,6 +215,17 @@ still never reading the value from the file. It is a good illustration of how a
 prompt leaks the shape of the system around it: the model was not wrong, it was
 under-informed, and the deterministic floor was already the right place for that
 penalty to live.
+
+**Half the investigations were empty, and every one of them parsed.** Re-reading the
+seeded board, 8 of 16 investigation reports were a fragment such as `{": {}}": null}`
+— valid JSON, so `parse_error` was false and each case read as investigated. Two
+things had to be true at once for that to pass unnoticed: the investigation agent was
+the only text agent with no output schema, and Nemotron 3 Super was being asked
+through `json_object` with its reasoning on, which leaks the reasoning into the
+constrained reply. We measured before choosing a fix: 6 of 12 usable replies in that
+mode, 12 of 12 without it, 12 of 12 with reasoning off instead. We kept the reasoning,
+dropped the mode, added the schema, and allowed one more call; the same ten cases on
+the live service went from 5 usable to 10.
 
 **We fixed the same fixture bug in one place and left it in another.** The
 headline demo case — a clean garment export that clears itself — described 1,640
@@ -369,7 +381,7 @@ impossible was two correct rules meeting, and the one that scored a clean docume
 at 52 was a correct rule being described badly to a model. Reviewing controls one
 at a time would not have caught either.
 
-## What's next for VF Logistics — Governed Autonomous Fraud Detection
+## What's next for Floorline — Governed Autonomous Fraud Detection
 
 Replacing the counterparty book with intake tied to a booking reference issued
 against a customer account, so identity is established before any document is

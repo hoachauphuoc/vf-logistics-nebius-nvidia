@@ -124,7 +124,7 @@ byte-for-byte the `755d998` file, while `verifier.py` grew from 487 lines to 1,6
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
 | **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
 | **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **885** backend tests in 37 files at 80% coverage, 137 frontend tests, and a mutation check that breaks 36 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **885** backend tests in 37 files at 80% coverage, 142 frontend tests, and a mutation check that breaks 36 lines and sees every one caught | A test nobody has seen fail is not evidence |
 | **CI** | none in `755d998`; the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (strict on clean modules, a ratchet on the rest), tests with a 75% coverage floor, frontend, and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
 
@@ -499,12 +499,14 @@ provider's models are underneath.
 
 **Nemotron Nano vs Super: observable differences in structured output.**
 Nano (`Nemotron-3-Nano-30B-A3B`) reliably produces clean JSON for fraud detection
-and compliance screening -- the most frequent calls. Super
-(`nemotron-3-super-120b-a12b`) is notably better at multi-step reasoning in
-investigation and debate, but occasionally wraps JSON in markdown fences that need
-stripping. Both models respect `response_format={"type":"json_object"}` but Super
-sometimes includes commentary outside the JSON block. Our `parse_model_json()`
-handles both.
+and compliance screening -- the most frequent calls -- under
+`response_format={"type":"json_object"}`. Super (`nemotron-3-super-120b-a12b`)
+carries the multi-step reasoning in investigation (the debate runs on Ultra), and
+under that same mode with reasoning on it failed half the time: measured on two
+stored board prompts, 6 of 12 replies were fragments such as `{": {}}": null}` or
+planning text used as a JSON key. The same prompt without `response_format` was
+12 of 12, so Super is asked for JSON by its prompt alone, checked against a schema,
+and asked once more if a reply still fails it.
 
 **Token Factory pricing is developer-friendly but hard to predict, and a rate
 multiple is not a cost multiple.** The per-token pricing ($0.06 / $0.24 per million
@@ -628,7 +630,7 @@ Verifiable via `GET /api/v1/agents`, the per-case trace UI, or the raw case docu
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 885 backend tests (pytest, 80% coverage), 137 frontend tests (vitest), mutation check 36/36 |
+| Automated test suite | 885 backend tests (pytest, 80% coverage), 142 frontend tests (vitest), mutation check 36/36 |
 | CI pipeline | GitHub Actions, five jobs, every one able to fail the build: ruff; mypy, strict on clean modules and a ceiling on the rest that may only fall; pytest with `--cov-fail-under=75`; frontend typecheck, lint, tests and build; and a container job that builds both images and smoke-tests the deployed one |
 | Auto-debate on score disputes | done -- fires without human intervention; a confident DISAGREE escalates the case, upward only |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |
@@ -655,10 +657,11 @@ outstanding item is the video.
 1. **OpenAI-compatible API** — Migrating from Gemini took hours, not days. The
    same `AsyncOpenAI` client talks to Token Factory; only the base URL, model
    IDs, and pricing table changed. Structured JSON output (`response_format`)
-   works identically.
+   works identically for Nano; Super with reasoning on is the exception, below.
 
 2. **Model variety in one endpoint** — Having Nemotron Nano (fast/cheap),
-   Nemotron Super (high-quality reasoning), and a vision model (MiniCPM-V)
+   Nemotron Super (high-quality reasoning), Nemotron Ultra (the debate), and a
+   vision model (MiniCPM-V)
    behind the same endpoint simplified architecture. Each agent picks the
    right model for its job without managing multiple SDKs or auth flows.
 
@@ -786,10 +789,15 @@ on this codebase. The first two are the ones we would fix first.
 
 2. **Nemotron 3 Super** (`nemotron-3-super-120b-a12b`) — handles the multi-hop work
    well: cross-referencing compliance findings and temporal anomaly detection. One
-   observed rough edge: it sometimes wraps JSON in markdown fences or adds commentary
-   outside the block even under `json_object`, which Nano does not. Our
-   `parse_model_json()` tolerates both, but a caller who trusted `json_object` strictly
-   would break on Super and not on Nano.
+   measured rough edge: **`response_format={"type":"json_object"}` and reasoning do not
+   mix.** With both on, Super's planning leaks into the constrained output: half the
+   replies were a fragment such as `{": {}}": null}`, `{".json": null}`, or a JSON key
+   holding text like "We must output JSON only...". Measured on two stored prompts, 12
+   calls per mode: json_object with reasoning 6/12 usable, no response_format 12/12,
+   json_object with `enable_thinking=False` 12/12. Every failed reply still parsed as
+   valid JSON, so nothing flagged it until we added a schema. We dropped json_object for
+   Super and kept the reasoning; on the live service the same ten cases went from 5/10
+   to 10/10 usable reports.
 
 3. **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — runs the Senior Auditor
    debate, where native function calling lets it decide at runtime whether to search
