@@ -330,7 +330,7 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **921 backend tests** at 81% line coverage, 146 frontend tests, and a
+**Now:** **922 backend tests** at 81% line coverage, 146 frontend tests, and a
 mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
 the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
@@ -1300,7 +1300,7 @@ which is what the case trace, the Review screen and the dossier are for.
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 921, at 81% line coverage. CI fails below 75%.
+# Unit + integration tests: 922, at 81% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
 # The mutation check: breaks 36 lines on purpose, one at a time, and requires the
@@ -1344,7 +1344,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 |-------|-------|----------------|
 | Sanctions & zero-day | 64 | Sanctions matching, list freshness, unseen-pattern handling |
 | Official sanctions lists | 14 | OFAC SDN and UN parsers on real rows cut from the published files, a registration number from OFAC's remarks, short aliases dropped, `OOO` read as `LLC`, and a refresh that refuses to publish half a list |
-| Due-diligence dossier | 10 | Every finding code lands on a reference that exists, the most specific guidance wins, the PDF renders from an empty or non-Latin case, and the route is a viewer read scoped to the tenant |
+| Due-diligence dossier | 11 | Every finding code lands on a reference that exists, the most specific guidance wins, the PDF renders from an empty or non-Latin case, a model's arrow is spelled out rather than printed as `?`, and the route is a viewer read scoped to the tenant |
 | Pure logic | 69 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
 | Decision paths | 57 | Every route a shipment can take through the state machine, and the heading the HS classifier is told was declared |
 | Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
@@ -1381,7 +1381,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
 | Evaluation endpoint | 8 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; and the public-case pairs with their sources |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **921** | |
+| **Total** | **922** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1597,6 +1597,8 @@ described goods — "ceramic tableware" sits between 6911 and 6912, and "woven c
 garments" does not say shirts. A query costs a person ten minutes and a missed
 substitution releases the cargo, which is the asymmetry the whole design rests on, so the
 fix stays. The samples are small; what they establish is the direction, not the rate.
+The seed board's base cargo now names what 6205 covers, men's shirts: a clean control that
+draws a query on its wording is not a clean control.
 
 **Token Factory has 24 models and not one of them is a safety model.** Measured
 against the live `/v1/models` endpoint: four NVIDIA models, all chat
@@ -1741,7 +1743,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        39 files, 921 tests
+├── tests/                        39 files, 922 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
