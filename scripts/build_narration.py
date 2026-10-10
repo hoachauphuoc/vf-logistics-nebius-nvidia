@@ -166,7 +166,7 @@ SCENES: list[tuple[str, float, str]] = [
     (
         "9 - Tests and CI",
         8.0,
-        "875 tests pass at 79 percent coverage. "
+        "885 tests pass at 80 percent coverage. "
         "Continuous integration runs them on every push.",
     ),
     (

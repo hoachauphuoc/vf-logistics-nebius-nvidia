@@ -7,7 +7,8 @@ cover everything the seven agents need:
 
   * complete_json         - text-only prompt, JSON-mode response (fraud,
                              compliance, investigation, hs_classifier, zero_day
-                             and debate agents)
+                             and debate agents); investigation turns JSON mode
+                             off with json_mode=False, see that agent's JSON_MODE
   * complete_vision_json  - a document image/PDF page plus a text prompt,
                              JSON-mode response (document intake agent)
 
@@ -238,14 +239,20 @@ async def complete_json(
     user_text: str,
     temperature: float = 0.1,
     max_tokens: int | None = None,
+    json_mode: bool = True,
 ) -> tuple[str, int, int]:
     """
     One text-only, JSON-mode chat completion.
 
     Returns (raw_text, input_tokens, output_tokens). Raises on transport/API
     errors - callers already run inside a Timer/try structure in each agent.
+
+    `json_mode=False` drops `response_format` and relies on the prompt plus
+    parse_model_json instead. It exists for Nemotron 3 Super, whose reasoning does
+    not survive the constrained decoding: see investigation_agent.JSON_MODE.
     """
     client = get_client()
+    mode = {"response_format": {"type": "json_object"}} if json_mode else {}
 
     async def _call():
         return await client.chat.completions.create(
@@ -255,7 +262,7 @@ async def complete_json(
                 {"role": "user", "content": user_text},
             ],
             temperature=temperature,
-            response_format={"type": "json_object"},
+            **mode,
             **_ceiling(max_tokens),
         )
 

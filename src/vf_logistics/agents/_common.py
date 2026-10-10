@@ -83,9 +83,11 @@ def validate_result(
     reply can send a shipment to a human but never release one.
 
     An agent with no registered schema passes through unchanged rather than
-    raising. That keeps the document and investigation agents working while their
-    output shapes are still moving, and AGENT_OUTPUT_SCHEMAS is the one place to
-    look to see which agents are covered.
+    raising. That keeps the document agent working while its output shape is
+    still moving, and AGENT_OUTPUT_SCHEMAS is the one place to look to see which
+    agents are covered. Passing through is not harmless: the investigation agent
+    was uncovered until half its replies on the 20-case board turned out to be
+    JSON fragments stored as finished work -- see schemas.InvestigationReport.
 
     The validated model is returned as a plain dict, not a BaseModel. Every
     caller downstream -- the orchestrator, the store, the dashboard JSON -- reads
