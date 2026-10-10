@@ -486,7 +486,7 @@ class MemoryStore:
                 # billed in credits, not dollars, and it is the tighter of the two
                 # ceilings: measured at 4.5-5.3 searches per case, the free tier's
                 # 1,000 credits a month runs out after roughly 200 cases, while the
-                # same traffic costs about seven cents of Nemotron.
+                # same traffic costs under a dollar of Nemotron.
                 #
                 # `billable` is summed rather than derived. A cache hit costs nothing
                 # and so does a request that never left the process, so

@@ -122,7 +122,7 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
 **Tavily** provides live web evidence at five integration points — counterparty
 screening, route validation, adverse-media search. It turned out to be the
 binding cost constraint on the whole system, which we had not expected: a 20-case
-run spends about `$0.068` on models and 90 to 106 Tavily searches, so on the free
+run spends `$0.068`–`$0.088` on models and 90 to 106 Tavily searches, so on the free
 tier the search quota runs out roughly 200 cases in while the model spend is still
 negligible. Every figure we had published was a model-cost figure.
 

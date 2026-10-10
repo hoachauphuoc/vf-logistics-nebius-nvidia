@@ -50,7 +50,7 @@ people who must screen every shipment before it moves and answer for each releas
 customs authority afterwards. Floorline closes the clear cases inside limits that desk
 publishes, sends the rest to a person with the findings, live sources and the document
 attached, and keeps an append-only record naming who or what allowed each action. Model
-spend is about a third of a cent per case (`$0.068` for a 20-case run); the measured
+spend is under half a cent per case (`$0.068`–`$0.088` for a 20-case run); the measured
 detection figures, on held-out synthetic data, are in [Measured results](#measured-results).
 
 A shipment event arrives and nobody touches it again. A background worker scores
@@ -276,7 +276,7 @@ that refuses a runtime model switch past a rate multiple of the cheapest model, 
 a measured `max_tokens` on every agent.
 
 **The finding worth reporting:** **Tavily, not the models, is the binding
-constraint.** A 20-case run spends about `$0.068` on inference and 90–106 Tavily
+constraint.** A 20-case run spends `$0.068`–`$0.088` on inference and 90–106 Tavily
 searches, so on the free search tier the quota runs out around 200 cases while
 model spend is still negligible. Every cost figure we had published until then was
 a model-cost figure.
@@ -1440,8 +1440,11 @@ to `nvidia/nemotron-3-super-120b-a12b` reverses the decision without a deploy.
 
 Measured on a 20-case run: **90–106 Tavily searches** (4.5–5.3 per case) against
 `$0.067994` of Nemotron. At the free tier's 1,000 credits a month that is **188–222
-cases**, while the model bill for the same traffic is under seven cents — so the external
-search, not inference, is what limits throughput. `estimated_cost_usd` counts Nebius
+cases**, while the model bill for those cases is under a dollar — so the external
+search, not inference, is what limits throughput. The board reseeded on 10/10 after the
+investigation fix measured `$0.087906` for the same 20 cases: in the earlier run half the
+investigation replies were near-empty fragments, so a working investigation costs more
+than a broken one did. Searches were not re-counted on that run. `estimated_cost_usd` counts Nebius
 only, which is why `GET /api/v1/billing/usage` now also reports `tavily_searches`,
 `tavily_cached` and `tavily_billable`. The three are summed independently rather than
 derived from each other, because a cache hit and a request that never left the process
