@@ -74,6 +74,7 @@ export const ALLOWED_GET = new Set([
 export const ALLOWED_GET_BY_ID: ReadonlyArray<readonly [string, string]> = [
   ["review", "document"], // the scanned bill of lading, for the review iframe
   ["orchestrator/case", ""], // full case trace, for the Case screen
+  ["orchestrator/case", "dossier"], // the case as a due-diligence PDF (dossier.py)
   ["compliance/audit", ""], // one B2B audit record
 ];
 
@@ -115,10 +116,17 @@ export const ALLOWED_POST = new Set([
  * The one-click judge button is public and its account is an admin, so for these
  * the role is not enough. Checked in the BFF so a refusal costs no upstream call
  * and reads well in the UI; Flask enforces the same rule independently.
+ *
+ * Each one changes the demo for every visitor after the person who pressed it:
+ * Clear board empties it, revoking the boundary suspends the agent, and the
+ * prefilter rules decide what clears with no model at all.
  */
-export const PASSWORD_ONLY_POST = new Set(["orchestrator/reset"]);
+export const PASSWORD_ONLY_POST = new Set(["orchestrator/reset", "governance/revoke"]);
 
 export const ALLOWED_PUT = new Set(["governance/prefilter-rules"]);
+
+/** PUTs with the same password rule. Today that is every PUT the proxy allows. */
+export const PASSWORD_ONLY_PUT = new Set(["governance/prefilter-rules"]);
 
 /**
  * The id segment is checked against the case-id shape the backend issues, so a

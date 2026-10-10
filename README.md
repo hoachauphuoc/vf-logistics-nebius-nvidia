@@ -27,31 +27,59 @@ visitor is a real `viewer` and both sit above it. **Recording a decision needs a
 account**, because the audit trail names the person who released a shipment rather than
 the service that called the API, and a free-text name field would make that record
 worthless. Judges: **Continue as guest judge** on the login page signs you in with one
-click and can do everything except clear the board; the password accounts are in the
+click and can do everything except clear the board, revoke the agent's authority or
+edit the screening rules; the password accounts are in the
 Devpost submission's testing-instructions field — a governance-admin account, and one
 that holds only the Reviewer role, so you can watch the access control refuse something.
 
 ## The problem
 
-Vietnamese logistics operators lose money to shipment fraud that is invisible to
-threshold rules: a shipping cost 60% under the historical route average looks
-like a promo, not under-invoicing. A shipper with 2 lifetime transactions and a
-generic company name looks like a new customer, not a shell entity. Catching
-these requires reading many weak signals *together* — exactly what a rules
-engine cannot do and an analyst has no time to do at volume.
+Fraud in a forwarder's book is rare, and that is what makes it expensive to find. In 2024
+Vietnam Customs processed **16.84 million** export and import declarations, found a
+violation in **29,849** of them — **0.18%** — and sent **3.45%** to the red channel for
+physical inspection to find them
+([customs.gov.vn, 2 Jan 2025](http://customs.gov.vn:8228/index.jsp?pageId=2&aid=208927&cid=24)).
+Even the authority's own targeting holds about nineteen declarations for every one that
+turns out to be wrong. A forwarder's compliance desk lives inside the same ratio: whatever
+it holds, almost all of it is honest, and each hold is a person's time and a customer's
+delay.
 
-**The impact:** every case a rules engine misses is either a fraud loss that
-surfaces weeks later in a reconciliation, or an analyst spending 20+ minutes
-manually re-deriving a judgment call the agents below make in seconds, for
-every one of hundreds of shipments a day.
+The signals do not help on their own. A freight charge 60% under the lane's history looks
+like a promotion, not under-invoicing; a shipper with two lifetime shipments looks like a
+new customer, not a shell. Read together they are the pattern, but a rules engine reads
+them one at a time and an analyst has no time to read them together for every booking.
+
+So the job is two jobs. **Hold the right shipments** — and on the public enforcement cases
+in [Measured results](#public-enforcement-cases), the rules plus the agents held 14 of 19
+real frauds. And **make every hold quick and defensible to decide**, because at 0.2% fraud
+even a good screen holds hundreds of honest shipments per real one. That second job is
+where Floorline earns its place: each held case arrives with the findings, the sanctions
+list it was screened against and that list's date, live sources, the document, and a
+**due-diligence dossier** that cites the regulation each finding rests on.
+
+### Why now
+
+- **The rules got stricter on the forwarder's side of the desk.** Vietnam's Decree
+  259/2025/ND-CP on strategic trade control, in force since 10 Oct 2025, governs dual-use
+  goods; Decree 169/2026/ND-CP on customs penalties took effect on 1 Jul 2026. A customs
+  broker carries the declarant's obligations (Customs Law 54/2014/QH13, Art. 20(4)).
+- **Regulators are naming forwarders.** OFAC has settled with freight and logistics firms
+  over shipments they moved — Toll Holdings (2022), C.H. Robinson's non-US subsidiaries
+  (2024), Fracht FWO (2025), and Pegasus Worldwide Logistics on 9 Oct 2026. In every one
+  the failure was screening, not concealment.
+- **Diversion runs through this corridor.** The BIS orders behind our public cases route
+  controlled US goods through the UAE, Hong Kong, Turkey, the Maldives and Central Asia,
+  and Commerce has found plywood, steel pipe, staples and solar modules completed in
+  Vietnam or its neighbours from Chinese inputs.
 
 **Who it is for:** the compliance desk at a freight forwarder or customs broker — the
 people who must screen every shipment before it moves and answer for each release to a
 customs authority afterwards. Floorline closes the clear cases inside limits that desk
-publishes, sends the rest to a person with the findings, live sources and the document
-attached, and keeps an append-only record naming who or what allowed each action. Model
-spend is under half a cent per case (`$0.068`–`$0.088` for a 20-case run); the measured
-detection figures, on held-out synthetic data, are in [Measured results](#measured-results).
+publishes, sends the rest to a person with the evidence attached, and keeps an
+append-only record naming who or what allowed each action. Model spend is under half a
+cent per case (`$0.068`–`$0.088` for a 20-case run); the measured detection figures, on
+held-out synthetic data and on 19 public enforcement cases, are in
+[Measured results](#measured-results).
 
 A shipment event arrives and nobody touches it again. A background worker scores
 it for fraud, decides on that score whether compliance screening is warranted,
@@ -302,7 +330,7 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **885 backend tests** at 80% line coverage, 142 frontend tests, and a
+**Now:** **921 backend tests** at 81% line coverage, 146 frontend tests, and a
 mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
 the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
@@ -520,6 +548,34 @@ original, so
 it `SYSTEM-GENERATED` — on the document itself and in the case provenance
 (`generated: true`, `rendered_from`). A reconstruction is never presented as an
 original.
+
+### The case as a due-diligence dossier
+
+A customs broker carries the declarant's obligations — Vietnam's Customs Law
+(54/2014/QH13) says so in Art. 20(4) — so when a shipment is questioned later, "the model
+scored it 85" is not an answer. **Due-diligence dossier (PDF)** on the case trace and the
+Review screen (`GET /api/v1/orchestrator/case/<id>/dossier`) renders the record a
+forwarder files: the outcome and who decided it, the shipment as declared, the sanctions
+list it was screened against and that list's date, every finding with the action it
+calls for and the text it rests on, a comparable public enforcement case, the
+specialists' views, and provenance.
+[`dossier.py`](src/vf_logistics/dossier.py) builds it in code from the stored case; the
+only model-written text is the agents' own recorded conclusions, labelled as such. Every
+reference below was checked against a fetched copy of the source.
+
+| Finding | Rests on | Comparable public case |
+|---|---|---|
+| `SANCTIONS_MATCH`, `HIGH_RISK_DESTINATION`, `HIGH_RISK_TRANSIT` | OFAC SDN and UN SC Consolidated List; Customs Law Art. 18 / 20(4); EAR Part 732 Supp. 3 | [OFAC 2022, Toll Holdings](https://ofac.treasury.gov/recent-actions/20220425): a forwarder, "to, from, or through" DPRK, Iran, Syria |
+| `DUAL_USE_HS_CODE`, `HS_DESCRIPTION_MISMATCH_DUAL_USE` | [Decree 259/2025/ND-CP](https://luatvietnam.vn/xuat-nhap-khau/nghi-dinh-259-2025-nd-cp-ve-kiem-soat-thuong-mai-chien-luoc-414787-d1.html) on strategic trade control; EAR Part 732 Supp. 3 | [BIS 2023](https://www.govinfo.gov/content/pkg/FR-2023-11-14/html/2023-25005.htm): microcontrollers via a UAE free-zone consignee to Russia |
+| `HIGH_RISK_ORIGIN` | OFAC / UN lists; [Customs Law Art. 18 / 20(4)](https://luatvietnam.vn/xuat-nhap-khau/luat-hai-quan-2014-so-54-2014-qh13-87932-d1.html) | [EPPO 2024](https://www.eppo.europa.eu/media/news/germany-eppo-brings-charges-against-two-evading-anti-dumping-duties-aluminium-foil-imports-2024-07-29_en): Chinese foil declared as Myanmar origin |
+| `MULTIPLE_DIVERSION_HUBS`, `ROUTE_CHANGED_AFTER_BOOKING` | [EAR Part 732 Supp. 3](https://www.law.cornell.edu/cfr/text/15/appendix-Supplement_No_3_to_part_732), red flag 10: route abnormal for the product | [BIS 2023](https://www.govinfo.gov/content/pkg/FR-2023-05-19/html/2023-10750.htm): brakes to a Maldives agent, destination changed after a forwarder's warning |
+| `SHIPPER_NO_HISTORY`, `RECENTLY_REGISTERED_SHIPPER` | EAR Part 732 Supp. 3, red flag 4: little or no business background | — |
+| `VALUE_DENSITY_*`, `FREIGHT_ANOMALY` | Customs Law Art. 18; [Decree 169/2026/ND-CP](https://luatvietnam.vn/thue/nghi-dinh-169-2026-nd-cp-quy-dinh-xu-phat-vi-pham-hanh-chinh-trong-linh-vuc-hai-quan-435022-d1.html) on customs penalties | [BIS 2022](https://www.govinfo.gov/content/pkg/FR-2022-12-16/html/2022-27347.htm): a USD 25,000 oscilloscope declared at USD 2,482 |
+| `HS_DESCRIPTION_MISMATCH` | Customs Law Art. 18; Decree 169/2026/ND-CP | [EPPO 2024](https://www.eppo.europa.eu/media/news/spain-five-directors-two-companies-indicted-evading-anti-dumping-duties-steel-sheets-2024-09-24_en): finished sheet declared as slab |
+| `BLACKLIST_*`, `ZERO_DAY_*`, identity mismatches | the forwarder's own policy | — |
+
+The dossier is not legal advice and says so on the page: a reference says where an
+obligation comes from, not that it has been met.
 
 ---
 
@@ -758,6 +814,7 @@ before; only the `model` field in each response envelope changed.
 | `/api/v1/simulate` | POST | Inject the scripted three-shipment demo batch |
 | `/api/v1/orchestrator/state` | GET | Full dashboard projection: cases, events, audit, counters |
 | `/api/v1/orchestrator/case/<case_id>` | GET | One case with every agent hop, latency and action receipt |
+| `/api/v1/orchestrator/case/<case_id>/dossier` | GET | The case as a due-diligence dossier (PDF), built by code from the stored case; viewer, like the case itself |
 | `/api/v1/orchestrator/tick` | POST | Advance the pipeline one step |
 | `/api/v1/orchestrator/reset` | POST | Clear the tenant's cases and events (operator, **password sign-in only**). The audit trail is kept, and the reset is written to it as a `board_reset` row naming who did it |
 | `/api/v1/orchestrator/drain` | POST | Run every pending case to a terminal state |
@@ -1051,12 +1108,15 @@ a judge never has to touch `gcloud`.
 The login page and the board's **Start here** strip offer **Continue as guest judge**:
 one click, no password, and the session is `guest-judge@vf-logistics.demo`, a separate
 account listed in `ADMIN_EMAILS`. It can do everything the judge account can — inject
-shipments, decide cases, publish policy — **except clear the board**.
+shipments, decide cases, simulate and publish policy — **except three changes that
+would carry over to the next judge**: clear the board, revoke the delegation boundary
+(which suspends the agent), and edit the pre-AI screening rules.
 
-That one exception is enforced twice, not hidden. The session token carries an `amr`
+Those exceptions are enforced twice, not hidden. The session token carries an `amr`
 claim (`password` or `one_click`) inside the same HMAC as the email, so it cannot be
-edited. The console's BFF refuses `orchestrator/reset` to any session that does not say
-`password`, and the API refuses it again with `auth.require_password_session`, which
+edited. The console's BFF refuses `orchestrator/reset`, `governance/revoke` and the
+`governance/prefilter-rules` PUT to any session that does not say `password`, and the
+API refuses them again with `auth.require_password_session`, which
 returns 403 with `required_auth: "password"`. A token without the claim — one minted
 before it existed — counts as *not* a password. A script holding only the API key still
 passes, because it has no session to ask about.
@@ -1195,12 +1255,52 @@ What the table says:
 - **The holdout is the test that matters:** 91.7% with no false alarms, on substitutions
   the reference never mentions, on Nano rather than Super.
 
+### Public enforcement cases
+
+The synthetic corpus tests the system against its authors' idea of fraud. So
+`scripts/build_public_cases.py` rebuilds **19 real cases** — BIS Temporary Denial Orders,
+OFAC settlements with freight forwarders, US Commerce circumvention findings, EPPO and
+OLAF prosecutions — each as the shipment the paperwork showed, beside the honest trade it
+imitated, with the regulator's URL and a verbatim quote on every case
+(`data/public_cases.json`). Parties are screened against the real OFAC SDN and UN lists.
+
+| 19 pairs | Rules alone | Full system |
+|---|---|---|
+| Frauds held | 11 / 19 | 14 / 19 |
+| Honest counterparts held | 7 / 19 | 9 / 19 |
+| Pairs separated (fraud held, honest cleared) | 4 | 3 |
+| Model cost | $0 | $0.034 |
+
+Read it as pairs. **Dual-use pairs are held on both sides**, correctly: controlled goods
+need a licence check whether or not this consignee is honest. **Six origin-fraud pairs
+are identical at booking** — Vietnamese-declared plywood made from Chinese veneer looks
+exactly like plywood made from Vietnamese veneer — so no booking-time screen separates
+them, and the report says so rather than tuning a rule until it appears to. Two identical
+pairs received different verdicts from the model; that is counted as variance, not
+detection. And the lists are retrospective: several parties were designated because of
+the very case.
+
+The exercise found two real gaps, both now fixed and measured. Routing was checked on the
+destination only, so foil declared as Myanmar origin and rail freight through Belarus
+passed; `HIGH_RISK_ORIGIN` and `HIGH_RISK_TRANSIT` close that ("to, from, or through", in
+OFAC's words), and change nothing on the synthetic corpus's clean shipments. And OFAC
+writes `LLC TESTKOMPLEKT` where a Russian invoice says `OOO Testkomplekt`; the name
+normaliser now treats Russian, CIS and Gulf legal forms like `LLC` and `Ltd`.
+
+**Workload at real fraud rates.** A corpus is a fifth to four-fifths fraud by
+construction; a forwarder's book is not. Vietnam Customs found a violation in 29,849 of
+16.84 million declarations in 2024, **0.18%**. At 0.2%, the tuned rules hold about 385 of
+every 1,000 shipments to find about 2 real cases. The console's Evaluation screen shows
+this for every report at 0.2%, 1% and 2%. The conclusion we draw is that the product's job
+is not to hold fewer shipments but to make each hold quick and defensible to decide —
+which is what the case trace, the Review screen and the dossier are for.
+
 ---
 
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 885, at 80% line coverage. CI fails below 75%.
+# Unit + integration tests: 921, at 81% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
 # The mutation check: breaks 36 lines on purpose, one at a time, and requires the
@@ -1208,7 +1308,7 @@ python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: typecheck, lint, 142 unit tests, production build
+# Frontend: typecheck, lint, 146 unit tests, production build
 cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build
 
 # Counterparty book, offline
@@ -1243,6 +1343,8 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Suite | Count | What it covers |
 |-------|-------|----------------|
 | Sanctions & zero-day | 64 | Sanctions matching, list freshness, unseen-pattern handling |
+| Official sanctions lists | 14 | OFAC SDN and UN parsers on real rows cut from the published files, a registration number from OFAC's remarks, short aliases dropped, `OOO` read as `LLC`, and a refresh that refuses to publish half a list |
+| Due-diligence dossier | 10 | Every finding code lands on a reference that exists, the most specific guidance wins, the PDF renders from an empty or non-Latin case, and the route is a viewer read scoped to the tenant |
 | Pure logic | 69 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
 | Decision paths | 57 | Every route a shipment can take through the state machine, and the heading the HS classifier is told was declared |
 | Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
@@ -1250,7 +1352,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Document upload | 33 | Accepted types, the PDF branch, injection screening |
 | Console session | 41 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
 | Network defence | 34 | Rate limits, request size, header hygiene, CSP content, content-type allow-list |
-| Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
+| Verifier | 34 | Risk reconciliation, prompt injection, whitelist, checks, and routing "to, from, or through" a restricted country |
 | B2B contract | 28 | The published response shape callers depend on |
 | Routes | 27 | Security headers, CORS, auth, validation, pagination |
 | Schema enforcement | 37 | Untrusted document fields against the declared schema; that an investigation reply with no summary is a counted failure rather than a finished report; and that Super is asked without `json_object`, which measured 6/12 usable against 12/12, with one retry billed in full |
@@ -1261,13 +1363,13 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Debate logic | 22 | Context building, tool dispatch, search depth, and that a failed search is named rather than arriving as an empty list |
 | Store | 20 | MemoryStore CRUD, optimistic locking, pagination |
 | Tavily cache | 20 | TTL behaviour, key derivation, and that a cached hit is recorded as one |
-| Governance | 18 | Boundaries, drift detection, fail-closed |
+| Governance | 19 | Boundaries, drift detection, fail-closed, and that the boundary excludes every heading the rules call dual-use |
 | Lineage & billing | 18 | Per-step cost attribution |
 | Orchestrator | 17 | State machine, tool execution, agent envelopes |
 | Observability | 16 | Logging, metrics, request context |
 | Security screen logic | 16 | Window arithmetic, and that an unreachable screen fails closed instead of reporting a clean document |
 | Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
-| RBAC | 21 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board |
+| RBAC | 25 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board, revoke the boundary or edit the prefilter rules |
 | Debate routing | 13 | A genuine, confident DISAGREE sends the case to investigation; a forced verdict does not; risk only moves up |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
 | False-positive tuning | 12 | Which signals are findings and which are context: observations carry no floor and are not counted |
@@ -1277,9 +1379,9 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
 | Audit integrity | 6 | The governance author is the authenticated identity, not a body field |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| Evaluation endpoint | 5 | The committed reports served as written, each naming its split and verifier, and never the per-case rows that carry the labels |
+| Evaluation endpoint | 8 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; and the public-case pairs with their sources |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **885** | |
+| **Total** | **921** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1572,14 +1674,14 @@ no pushed image and no visible log output.
 
 ## Roadmap
 
-The orchestration layer and the Nebius/NVIDIA model layer are both live. What
+The orchestration layer and the Nebius/NVIDIA model layer are both live, and so is
+deterministic sanctions screening against the real OFAC SDN and UN Security Council
+lists (18,525 records, refreshed by `scripts/refresh_sanctions.py` into GCS). What
 remains stubbed is historical data: the agents receive route-cost baselines as
-request fields rather than pulling them from a warehouse, and the compliance
-agent's sanctions knowledge is now grounded by a live Tavily search but still
-has no dedicated OFAC/UN/EU list lookup. Next steps: a real historical-baseline
-store, a dedicated sanctions-list API behind the compliance agent alongside
-Tavily, and replacing the scripted simulator with a production Pub/Sub
-subscription from the shipment system.
+request fields rather than pulling them from a warehouse. Next steps: a real
+historical-baseline store, the EU and UK consolidated lists alongside OFAC and UN,
+a scheduled refresh instead of a hand-run one, and replacing the scripted simulator
+with a production Pub/Sub subscription from the shipment system.
 
 Longer term, closing the loop on the humans this system currently escalates
 to: build a **Toloka**-backed human-in-the-loop review layer where real customs
@@ -1639,7 +1741,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        37 files, 885 tests
+├── tests/                        39 files, 921 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports

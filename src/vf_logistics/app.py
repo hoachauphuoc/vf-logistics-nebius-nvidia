@@ -16,6 +16,7 @@ import re
 import threading
 from datetime import datetime, timezone
 from functools import wraps
+from typing import Any
 
 from flask import Flask, Response, redirect, request, jsonify, send_from_directory
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
@@ -1267,6 +1268,11 @@ def governance_simulate():
 
 @app.route("/api/v1/governance/revoke", methods=["POST"])
 @require_governance_admin
+# Password-only for the same reason as the board reset. The one-click judge button
+# is public and mints an admin, and revoking the boundary suspends the agent for
+# every visitor after this one until someone with a password re-publishes. Judges
+# keep publish and simulate; the kill switch is shown in the video and the trail.
+@require_password_session
 def governance_revoke():
     """
     Revoke the active delegation boundary -- the governance kill switch.
@@ -1540,6 +1546,10 @@ def get_prefilter_rules():
 
 @app.route("/api/v1/governance/prefilter-rules", methods=["PUT"])
 @require_governance_admin
+# Password-only: these lists decide what clears with no model at all, so a
+# stranger holding a one-click session could empty the blacklist for every judge
+# who arrives after them.
+@require_password_session
 def update_prefilter_rules():
     """
     Update SQL pre-filter rules.
@@ -2034,6 +2044,43 @@ def orchestrator_case(case_id: str):
         if not case:
             return jsonify({"error": "case not found"}), 404
         return jsonify(case)
+    except Exception as e:
+        return _safe_error(e)
+
+
+@app.route("/api/v1/orchestrator/case/<case_id>/dossier", methods=["GET"])
+# Viewer, like the case it renders: the dossier is the same record arranged for a
+# compliance file, so gating it higher than the JSON beside it protects nothing.
+@require_viewer
+# Rendering is local CPU, no model and no network, but it is a PDF per request.
+@limiter.limit("20 per minute")
+def orchestrator_case_dossier(case_id: str) -> Any:
+    """
+    The case as a due-diligence dossier (PDF): outcome, the shipment as declared,
+    the sanctions list and its date, every finding with the regulation it rests
+    on and a comparable public case, the specialists' views, and provenance.
+    Assembled by code from the stored case -- see dossier.py.
+    """
+    try:
+        from vf_logistics import dossier
+        from vf_logistics.store import get_store
+
+        case = _on_worker(get_store().get_case(case_id, tenant_id=_tenant()))
+        if not case:
+            return jsonify({"error": "case not found"}), 404
+
+        context = get_auth_context()
+        who = context.email if context is not None and context.acts_for_a_person else None
+        pdf = dossier.render_dossier(case, generated_by=who)
+        if pdf is None:
+            return jsonify({"error": "the PDF library is not available on this service"}), 503
+
+        safe_id = re.sub(r"[^\w\-]", "_", case_id)[:80]
+        return Response(
+            pdf,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="dossier-{safe_id}.pdf"'},
+        )
     except Exception as e:
         return _safe_error(e)
 

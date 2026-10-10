@@ -962,6 +962,7 @@ def check_sanctions_screening(
                 p for m in matches for p in (m.get("programs") or [])
             }),
             "sanctions_list_version": snapshot.get("version"),
+            "sanctions_source": snapshot.get("source"),
             "sanctions_synced_at": snapshot.get("synced_at"),
             "sanctions_list_age_days": age,
         },
@@ -1074,6 +1075,39 @@ def check_routing(shipment: dict[str, Any]) -> list[dict[str, Any]]:
             "severity": "HIGH",
             "floor": 70,
             "detail": f"Destination '{dest}' is on the enhanced due diligence list.",
+        })
+
+    # Origin and transit, not only destination. Sanctions are written "to, from, or
+    # through" -- the phrase is from OFAC's Toll Holdings settlement, a freight
+    # forwarder fined for exactly this -- and checking the destination alone missed
+    # two of the public enforcement cases in data/public_cases.json: aluminium foil
+    # declared as Myanmar origin, and rail freight routed through Belarus. Measured
+    # on the synthetic corpus before it went in: it touches 300 attacks and no clean
+    # shipment, so it cannot raise the false-positive rate there.
+    origin = _country(shipment.get("origin"))
+    if origin in HIGH_RISK_DESTINATIONS and origin != dest:
+        findings.append({
+            "code": "HIGH_RISK_ORIGIN",
+            "severity": "HIGH",
+            "floor": 70,
+            "detail": f"Origin '{origin}' is on the enhanced due diligence list.",
+        })
+
+    passing = f"{transit} {route}"
+    through = sorted(
+        country for country in HIGH_RISK_DESTINATIONS
+        if country not in (dest, origin) and re.search(rf"\b{re.escape(country)}\b", passing)
+    )
+    if through:
+        findings.append({
+            "code": "HIGH_RISK_TRANSIT",
+            "severity": "HIGH",
+            "floor": 70,
+            "detail": (
+                f"Routed through {', '.join(through)}, on the enhanced due diligence "
+                "list. Sanctions apply to goods passing through, not only arriving."
+            ),
+            "measured": {"countries": through},
         })
 
     hubs = sorted(distinct_hubs(transit, exclude=dest))

@@ -36,7 +36,45 @@ _PIPELINE_FIELDS = (
     "arm", "split", "split_method", "generated_at", "cases_run", "verifier",
     "detection", "rules_only_baseline", "model_contribution", "by_attack_type",
     "false_positives", "hs_classification", "zero_day", "cost", "notes",
+    "corpus", "sanctions_index", "pairs",
 )
+
+# Fraud prevalence the workload figures are computed at.
+#
+# 0.2% is the measured rate on the corridor this was built for: Vietnam Customs
+# found a violation in 29,849 of 16.84 million declarations in 2024, 0.18%
+# (customs.gov.vn, 2 Jan 2025). Declarations, not cases: the same release counts
+# 18,558 violation files. 1% and 2% bracket a forwarder whose book skews to the higher-risk lanes. A
+# corpus is 20-50% fraud by construction, so precision measured on it says
+# nothing about what a reviewer's queue looks like; these do.
+PREVALENCES = (0.002, 0.01, 0.02)
+
+
+def workload(detection: dict[str, Any], prevalences: tuple[float, ...] = PREVALENCES) -> list[dict[str, Any]]:
+    """
+    What a reviewer sees per 1,000 shipments, at each prevalence.
+
+    held = p * recall + (1 - p) * false_positive_rate, and the share of the held
+    that are real is the precision at that prevalence rather than the corpus's.
+    The rates are the corpus's, so the result inherits its limits -- a small n
+    above all -- and is labelled with them where it is shown.
+    """
+    recall = float(detection.get("recall") or 0.0)
+    fpr = float(detection.get("false_positive_rate") or 0.0)
+    out = []
+    for p in prevalences:
+        true_held = 1000 * p * recall
+        false_held = 1000 * (1 - p) * fpr
+        held = true_held + false_held
+        out.append({
+            "prevalence": p,
+            "held_per_1000": round(held, 1),
+            "true_per_1000": round(true_held, 2),
+            "missed_per_1000": round(1000 * p * (1 - recall), 2),
+            "precision_at_prevalence": round(true_held / held, 4) if held else 0.0,
+            "held_per_true_case": round(held / true_held, 1) if true_held else None,
+        })
+    return out
 
 # HS classifier arms in the order the harness reports them.
 _HS_ARM_ORDER = {
@@ -62,6 +100,7 @@ def pipeline_results(directory: pathlib.Path = BENCHMARK_DIR) -> list[dict[str, 
             continue
         entry = {key: report[key] for key in _PIPELINE_FIELDS if key in report}
         entry["id"] = path.stem
+        entry["workload"] = workload(report["detection"])
         out.append(entry)
     return out
 
@@ -89,6 +128,12 @@ def summary() -> dict[str, Any]:
         "caveats": [
             "The pipeline corpus is synthetic (data/synthetic_test_cases.json, "
             "1,000 cases, fixed seed). No real customer traffic has been measured.",
+            "The public-case set (data/public_cases.json) is 19 enforcement cases from "
+            "BIS, OFAC, US Commerce, EPPO and OLAF, each rebuilt as one shipment and "
+            "paired with the honest trade it imitated. Real typologies, small n, and "
+            "screened against today's lists, which is retrospective.",
+            "Workload is computed at 0.2% fraud, the 2024 rate on the Vietnam corridor "
+            "(a violation found in 29,849 of 16.84 million declarations), and at 1% and 2%.",
             "The corpus is split in two by a hash of each case id. Thresholds were "
             "chosen on the dev half; the holdout half is what is reported.",
             "Real Tavily searches are limited to a small subset of a full-arm run "

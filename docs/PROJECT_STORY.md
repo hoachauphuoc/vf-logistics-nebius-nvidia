@@ -184,8 +184,8 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 885 backend
-tests and 142 frontend tests.
+test file, and it drives a deployed service over HTTP. There are now 921 backend
+tests and 146 frontend tests.
 
 ## Challenges we ran into
 

@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   ALLOWED_GET,
+  ALLOWED_GET_BY_ID,
   ALLOWED_POST,
   describedReads,
   describedWrites,
   matchRead,
   matchWrite,
+  ALLOWED_PUT,
   PASSWORD_ONLY_POST,
+  PASSWORD_ONLY_PUT,
 } from "./proxy-policy";
 
 describe("matchRead", () => {
@@ -16,6 +19,8 @@ describe("matchRead", () => {
     expect(matchRead("auth/whoami")).toBe(true);
     expect(matchRead("auth/policy")).toBe(true);
     expect(matchRead("orchestrator/case/CASE-1")).toBe(true);
+    expect(matchRead("orchestrator/case/CASE-1/dossier")).toBe(true);
+    expect(matchRead("orchestrator/case/../dossier")).toBe(false);
     expect(matchRead("review/CASE-1/document")).toBe(true);
     expect(matchRead("compliance/audit/AUD-9")).toBe(true);
   });
@@ -54,6 +59,15 @@ describe("matchWrite", () => {
     for (const path of PASSWORD_ONLY_POST) expect(ALLOWED_POST.has(path)).toBe(true);
   });
 
+  it("marks revoke and the prefilter rules edit as password-only, and nothing else", () => {
+    expect([...PASSWORD_ONLY_POST].sort()).toEqual(["governance/revoke", "orchestrator/reset"]);
+    expect([...PASSWORD_ONLY_PUT]).toEqual(["governance/prefilter-rules"]);
+    for (const path of PASSWORD_ONLY_PUT) expect(ALLOWED_PUT.has(path)).toBe(true);
+    // Publish and simulate stay with the one-click judge.
+    expect(PASSWORD_ONLY_POST.has("governance/publish")).toBe(false);
+    expect(PASSWORD_ONLY_POST.has("governance/simulate")).toBe(false);
+  });
+
   it("forwards the sanctions-news scan the Governance screen offers", () => {
     expect(matchWrite("governance/tavily-scan", ALLOWED_POST)).toBe(true);
   });
@@ -63,8 +77,9 @@ describe("the lists the Access Control screen shows", () => {
   it("include every read the proxy forwards, id routes too", () => {
     const shown = describedReads();
     // The hand-copied list this replaced showed 14 of 17.
-    expect(shown).toHaveLength(ALLOWED_GET.size + 3);
+    expect(shown).toHaveLength(ALLOWED_GET.size + ALLOWED_GET_BY_ID.length);
     expect(shown).toContain("orchestrator/case/<id>");
+    expect(shown).toContain("orchestrator/case/<id>/dossier");
     expect(shown).toContain("review/<id>/document");
   });
 

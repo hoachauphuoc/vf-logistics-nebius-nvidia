@@ -244,6 +244,17 @@ class TestProposedBoundary:
         assert "require_human_when" in boundary
         assert "sar_filing" in boundary
 
+    def test_the_boundary_excludes_every_heading_the_rules_call_dual_use(self):
+        """
+        It was a copy, and it had drifted: 8471, 9014 and 8479 were CRITICAL to the
+        rules and absent from the boundary a person publishes.
+        """
+        from vf_logistics.verifier import DUAL_USE_HS_PREFIXES
+
+        forbidden = set(proposed_boundary()["auto_release"]["forbidden_hs_prefixes"])
+        assert forbidden == set(DUAL_USE_HS_PREFIXES)
+        assert {"8471", "9014", "8479"} <= forbidden
+
 
 class TestProtectedActions:
     """Tests for protected actions configuration."""

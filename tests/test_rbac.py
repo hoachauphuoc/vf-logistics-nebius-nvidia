@@ -256,6 +256,65 @@ class TestRoleLists(unittest.TestCase):
         self.assertFalse(ctx.has_role(auth.Role.OPERATOR))
 
 
+class TestPolicyKillSwitchesNeedAPassword(unittest.TestCase):
+    """
+    The real revoke and prefilter-rules routes, against a one-click admin.
+
+    The judge button is public and its account is an admin. Either route, pressed
+    once by a stranger, changes the demo for every judge after them, so both now
+    ask for the password sign-in the board reset already asked for.
+    """
+
+    def setUp(self):
+        from vf_logistics import app as app_mod
+
+        self.env = patch.dict(os.environ, dict(ROLE_ENV, STORE_BACKEND="memory"))
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        limiter_was = app_mod.limiter.enabled
+        app_mod.limiter.enabled = False
+        self.addCleanup(setattr, app_mod.limiter, "enabled", limiter_was)
+        self.client = app_mod.app.test_client()
+
+    def test_a_one_click_admin_cannot_revoke_the_boundary(self):
+        response = self.client.post(
+            "/api/v1/governance/revoke", json={"note": "trying it"},
+            headers=_session(ADMIN, amr="one_click"),
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["required_auth"], "password")
+
+    def test_a_one_click_admin_cannot_rewrite_the_prefilter_rules(self):
+        response = self.client.put(
+            "/api/v1/governance/prefilter-rules", json={"blacklist_companies": []},
+            headers=_session(ADMIN, amr="one_click"),
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["required_auth"], "password")
+
+    def test_a_password_admin_still_passes_the_gate(self):
+        """Not refused for the sign-in method: whatever comes back is the route's own answer."""
+        for method, path, body in (
+            ("post", "/api/v1/governance/revoke", {"note": "drill"}),
+            ("put", "/api/v1/governance/prefilter-rules", {"low_value_threshold_usd": 100}),
+        ):
+            with self.subTest(path=path):
+                response = getattr(self.client, method)(path, json=body, headers=_session(ADMIN))
+                self.assertNotEqual(
+                    (response.get_json() or {}).get("required_auth"), "password",
+                    f"{path} refused a password sign-in",
+                )
+
+    def test_a_one_click_admin_can_still_read_simulate_and_publish(self):
+        """The judge keeps everything else: reading the rules, and the publish route's gate."""
+        headers = _session(ADMIN, amr="one_click")
+        self.assertEqual(
+            self.client.get("/api/v1/governance/prefilter-rules", headers=headers).status_code, 200
+        )
+        response = self.client.post("/api/v1/governance/publish", json={}, headers=headers)
+        self.assertNotEqual((response.get_json() or {}).get("required_auth"), "password")
+
+
 class TestWhoami(unittest.TestCase):
     """GET /api/v1/auth/whoami reports what the decorators will enforce."""
 
@@ -351,14 +410,32 @@ class TestRoutePolicy(unittest.TestCase):
         self.assertEqual(by_path[("/api/v1/billing/usage", ("GET",))], "operator")
         self.assertEqual(by_path[("/api/v1/governance/publish", ("POST",))], "governance_admin")
 
-    def test_only_the_board_reset_asks_for_a_password(self):
+    def test_only_the_board_reset_and_the_two_policy_kill_switches_ask_for_a_password(self):
         """
         The flag survives the rate limiter and the role decorator above it, and it
-        is on exactly the route it was put on. Widening it would quietly take a
+        is on exactly the routes it was put on. Widening it would quietly take a
         right away from the one-click judge session.
+
+        Revoke and the prefilter PUT joined the reset because each one changes the
+        demo for every visitor after the person who pressed it: a revoked boundary
+        suspends the agent, an emptied blacklist clears what it should hold.
         """
         flagged = {r["path"] for r in self.rows if r["requires_password_session"]}
-        self.assertEqual(flagged, {"/api/v1/orchestrator/reset"})
+        self.assertEqual(flagged, {
+            "/api/v1/orchestrator/reset",
+            "/api/v1/governance/revoke",
+            "/api/v1/governance/prefilter-rules",
+        })
+        put = next(
+            r for r in self.rows
+            if r["path"] == "/api/v1/governance/prefilter-rules" and "PUT" in r["methods"]
+        )
+        self.assertTrue(put["requires_password_session"])
+        get = next(
+            r for r in self.rows
+            if r["path"] == "/api/v1/governance/prefilter-rules" and "GET" in r["methods"]
+        )
+        self.assertFalse(get["requires_password_session"], "reading the rules stays open")
 
     def test_policy_endpoint_reports_list_sizes_not_members(self):
         from vf_logistics.app import app

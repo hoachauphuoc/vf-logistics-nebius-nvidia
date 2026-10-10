@@ -50,7 +50,7 @@ import {
 } from "@/lib/api";
 import { HelpDot } from "@/components/help/HelpDot";
 import { actionLabel, humaniseCode } from "@/lib/format";
-import { lockReason, roleLabel, useIdentity } from "@/lib/identity";
+import { lockReason, passwordLockReason, roleLabel, useIdentity } from "@/lib/identity";
 import { useTenant } from "@/lib/tenant-context";
 import type { DelegationBoundary, PrefilterRules } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -279,6 +279,10 @@ function BoundaryTab() {
   });
   const identity = useIdentity().data;
   const adminLock = lockReason(identity, "governance_admin");
+  // Revoke suspends the agent for every visitor after this one, so the public
+  // one-click judge session cannot reach it (the BFF and the API both refuse).
+  // Publish and simulate stay open to it.
+  const revokeLock = adminLock ?? passwordLockReason(identity);
   const simulateLock = lockReason(identity, "viewer");
 
   const [note, setNote] = useState("");
@@ -503,11 +507,11 @@ function BoundaryTab() {
               </Gated>
 
               <span className="ml-auto">
-                <Gated reason={adminLock}>
+                <Gated reason={revokeLock}>
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={revoke.isPending || active === null || adminLock !== null}
+                    disabled={revoke.isPending || active === null || revokeLock !== null}
                     onClick={() => {
                       if (!note.trim()) {
                         setFormError("A reason is required to revoke authority.");
@@ -795,7 +799,10 @@ function PrefilterTab() {
     queryFn: fetchPrefilterRules,
     retry: false,
   });
-  const saveLock = lockReason(useIdentity().data, "governance_admin");
+  const identity = useIdentity().data;
+  // Password-only for the same reason as revoke: these lists decide what clears
+  // with no model at all, for every judge who arrives after the edit.
+  const saveLock = lockReason(identity, "governance_admin") ?? passwordLockReason(identity);
 
   const [draft, setDraft] = useState<PrefilterRules | null>(null);
   const [error, setError] = useState<string | null>(null);

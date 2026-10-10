@@ -1,0 +1,494 @@
+{
+  "arm": "full",
+  "split": "all",
+  "split_method": "sha256(case_id)[0] % 2: 0 = dev, 1 = holdout",
+  "generated_at": "2026-10-10T16:02:32+0700",
+  "cases_run": 38,
+  "elapsed_seconds": 625.2,
+  "corpus": {
+    "file": "public_cases.json",
+    "seed": null,
+    "total_available": 38,
+    "composition": {
+      "dual_use_transshipment": 7,
+      "sanctions_logistics": 3,
+      "origin_transshipment": 6,
+      "undervaluation_misclassification": 3
+    }
+  },
+  "sanctions_index": {
+    "version": 1791617583,
+    "synced_at": "2026-10-10T07:33:03.205613+00:00",
+    "age_days": 0,
+    "source": "OFAC SDN + UN SC Consolidated",
+    "entity_count": 18525
+  },
+  "pairs": [
+    {
+      "ref": "BIS-TDO-2023-GOLTSEV",
+      "typology": "dual_use_transshipment",
+      "title": "US microcontrollers and SRAM routed to Russian defence buyers via a UAE free-zone company",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2023-11-14/html/2023-25005.htm",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "VALUE_DENSITY_HIGH",
+        "DUAL_USE_HS_CODE",
+        "HS_DESCRIPTION_MISMATCH",
+        "ZERO_DAY_ADVERSE_MEDIA"
+      ],
+      "honest_codes": [
+        "VALUE_DENSITY_HIGH",
+        "DUAL_USE_HS_CODE"
+      ],
+      "attack_floor": 85,
+      "honest_floor": 85
+    },
+    {
+      "ref": "BIS-TDO-2022-LIVSHITS",
+      "typology": "dual_use_transshipment",
+      "title": "Oscilloscope worth about $25,000 declared as 'Used' at $2,482 to stay under the EEI threshold, via Hamburg to Russia",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2022-12-16/html/2022-27347.htm",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "DUAL_USE_HS_CODE"
+      ],
+      "honest_codes": [
+        "VALUE_DENSITY_HIGH",
+        "DUAL_USE_HS_CODE"
+      ],
+      "attack_floor": 85,
+      "honest_floor": 85
+    },
+    {
+      "ref": "BIS-TDO-2023-PATSULYA",
+      "typology": "dual_use_transshipment",
+      "title": "Aircraft brake assemblies for a Russian airline consigned to a Maldives cargo agent, destination changed to Turkey after a forwarder raised concerns",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2023-05-19/html/2023-10750.htm",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "VALUE_DENSITY_HIGH",
+        "ROUTE_CHANGED_AFTER_BOOKING",
+        "SANCTIONS_MATCH",
+        "HS_DESCRIPTION_MISMATCH_DUAL_USE"
+      ],
+      "honest_codes": [
+        "VALUE_DENSITY_HIGH"
+      ],
+      "attack_floor": 100,
+      "honest_floor": 50
+    },
+    {
+      "ref": "BIS-TDO-2024-SKYTECHNIC",
+      "typology": "dual_use_transshipment",
+      "title": "US aircraft starter generators bought for a Russian MRO through Hong Kong shell companies",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2024-06-17/html/2024-13258.htm",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "VALUE_DENSITY_HIGH"
+      ],
+      "honest_codes": [
+        "VALUE_DENSITY_HIGH",
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "attack_floor": 50,
+      "honest_floor": 50
+    },
+    {
+      "ref": "BIS-TDO-2023-PETROV",
+      "typology": "dual_use_transshipment",
+      "title": "Microcontrollers sold to a Cyprus 'fabless manufacturer' that was a pass-through forwarder for a St. Petersburg buyer",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2023-09-07/html/2023-19332.htm",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "VALUE_DENSITY_HIGH",
+        "DUAL_USE_HS_CODE",
+        "SANCTIONS_MATCH"
+      ],
+      "honest_codes": [
+        "VALUE_DENSITY_HIGH",
+        "DUAL_USE_HS_CODE"
+      ],
+      "attack_floor": 100,
+      "honest_floor": 85
+    },
+    {
+      "ref": "BIS-2026-AMAT",
+      "typology": "dual_use_transshipment",
+      "title": "Ion implanters shipped to a Korean affiliate for assembly, then onward to an Entity-Listed Chinese customer",
+      "source_url": "https://www.bis.gov/press-release/applied-materials-pay-252-million-penalty-bis-illegally-exporting-semiconductor-manufacturing-equipment",
+      "identical_inputs": true,
+      "attack_flagged": true,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": true,
+      "attack_codes": [
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "honest_codes": [],
+      "attack_floor": 40,
+      "honest_floor": 0
+    },
+    {
+      "ref": "OLAF-2026-VEHICLES-RU",
+      "typology": "dual_use_transshipment",
+      "title": "Used vehicles declared for importers in Central Asia and the Caucasus, never imported there, traced to Russia",
+      "source_url": "https://anti-fraud.ec.europa.eu/media-corner/news/olaf-coordinates-international-investigation-suspected-circumvention-eu-sanctions-involving-over-760-2026-01-26_en",
+      "identical_inputs": false,
+      "attack_flagged": false,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [],
+      "honest_codes": [],
+      "attack_floor": 0,
+      "honest_floor": 0
+    },
+    {
+      "ref": "OFAC-2022-TOLL",
+      "typology": "sanctions_logistics",
+      "title": "Australian freight forwarder handled shipments to, from or through DPRK, Iran and Syria",
+      "source_url": "https://ofac.treasury.gov/recent-actions/20220425",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": false,
+      "separated": true,
+      "model_variance": false,
+      "attack_codes": [
+        "HIGH_RISK_DESTINATION"
+      ],
+      "honest_codes": [],
+      "attack_floor": 70,
+      "honest_floor": 0
+    },
+    {
+      "ref": "OFAC-2024-CHROBINSON",
+      "typology": "sanctions_logistics",
+      "title": "Non-US subsidiaries of a US broker arranged freight for shipments involving Cuba and Iran",
+      "source_url": "https://ofac.treasury.gov/recent-actions/20241213",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": false,
+      "separated": true,
+      "model_variance": false,
+      "attack_codes": [
+        "HIGH_RISK_DESTINATION",
+        "ZERO_DAY_SEARCH_DID_NOT_RUN"
+      ],
+      "honest_codes": [],
+      "attack_floor": 70,
+      "honest_floor": 0
+    },
+    {
+      "ref": "OFAC-2025-FRACHT",
+      "typology": "sanctions_logistics",
+      "title": "Houston forwarder booked a blocked Venezuelan state airline, flying an aircraft blocked as operated by Mahan Air, for a Mexico-Argentina shipment",
+      "source_url": "https://ofac.treasury.gov/recent-actions/20250903_33",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "HIGH_RISK_TRANSIT",
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "honest_codes": [
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "attack_floor": 70,
+      "honest_floor": 40
+    },
+    {
+      "ref": "ITA-2023-PLYWOOD-VN",
+      "typology": "origin_transshipment",
+      "title": "Plywood completed in Vietnam from Chinese veneers and cores, declared Vietnamese",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2023-07-20/html/2023-15431.htm",
+      "identical_inputs": true,
+      "attack_flagged": false,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [],
+      "honest_codes": [],
+      "attack_floor": 0,
+      "honest_floor": 0
+    },
+    {
+      "ref": "ITA-2023-SOLAR-SEA",
+      "typology": "origin_transshipment",
+      "title": "Solar modules completed in Cambodia from Chinese wafers, declared Cambodian",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2023-08-23/html/2023-18161.htm",
+      "identical_inputs": true,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "honest_codes": [
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "attack_floor": 40,
+      "honest_floor": 40
+    },
+    {
+      "ref": "ITA-2024-STAPLES-VN",
+      "typology": "origin_transshipment",
+      "title": "Collated staples formed in Vietnam from Chinese steel wire, declared Vietnamese",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2024-01-30/html/2024-01792.htm",
+      "identical_inputs": true,
+      "attack_flagged": false,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [],
+      "honest_codes": [],
+      "attack_floor": 0,
+      "honest_floor": 0
+    },
+    {
+      "ref": "ITA-2023-LWRPT-VN",
+      "typology": "origin_transshipment",
+      "title": "Light-walled rectangular pipe made in Vietnam from Chinese hot-rolled steel, declared Vietnamese",
+      "source_url": "https://www.govinfo.gov/content/pkg/FR-2023-11-09/html/2023-24796.htm",
+      "identical_inputs": true,
+      "attack_flagged": true,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": true,
+      "attack_codes": [
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "honest_codes": [],
+      "attack_floor": 40,
+      "honest_floor": 0
+    },
+    {
+      "ref": "EPPO-2024-ALFOIL-DE",
+      "typology": "origin_transshipment",
+      "title": "Chinese aluminium foil declared as Myanmar origin to avoid EU anti-dumping duty",
+      "source_url": "https://www.eppo.europa.eu/media/news/germany-eppo-brings-charges-against-two-evading-anti-dumping-duties-aluminium-foil-imports-2024-07-29_en",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": false,
+      "separated": true,
+      "model_variance": false,
+      "attack_codes": [
+        "HIGH_RISK_ORIGIN"
+      ],
+      "honest_codes": [],
+      "attack_floor": 70,
+      "honest_floor": 0
+    },
+    {
+      "ref": "EPPO-2024-ALSHEETS-ES",
+      "typology": "origin_transshipment",
+      "title": "Chinese aluminium sheets declared as UAE origin through companies in Spain, Portugal and the UAE",
+      "source_url": "https://www.eppo.europa.eu/media/news/spain-eppo-dismantles-organised-crime-group-evaded-eur33-million-antidumping-duties-2024-12-19_en",
+      "identical_inputs": false,
+      "attack_flagged": false,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [],
+      "honest_codes": [],
+      "attack_floor": 0,
+      "honest_floor": 0
+    },
+    {
+      "ref": "EPPO-2024-STEELSHEETS-ES",
+      "typology": "undervaluation_misclassification",
+      "title": "Finished Chinese steel sheets declared as semi-finished slabs to avoid anti-dumping duty",
+      "source_url": "https://www.eppo.europa.eu/media/news/spain-five-directors-two-companies-indicted-evading-anti-dumping-duties-steel-sheets-2024-09-24_en",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "VALUE_DENSITY_LOW",
+        "HS_DESCRIPTION_MISMATCH"
+      ],
+      "honest_codes": [
+        "VALUE_DENSITY_LOW"
+      ],
+      "attack_floor": 45,
+      "honest_floor": 45
+    },
+    {
+      "ref": "EPPO-2024-EBIKES-BE",
+      "typology": "undervaluation_misclassification",
+      "title": "Complete Chinese e-bikes imported as separate parts via Antwerp to avoid the anti-dumping duty on assembled e-bikes",
+      "source_url": "https://www.eppo.europa.eu/media/news/belgium-three-convicted-evading-eur31-million-customs-duties-imported-e-bikes-2024-04-19_en",
+      "identical_inputs": false,
+      "attack_flagged": false,
+      "honest_flagged": false,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [],
+      "honest_codes": [],
+      "attack_floor": 0,
+      "honest_floor": 0
+    },
+    {
+      "ref": "OLAF-2026-PL-TRANSIT",
+      "typology": "undervaluation_misclassification",
+      "title": "Chinese goods entering by rail through Belarus under a T1 transit to Belgium that never left Poland",
+      "source_url": "https://anti-fraud.ec.europa.eu/media-corner/news/olaf-plays-central-role-uncovering-major-vat-and-customs-fraud-involving-imports-undeclared-goods-2026-04-28_en",
+      "identical_inputs": false,
+      "attack_flagged": true,
+      "honest_flagged": true,
+      "separated": false,
+      "model_variance": false,
+      "attack_codes": [
+        "HIGH_RISK_TRANSIT"
+      ],
+      "honest_codes": [
+        "HIGH_RISK_TRANSIT"
+      ],
+      "attack_floor": 70,
+      "honest_floor": 70
+    }
+  ],
+  "detection": {
+    "precision": 0.6087,
+    "recall": 0.7368,
+    "f1": 0.6667,
+    "false_positive_rate": 0.4737,
+    "tp": 14,
+    "fp": 9,
+    "fn": 5,
+    "tn": 10
+  },
+  "rules_only_baseline": {
+    "precision": 0.6111,
+    "recall": 0.5789,
+    "f1": 0.5946,
+    "false_positive_rate": 0.3684,
+    "tp": 11,
+    "fp": 7,
+    "fn": 8,
+    "tn": 12
+  },
+  "model_contribution": {
+    "recall_delta": 0.1579,
+    "precision_delta": -0.0024,
+    "false_positive_rate_delta": 0.1053,
+    "note": "A negative false_positive_rate_delta is the win worth having: on this corpus the rules catch almost every attack and hold most of the clean traffic, so the model layer is judged on whether it releases honest shipments without releasing attacks."
+  },
+  "by_attack_type": {
+    "None": {
+      "cases": 19,
+      "detected": 9,
+      "detection_rate": 0.4737,
+      "rules_only_detected": 7
+    },
+    "dual_use_transshipment": {
+      "cases": 7,
+      "detected": 6,
+      "detection_rate": 0.8571,
+      "rules_only_detected": 5
+    },
+    "origin_transshipment": {
+      "cases": 6,
+      "detected": 3,
+      "detection_rate": 0.5,
+      "rules_only_detected": 1
+    },
+    "sanctions_logistics": {
+      "cases": 3,
+      "detected": 3,
+      "detection_rate": 1.0,
+      "rules_only_detected": 3
+    },
+    "undervaluation_misclassification": {
+      "cases": 3,
+      "detected": 2,
+      "detection_rate": 0.6667,
+      "rules_only_detected": 2
+    }
+  },
+  "hs_classification": {
+    "by_set": {},
+    "note": "`holdout` substitutions are absent from data/hs_reference.yaml. Recall there is the number that says whether the reference table generalises; `pairs` was tuned against."
+  },
+  "false_positives": {
+    "all_clean_cases": 19,
+    "flagged": 9,
+    "rate": 0.4737,
+    "hard_negatives": {
+      "cases": 7,
+      "flagged": 5,
+      "rate": 0.7143
+    },
+    "easy_negatives": {
+      "cases": 12,
+      "flagged": 4,
+      "rate": 0.3333
+    },
+    "adjacent_hs_negatives": {
+      "cases": 0,
+      "flagged": 0,
+      "hs_mismatch_claimed": 0,
+      "note": "Benign goods declared under the heading an evader would use as cover. An HS mismatch claimed here is the classifier learning the cover heading rather than the goods."
+    }
+  },
+  "zero_day": {
+    "gate_fired_on_attacks": 4,
+    "gate_fired_on_clean": 3,
+    "gate_precision": 0.5714,
+    "verdicts": {
+      "risk_found": 1,
+      "no_risk_found": 6
+    },
+    "verdicts_forced": 3,
+    "real_searches": 2,
+    "stubbed_searches": 13,
+    "measurement_limit": "Stubbed searches return an EMPTY result, never a fabricated adverse finding -- inventing news would feed the corpus labels to the model through the tool and then grade it on repeating them. So adverse-media DETECTION is measured only on the --real-tavily subset; the rest measures the gate and the model's handling of absence. Tavily's free tier is 1,000 credits a month, which is why the subset exists."
+  },
+  "cost": {
+    "total_usd": 0.033985,
+    "cases_with_model_calls": 38,
+    "avg_usd_per_case": 0.00089434,
+    "avg_usd_per_case_all": 0.00089434,
+    "total_input_tokens": 96537,
+    "total_output_tokens": 117470,
+    "projected_usd_per_1000_cases": 0.8943
+  },
+  "latency": {
+    "mean_ms": 16397,
+    "median_ms": 11161,
+    "p95_ms": 57798
+  },
+  "errors": {
+    "zero_day_verdict_forced": 3
+  },
+  "aborted_on_cost": false,
+  "notes": [
+    "Rules, the HS classifier and the zero-day radar on the same 19 pairs, for USD 0.034. Two real Tavily searches; the rest stubbed empty.",
+    "The model layer raised recall from 11 to 14 of 19 and held two more honest shipments. It separated no more pairs than the rules did (3 against 4).",
+    "Two identical pairs got different verdicts on their two halves. That is the model disagreeing with itself, counted as variance, not as detection."
+  ],
+  "verifier": "after the origin/transit routing rule and OFAC SDN + UN screening"
+}

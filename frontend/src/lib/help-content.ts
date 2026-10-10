@@ -252,6 +252,16 @@ export const FINDING_HELP: Record<string, HelpEntry> = {
     body:
       "The destination country is on the restricted list: Afghanistan, Belarus, Cuba, Iran, Myanmar, North Korea, Pakistan, Russia, Sudan, Syria or Venezuela.",
   },
+  HIGH_RISK_ORIGIN: {
+    title: "High-risk origin",
+    body:
+      "The shipment leaves from a country on the same restricted list. Sanctions apply to goods coming from a country, not only going to it -- and a false origin there is a known way to dodge anti-dumping duty.",
+  },
+  HIGH_RISK_TRANSIT: {
+    title: "High-risk transit",
+    body:
+      "The route passes through a country on the restricted list. Sanctions are written 'to, from, or through': a freight forwarder was fined by OFAC for shipments that only passed through.",
+  },
   MULTIPLE_DIVERSION_HUBS: {
     title: "Multiple transhipment hubs",
     body:
@@ -581,6 +591,16 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
     title: "HS classifier",
     body:
       "Controlled goods declared under a benign heading, which rules cannot catch because the declared code is the evader's choice. The holdout substitutions appear nowhere in the material the method was developed on.",
+  },
+  "evaluation.workload": {
+    title: "Workload at real fraud rates",
+    body:
+      "A test corpus is a fifth to four-fifths fraud by construction, so its precision does not describe a real queue. This reapplies each report's recall and false-alarm rate at 0.2%, 1% and 2% fraud. At the measured 0.2%, hundreds of honest shipments are held for each real one, which is why the product's job is to make each hold quick to decide.",
+  },
+  "evaluation.public": {
+    title: "Public enforcement cases",
+    body:
+      "Each case is a shipment as declared in a case a regulator made public, beside the honest trade it imitated. Separated means only the fraud was held. Both held usually means controlled goods, which want a licence check either way. Missed is mostly origin fraud, which is decided by where the inputs came from and is not on a booking.",
   },
 };
 

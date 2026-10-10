@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, Lock, LogIn, Sparkles } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, Lock, LogIn, Sparkles } from "lucide-react";
 import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 
 import { PageHeading } from "@/components/layout/PageHeading";
@@ -29,6 +29,7 @@ import {
   fetchReviewQueue,
   queryKeys,
   requestDeepReview,
+  caseDossierUrl,
   reviewDocumentUrl,
 } from "@/lib/api";
 import { HelpDot } from "@/components/help/HelpDot";
@@ -265,6 +266,17 @@ function Paperwork({ case: c, identity }: { case: Case; identity: Identity | nul
       <div className="flex items-center gap-1.5 px-4 pb-2 pt-4">
         <h3 className="text-[12px] font-medium text-white">Paperwork</h3>
         <HelpDot id="review.paperwork" />
+        {/* Open to anyone who can read the case: it is the case, arranged for a
+            compliance file, with no original document inside it. */}
+        <a
+          href={caseDossierUrl(c.case_id)}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline"
+        >
+          <FileText className="size-3.5" aria-hidden />
+          Due-diligence dossier (PDF)
+        </a>
       </div>
 
       {uri && locked ? (

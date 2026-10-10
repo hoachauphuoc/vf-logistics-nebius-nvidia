@@ -1,8 +1,23 @@
 # Flow 1 — Weekly sanctions refresh
 
-`scripts/refresh_sanctions.py` rebuilds the sanctions index from OpenSanctions,
-publishes it to GCS, and measures a Nemotron Super parse against the deterministic
-one on a sample.
+`scripts/refresh_sanctions.py` rebuilds the sanctions index and publishes it to GCS
+(`gs://vf-fraud-detection-phuochoa-sanctions/sanctions/index.json.gz`, read by the
+service through `SANCTIONS_INDEX_BUCKET`).
+
+**The default source is the two primary publications**, parsed by code in
+`vf_logistics.sanctions_sources`: OFAC's SDN list (US Treasury: `sdn.csv`, `alt.csv`
+for aliases, `add.csv` for addresses) and the UN Security Council Consolidated List
+(one XML). The build of 2026-10-10 holds **18,525 screenable records** — 17,515 OFAC
+entities and individuals, 6,985 of them with a registration or tax number taken from
+the remarks, and 1,010 UN records — indexed under 45,379 normalised names. It is
+0.7 MB gzipped and about 30 MB in memory. Vessels and aircraft are dropped, and so
+are aliases shorter than six characters, because exact matching on an acronym holds
+every shipment from any company whose name normalises to it.
+
+Neither list carries a non-commercial licence, which is why they replaced the
+OpenSanctions feed as the default. `--source opensanctions` keeps that path and the
+measured comparison between deterministic and Nemotron Super parsing described below;
+the sequence diagram shows it, because it is the path with the model in it.
 
 It is written to run weekly and is **run by hand**: nothing schedules it. Cloud
 Scheduler is not enabled on the project and the service exposes no refresh route, so
@@ -126,7 +141,10 @@ which only lowercases and collapses whitespace. On a sanctions list the near-mis
 
 | declared | matches | via |
 |---|---|---|
-| `Shell Trading Ltd.` | `Shell Trading Ltd` | punctuation stripped |
+| `Alexsong Pte. Ltd.` | `ALEXSONG PTE LTD` (OFAC-SDN-35036) | punctuation and case |
+| `Champion Way Pte Ltd` | `ALEXSONG PTE LTD` | its former name, filed as an alias |
+| `199104462G` | `ALEXSONG PTE LTD` | registration number from the OFAC remarks |
+| `Shell Trading Ltd.` | `Shell Trading Ltd` (bundled seed) | punctuation stripped |
 | `SHELL TRADING LIMITED` | `Shell Trading Ltd` | legal-form suffix |
 | `Shel Trading Ltd` | `Shell Trading Ltd` | filed alias |
 | `SheII Trading Ltd` | `Shell Trading Ltd` | homoglyph, capital I for l |

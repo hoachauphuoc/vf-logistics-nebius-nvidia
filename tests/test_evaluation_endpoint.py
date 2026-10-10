@@ -57,3 +57,41 @@ def test_hs_rows_are_dropped_and_sets_are_separated(tmp_path):
     sets = evaluation.hs_results(tmp_path)
     assert len(sets["pairs"]) == 1 and len(sets["holdout"]) == 1
     assert "rows" not in sets["pairs"][0]
+
+
+def test_workload_is_arithmetic_on_recall_and_false_alarms():
+    """
+    At 0.2% fraud, recall 1.0 and a 10% false-alarm rate: 2 real cases and 99.8
+    honest ones held per 1,000, so one real case in fifty held.
+    """
+    rows = evaluation.workload({"recall": 1.0, "false_positive_rate": 0.1}, (0.002,))
+    assert rows == [{
+        "prevalence": 0.002,
+        "held_per_1000": 101.8,
+        "true_per_1000": 2.0,
+        "missed_per_1000": 0.0,
+        "precision_at_prevalence": round(2.0 / 101.8, 4),
+        "held_per_true_case": 50.9,
+    }]
+    assert evaluation.workload({"recall": 0.0, "false_positive_rate": 0.0})[0]["held_per_true_case"] is None
+
+
+def test_every_report_carries_its_workload_at_the_measured_rate():
+    for entry in evaluation.pipeline_results():
+        assert [w["prevalence"] for w in entry["workload"]] == list(evaluation.PREVALENCES)
+
+
+def test_the_public_case_reports_are_served_as_pairs_with_their_sources():
+    """
+    Every pair names its regulator's page, and pairs that are identical at booking
+    are never counted as separated -- a different verdict on them is variance.
+    """
+    by_id = {e["id"]: e for e in evaluation.pipeline_results()}
+    for report_id in ("public_rules_all", "public_full_all"):
+        pairs = by_id[report_id]["pairs"]
+        assert len(pairs) == 19
+        for pair in pairs:
+            assert pair["source_url"].startswith("https://")
+            if pair["identical_inputs"]:
+                assert not pair["separated"]
+        assert by_id[report_id]["sanctions_index"]["source"] == "OFAC SDN + UN SC Consolidated"

@@ -124,7 +124,7 @@ byte-for-byte the `755d998` file, while `verifier.py` grew from 487 lines to 1,6
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
 | **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
 | **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **885** backend tests in 37 files at 80% coverage, 142 frontend tests, and a mutation check that breaks 36 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **921** backend tests in 39 files at 81% coverage, 146 frontend tests, and a mutation check that breaks 36 lines and sees every one caught | A test nobody has seen fail is not evidence |
 | **CI** | none in `755d998`; the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (strict on clean modules, a ratchet on the rest), tests with a 75% coverage floor, frontend, and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 10 modules that did not exist: auth, budget, tenant, b2b, openapi, sanctions, hs_reference, lineage, observability, schemas | — |
 
@@ -148,19 +148,38 @@ had published or would have:
 
 ### The problem
 
-Vietnamese logistics operators lose money to shipment fraud that threshold rules
-cannot see. A shipping cost 60% under the historical route average looks like a
-promotion, not under-invoicing. A shipper with two lifetime transactions and a
-generic company name looks like a new customer, not a shell entity.
+Fraud in a forwarder's book is rare, and that is what makes it expensive to find. In 2024
+Vietnam Customs processed 16.84 million declarations, found a violation in 29,849 of
+them (0.18%), and sent 3.45% to physical inspection to find them
+([customs.gov.vn](http://customs.gov.vn:8228/index.jsp?pageId=2&aid=208927&cid=24)):
+even the authority's own targeting holds about nineteen declarations for every one that
+is wrong. A forwarder's compliance desk lives inside the same ratio. Whatever it holds is
+mostly honest, and every hold is a person's time and a customer's delay.
 
-Individually each signal is weak and generates false positives. Together they
-are damning. Catching that combination is what a SQL rules engine structurally
-cannot do, and what a human analyst has no time to do across thousands of
-shipments a day.
+The signals are weak alone and damning together. A freight charge 60% under the lane's
+history looks like a promotion; a shipper with two lifetime shipments looks like a new
+customer. A rules engine reads them one at a time, and an analyst has no time to read them
+together for every booking.
 
-But detecting fraud is only half the problem. The harder question is: **who
+So the job is two jobs: hold the right shipments, and **make every hold quick and
+defensible to decide**. The second is where the time goes, and it is what a
+due-diligence dossier with a regulation behind every finding is for.
+
+And detecting fraud is still only half the problem. The harder question is: **who
 decides what the agent may do about it?** An agent that reasons well is not the
 same as an agent you can hand authority to.
+
+### Why now
+
+- Vietnam's **Decree 259/2025/ND-CP** on strategic trade control (dual-use goods) has been
+  in force since 10 Oct 2025, and **Decree 169/2026/ND-CP** on customs penalties since
+  1 Jul 2026. A customs broker carries the declarant's obligations (Customs Law
+  54/2014/QH13, Art. 20(4)).
+- **Regulators are naming forwarders.** OFAC settled with Toll Holdings (2022), C.H.
+  Robinson's non-US subsidiaries (2024), Fracht FWO (2025) and Pegasus Worldwide Logistics
+  (9 Oct 2026) over shipments they moved. Every one was a screening failure.
+- The BIS orders behind our public test cases route controlled US goods through the UAE,
+  Hong Kong, Turkey, the Maldives and Central Asia — this corridor's transhipment hubs.
 
 ### Who it is for
 
@@ -176,11 +195,19 @@ estimated:
   only what the published delegation boundary allows, and every release records the
   boundary version and rule that permitted it.
 - **What stops reaches a person with its evidence attached** — the findings with the floor
-  each one forces, the live sources the compliance screen read, and the document itself.
-  On a held-out synthetic split the deterministic layer catches 93.5% of fraud at 91.2%
-  precision, and the HS classifier catches 91.7% of disguised controlled goods on a
+  each one forces, the sanctions list it was screened against and that list's date, the
+  live sources the compliance screen read, and the document itself. **One click turns the
+  case into a due-diligence dossier (PDF)** for the compliance file: every finding with the
+  action it calls for, the regulation it rests on, and a comparable public enforcement
+  case. On a held-out synthetic split the deterministic layer catches 93.5% of fraud at
+  91.2% precision, and the HS classifier catches 91.7% of disguised controlled goods on a
   holdout with no false alarms. It still holds 38.4% of clean shipments for a person,
   which is the open weakness and is reported as one.
+- **Tested on real cases, not only our own.** 19 public enforcement cases from BIS, OFAC,
+  US Commerce, EPPO and OLAF, each rebuilt as the shipment the paperwork showed and paired
+  with the honest trade it imitated, screened against the real OFAC SDN and UN lists
+  (18,525 records): the full system held 14 of the 19 frauds for $0.034. Origin fraud,
+  decided by where the inputs came from, is invisible at booking, and we say so.
 - **Screening costs cents, not analyst hours.** Model spend on a 20-case run is
   `$0.068`–`$0.088`, under half a cent per case; the binding cost is web search, and the
   pre-filter resolves the plainest cases with no model call at all.
@@ -189,7 +216,7 @@ estimated:
   append-only.
 
 The synthetic corpus is stated as such: these are the system's measured behaviour on
-held-out data, not field results from a customer.
+held-out data and on reconstructed public cases, not field results from a customer.
 
 ### What we built
 
@@ -224,10 +251,12 @@ billing, time fraud) on **NVIDIA Nemotron 3 Nano**. Returns `risk_score`
 0–100, `risk_level`, a `flags[]` array with per-finding severity, and an
 explicit `confidence`.
 
-**Compliance Screening Agent** — sanctions exposure against OFAC / UN / EU
-patterns, trade and regulatory compliance, AML indicators, on **NVIDIA
-Nemotron 3 Nano** — grounded by a **real Tavily search** for the shipper and
-receiver names before scoring.
+**Compliance Screening Agent** — trade and regulatory compliance and AML indicators on
+**NVIDIA Nemotron 3 Nano**, grounded by a **real Tavily search** for the shipper and
+receiver names before scoring. Beneath it, sanctions screening is deterministic: every
+party is matched by name and identifier against the **OFAC SDN and UN Security Council
+lists** (18,525 records, rebuilt by `scripts/refresh_sanctions.py` from the published
+files), and a match floors the case at 100.
 
 **AI Investigation Agent** — multi-step case investigation across related
 shipments, pattern analysis, network mapping and consolidated reporting, on
@@ -594,7 +623,7 @@ tailwindcss, docker
 | **Category** | Best Apps and Agents |
 | **Public code repo URL** | https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | **Reproducible Testing instructions in README?** | **Yes** — README → *Reproducible testing* |
-| **Testing instructions (private)** | **Console:** https://vf-app-350828852747.asia-southeast1.run.app — the board, any case, the review queue, the audit trail and the evaluation figures are readable **without signing in**, because an anonymous visitor is a real viewer, so nothing is needed to assess the product. **To act, one click:** the login page and the board's *Start here* strip offer **Continue as guest judge**, which signs you in with no password as `guest-judge@vf-logistics.demo`, a governance admin — inject shipments, decide cases, publish policy. The one thing it cannot do is **Clear board** (DevOps), which needs a password sign-in. Two password accounts are provided, with the passwords supplied alongside this submission. `judge@vf-logistics.demo` is a **governance admin**: it can record a review decision, see the spend figures and publish policy. `reviewer@vf-logistics.demo` holds only the **Reviewer** role: it can decide a case and open its document, and the spend figures, document upload and policy publishing stay locked for it, naming the role that would unlock each — sign in with it to watch the access control refuse something. The audit trail names whichever account acted. **API only:** `GET /health` to warm it, `GET /api/v1/auth/policy` for what every route enforces, then read `GET /api/v1/orchestrator/state`. Full walkthrough in the README. |
+| **Testing instructions (private)** | **Console:** https://vf-app-350828852747.asia-southeast1.run.app — the board, any case, the review queue, the audit trail and the evaluation figures are readable **without signing in**, because an anonymous visitor is a real viewer, so nothing is needed to assess the product. **To act, one click:** the login page and the board's *Start here* strip offer **Continue as guest judge**, which signs you in with no password as `guest-judge@vf-logistics.demo`, a governance admin — inject shipments, decide cases, simulate and publish policy. What it cannot do is the three changes that would carry over to the next judge — **Clear board** (DevOps), **Revoke** the delegation boundary, and editing the **pre-AI screening rules** (Governance) — which need a password sign-in. Two password accounts are provided, with the passwords supplied alongside this submission. `judge@vf-logistics.demo` is a **governance admin**: it can record a review decision, see the spend figures and publish policy. `reviewer@vf-logistics.demo` holds only the **Reviewer** role: it can decide a case and open its document, and the spend figures, document upload and policy publishing stay locked for it, naming the role that would unlock each — sign in with it to watch the access control refuse something. The audit trail names whichever account acted. **API only:** `GET /health` to warm it, `GET /api/v1/auth/policy` for what every route enforces, then read `GET /api/v1/orchestrator/state`. Full walkthrough in the README. |
 
 **Which model provider(s) did you use?** → **Nebius Token Factory**, hosting
 **NVIDIA Nemotron 3 Nano** (`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`), **NVIDIA
@@ -630,7 +659,7 @@ Verifiable via `GET /api/v1/agents`, the per-case trace UI, or the raw case docu
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 5 integration points |
-| Automated test suite | 885 backend tests (pytest, 80% coverage), 142 frontend tests (vitest), mutation check 36/36 |
+| Automated test suite | 921 backend tests (pytest, 81% coverage), 146 frontend tests (vitest), mutation check 36/36 |
 | CI pipeline | GitHub Actions, five jobs, every one able to fail the build: ruff; mypy, strict on clean modules and a ceiling on the rest that may only fall; pytest with `--cov-fail-under=75`; frontend typecheck, lint, tests and build; and a container job that builds both images and smoke-tests the deployed one |
 | Auto-debate on score disputes | done -- fires without human intervention; a confident DISAGREE escalates the case, upward only |
 | Human feedback learning loop | done -- derived from reviewed cases, survives restart |

@@ -1,4 +1,4 @@
-# Demo video shooting script — ten clips, 165 seconds
+# Demo video shooting script — eleven clips, 165 seconds
 
 One shooting document. There used to be two that disagreed with each other, which is the
 same class of defect this script exists to avoid on camera.
@@ -13,7 +13,7 @@ So clip 1 opens on the product name and its user, and clips 3 and 10 say "NVIDIA
 and "Nebius Token Factory" aloud. Until this revision "NVIDIA" was never spoken at all.
 
 The narration is **generated, not spoken live**. `scripts/build_narration.py` synthesises
-`build/narration.wav` plus `build/narration.srt` from the ten scenes below, per sentence,
+`build/narration.wav` plus `build/narration.srt` from the eleven scenes below, per sentence,
 so subtitle timings are measured from real audio rather than interpolated from word counts.
 Each scene's speech is padded with silence up to the length of the clip recorded for it, so
 if the clips are laid end to end in order, every line lands on the shot it describes with
@@ -49,16 +49,34 @@ its cut.
 | Clip | Scene | Length | Screen |
 |---|---|---|---|
 | 1 | The problem | 17s | Pipeline `/` |
-| 2 | A real document | 14s | DevOps `/devops` → *Upload a document* |
+| 2 | A real document | 10s | DevOps `/devops` → *Upload a document* |
 | 3 | The design rule | 21s | Agent Console `/agents` |
 | 4 | The floor overrules the model | 19s | Pipeline → an escalated case → trace sheet, the three risk rows and the veto note |
-| 5 | Live evidence | 14s | Same sheet, scrolled to *Live evidence* |
-| 6 | The review queue | 16s | Review `/review` |
-| 7 | The delegation boundary | 28s | Governance `/governance` |
-| 8 | Prompt injection blocked | 15s | Review → the blocked case |
-| 9 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
-| 10 | Close | 13s | Pipeline `/` |
+| 5 | Live evidence | 10s | Same sheet, scrolled to *Live evidence* |
+| 6 | The review queue | 12s | Review `/review` |
+| 7 | The dossier | 14s | Review → *Due-diligence dossier (PDF)* → the PDF in a new tab |
+| 8 | The delegation boundary | 24s | Governance `/governance` |
+| 9 | Prompt injection blocked | 14s | Review → the blocked case |
+| 10 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
+| 11 | Close | 16s | Evaluation `/evaluation` → *Public enforcement cases*, then Pipeline `/` |
 | | | **165s** | |
+
+### What changed on 10/10, and why
+
+Still nothing shot, so restructuring was free again.
+
+- **Clip 1 opens on a verified figure.** "Thousands of shipments a week" was nobody's
+  number. Vietnam Customs found a violation in 29,849 of 16.84 million declarations in
+  2024 ([customs.gov.vn](http://customs.gov.vn:8228/index.jsp?pageId=2&aid=208927&cid=24)),
+  fewer than one in five hundred — and that ratio is the product's argument: nearly every
+  hold is honest, so the work is deciding each one quickly and defensibly.
+- **Clip 7 is new: the due-diligence dossier.** It is the answer to clip 1, and the one
+  artefact a forwarder would actually file. This is the *Potential Impact* clip.
+- **Clip 11 closes on the only measurement made on cases this project did not write:**
+  14 of 19 public enforcement cases held, on the Evaluation screen where the table is.
+- **Paid for by** clip 2 (the intake agent is on screen, so the sentence naming it went),
+  clips 5 and 6 each merging two sentences, and clip 8 losing *"so old decisions replay
+  against the policy of their day"*.
 
 ### What changed from the nine-clip version, and why
 
@@ -67,7 +85,7 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 885 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
+  on camera.** 921 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
   summarised — a judge scoring Technological Implementation had to read the repository to
   find any of it. Clip 5 also carries the **Tavily bonus award**, which the old script
   showed nowhere at all.
@@ -103,7 +121,7 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
 - [ ] Open Explorer at `sample_docs\` in this repository, positioned in a corner of the
       screen so `dirty_bol.pdf` and `injected_bol.pdf` are both visible.
 - [ ] Upload `injected_bol.pdf` **now**, in the preparation phase, so the blocked case
-      exists for clip 8. Model Armor refuses it before any model is invoked, so it is fast
+      exists for clip 9. Model Armor refuses it before any model is invoked, so it is fast
       and costs nothing.
 - [ ] Do **not** upload `clean_bol.pdf`. An earlier take had three document cases with
       near-identical numbers spread across two columns and they were impossible to tell
@@ -117,7 +135,8 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
 - [ ] **Confirm the live revision has the latest console.** The header chip
       *NVIDIA Nemotron 3 · Nebius Token Factory*, the *Start here* strip and the *End to
       end* chain at the top of every case trace are what make the required tools visible
-      in every frame. They are deployed (revision `vf-app-00008-7lc` and later); if the
+      in every frame. They are deployed (revision `vf-app-00011` and later — the dossier
+  button and the public-case table need it); if the
       chip is missing you are looking at a cached or older page.
 
 ### Check these three screens before rolling clips 3, 4 and 5
@@ -175,9 +194,12 @@ slowly a little, just for motion. Let the header chip naming NVIDIA Nemotron 3 a
 Token Factory be in frame for the whole clip; close the *Start here* strip before
 recording if it crowds the board.
 
-> Floorline is for freight forwarders clearing thousands of shipments a week. Any one can
-> hide under-invoicing, a sanctioned buyer, or dual-use cargo on farm paperwork. Checking
-> by hand is impossible; letting a model release them is reckless.
+> Floorline is for freight forwarders. In 2024, Vietnam Customs found a violation in fewer
+> than one declaration in five hundred. So almost everything held is honest: the job is
+> holding the right ones, and deciding each fast.
+
+The figure is 29,849 of 16.84 million (0.18%), from Vietnam Customs' own year-end release.
+It is said as a ratio on purpose: a judge remembers "one in five hundred", not "0.18".
 
 Worth letting the six columns be visible. On the board seeded for this take: eleven
 escalated, one held, two awaiting a person, two blocked by a person, two released by a
@@ -188,21 +210,21 @@ off the seed script's summary rather than from this paragraph.
 
 ---
 
-## Clip 2 — A real document (0:17 → 0:31, 14s)
+## Clip 2 — A real document (0:17 → 0:27, 10s)
 
 **Action:** Go to `/devops`, find **Upload a document**. Drag `dirty_bol.pdf` from Explorer
 onto it — drag *slowly*, wait for the drop target to highlight, then release. Cut as soon
 as the transcribing state appears. Do not record the wait.
 
-> A real bill of lading, dropped the way a mailroom would drop it. Model Armor
-> screens the file before any model reads it. Then an intake agent transcribes it.
+> A real bill of lading, dropped as a mailroom would. Model Armor screens it before any
+> model reads it.
 
 The case takes 30–60 seconds to reach a terminal state. Clip 6 needs it finished, so shoot
 the clips out of order if you like — just lay them back in order on the timeline.
 
 ---
 
-## Clip 3 — The design rule (0:31 → 0:52, 21s)
+## Clip 3 — The design rule (0:27 → 0:48, 21s)
 
 **Action:** Go to `/agents`. Stop on the **Cost by agent** card. Let the dollar column be
 readable, and let it be visible that the debate agent sits high on spend with very few
@@ -222,7 +244,7 @@ number said loosely is a number they will check.
 
 ---
 
-## Clip 4 — The floor overrules the model (0:52 → 1:11, 19s)
+## Clip 4 — The floor overrules the model (0:48 → 1:07, 19s)
 
 **Action:** Back to `/`. In the **Escalated** column open **`FULL-12-DUALUSE`** (industrial
 frequency converters under a dual-use heading). On the seeded board it reads *Model alone*
@@ -255,15 +277,15 @@ no sources to scroll to.
 
 ---
 
-## Clip 5 — Live evidence (1:11 → 1:25, 14s)
+## Clip 5 — Live evidence (1:07 → 1:17, 10s)
 
 **Action:** Stay in the clip 4 sheet. Scroll to **Live evidence**. The first heading reads
 *COMPLIANCE READ 5 SOURCES* (an *INVESTIGATION READ 5 SOURCES* group follows it). Hover one
 anchor so the hostname is legible, then click it and
 let the real page open in a new tab. Cut once the destination is recognisable.
 
-> The compliance screen read five public sources at decision time. Each one is a live link,
-> not a summary. This is what a customs authority would be shown.
+> The compliance screen read five public sources at decision time, each a live link, not a
+> summary.
 
 This is the Tavily evidence, and the bonus award rides on it. Until recently these citations
 did not render at all: the component read `s.urls` off the search step, a key the backend
@@ -272,7 +294,7 @@ point — it proves the citation resolves rather than decorates.
 
 ---
 
-## Clip 6 — The review queue (1:25 → 1:41, 16s)
+## Clip 6 — The review queue (1:17 → 1:29, 12s)
 
 **Only shoot this once `dirty_bol.pdf` has settled.** It should be in the queue as an
 escalated document case.
@@ -280,57 +302,75 @@ escalated document case.
 **Action:** Go to `/review`. Hold on the list so the red and amber left borders are both
 visible, then open one case and scroll so the document sits beside the findings.
 
-> Everything the agent was not permitted to close comes here. Red is escalated, yellow is
-> held. The document sits beside the findings, because approving a hold you cannot check is
-> a rubber stamp.
+> Everything the agent may not close comes here, with the document beside the findings,
+> because approving a hold you cannot check is a rubber stamp.
 
 If you land on a case where the model and the floor disagreed by fifteen points or more, the
 disputed banner and the **Senior auditor debate** card with its CONFIRM/DISAGREE badge are
 both worth having in frame. On the seeded board two cases carry one, and only
 **`FULL-07-BLACKTAX`** is in the queue (model 68 against a floor of 100); the other,
 `FULL-05-SANCTIONS`, has already been blocked by a reviewer. Do not lengthen the clip for
-it — if you want it as its own beat, re-record at 22–24s, change that scene's seconds in
+it — if you want it as its own beat, re-record at 18–20s, change that scene's seconds in
 `SCENES`, re-run `check_narration_budget.py`, and regenerate.
 
 ---
 
-## Clip 7 — The delegation boundary (1:41 → 2:09, 28s)
+## Clip 7 — The dossier (1:29 → 1:43, 14s)
+
+**Action:** Still in `/review`, on a case with a sanctions or dual-use finding — after a
+reseed, **`FULL-05-SANCTIONS`** (blocked by a reviewer; its receiver is *Alexsong Pte.
+Ltd.*, a real OFAC designation, OFAC-SDN-35036) or **`FULL-12-DUALUSE`** from the trace
+sheet. Press **Due-diligence dossier (PDF)** in the *Paperwork* header. The PDF opens in a
+new tab. Hold on the top half (outcome, shipment), then scroll to **Sanctions screening**
+(list *OFAC SDN + UN SC Consolidated*, 18,525 entities, the sync date) and the first
+**finding**, so *Basis* and *Comparable public case* are both legible.
+
+> One click turns any case into a due-diligence dossier. Every finding, the sanctions list
+> and its date, the regulation it rests on, and a real enforcement case like it.
+
+This is the clip that says who would pay for this. Do not narrate the regulations by name;
+the page carries them, and a judge reads faster than the voice speaks. **Check before
+rolling** that the case's *List* row does not read `bundled_seed`: a case seeded before the
+official index went live was screened against the demo list, and the dossier says so in
+grey under the table. Reseed if it does.
+
+---
+
+## Clip 8 — The delegation boundary (1:43 → 2:07, 24s)
 
 **Action:** Go to `/governance`. Hold on the line naming the active boundary and the person
 who published it, then scroll to the permissions block.
 
 > The agent has no authority of its own. A human publishes a machine-readable boundary; the
 > agent works inside it: the value ceiling, forbidden destinations, which actions it may
-> take unasked. Every action records the boundary version that allowed it, so old decisions
-> replay against the policy of their day. Withdraw it and the system suspends itself, still
-> analysing but refusing every protected action.
+> take unasked. Every action records the boundary version that allowed it. Withdraw it and
+> the system suspends itself, still analysing but refusing every protected action.
 
 Still the longest clip, and the one that earns the submission its category. It came down
-from 38s to 28s to fund the evidence clips; the two sentences dropped were *"Autonomy here
-is delegated, and delegation can be revoked"* and the split of the suspend behaviour into
-two. The remaining four carry the argument.
+from 38s to 28s to fund the evidence clips, and to 24s to fund the dossier. **Do not press
+Revoke on camera with the judge session**: it is locked for one-click sign-ins, because a
+revoked boundary would suspend the agent for every judge after you.
 
 ---
 
-## Clip 8 — Prompt injection blocked (2:09 → 2:24, 15s)
+## Clip 9 — Prompt injection blocked (2:07 → 2:21, 14s)
 
 **Action:** In `/review`, open the blocked case created during preparation.
 
 > This document told the agent to ignore its instructions and release the container. Model
-> Armor caught it before any model ran, so no tokens were spent. The case opened already
-> denied.
+> Armor caught it before any model ran. The case opened already denied.
 
 Verified on live traffic: the case trace reads *blocked at intake, model never invoked*.
 
 ---
 
-## Clip 9 — Tests and CI (2:24 → 2:32, 8s)
+## Clip 10 — Tests and CI (2:21 → 2:29, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on `885 passed`. Then the GitHub
+tail of a real run — `python -m pytest tests/ -q` ending on `921 passed`. Then the GitHub
 Actions run page for `master`, with five green jobs visible.
 
-> 885 tests pass at 80 percent coverage. Continuous integration runs them on every push.
+> 921 tests pass at 81 percent coverage, and CI runs them on every push.
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight
@@ -343,23 +383,27 @@ now.
 
 ---
 
-## Clip 10 — Close (2:32 → 2:45, 13s)
+## Clip 11 — Close (2:29 → 2:45, 16s)
 
-**Action:** Back to `/`. Let the board fill the frame, header chip included.
+**Action:** Go to `/evaluation` and scroll to **Public enforcement cases**, so the table of
+nineteen cases with their *Rules* and *Full pipeline* verdicts is in frame (about eight
+seconds). Then cut back to `/` and let the board fill the frame, header chip included.
 
-> Floorline: six NVIDIA Nemotron agents and a vision model, on Nebius Token Factory.
-> Agents that act, inside limits a person set. And stop when they should.
+> On nineteen real enforcement cases it held fourteen, and says what it cannot see.
+> Floorline: NVIDIA Nemotron on Nebius Token Factory. Agents that act inside limits a person
+> set, and stop when they should.
 
-End on the board, not on a slide. The count is deliberate: seven agents, six of them on
-Nemotron, and document intake on MiniCPM-V. The previous line said "seven agents on NVIDIA
-Nemotron", which the *Do not say* list below forbids.
+"Says what it cannot see" is the *Missed* rows: origin fraud, which no booking shows. The
+table states it; the voice only points at it. **Fourteen is the full-pipeline figure**
+(`data/benchmark_results/public_full_all.json`); rules alone held eleven. If that file is
+regenerated, re-read the number before recording. End on the board, not on a slide.
 
 ---
 
 ## Assembling in Clipchamp
 
 1. Drag `build/narration.wav` onto the timeline at **0:00**.
-2. Drop the ten clips in order 1..10, butted together, **no transitions**. Each scene's
+2. Drop the eleven clips in order 1..11, butted together, **no transitions**. Each scene's
    speech is already padded to its clip length, so correct order means picture and sound
    line up on their own.
 3. Subtitles: import `build/narration.srt` directly. Do **not** use Clipchamp's *Auto
@@ -371,8 +415,8 @@ Nemotron", which the *Do not say* list below forbids.
 Clip lengths currently in `SCENES`:
 
 ```
-1: 17s   2: 14s   3: 21s   4: 19s   5: 14s
-6: 16s   7: 28s   8: 15s   9:  8s  10: 13s     total 165s
+1: 17s   2: 10s   3: 21s   4: 19s   5: 10s   6: 12s
+7: 14s   8: 24s   9: 14s  10:  8s  11: 16s     total 165s
 ```
 
 ## Regenerating the narration
@@ -392,9 +436,8 @@ credentials.
   and regenerate.** The script reports immediately if a scene's speech no longer fits its
   clip, and by how many seconds. The fix for an overrun is shorter writing, not a faster
   read.
-- Clips 5 and 6 have the most headroom (about 1.7s each on the offline estimate), so if one
-  scene needs an extra second that is where to take it from. Clip 10 already took one from
-  clip 4 for the corrected closing line.
+- Clips 5 and 9 have the most headroom (about 2.5s each on the offline estimate), so if one
+  scene needs an extra second that is where to take it from.
 - Splitting a sentence in two costs 0.25s even if you add no words, because of the gap after
   every sentence.
 
@@ -406,8 +449,9 @@ credentials.
   decide.
 - "fully autonomous" — the entire architecture argues the opposite, and a judge who notices
   will trust everything else less.
-- Any accuracy claim beyond the HS classification holdout (91.7%), which is the only
-  measured accuracy figure in the project.
+- Any accuracy claim beyond the HS classification holdout (91.7%) and the public-case count
+  (14 of 19 held). Do not turn the second into a percentage: on nineteen cases one case is
+  five points.
 - Anything about the debate being cheap. It is measured at `$0.0198` per debate against
   Super's `$0.0015`.
 - **"Super runs the debate."** It runs Ultra. Several source comments and two user-visible

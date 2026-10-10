@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
 """
-Weekly sanctions refresh, with a measured comparison between deterministic
-parsing and model parsing.
+Weekly sanctions refresh.
 
 Run
-    python scripts/refresh_sanctions.py --limit 5000 --dry-run
-    python scripts/refresh_sanctions.py --divergence-sample 40
+    python scripts/refresh_sanctions.py --dry-run --out %TEMP%/index.json
     python scripts/refresh_sanctions.py            # full refresh, writes GCS
+    python scripts/refresh_sanctions.py --local-dir %TEMP%/floorline-sanctions
+    python scripts/refresh_sanctions.py --source opensanctions --limit 5000 \
+        --divergence-sample 40 --dry-run
 
-Why both parse paths run
-------------------------
+Which lists
+-----------
+By default the index is built from the two primary publications, parsed by code in
+vf_logistics.sanctions_sources: OFAC's SDN list (US Treasury) and the UN Security
+Council Consolidated List. Both are published by the designating authority for
+anyone to screen against, which is what a forwarder actually screens against, and
+neither carries the non-commercial licence the OpenSanctions bulk data does.
+
+`--source opensanctions` keeps the original path: the FTM feed, and the measured
+comparison between deterministic parsing and Nemotron Super parsing described
+below. It is kept because that measurement found a real parser bug, and because
+OpenSanctions covers lists (EU, UK, national) that a later refresh may add.
+
+Why both parse paths run (OpenSanctions only)
+---------------------------------------------
 The obvious question about this pipeline is whether a language model should be
 parsing the sanctions feed at all. OpenSanctions publishes structured JSON, so the
 deterministic path is correct by construction and the model can only introduce
@@ -72,7 +86,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import httpx  # noqa: E402
 
-from vf_logistics import nebius_client, sanctions, shipper_registry  # noqa: E402
+from vf_logistics import nebius_client, sanctions, sanctions_sources, shipper_registry  # noqa: E402
 
 # Newline-delimited FollowTheMoney entities. Chosen over targets.nested.json
 # because it streams: the consolidated dataset is tens of megabytes and Cloud Run
@@ -373,8 +387,16 @@ def iter_local(path: str, limit: int | None) -> Iterator[dict[str, Any]]:
 
 async def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--source", choices=("official", "opensanctions"), default="official",
+        help="official = OFAC SDN + UN SC Consolidated (default); opensanctions = FTM feed",
+    )
+    ap.add_argument(
+        "--local-dir",
+        help="official source: read sdn.csv, alt.csv, add.csv and un.xml from here",
+    )
     ap.add_argument("--feed", default=DEFAULT_FEED)
-    ap.add_argument("--local", help="read from a local JSONL file instead")
+    ap.add_argument("--local", help="opensanctions source: read a local JSONL file instead")
     ap.add_argument("--limit", type=int, default=0, help="0 means no limit")
     ap.add_argument(
         "--divergence-sample", type=int, default=0,
@@ -386,8 +408,85 @@ async def main() -> int:
         help="build and report but do not write GCS or Firestore",
     )
     ap.add_argument("--out", help="also write the built index to this local path")
+    ap.add_argument(
+        "--bucket", default=sanctions.INDEX_BUCKET,
+        help="GCS bucket to publish to (default: SANCTIONS_INDEX_BUCKET)",
+    )
     args = ap.parse_args()
 
+    if args.source == "official":
+        payload = build_official(args.local_dir)
+    else:
+        payload = await build_opensanctions(args)
+    return publish(payload, out=args.out, dry_run=args.dry_run, bucket=args.bucket)
+
+
+def _fetch(url: str, local_dir: str | None, filename: str) -> bytes:
+    if local_dir:
+        return (pathlib.Path(local_dir) / filename).read_bytes()
+    response = httpx.get(url, timeout=180.0, follow_redirects=True)
+    response.raise_for_status()
+    return response.content
+
+
+def build_official(local_dir: str | None = None) -> dict[str, Any]:
+    """
+    The index from OFAC SDN and the UN Consolidated List.
+
+    Raises rather than publishing half a list. If either download fails the refresh
+    stops, and the previous index in GCS stays live -- an index silently missing
+    the UN list would answer CLEAN for every UN-only designation.
+    """
+    from vf_logistics.store import utcnow
+
+    started = time.monotonic()
+    # OFAC's CSVs are Latin-1, not UTF-8: names such as "BANCO NACIONAL DE CUBA"
+    # carry accented aliases that a UTF-8 decode would reject outright.
+    ofac = sanctions_sources.parse_ofac(
+        _fetch(sanctions_sources.OFAC_SDN_URL, local_dir, "sdn.csv").decode("latin-1"),
+        _fetch(sanctions_sources.OFAC_ALT_URL, local_dir, "alt.csv").decode("latin-1"),
+        _fetch(sanctions_sources.OFAC_ADD_URL, local_dir, "add.csv").decode("latin-1"),
+    )
+    un, un_generated = sanctions_sources.parse_un(
+        _fetch(sanctions_sources.UN_CONSOLIDATED_URL, local_dir, "un.xml"),
+    )
+    if not ofac or not un:
+        raise RuntimeError(
+            f"refusing a partial index: OFAC gave {len(ofac)} rows, UN gave {len(un)}"
+        )
+    entities = ofac + un
+    print(f"OFAC SDN: {len(ofac)} screenable records "
+          f"({sum(1 for e in ofac if e['identifiers'])} with identifiers)")
+    print(f"UN SC Consolidated: {len(un)} records, generated {un_generated}")
+    print(f"built in {time.monotonic() - started:.1f}s")
+
+    return {
+        "meta": {
+            "version": int(time.time()),
+            "synced_at": utcnow(),
+            "source": "OFAC SDN + UN SC Consolidated",
+            "entity_count": len(entities),
+            "lists": {
+                "ofac_sdn": {"url": sanctions_sources.OFAC_SDN_URL, "records": len(ofac)},
+                "un_sc_consolidated": {
+                    "url": sanctions_sources.UN_CONSOLIDATED_URL,
+                    "records": len(un),
+                    "generated": un_generated,
+                },
+            },
+            # Recorded on the index itself so a consumer can see the terms without
+            # reading this script.
+            "licence": (
+                "Public: OFAC SDN is a US Government work; the UN Consolidated List "
+                "is published by the Security Council for implementation by states "
+                "and private parties."
+            ),
+        },
+        "entities": entities,
+    }
+
+
+async def build_opensanctions(args: argparse.Namespace) -> dict[str, Any]:
     limit = args.limit or None
     started = time.monotonic()
 
@@ -490,16 +589,23 @@ async def main() -> int:
         },
         "entities": entities,
     }
+    return payload
 
-    if args.out:
-        out_path = pathlib.Path(args.out)
+
+def publish(
+    payload: dict[str, Any], *, out: str | None, dry_run: bool, bucket: str,
+) -> int:
+    entities = payload.get("entities") or []
+
+    if out:
+        out_path = pathlib.Path(out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8",
         )
-        print(f"\nwrote {args.out}")
+        print(f"\nwrote {out}")
 
-    if args.dry_run:
+    if dry_run:
         print("\n--dry-run: nothing written to GCS or Firestore")
         return 0
 
@@ -509,7 +615,6 @@ async def main() -> int:
         print("\nREFUSING to publish: the built index has no entities", file=sys.stderr)
         return 1
 
-    bucket = sanctions.INDEX_BUCKET
     if not bucket:
         print("\nSANCTIONS_INDEX_BUCKET is unset; nothing to publish to", file=sys.stderr)
         return 1
@@ -523,8 +628,6 @@ async def main() -> int:
     blob.upload_from_string(buffer.getvalue(), content_type="application/gzip")
     print(f"\npublished {len(entities)} entities to "
           f"gs://{bucket}/{sanctions.INDEX_OBJECT}")
-
-    sanctions.load(force=True)
     return 0
 
 

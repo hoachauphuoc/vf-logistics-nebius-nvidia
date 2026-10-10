@@ -160,7 +160,7 @@ asked, so an anonymous `POST /api/proxy/governance/simulate` is 401 even though 
 route itself is `viewer`: the dry run reads nothing a viewer cannot, but a write-shaped
 request from nobody is refused at the first door.
 
-### One-click sign-in, and the one thing it cannot do
+### One-click sign-in, and the three things it cannot do
 
 The console can offer judges a **one-click** sign-in (`POST /api/auth/judge`, off unless
 `VF_ONE_CLICK_JUDGE=true`, closed after `VF_ONE_CLICK_UNTIL`). It mints an ordinary
@@ -169,22 +169,26 @@ the console asserts an email, never a role.
 
 What differs is a signed `amr` claim in the session body: `password` from the login
 form, `one_click` from the button. Because the button is public and its account is an
-admin, role alone cannot protect the one action a stranger could take that the next
-visitor would find undone, so `POST /orchestrator/reset` also asks how the session was
-signed in:
+admin, role alone cannot protect the actions a stranger could take that the next
+visitor would find undone. Three routes therefore also ask how the session was signed
+in: `POST /orchestrator/reset` (Clear board), `POST /governance/revoke` (which suspends
+the agent until someone re-publishes) and `PUT /governance/prefilter-rules` (which
+decides what clears with no model at all). Publishing and simulating a boundary stay
+open to the judge:
 
-| Caller | Clear board |
+| Caller | Clear board, revoke, prefilter edit |
 | --- | --- |
-| password session, operator or above | allowed |
+| password session with the route's role | allowed |
 | one-click session, any role | **403**, `required_auth: "password"` |
 | session with no or an unknown `amr` (e.g. minted before the claim) | **403**, fails closed |
 | API key alone (scripts, seeding) | allowed -- no session to ask about |
 
-It is checked in the BFF (`PASSWORD_ONLY_POST`, so the refusal costs no upstream call)
-and again in Flask (`auth.require_password_session`, stacked under `@require_operator`
-and published as `requires_password_session` in `/auth/policy`). The route counts above
-are unchanged: it is a flag on a route, not a sixth role, because "operator minus one
-route" is not nested inside anything and the hierarchy relies on roles being nested.
+It is checked in the BFF (`PASSWORD_ONLY_POST` and `PASSWORD_ONLY_PUT`, so the refusal
+costs no upstream call) and again in Flask (`auth.require_password_session`, stacked
+under the role decorator and published as `requires_password_session` in
+`/auth/policy`). The route counts above are unchanged: it is a flag on a route, not a
+sixth role, because "admin minus three routes" is not nested inside anything and the
+hierarchy relies on roles being nested.
 
 A reset clears cases and events and keeps the audit trail, and writes a `board_reset`
 row naming the actor and `actor_auth`. Review decisions, boundary publishes and revokes,
