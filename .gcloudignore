@@ -27,6 +27,11 @@ benchmark_report*.json
 .coverage
 .pytest_cache/
 
+# Tool caches. Git skips them through a .gitignore each tool writes inside its own
+# cache, which gcloud never reads; .mypy_cache alone is 124 MB in 50 files.
+.mypy_cache/
+.ruff_cache/
+
 # Not used at runtime. Both Dockerfiles copy src/ and data/hs_reference.yaml;
 # the root one also builds frontend/ and copies entrypoint.sh.
 tests/

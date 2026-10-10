@@ -92,7 +92,11 @@ def _base(**over) -> dict:
         "shipper_tax_id": "0301447722",
         "receiver_name": "Pacific Sourcing Pte Ltd",
         "receiver_company": "Pacific Sourcing Pte Ltd",
-        "cargo_description": "Woven cotton garments, retail packed",
+        # Named to the heading. "Woven cotton garments" spans 6203-6206, and
+        # the HS check queried 6205 (men's shirts) on it -- correctly: the text
+        # did not say shirts. That left the clean control and every case built
+        # on it with a MEDIUM HS_DESCRIPTION_MISMATCH that was not its branch.
+        "cargo_description": "Men's woven cotton shirts, retail packed",
         "hs_code": "6205.20",
         "weight_kg": 620,
         "declared_value": 7_400,
@@ -272,7 +276,8 @@ CASES: list[tuple[str, str, list[str], dict]] = [
     (
         "FULL-14-HSMISMATCH",
         "description and declared heading describe different goods",
-        ["HS_DESCRIPTION_MISMATCH_DUAL_USE", "HS_DESCRIPTION_MISMATCH_LOW_CONFIDENCE"],
+        ["HS_DESCRIPTION_MISMATCH", "HS_DESCRIPTION_MISMATCH_DUAL_USE",
+         "HS_DESCRIPTION_MISMATCH_LOW_CONFIDENCE"],
         _base(
             cargo_description=(
                 "Flat-pack wooden office furniture, seats and chairs"
@@ -383,18 +388,30 @@ def _headers(extra: dict | None = None) -> dict[str, str]:
 def _request(base: str, path: str, method: str, body: dict | None, timeout: int):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     extra = {"Content-Type": "application/json"} if data else {}
-    req = urllib.request.Request(
-        f"{base}{path}", data=data, headers=_headers(extra), method=method
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
+    # urlopen raises URLError only when the connection or the send fails, before
+    # the server has a request to act on, so a retry cannot post a shipment twice.
+    # A failure while reading the response (RemoteDisconnected) is not a URLError
+    # and is not retried. Seen in practice as an intermittent SSL EOF in the
+    # handshake that aborted a reset-then-seed run after the reset.
+    for attempt in range(3):
+        req = urllib.request.Request(
+            f"{base}{path}", data=data, headers=_headers(extra), method=method
+        )
         try:
-            return exc.code, json.loads(raw)
-        except json.JSONDecodeError:
-            return exc.code, {"error": raw[:300]}
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                return exc.code, json.loads(raw)
+            except json.JSONDecodeError:
+                return exc.code, {"error": raw[:300]}
+        except urllib.error.URLError as exc:
+            if attempt == 2:
+                raise
+            print(f"    connection failed ({exc.reason}); retrying")
+            time.sleep(2 * (attempt + 1))
+    raise AssertionError("unreachable")
 
 
 def post(base, path, body, timeout=300):

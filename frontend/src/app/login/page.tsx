@@ -192,7 +192,9 @@ function LoginForm() {
     <div className="mt-5">
       {/* The judge's way in, first. A judge with three minutes should not have to
           find a password in a private field to try the product; this signs them
-          in as a guest account with every right except clearing the board. */}
+          in as a guest account with every right except the three whose effect
+          outlives the visit: clearing the board, revoking the boundary, and
+          editing the prefilter rules. */}
       {offerOneClick && (
         <div className="mb-5">
           <Button
