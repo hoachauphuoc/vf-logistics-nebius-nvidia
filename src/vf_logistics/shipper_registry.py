@@ -40,9 +40,19 @@ from typing import Any
 # between a document and a database ("Pte Ltd" / "PTE. LTD." / "Pte. Limited").
 # They are removed before comparison so formatting noise does not read as a
 # different company, while the distinctive part of the name still has to match.
+#
+# The second line was missing until the official lists were indexed, and the
+# public enforcement cases showed what that cost. OFAC writes "LLC TESTKOMPLEKT"
+# where a Russian invoice says "OOO Testkomplekt" -- the same legal form in two
+# languages -- and the two normalised to different keys, so a designated buyer
+# named the way its own paperwork names it screened CLEAN. The forms added are the
+# ones on this corridor's lists: Russian and CIS (OOO, AO, OAO, ZAO, PAO, TOV),
+# Gulf free zones (FZE, FZCO, FZC, FZ-LLC) and the common Asian and European ones.
 _SUFFIXES = {
     "co", "ltd", "limited", "jsc", "pte", "inc", "incorporated",
     "corp", "corporation", "group", "trading", "company", "plc", "llc",
+    "ooo", "oao", "zao", "pao", "ao", "tov", "fze", "fzco", "fzc", "fz",
+    "llp", "sdn", "bhd", "gmbh", "bv", "nv", "srl",
 }
 
 

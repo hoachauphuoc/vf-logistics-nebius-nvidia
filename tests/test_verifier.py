@@ -443,6 +443,46 @@ class TestIndividualChecks:
 
         assert any(f["code"] == "HIGH_RISK_DESTINATION" for f in result)
 
+    def test_check_routing_high_risk_origin(self):
+        """
+        "To, from, or through". Aluminium foil declared as Myanmar origin
+        (EPPO, 2024) passed a destination-only check entirely.
+        """
+        result = check_routing({"origin": "Yangon, Myanmar", "destination": "Hamburg, Germany"})
+
+        assert [f["code"] for f in result] == ["HIGH_RISK_ORIGIN"]
+
+    def test_check_routing_high_risk_transit(self):
+        """Rail freight through Belarus to an EU destination (OLAF, 2026)."""
+        result = check_routing({
+            "origin": "Chongqing, China",
+            "destination": "Liege, Belgium",
+            "transit_points": "Brest, Belarus; Malaszewicze, Poland",
+        })
+
+        transit = [f for f in result if f["code"] == "HIGH_RISK_TRANSIT"]
+        assert transit and transit[0]["measured"]["countries"] == ["belarus"]
+
+    def test_check_routing_does_not_double_count_the_destination(self):
+        """A route text that restates the destination is not a second, transit finding."""
+        result = check_routing({
+            "origin": "Mumbai, India",
+            "destination": "Bandar Abbas, Iran",
+            "route_details": "Mumbai to Bandar Abbas, Iran, direct",
+        })
+
+        assert [f["code"] for f in result] == ["HIGH_RISK_DESTINATION"]
+
+    def test_check_routing_matches_whole_words_only(self):
+        """'Cuba' is a country; 'Incubator' is cargo."""
+        result = check_routing({
+            "origin": "Osaka, Japan",
+            "destination": "Busan, South Korea",
+            "route_details": "Incubator parts, Osaka to Busan, direct",
+        })
+
+        assert result == []
+
     def test_check_counterparty_no_history(self):
         """Counterparty check flags new shippers."""
         shipment = {"shipper_tx_count": 0}

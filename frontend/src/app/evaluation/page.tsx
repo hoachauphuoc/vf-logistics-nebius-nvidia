@@ -8,6 +8,7 @@ import { PageHeading } from "@/components/layout/PageHeading";
 import { ErrorState } from "@/components/layout/States";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  type CasePair,
   type Detection,
   type EvaluationSummary,
   type HsResult,
@@ -57,6 +58,8 @@ function Report({ data }: { data: EvaluationSummary }) {
   const before = byId.get("rules_holdout_before");
   const after = byId.get("rules_holdout_after");
   const full = byId.get("full_holdout_after");
+  const publicRules = byId.get("public_rules_all");
+  const publicFull = byId.get("public_full_all");
   const hsHoldout = data.hs_classifier.holdout;
 
   return (
@@ -72,6 +75,8 @@ function Report({ data }: { data: EvaluationSummary }) {
 
       {before && after && <TuningComparison before={before} after={after} />}
       {full && <FullArm result={full} />}
+      {after && <WorkloadCard results={[after, full, publicRules, publicFull]} />}
+      {publicRules && publicFull && <PublicCases rules={publicRules} full={publicFull} />}
       {hsHoldout.length > 0 && <HsTable rows={hsHoldout} />}
       <Sources results={data.pipeline} />
     </div>
@@ -189,6 +194,160 @@ function FullArm({ result }: { result: PipelineResult }) {
       {result.notes?.length ? (
         <ul className="mt-3 space-y-0.5 text-[11px] leading-relaxed text-faint">
           {result.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+const WORKLOAD_LABEL: Record<string, string> = {
+  rules_holdout_after: "Rules, synthetic holdout",
+  full_holdout_after: "Full pipeline, synthetic holdout",
+  public_rules_all: "Rules, public cases",
+  public_full_all: "Full pipeline, public cases",
+};
+
+/**
+ * What a reviewer's queue looks like at the fraud rates a forwarder actually sees.
+ *
+ * The corpora are 20-80% fraud by construction, so their precision says nothing
+ * about the queue. At 0.2% -- the Vietnam corridor's measured rate -- even a good
+ * recall and a modest false-alarm rate put hundreds of honest shipments in front
+ * of a reviewer for every real one. Shown because it is the number that decides
+ * whether the product's value is "hold fewer" or "decide each hold faster", and
+ * on this evidence it is the second.
+ */
+function WorkloadCard({ results }: { results: Array<PipelineResult | undefined> }) {
+  const rows = results.filter((r): r is PipelineResult => Boolean(r?.workload?.length));
+  if (!rows.length) return null;
+  const prevalences = rows[0].workload!.map((w) => w.prevalence);
+  return (
+    <div className="bento-card p-4">
+      <CardTitle help="evaluation.workload">Reviewer workload at real fraud rates</CardTitle>
+      <p className="mt-1.5 max-w-3xl text-[12px] leading-relaxed text-dim">
+        Shipments held per 1,000, and how many of those are real, if fraud were as rare
+        as it is in practice. 0.2% is Vietnam Customs&rsquo; 2024 rate: a violation found
+        in 29,849 of 16.84 million declarations. Computed from each report&rsquo;s recall and
+        false-alarm rate, so it carries their small-sample limits.
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[34rem] text-left">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-wide text-faint">
+              <th className="py-1.5 pr-3 font-medium">Report</th>
+              {prevalences.map((p) => (
+                <th key={p} className="py-1.5 pr-3 text-right font-medium">
+                  {(p * 100).toFixed(1)}% fraud
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-t border-white/[0.05]">
+                <td className="py-1.5 pr-3 text-[12px] text-white/85">{WORKLOAD_LABEL[r.id] ?? r.id}</td>
+                {r.workload!.map((w) => (
+                  <td key={w.prevalence} className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums">
+                    <span className="text-white">{w.held_per_1000.toFixed(0)}</span>
+                    <span className="text-faint"> held, {w.true_per_1000.toFixed(1)} real</span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
+        A screen that holds hundreds of honest shipments per real one is not saved by
+        holding fewer: the cost is in deciding each one. That is what the case trace and
+        the due-diligence dossier are for.
+      </p>
+    </div>
+  );
+}
+
+const PAIR_VERDICT: Record<string, { label: string; tone: string }> = {
+  separated: { label: "Separated", tone: "text-risk-clear" },
+  both: { label: "Both held", tone: "text-risk-warn" },
+  missed: { label: "Missed", tone: "text-risk-critical" },
+  variance: { label: "Model variance", tone: "text-faint" },
+  false_alarm: { label: "Honest held only", tone: "text-risk-critical" },
+};
+
+function pairVerdict(p: CasePair): keyof typeof PAIR_VERDICT {
+  if (p.model_variance) return "variance";
+  if (p.separated) return "separated";
+  if (p.attack_flagged && p.honest_flagged) return "both";
+  if (p.honest_flagged) return "false_alarm";
+  return "missed";
+}
+
+/**
+ * Nineteen public enforcement cases, each beside the honest trade it imitated.
+ *
+ * Read as pairs because only a pair says anything: holding both halves is holding
+ * a commodity, not detecting a fraud. Every row links to the regulator's own page.
+ */
+function PublicCases({ rules, full }: { rules: PipelineResult; full: PipelineResult }) {
+  const fullByRef = new Map((full.pairs ?? []).map((p) => [p.ref, p]));
+  const count = (r: PipelineResult, v: keyof typeof PAIR_VERDICT) =>
+    (r.pairs ?? []).filter((p) => pairVerdict(p) === v).length;
+  return (
+    <div className="bento-card p-4">
+      <CardTitle help="evaluation.public">Public enforcement cases</CardTitle>
+      <p className="mt-1.5 max-w-3xl text-[12px] leading-relaxed text-dim">
+        {(rules.pairs ?? []).length} cases from BIS, OFAC, US Commerce, EPPO and OLAF, each
+        rebuilt as the shipment the paperwork showed and paired with the honest trade it
+        imitated. Rules alone separated {count(rules, "separated")}; the full pipeline
+        separated {count(full, "separated")} and caught{" "}
+        {full.detection.tp} of {full.detection.tp + full.detection.fn} frauds, for{" "}
+        {formatUsd(full.cost?.total_usd)}.
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[44rem] text-left">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-wide text-faint">
+              <th className="py-1.5 pr-3 font-medium">Case</th>
+              <th className="py-1.5 pr-3 font-medium">Rules</th>
+              <th className="py-1.5 pr-3 font-medium">Full pipeline</th>
+              <th className="py-1.5 font-medium">What fired on the fraud</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(rules.pairs ?? []).map((p) => {
+              const f = fullByRef.get(p.ref);
+              const rv = PAIR_VERDICT[pairVerdict(p)];
+              const fv = f ? PAIR_VERDICT[pairVerdict(f)] : null;
+              return (
+                <tr key={p.ref} className="border-t border-white/[0.05] align-top">
+                  <td className="max-w-[22rem] py-1.5 pr-3 text-[11.5px] text-white/85">
+                    {p.source_url ? (
+                      <a href={p.source_url} target="_blank" rel="noreferrer" className="hover:underline">
+                        {p.title ?? p.ref}
+                      </a>
+                    ) : (
+                      p.title ?? p.ref
+                    )}
+                    <span className="block font-mono text-[10px] text-faint">
+                      {p.ref} · {humaniseCode(p.typology)}
+                    </span>
+                  </td>
+                  <td className={cn("py-1.5 pr-3 text-[11.5px]", rv.tone)}>{rv.label}</td>
+                  <td className={cn("py-1.5 pr-3 text-[11.5px]", fv?.tone)}>{fv?.label ?? "—"}</td>
+                  <td className="py-1.5 font-mono text-[10.5px] text-dim">
+                    {(f?.attack_codes ?? p.attack_codes).map(humaniseCode).join(", ") || "nothing"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {full.notes?.length ? (
+        <ul className="mt-3 space-y-0.5 text-[11px] leading-relaxed text-faint">
+          {[...(rules.notes ?? []), ...full.notes].map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Ban, Check, ChevronRight, Clipboard, ClipboardCheck, ExternalLink, Link2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Ban, Check, ChevronRight, Clipboard, ClipboardCheck, ExternalLink, FileText, Link2 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useState } from "react";
@@ -17,8 +17,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchCase, queryKeys } from "@/lib/api";
+import { caseDossierUrl, fetchCase, queryKeys } from "@/lib/api";
 import { caseHref, reviewHref } from "@/lib/case-links";
+import { DEMO_MODE } from "@/lib/config";
 import {
   actionLabel,
   auditStatusLabel,
@@ -90,6 +91,20 @@ export function CaseTraceSheet({
               Decide it in the Review Queue
               <ArrowRight className="size-3.5" aria-hidden />
             </Link>
+          )}
+          {/* The record a forwarder files: every check, the list and its date,
+              each finding with the regulation it rests on. Built by code from
+              this case (dossier.py), so it says nothing the trace below does not. */}
+          {c && !DEMO_MODE && (
+            <a
+              href={caseDossierUrl(c.case_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex h-8 w-fit items-center gap-1.5 rounded-md border border-white/10 px-3 text-[12px] text-white/90 transition-colors hover:bg-white/[0.05]"
+            >
+              <FileText className="size-3.5" aria-hidden />
+              Due-diligence dossier (PDF)
+            </a>
           )}
         </SheetHeader>
 

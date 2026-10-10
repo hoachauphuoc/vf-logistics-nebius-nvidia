@@ -142,8 +142,9 @@ export function AccountMenu() {
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-[20rem]">
             Signed in with the judge button. You can do everything this account
-            can, except clear the board, which needs a password sign-in. Click to
-            sign in with a password.
+            can except three changes that would carry over to the next visitor:
+            clearing the board, revoking the agent&rsquo;s authority and editing the
+            pre-AI screening rules. Click to sign in with a password.
           </TooltipContent>
         </Tooltip>
       )}

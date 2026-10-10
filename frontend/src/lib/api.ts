@@ -364,6 +364,14 @@ export function reviewDocumentUrl(caseId: string): string {
   return `/api/proxy/review/${encodeURIComponent(caseId)}/document`;
 }
 
+/**
+ * The case as a due-diligence dossier (PDF). A proxy URL, opened in a new tab:
+ * the browser renders it, and a reviewer saves it to the compliance file.
+ */
+export function caseDossierUrl(caseId: string): string {
+  return `/api/proxy/orchestrator/case/${encodeURIComponent(caseId)}/dossier`;
+}
+
 // --------------------------------------------------------------------------
 // Audit trail
 // --------------------------------------------------------------------------
@@ -734,6 +742,35 @@ export interface PipelineResult {
   cost?: { total_usd: number; projected_usd_per_1000_cases: number };
   zero_day?: { real_searches?: number; stubbed_searches?: number };
   notes?: string[];
+  /** Reviewer load per 1,000 shipments at real-world fraud rates (evaluation.workload). */
+  workload?: Workload[];
+  /** Attack against its honest counterpart, on the paired public-case corpus only. */
+  pairs?: CasePair[] | null;
+}
+
+export interface Workload {
+  prevalence: number;
+  held_per_1000: number;
+  true_per_1000: number;
+  missed_per_1000: number;
+  precision_at_prevalence: number;
+  held_per_true_case: number | null;
+}
+
+export interface CasePair {
+  ref: string;
+  typology: string;
+  title?: string | null;
+  source_url?: string | null;
+  identical_inputs: boolean;
+  attack_flagged: boolean;
+  honest_flagged: boolean;
+  separated: boolean;
+  model_variance: boolean;
+  attack_codes: string[];
+  honest_codes: string[];
+  attack_floor: number;
+  honest_floor: number;
 }
 
 /** One HS classifier arm from data/eval_results/. */

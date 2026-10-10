@@ -39,6 +39,7 @@ from typing import Any
 
 from vf_logistics import tools
 from vf_logistics.store import get_store, new_id, utcnow
+from vf_logistics.verifier import DUAL_USE_HS_PREFIXES
 
 # Actions that change the world and therefore require delegated authority.
 PROTECTED_ACTIONS = {
@@ -80,9 +81,12 @@ def proposed_boundary(reason: str = "Initial delegation proposal") -> dict[str, 
             "max_declared_value_usd": 25_000,
             "max_effective_risk": 39,
             "require_zero_deterministic_findings": True,
-            "forbidden_hs_prefixes": sorted(
-                ["8504", "9026", "8458", "8542", "9030", "2844", "8411"]
-            ),
+            # Read from the verifier's own dual-use table rather than copied. The copy
+            # this replaced had seven of the ten prefixes: 8471 (computers), 9014
+            # (navigation instruments) and 8479 (incl. isotope separation) were
+            # flagged CRITICAL by the rules yet absent from the boundary, so a
+            # published boundary did not say what the rules already enforced.
+            "forbidden_hs_prefixes": sorted(DUAL_USE_HS_PREFIXES),
             "forbidden_destinations": sorted(
                 ["pakistan", "iran", "north korea", "syria", "russia", "belarus"]
             ),

@@ -209,8 +209,10 @@ function LoginForm() {
             Continue as guest judge
           </Button>
           <p className="mt-2 text-[11px] leading-relaxed text-dim">
-            One click, no password. You can inject shipments, decide cases and
-            publish policy; clearing the board needs a password sign-in below.
+            One click, no password. You can inject shipments, decide cases, and
+            simulate and publish policy. Clearing the board, revoking the
+            agent&rsquo;s authority and editing the screening rules need a password
+            sign-in below, because they would carry over to the next judge.
           </p>
           <div className="mt-4 flex items-center gap-2 text-[11px] text-dim" aria-hidden>
             <span className="h-px flex-1 bg-white/10" />

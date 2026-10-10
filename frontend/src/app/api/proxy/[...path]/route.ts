@@ -8,6 +8,7 @@ import {
   matchRead,
   matchWrite,
   PASSWORD_ONLY_POST,
+  PASSWORD_ONLY_PUT,
 } from "@/lib/proxy-policy";
 import {
   isPasswordSession,
@@ -274,8 +275,12 @@ export async function PUT(
 
   if (!ALLOWED_PUT.has(joined)) return notProxied(joined, "PUT");
 
-  const token = await verifiedToken(request);
-  if (loginRequired() && !token) return notAuthenticated();
+  const caller = await verified(request);
+  if (loginRequired() && !caller) return notAuthenticated();
 
-  return forward(request, joined, "PUT", token);
+  if (PASSWORD_ONLY_PUT.has(joined) && caller && !isPasswordSession(caller.session)) {
+    return passwordRequired(caller.session);
+  }
+
+  return forward(request, joined, "PUT", caller?.token ?? null);
 }

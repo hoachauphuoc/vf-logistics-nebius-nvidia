@@ -8,7 +8,7 @@ steers three outcome buckets with hardcoded counts and no way to ask for a
 specific finding.
 
 This one is organised by *finding code* instead of by outcome, because the
-finding is what a reviewer reads and what the risk floor is computed from. The 29
+finding is what a reviewer reads and what the risk floor is computed from. The 33
 codes in verifier.py are not all reachable by shaping a shipment -- the three
 `*_UNAVAILABLE` codes require an external dependency to fail, and the
 `ZERO_DAY_*` and `HS_DESCRIPTION_*` families depend on what a model returns -- so
@@ -39,12 +39,21 @@ from datetime import datetime, timedelta, timezone
 DEFAULT_BASE = "https://vf-app-350828852747.asia-southeast1.run.app"
 
 # Values that must match the deployed prefilter rules and reference data. Quoted
-# from verifier.PrefilterRules.defaults() and data/sanctions_seed.json rather
+# from verifier.PrefilterRules.defaults() and the published sanctions index rather
 # than invented, because a near-miss silently produces an ordinary case and the
 # branch goes untested while the board still looks full.
-SANCTIONED_COMPANY = "Shell Trading Ltd"      # SEED-0001, topic 'sanction'
+#
+# The sanctioned party is a real designation, not a seed entry: production screens
+# against OFAC SDN + UN (scripts/refresh_sanctions.py), where the old seed name
+# "Shell Trading Ltd" does not exist. ALEXSONG PTE LTD is OFAC-SDN-35036, a
+# Singapore company under RUSSIA-EO14024, written here with the punctuation a
+# declarant would type so the case also shows normalisation doing its job.
+SANCTIONED_COMPANY = "Alexsong Pte. Ltd."     # OFAC-SDN-35036, RUSSIA-EO14024
 SANCTIONED_TAX_ID = "9999999999"
-BLACKLISTED_COMPANY = "Golden Star Trading"   # blacklist_companies
+# Not "Golden Star Trading", though it is on the blacklist too: that name is also
+# two real SDN entries (GOLDEN STAR CO, GOLDEN STAR TRADING LLC), so the case
+# fired SANCTIONS_MATCH as well and stopped isolating the blacklist branch.
+BLACKLISTED_COMPANY = "Phoenix Logistics Inc"  # blacklist_companies, on no real list
 BLACKLISTED_TAX_ID = "1234567890"             # blacklist_tax_ids
 VIP_COMPANY = "Vinamilk Joint Stock Company"  # vip_registry, with its real id
 VIP_TAX_ID = "0100107518"
@@ -153,7 +162,7 @@ CASES: list[tuple[str, str, list[str], dict]] = [
 
     # ---- deterministic hard floors --------------------------------------
     (
-        "FULL-05-SANCTIONS", "sanctioned counterparty in the seeded index",
+        "FULL-05-SANCTIONS", "counterparty designated on the OFAC SDN list",
         ["SANCTIONS_MATCH"],
         _base(
             receiver_name=SANCTIONED_COMPANY, receiver_company=SANCTIONED_COMPANY,

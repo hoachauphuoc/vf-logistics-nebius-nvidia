@@ -103,21 +103,35 @@ GAP_AFTER_SENTENCE_S = 0.25
 # itself, and names no figures so a reseed cannot falsify it. Scene 10 said "seven
 # agents on NVIDIA Nemotron"; document intake runs MiniCPM-V, which is not an NVIDIA
 # model. The fixed line is longer, so scene 4 gave scene 10 a second: still 165s.
+#
+# ELEVEN scenes from 10/10, still 165s, for the grand-prize push. What changed and why:
+#
+#   - Scene 1 opens on a verified number instead of an assertion. "Thousands of shipments
+#     a week" was nobody's figure; 29,849 violating declarations in 16.84 million is
+#     Vietnam Customs' own (customs.gov.vn, 2 Jan 2025), and it carries the product's
+#     real argument: almost every hold is honest, so the job is deciding each one fast.
+#   - Scene 7 is new: the due-diligence dossier, which is the answer to that argument and
+#     the one artefact a forwarder would file. It is the Potential Impact scene.
+#   - The close names the only measurement on cases the project did not write: 14 of 19
+#     public enforcement cases held. It films the Evaluation screen, where the table is.
+#   - Paid for by: clip 2 to 10s (the intake agent is on screen, so the sentence naming it
+#     went), clips 5 and 6 merged two sentences each, and the boundary clip lost "so old
+#     decisions replay against the policy of their day" (28s to 24s).
 SCENES: list[tuple[str, float, str]] = [
     (
         "1 - The problem",
         17.0,
-        "Floorline is for freight forwarders clearing thousands of shipments a week. "
-        "Any one can hide under-invoicing, a sanctioned buyer, or dual-use cargo "
-        "on farm paperwork. "
-        "Checking by hand is impossible; letting a model release them is reckless.",
+        "Floorline is for freight forwarders. "
+        "In 2024, Vietnam Customs found a violation in fewer than one declaration "
+        "in five hundred. "
+        "So almost everything held is honest: the job is holding the right ones, "
+        "and deciding each fast.",
     ),
     (
         "2 - A real document",
-        14.0,
-        "A real bill of lading, dropped the way a mailroom would drop it. "
-        "Model Armor screens the file before any model reads it. "
-        "Then an intake agent transcribes it.",
+        10.0,
+        "A real bill of lading, dropped as a mailroom would. "
+        "Model Armor screens it before any model reads it.",
     ),
     (
         "3 - The design rule",
@@ -138,52 +152,54 @@ SCENES: list[tuple[str, float, str]] = [
     ),
     (
         "5 - Live evidence",
-        14.0,
-        "The compliance screen read five public sources at decision time. "
-        "Each one is a live link, not a summary. "
-        "This is what a customs authority would be shown.",
+        10.0,
+        "The compliance screen read five public sources at decision time, each a "
+        "live link, not a summary.",
     ),
     (
         "6 - The review queue",
-        16.0,
-        "Everything the agent was not permitted to close comes here. "
-        "Red is escalated, yellow is held. "
-        "The document sits beside the findings, because approving a hold you "
-        "cannot check is a rubber stamp.",
+        12.0,
+        "Everything the agent may not close comes here, with the document beside "
+        "the findings, because approving a hold you cannot check is a rubber stamp.",
     ),
     (
-        "7 - The delegation boundary",
-        28.0,
+        "7 - The dossier",
+        14.0,
+        "One click turns any case into a due-diligence dossier. "
+        "Every finding, the sanctions list and its date, the regulation it rests on, "
+        "and a real enforcement case like it.",
+    ),
+    (
+        "8 - The delegation boundary",
+        24.0,
         "The agent has no authority of its own. "
         "A human publishes a machine-readable boundary; the agent works inside it: "
         "the value ceiling, forbidden destinations, which actions it may take "
         "unasked. "
-        "Every action records the boundary version that allowed it, so old "
-        "decisions replay against the policy of their day. "
+        "Every action records the boundary version that allowed it. "
         "Withdraw it and the system suspends itself, still analysing but refusing "
         "every protected action.",
     ),
     (
-        "8 - Prompt injection blocked",
-        15.0,
+        "9 - Prompt injection blocked",
+        14.0,
         "This document told the agent to ignore its instructions and release the "
         "container. "
-        "Model Armor caught it before any model ran, so no tokens were spent. "
+        "Model Armor caught it before any model ran. "
         "The case opened already denied.",
     ),
     (
-        "9 - Tests and CI",
+        "10 - Tests and CI",
         8.0,
-        "885 tests pass at 80 percent coverage. "
-        "Continuous integration runs them on every push.",
+        "921 tests pass at 81 percent coverage, and CI runs them on every push.",
     ),
     (
-        "10 - Close",
-        13.0,
-        "Floorline: six NVIDIA Nemotron agents and a vision model, on Nebius "
-        "Token Factory. "
-        "Agents that act, inside limits a person set. "
-        "And stop when they should.",
+        "11 - Close",
+        16.0,
+        "On nineteen real enforcement cases it held fourteen, and says what it "
+        "cannot see. "
+        "Floorline: NVIDIA Nemotron on Nebius Token Factory. "
+        "Agents that act inside limits a person set, and stop when they should.",
     ),
 ]
 

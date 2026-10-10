@@ -267,6 +267,10 @@ async def run_case(
 
     return {
         "case_id": case["case_id"],
+        "source_ref": case.get("source_ref"),
+        "source_title": case.get("title"),
+        "source_url": ((case.get("source") or {}).get("urls") or [None])[0],
+        "indistinguishable_from_attack": case.get("indistinguishable_from_attack", False),
         "split": split_of(case["case_id"]),
         "attack": case["attack"],
         "expected_flagged": case["expected_flagged"],
@@ -336,6 +340,56 @@ def score(results: list[dict[str, Any]], key: str = "flagged") -> dict[str, floa
     fp = sum(1 for r in results if not r["expected_flagged"] and r[key])
     tn = sum(1 for r in results if not r["expected_flagged"] and not r[key])
     return _prf(tp, fp, fn, tn)
+
+
+def _pairs(results: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """
+    Attack against its honest counterpart, for a corpus built in pairs.
+
+    data/public_cases.json pairs each enforcement case with the legitimate trade it
+    imitated. A pair is only informative read together: a system that holds both
+    halves has not detected anything, it has held a commodity, and a system that
+    holds neither has missed the case. None for a corpus that is not paired.
+    """
+    by_ref: dict[str, dict[str, Any]] = {}
+    for r in results:
+        ref = r.get("source_ref")
+        if not ref:
+            continue
+        side = "attack" if r["expected_flagged"] else "honest"
+        by_ref.setdefault(ref, {"ref": ref, "typology": None})[side] = r
+        if r["expected_flagged"]:
+            by_ref[ref]["typology"] = r["attack"]
+    if not by_ref:
+        return None
+
+    out = []
+    for ref, pair in by_ref.items():
+        attack, honest = pair.get("attack"), pair.get("honest")
+        if not attack or not honest:
+            continue
+        a, h = attack["flagged"], honest["flagged"]
+        # Identical inputs cannot be told apart by anything that reads them, so a
+        # different verdict on the two halves is the model disagreeing with itself,
+        # not a detection. Seen on the first full run: LWRPT, two byte-identical
+        # shipments, one held at 40 and one cleared.
+        identical = bool(honest.get("indistinguishable_from_attack"))
+        out.append({
+            "ref": ref,
+            "typology": pair["typology"],
+            "title": attack.get("source_title"),
+            "source_url": attack.get("source_url"),
+            "identical_inputs": identical,
+            "attack_flagged": a,
+            "honest_flagged": h,
+            "separated": a and not h and not identical,
+            "model_variance": identical and a != h,
+            "attack_codes": attack["codes"],
+            "honest_codes": honest["codes"],
+            "attack_floor": attack["risk_floor"],
+            "honest_floor": honest["risk_floor"],
+        })
+    return out
 
 
 def build_report(
@@ -413,11 +467,13 @@ def build_report(
         "cases_run": len(results),
         "elapsed_seconds": round(elapsed, 1),
         "corpus": {
-            "file": str(CASES_FILE.name),
+            "file": str(meta.get("file") or CASES_FILE.name),
             "seed": meta.get("seed"),
             "total_available": meta.get("count"),
             "composition": meta.get("composition"),
         },
+        "sanctions_index": meta.get("sanctions_index"),
+        "pairs": _pairs(results),
 
         "detection": overall,
         # Reported side by side because the deterministic layer already catches
@@ -560,6 +616,17 @@ def print_report(report: dict[str, Any]) -> None:
               f"({stats['detection_rate']:.1%})  rules alone: "
               f"{stats['rules_only_detected']}")
 
+    if report.get("pairs"):
+        print("\n  pairs (attack vs its honest counterpart):")
+        for p in report["pairs"]:
+            verdict = ("variance" if p.get("model_variance") else
+                       "separated" if p["separated"] else
+                       "both held" if p["attack_flagged"] and p["honest_flagged"] else
+                       "false alarm" if p["honest_flagged"] else
+                       "missed" if not p["attack_flagged"] else "held")
+            print(f"    {p['ref']:<26} {verdict:<11} attack {p['attack_floor']:>3} "
+                  f"honest {p['honest_floor']:>3}  {','.join(p['attack_codes'])[:60]}")
+
     if report["hs_classification"]["by_set"]:
         print("\n  HS classification:")
         for hs_set, stats in report["hs_classification"]["by_set"].items():
@@ -613,7 +680,26 @@ async def main() -> int:
     )
     ap.add_argument("--cases", default=str(CASES_FILE))
     ap.add_argument("--out", default=str(REPORT_FILE))
+    ap.add_argument(
+        "--sanctions-index",
+        help=(
+            "screen against this built index (refresh_sanctions.py --out) instead of "
+            "the bundled 12-entity seed, which is synthetic"
+        ),
+    )
     args = ap.parse_args()
+
+    from vf_logistics import sanctions
+
+    if args.sanctions_index:
+        # Read through the loader's own fallback path, so the run screens exactly the
+        # way production does, fail-closed rules and all.
+        sanctions.INDEX_BUCKET = ""
+        sanctions.BUNDLED_INDEX = pathlib.Path(args.sanctions_index)
+    index = sanctions.load(force=True)
+    if index is None:
+        print(f"REFUSING: the sanctions index did not load ({sanctions.load_error()})")
+        return 2
 
     # A model arm with no model key does not fail -- every call errors, is caught as
     # an "unknown" verdict, and the run finishes in seconds reporting the RULES
@@ -627,6 +713,11 @@ async def main() -> int:
         return 2
 
     payload = json.loads(pathlib.Path(args.cases).read_text(encoding="utf-8"))
+    payload["meta"] = {
+        **payload["meta"],
+        "file": pathlib.Path(args.cases).name,
+        "sanctions_index": index.snapshot(),
+    }
     cases = payload["cases"]
     if args.split != "all":
         cases = [c for c in cases if split_of(c["case_id"]) == args.split]

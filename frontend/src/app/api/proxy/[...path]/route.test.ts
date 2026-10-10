@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { signSession } from "@/lib/session";
 
-import { GET, POST } from "./route";
+import { GET, POST, PUT } from "./route";
 
 /**
  * The BFF's credential rule: the console's API key travels with a VERIFIED
@@ -145,5 +145,73 @@ describe("Clear board needs a password sign-in", () => {
   it("still turns away an anonymous caller first", async () => {
     expect((await reset(null)).status).toBe(401);
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("The two policy kill switches need a password sign-in too", () => {
+  let spy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv("VF_API_KEY", "console-secret-key");
+    vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    vi.stubEnv("FLASK_API_BASE", "http://127.0.0.1:9090");
+    spy = vi.fn(async () => Response.json({ ok: true }));
+    globalThis.fetch = spy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  function revoke(token: string | null) {
+    return POST(
+      new Request("https://vf.example/api/proxy/governance/revoke", {
+        method: "POST",
+        headers: { cookie: `vf_session=${token}` },
+        body: "{}",
+      }),
+      params("governance/revoke"),
+    );
+  }
+
+  function putRules(token: string | null) {
+    return PUT(
+      new Request("https://vf.example/api/proxy/governance/prefilter-rules", {
+        method: "PUT",
+        headers: { cookie: `vf_session=${token}` },
+        body: "{}",
+      }),
+      params("governance/prefilter-rules"),
+    );
+  }
+
+  it("refuses a one-click revoke and rules edit without calling the API", async () => {
+    const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
+    for (const response of [await revoke(token), await putRules(token)]) {
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ required_auth: "password" });
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("forwards both for a password session", async () => {
+    const token = await signSession("judge@vf-logistics.demo", "password");
+    expect((await revoke(token)).status).toBe(200);
+    expect((await putRules(token)).status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves publish open to a one-click session", async () => {
+    const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
+    const response = await POST(
+      new Request("https://vf.example/api/proxy/governance/publish", {
+        method: "POST",
+        headers: { cookie: `vf_session=${token}` },
+        body: "{}",
+      }),
+      params("governance/publish"),
+    );
+    expect(response.status).toBe(200);
   });
 });

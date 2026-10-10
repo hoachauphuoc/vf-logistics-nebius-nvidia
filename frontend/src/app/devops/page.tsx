@@ -664,7 +664,7 @@ function ClearBoard({
             Deletes every case and event on this tenant so a demo starts clean. The
             audit trail is not deleted, and the reset is written to it under your
             name. Needs the Operator role and a password sign-in: the one-click judge
-            session can do everything else, but not this.
+            session cannot do this, because the next judge would find the board empty.
           </p>
           {lock && (
             <p className="mt-2 flex items-start gap-1.5 text-[11.5px] text-dim">
