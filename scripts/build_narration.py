@@ -95,6 +95,14 @@ GAP_AFTER_SENTENCE_S = 0.25
 # Nebius only in the closing line. Scene 3 dropped "Spend is metered per agent, in dollars"
 # to make room; the dollar column is still on screen. Clips 1 and 3 grew a second each and
 # clip 2, which had the most headroom, gave one back: 165s.
+#
+# Scene 4 changed subject on 10/10. It was "a case that cleared itself" and named three
+# numbers, but every case that clears on this board clears on a rule in sql_prefilter:
+# no model runs, so there is no "Model alone" row and no sources for scene 5 to scroll
+# to. It now films a case where the floor overrode the model, which is the design rule
+# itself, and names no figures so a reseed cannot falsify it. Scene 10 said "seven
+# agents on NVIDIA Nemotron"; document intake runs MiniCPM-V, which is not an NVIDIA
+# model. The fixed line is longer, so scene 4 gave scene 10 a second: still 165s.
 SCENES: list[tuple[str, float, str]] = [
     (
         "1 - The problem",
@@ -120,13 +128,13 @@ SCENES: list[tuple[str, float, str]] = [
         "Ultra runs one hop, the debate, where its verdict is the answer.",
     ),
     (
-        "4 - A case that cleared itself",
-        20.0,
-        "This one cleared itself. "
-        "Three numbers say why: what the model scored, what the rules floor "
-        "demanded, and the higher of the two. "
-        "The agent did not decide it was safe. "
-        "It proved it was permitted, and recorded which rule allowed it.",
+        "4 - The floor overrules the model",
+        19.0,
+        "Here the model scored this lower than the rules allow. "
+        "The floor wins, so the higher number stands. "
+        "An agent may raise risk, never lower it. "
+        "This score is arithmetic, not judgement, and the trace records which "
+        "rule set it.",
     ),
     (
         "5 - Live evidence",
@@ -171,8 +179,9 @@ SCENES: list[tuple[str, float, str]] = [
     ),
     (
         "10 - Close",
-        12.0,
-        "Floorline: seven agents on NVIDIA Nemotron, through Nebius Token Factory. "
+        13.0,
+        "Floorline: six NVIDIA Nemotron agents and a vision model, on Nebius "
+        "Token Factory. "
         "Agents that act, inside limits a person set. "
         "And stop when they should.",
     ),

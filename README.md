@@ -302,7 +302,7 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **885 backend tests** at 80% line coverage, 137 frontend tests, and a
+**Now:** **885 backend tests** at 80% line coverage, 142 frontend tests, and a
 mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
 the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
@@ -367,9 +367,14 @@ understanding.
 
 All three NVIDIA models and MiniCPM-V are reached through the same
 OpenAI-compatible endpoint (`nebius_client.py`), so the split costs no extra
-integration surface. All responses are requested in JSON mode
-(`response_format={"type": "json_object"}`), parsed server-side, so downstream
-routing is machine-readable. Every agent response envelope records which model
+integration surface. Fraud, compliance, HS classification and document intake are
+requested in JSON mode (`response_format={"type": "json_object"}`); zero-day and
+the debate reply through tool calls. Investigation is the exception: Super is asked
+for JSON by its prompt alone, because with `json_object` on, its reasoning leaked into
+the constrained output and only 6 of 12 replies were usable, against 12 of 12 without
+it. Every reply is parsed server-side and checked against its agent's schema
+(`schemas.AGENT_OUTPUT_SCHEMAS`); an investigation that fails it is asked once more,
+and both calls are billed. Every agent response envelope records which model
 produced it, visible in the per-case trace in the dashboard.
 
 ### A real Tavily call, not a simulated one
@@ -1203,7 +1208,7 @@ python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: typecheck, lint, 137 unit tests, production build
+# Frontend: typecheck, lint, 142 unit tests, production build
 cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build
 
 # Counterparty book, offline
@@ -1541,6 +1546,9 @@ without Tavily.
 `response_format={"type": "json_object"}` do the same job — coerce the model
 into emitting parseable JSON — so the prompts and output schemas of the four agents
 that existed at the time needed no changes at all, only the transport underneath them.
+One model did not carry over cleanly: Nemotron 3 Super with reasoning on returns a
+fragment such as `{": {}}": null}` for half its replies under `json_object`, so the
+investigation agent now asks it without that mode (see the model section above).
 
 **A human reviewer with no paperwork is not a control.** (Carried over from
 the original build.) The review panel only showed a source document for
@@ -1608,7 +1616,7 @@ collection effort.
 │   ├── lineage.py                Per-step cost attribution
 │   ├── evaluation.py             Serves the committed benchmark and HS reports, never per-case rows
 │   ├── observability.py          Structured logging, metrics, request context
-│   ├── schemas.py                Request/response validation
+│   ├── schemas.py                Request/response validation, and AGENT_OUTPUT_SCHEMAS for six agents' replies
 │   ├── openapi.py                Generates the OpenAPI document
 │   ├── b2b.py                    The published contract surface
 │   ├── document_render.py        Renders event-sourced shipments as a bill of lading
@@ -1619,7 +1627,7 @@ collection effort.
 │   ├── static/index.html         The legacy dashboard, now served at /legacy
 │   └── agents/
 │       ├── __init__.py           Public agent API
-│       ├── _common.py            Shared JSON parsing, timing, response envelope
+│       ├── _common.py            Shared JSON parsing, schema check (validate_result), timing, response envelope
 │       ├── document_agent.py     Multimodal document intake      — MiniCPM-V-4.5
 │       ├── fraud_detection_agent.py  Fraud scoring               — Nemotron 3 Nano
 │       ├── compliance_agent.py   Sanctions / trade / AML + Tavily — Nemotron 3 Nano

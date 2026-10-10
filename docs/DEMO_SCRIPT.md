@@ -51,13 +51,13 @@ its cut.
 | 1 | The problem | 17s | Pipeline `/` |
 | 2 | A real document | 14s | DevOps `/devops` → *Upload a document* |
 | 3 | The design rule | 21s | Agent Console `/agents` |
-| 4 | A case that cleared itself | 20s | Pipeline → a case → trace sheet, the three risk rows |
+| 4 | The floor overrules the model | 19s | Pipeline → an escalated case → trace sheet, the three risk rows and the veto note |
 | 5 | Live evidence | 14s | Same sheet, scrolled to *Live evidence* |
 | 6 | The review queue | 16s | Review `/review` |
 | 7 | The delegation boundary | 28s | Governance `/governance` |
 | 8 | Prompt injection blocked | 15s | Review → the blocked case |
 | 9 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
-| 10 | Close | 12s | Pipeline `/` |
+| 10 | Close | 13s | Pipeline `/` |
 | | | **165s** | |
 
 ### What changed from the nine-clip version, and why
@@ -114,31 +114,35 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
       header shows a *One-click* chip; that is fine on camera and true. Do not press
       **Clear board** on DevOps: it is locked for this session anyway, and it would wipe
       the seeded board.
-- [ ] **Shoot against a deployed revision that has the latest console.** The header chip
+- [ ] **Confirm the live revision has the latest console.** The header chip
       *NVIDIA Nemotron 3 · Nebius Token Factory*, the *Start here* strip and the *End to
-      end* chain at the top of every case trace only exist once this work is committed
-      and deployed. They are what makes the required tools visible in every frame.
+      end* chain at the top of every case trace are what make the required tools visible
+      in every frame. They are deployed (revision `vf-app-00008-7lc` and later); if the
+      chip is missing you are looking at a cached or older page.
 
-### Three things that must be deployed before clips 3, 4 and 5 will film
+### Check these three screens before rolling clips 3, 4 and 5
 
-These are recent fixes. Shooting against an older revision gets you a screen that
-contradicts the narration.
+All three depend on fixes that are deployed. Each check takes a few seconds and catches a
+stale tab, a wrong case, or a board that has not settled.
 
-- [ ] **Clip 3 needs the per-agent dollar column on `/agents`.** That card was titled "Cost
-      by agent" and displayed only calls and tokens — no money at all — while the old
-      narration claimed spend was metered in dollars. The figure is now summed server-side
-      from each step's own rate. Verify: the rows show a dollar amount and are **ordered by
-      spend**, so the debate agent is near the top despite its low call count.
-- [ ] **Clip 4 needs the `risk_floor` fix, or the shot does not exist.** The trace sheet read
-      `rec.floor`, a key the backend has never sent — it sends `risk_floor` — and the
-      `!= null` guard turned that into silence. **The "Rules floor" row has never rendered
-      on any case.** Verify before rolling: open any case and confirm you can see three
-      rows, *Effective risk*, *Model alone* and *Rules floor*. If you only see two, you are
-      on an old revision and clip 4 has no subject.
+- [ ] **Clip 3: the per-agent dollar column on `/agents`.** The card used to show only
+      calls and tokens while the narration claimed dollars. Verify: the rows show a dollar
+      amount and are **ordered by spend**, so the debate agent is near the top despite its
+      low call count.
+- [ ] **Clip 4: three risk rows and the veto note on the chosen case.** Open the case
+      named under clip 4 and confirm *Effective risk*, *Model alone* and *Rules floor* are
+      all present, *Model alone* is the lower number, and the amber paragraph *"The
+      deterministic floor overruled the model here"* is shown. Until the `risk_floor` fix
+      shipped, the *Rules floor* row rendered on no case at all.
+- [ ] **Clip 4: the investigation step reads as a report.** In the same sheet the
+      investigation hop should carry a summary, not a model-failure note. Before
+      `78d6db0`, half of Super's investigation replies were empty fragments that still
+      parsed; the board was reseeded after the fix, so this should hold for every case,
+      but look before you roll.
 - [ ] **Clip 5 only works against the live service.** `external_search_results` does not
-      exist in `demo-data.ts`, and `fetchCase` refuses in `DEMO_MODE`. Pick a case that went
-      through compliance or investigation; a case that cleared on rules alone ran no
-      searches and has no sources to show.
+      exist in `demo-data.ts`, and `fetchCase` refuses in `DEMO_MODE`. The clip 4 case went
+      through compliance, so it has sources; a case that cleared on rules alone ran no
+      searches and has none.
 
 ### Do not press these while recording
 
@@ -175,9 +179,12 @@ recording if it crowds the board.
 > hide under-invoicing, a sanctioned buyer, or dual-use cargo on farm paperwork. Checking
 > by hand is impossible; letting a model release them is reckless.
 
-Worth letting the six columns be visible: eleven escalated, two blocked by a person, two
-released by a person, two cleared automatically. The spread is the point — this is not a
-demo where everything is suspicious.
+Worth letting the six columns be visible. On the board seeded for this take: eleven
+escalated, one held, two awaiting a person, two blocked by a person, two released by a
+person, two cleared automatically. Preparation adds one more awaiting a person (the
+blocked injection document) and clip 2 adds one more escalated. The spread is the point —
+this is not a demo where everything is suspicious. If you reseed, read the column counts
+off the seed script's summary rather than from this paragraph.
 
 ---
 
@@ -215,30 +222,44 @@ number said loosely is a number they will check.
 
 ---
 
-## Clip 4 — A case that cleared itself (0:52 → 1:12, 20s)
+## Clip 4 — The floor overrules the model (0:52 → 1:11, 19s)
 
-**Action:** Back to `/`. Open a case in the **Cleared** column. The sheet opens on the
-**End to end** chain — every hop with the NVIDIA model that ran it, then the delegation
-gate and the actions — so hold on it for a beat, then scroll so the three risk
-rows — *Effective risk*, *Model alone*, *Rules floor* — are in frame together, and hold
-there. If a veto paragraph is present, keep it in shot: *"The model may raise risk but never
-lower it, so this score is arithmetic rather than judgement."*
+**Action:** Back to `/`. In the **Escalated** column open **`FULL-12-DUALUSE`** (industrial
+frequency converters under a dual-use heading). On the seeded board it reads *Model alone*
+78, *Rules floor* 85, *Effective risk* 85. The sheet opens on the **End to end** chain —
+every hop with the NVIDIA model that ran it, then the delegation gate and the actions — so
+hold on it for a beat, then scroll so the three risk rows and the amber veto paragraph are
+in frame together, and hold there: *"The deterministic floor overruled the model here. The
+model may raise risk but never lower it, so this score is arithmetic rather than
+judgement."*
 
-> This one cleared itself. Three numbers say why: what the model scored, what the rules
-> floor demanded, and the higher of the two. The agent did not decide it was safe. It proved
-> it was permitted, and recorded which rule allowed it.
+Fallback if that case is not vetoed after a reseed: **`FULL-16-FREIGHTANOMALY`** (in
+*Released by a reviewer*; 78 against a floor of 90 on this board). Any case works whose
+*Model alone* is below its *Rules floor* and which shows the veto paragraph; the two
+blacklist and sanctions cases also qualify but open on a denial banner that crowds the
+frame.
 
-The last two sentences are the thesis of the whole submission. Do not rush them.
+> Here the model scored this lower than the rules allow. The floor wins, so the higher
+> number stands. An agent may raise risk, never lower it. This score is arithmetic, not
+> judgement, and the trace records which rule set it.
 
-**Check the shot exists before you roll.** See the deployment checklist above: until the
-`risk_floor` fix shipped, the *Rules floor* row rendered on no case at all.
+The third and fourth sentences are the thesis of the whole submission. Do not rush them.
+The narration names no figures on purpose: the screen carries them, and a reseed changes
+them.
+
+**Why not a case that cleared itself.** This clip used to open a case in the *Cleared*
+column and narrate "what the model scored". Both cleared cases on this board clear on a
+rule in `sql_prefilter` — a VIP exporter on its registered tax id, and a low-value domestic
+consignment — so no model runs: the sheet shows no *Model alone* row, and clip 5 would find
+no sources to scroll to.
 
 ---
 
-## Clip 5 — Live evidence (1:12 → 1:26, 14s)
+## Clip 5 — Live evidence (1:11 → 1:25, 14s)
 
-**Action:** Stay in the same sheet. Scroll to **Live evidence**. The heading reads
-*COMPLIANCE READ 5 SOURCES*. Hover one anchor so the hostname is legible, then click it and
+**Action:** Stay in the clip 4 sheet. Scroll to **Live evidence**. The first heading reads
+*COMPLIANCE READ 5 SOURCES* (an *INVESTIGATION READ 5 SOURCES* group follows it). Hover one
+anchor so the hostname is legible, then click it and
 let the real page open in a new tab. Cut once the destination is recognisable.
 
 > The compliance screen read five public sources at decision time. Each one is a live link,
@@ -251,7 +272,7 @@ point — it proves the citation resolves rather than decorates.
 
 ---
 
-## Clip 6 — The review queue (1:26 → 1:42, 16s)
+## Clip 6 — The review queue (1:25 → 1:41, 16s)
 
 **Only shoot this once `dirty_bol.pdf` has settled.** It should be in the queue as an
 escalated document case.
@@ -265,13 +286,15 @@ visible, then open one case and scroll so the document sits beside the findings.
 
 If you land on a case where the model and the floor disagreed by fifteen points or more, the
 disputed banner and the **Senior auditor debate** card with its CONFIRM/DISAGREE badge are
-both worth having in frame. The board carries three such cases. Do not lengthen the clip for
+both worth having in frame. On the seeded board two cases carry one, and only
+**`FULL-07-BLACKTAX`** is in the queue (model 68 against a floor of 100); the other,
+`FULL-05-SANCTIONS`, has already been blocked by a reviewer. Do not lengthen the clip for
 it — if you want it as its own beat, re-record at 22–24s, change that scene's seconds in
 `SCENES`, re-run `check_narration_budget.py`, and regenerate.
 
 ---
 
-## Clip 7 — The delegation boundary (1:42 → 2:10, 28s)
+## Clip 7 — The delegation boundary (1:41 → 2:09, 28s)
 
 **Action:** Go to `/governance`. Hold on the line naming the active boundary and the person
 who published it, then scroll to the permissions block.
@@ -289,7 +312,7 @@ two. The remaining four carry the argument.
 
 ---
 
-## Clip 8 — Prompt injection blocked (2:10 → 2:25, 15s)
+## Clip 8 — Prompt injection blocked (2:09 → 2:24, 15s)
 
 **Action:** In `/review`, open the blocked case created during preparation.
 
@@ -301,7 +324,7 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 
 ---
 
-## Clip 9 — Tests and CI (2:25 → 2:33, 8s)
+## Clip 9 — Tests and CI (2:24 → 2:32, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
 tail of a real run — `python -m pytest tests/ -q` ending on `885 passed`. Then the GitHub
@@ -320,14 +343,16 @@ now.
 
 ---
 
-## Clip 10 — Close (2:33 → 2:45, 12s)
+## Clip 10 — Close (2:32 → 2:45, 13s)
 
 **Action:** Back to `/`. Let the board fill the frame, header chip included.
 
-> Floorline: seven agents on NVIDIA Nemotron, through Nebius Token Factory. Agents that
-> act, inside limits a person set. And stop when they should.
+> Floorline: six NVIDIA Nemotron agents and a vision model, on Nebius Token Factory.
+> Agents that act, inside limits a person set. And stop when they should.
 
-End on the board, not on a slide.
+End on the board, not on a slide. The count is deliberate: seven agents, six of them on
+Nemotron, and document intake on MiniCPM-V. The previous line said "seven agents on NVIDIA
+Nemotron", which the *Do not say* list below forbids.
 
 ---
 
@@ -346,8 +371,8 @@ End on the board, not on a slide.
 Clip lengths currently in `SCENES`:
 
 ```
-1: 17s   2: 14s   3: 21s   4: 20s   5: 14s
-6: 16s   7: 28s   8: 15s   9:  8s  10: 12s     total 165s
+1: 17s   2: 14s   3: 21s   4: 19s   5: 14s
+6: 16s   7: 28s   8: 15s   9:  8s  10: 13s     total 165s
 ```
 
 ## Regenerating the narration
@@ -367,8 +392,9 @@ credentials.
   and regenerate.** The script reports immediately if a scene's speech no longer fits its
   clip, and by how many seconds. The fix for an overrun is shorter writing, not a faster
   read.
-- Clip 9 and clip 10 have the most headroom, so if one scene needs an extra second that is
-  where to take it from.
+- Clips 5 and 6 have the most headroom (about 1.7s each on the offline estimate), so if one
+  scene needs an extra second that is where to take it from. Clip 10 already took one from
+  clip 4 for the corrected closing line.
 - Splitting a sentence in two costs 0.25s even if you add no words, because of the gap after
   every sentence.
 

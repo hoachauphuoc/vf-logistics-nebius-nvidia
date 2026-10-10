@@ -281,6 +281,28 @@ Transport is `openai.AsyncOpenAI` against Token Factory. 45 s per request, a 90 
 retry budget, 3 attempts, and `max_retries=0` on the SDK so there is one retry policy
 rather than two.
 
+**Output checking is a second, content-level layer above that.** A reply that parses
+is not yet a reply: `agents/_common.validate_result()` checks it against
+`schemas.AGENT_OUTPUT_SCHEMAS`, which covers six agents -- fraud, compliance, HS, debate,
+zero-day and investigation. Document intake has none; its fields go through
+`untrusted.py` instead. A reply that fails is recorded as `parse_error` with a
+`schema_error`, counted as a model failure on the case, and never treated as a finished
+result.
+
+Fraud, compliance, HS and document intake ask for `response_format={"type":
+"json_object"}`; zero-day and the debate reply through tool calls. Investigation is the
+exception (`investigation_agent.JSON_MODE = False`): with `json_object` on, Super's
+reasoning leaked into the constrained output and 6 of 12 replies were fragments such as
+`{": {}}": null}`, against 12 of 12 without it. It is asked by prompt alone, and a reply
+that still fails `InvestigationReport` is asked once more (`MAX_ATTEMPTS = 2`), with the
+tokens of both calls billed to the step.
+
+That retry sits above the transport retry, so each of the two calls carries its own
+90 s budget. The worst case is therefore about 180 s, above the 120 s chain budget and
+the 120 s the synchronous `/api/v1/investigation/case` route waits. Measured calls take
+5-10 s, and the retry ran on none of the ten live cases re-run after the change, so
+this is a bound worth knowing rather than one being hit.
+
 **`pricing_for()` falls back to Nano for an unrecognised id, and logs at ERROR.** The
 fallback direction is deliberate: Nano is the cheapest entry, so an unpriced model
 under-reports spend rather than over-reporting it. That protects the customer's invoice
