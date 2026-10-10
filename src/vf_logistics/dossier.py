@@ -159,8 +159,19 @@ def guidance_for(code: str) -> tuple[tuple[str, ...], str | None, str]:
 # --------------------------------------------------------------------------
 
 def _ascii(text: Any) -> str:
-    """The built-in PDF fonts are Latin-1; see document_render._ascii."""
-    replacements = {"\u2011": "-", "\u2013": "-", "\u2014": "-", "\u2019": "'", "\u201c": '"', "\u201d": '"'}
+    """
+    The built-in PDF fonts are Latin-1; see document_render._ascii.
+
+    The agents' quoted text is the usual source of anything outside it -- an
+    exposure estimate on the live board read "2x value ? estimated" until the
+    arrow was mapped -- so the punctuation models produce is spelled out here.
+    """
+    replacements = {
+        "\u2011": "-", "\u2013": "-", "\u2014": "-", "\u2212": "-",
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2192": "->", "\u2190": "<-", "\u2248": "~", "\u2264": "<=", "\u2265": ">=",
+        "\u2026": "...", "\u2022": "-", "\u202f": " ", "\u2009": " ",
+    }
     out = str(text if text is not None else "")
     for src, dst in replacements.items():
         out = out.replace(src, dst)

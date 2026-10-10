@@ -100,6 +100,13 @@ class TestRender(unittest.TestCase):
         case = dict(CASE, shipment=dict(CASE["shipment"], shipper_company="Công ty Trường Hải — ООО Тест"))
         self.assertTrue(dossier.render_dossier(case).startswith(b"%PDF"))
 
+    def test_model_punctuation_is_spelled_out_not_turned_into_question_marks(self):
+        # Seen on the live board: an exposure estimate "2× value → estimated".
+        self.assertEqual(
+            dossier._ascii("2× value → estimated ≈ USD 552,000…"),
+            "2× value -> estimated ~ USD 552,000...",
+        )
+
 
 class TestRoute(unittest.TestCase):
     def setUp(self):
