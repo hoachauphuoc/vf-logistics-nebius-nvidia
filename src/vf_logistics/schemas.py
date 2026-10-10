@@ -403,6 +403,32 @@ class ZeroDayVerdict(AgentOutput):
     evidence_urls: list[str] = Field(default_factory=list)
 
 
+class InvestigationReport(AgentOutput):
+    """
+    investigation_agent, on Nemotron 3 Super.
+
+    `summary` is the only required field because it is the one a decision is built
+    from: orchestrator.py writes it into the SAR narrative and the escalation
+    webhook. Everything else stays loose -- `connections` came back as a list in
+    five good replies and as a dict in a sixth, and rejecting a sound report over
+    that would send a reviewer less, not more.
+
+    Measured on the 20-case board: 8 of 16 investigation replies were a JSON
+    fragment such as {": {}}": null} or {".json": null}, or the model's own
+    planning text as a key, after 283-579 output tokens. Each parsed as JSON, and
+    with no schema registered here each was stored as a finished investigation
+    with parse_error False, so the trace showed the step as done, the SAR read
+    "No narrative returned." and the failure was never counted.
+    """
+    summary: str = Field(..., min_length=1)
+    # Read by orchestrator.py into the escalation reason and the SAR, through
+    # str(); typed Any so a figure given as a number is kept rather than refused.
+    # The prompt's other fields arrive through extra="allow", unchecked, because
+    # nothing makes a decision from them.
+    fraud_pattern: Any = None
+    exposure_estimate: Any = None
+
+
 # Maps an agent name to the schema its replies must satisfy. agents/_common.py
 # looks the schema up here rather than each agent importing its own, so adding an
 # agent without a schema is visible in one place.
@@ -412,6 +438,7 @@ AGENT_OUTPUT_SCHEMAS: dict[str, type[AgentOutput]] = {
     "hs_classifier": HSClassification,
     "debate": DebateVerdict,
     "zero_day": ZeroDayVerdict,
+    "investigation": InvestigationReport,
 }
 
 

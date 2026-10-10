@@ -12,11 +12,14 @@ Hackathon: Nebius x NVIDIA Global AI Hackathon
 """
 
 import json
+import logging
 import os
 from typing import Any
 
 from vf_logistics import nebius_client, tavily_client
-from ._common import Timer, envelope, parse_model_json
+from ._common import Timer, envelope, parse_model_json, validate_result
+
+log = logging.getLogger(__name__)
 
 # Output ceiling. 4,500 against a measured legitimate maximum of 1,387 output
 # tokens, median 900.
@@ -27,6 +30,21 @@ from ._common import Timer, envelope, parse_model_json
 MAX_OUTPUT_TOKENS = 4500
 
 MODEL_ID = os.getenv("INVESTIGATION_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+
+# Off: Super is asked for JSON by the prompt and parsed by parse_model_json, not
+# constrained by response_format. With json_object on, its reasoning leaks into the
+# constrained output -- the reply opens a key and the planning lands inside it.
+# Measured 2026-10-10 on two stored board prompts, 12 calls per mode: json_object
+# with reasoning 6/12 usable reports (`{": {}}": null}`, `{".json": null}`, "We
+# must output JSON only..." as a key); no response_format 12/12; json_object with
+# reasoning disabled 12/12. Reasoning is why this agent runs on Super, so the
+# constraint goes and the reasoning stays.
+JSON_MODE = False
+
+# One more call when a reply still fails InvestigationReport. Bounded at two: the
+# case is already going to a human, so a second failure is recorded and counted
+# rather than chased. Tokens of every attempt are billed to the step.
+MAX_ATTEMPTS = 2
 
 def get_model_id():
     """Investigation agent is pinned via INVESTIGATION_MODEL, not the shared registry."""
@@ -135,16 +153,29 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
         )
 
     user_text = f"Conduct a thorough investigation:\n{case_text}{tavily_context}"
+    input_tokens = output_tokens = attempts = 0
     with Timer() as timer:
-        text, input_tokens, output_tokens = await nebius_client.complete_json(
-            model=get_model_id(),
-            system_prompt=INVESTIGATION_PROMPT,
-            user_text=user_text,
-            temperature=0.2,
-            max_tokens=MAX_OUTPUT_TOKENS,
-        )
+        while True:
+            attempts += 1
+            text, call_in, call_out = await nebius_client.complete_json(
+                model=get_model_id(),
+                system_prompt=INVESTIGATION_PROMPT,
+                user_text=user_text,
+                temperature=0.2,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                json_mode=JSON_MODE,
+            )
+            input_tokens += call_in
+            output_tokens += call_out
+            parsed, error = parse_model_json(text)
+            usable = error is None and validate_result("investigation", parsed)[1] is None
+            if usable or attempts >= MAX_ATTEMPTS:
+                break
+            log.warning(
+                "investigation reply for %s unusable on attempt %d, asking again: %r",
+                case_data.get("case_id"), attempts, (text or "")[:120],
+            )
 
-    parsed, error = parse_model_json(text)
     out = envelope(
         agent="investigation",
         model=get_model_id(),
@@ -159,6 +190,7 @@ async def investigate_case(case_data: dict[str, Any]) -> dict[str, Any]:
         case_id=case_data.get("case_id"),
     )
     out["thinking_enabled"] = True
+    out["attempts"] = attempts
     out["external_search_used"] = len(all_results) > 0
     # A LIST of {title, url}, matching compliance_agent.
     #
@@ -271,6 +303,7 @@ async def generate_report(investigation_results: list[dict]) -> dict[str, Any]:
             user_text=f"Generate report from these investigations:\n{results_text}",
             temperature=0.2,
             max_tokens=MAX_OUTPUT_TOKENS,
+            json_mode=JSON_MODE,
         )
 
     parsed, error = parse_model_json(text)

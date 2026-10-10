@@ -302,7 +302,7 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **875 backend tests** at 79% line coverage, 137 frontend tests, and a
+**Now:** **885 backend tests** at 80% line coverage, 137 frontend tests, and a
 mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
 the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
@@ -1195,7 +1195,7 @@ What the table says:
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 875, at 79% line coverage. CI fails below 75%.
+# Unit + integration tests: 885, at 80% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
 # The mutation check: breaks 36 lines on purpose, one at a time, and requires the
@@ -1248,7 +1248,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Verifier | 30 | Risk reconciliation, prompt injection, whitelist, checks |
 | B2B contract | 28 | The published response shape callers depend on |
 | Routes | 27 | Security headers, CORS, auth, validation, pagination |
-| Schema enforcement | 27 | Untrusted document fields against the declared schema |
+| Schema enforcement | 37 | Untrusted document fields against the declared schema; that an investigation reply with no summary is a counted failure rather than a finished report; and that Super is asked without `json_object`, which measured 6/12 usable against 12/12, with one retry billed in full |
 | Budget | 26 | Per-tenant spend ceiling, cache TTL, fail-open on store error |
 | Billing period | 25 | Windowed usage, and that every aggregation has an index |
 | Model switch & metering | 25 | The cost ratchet, that an unpriced model cannot bill silently, and that no string names Super on the debate path |
@@ -1274,7 +1274,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
 | Evaluation endpoint | 5 | The committed reports served as written, each naming its split and verifier, and never the per-case rows that carry the labels |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **875** | |
+| **Total** | **885** | |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1628,7 +1628,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        37 files, 875 tests
+├── tests/                        37 files, 885 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports

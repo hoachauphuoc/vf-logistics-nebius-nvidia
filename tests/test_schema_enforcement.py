@@ -210,6 +210,55 @@ class TestSchemaValidation(unittest.TestCase):
         self.assertIsNone(out, "a verdict that does not say whether it searched")
         self.assertIn("searched", err)
 
+    def test_investigation_fragments_are_rejected(self):
+        """
+        The four shapes Nemotron 3 Super actually returned on 8 of 16
+        investigations on the 20-case board. Each is valid JSON, so the parser
+        accepts it; before this schema each was stored as a finished
+        investigation with parse_error False.
+        """
+        fragments = (
+            '{": {}}": null}',
+            '{".json": null}',
+            '{": {": {}}',
+            '{": {}}? Actually top-level JSON object with fields. Provide '
+            'summary, evidence list, connections list.": null}',
+        )
+        for text in fragments:
+            parsed, perr = parse_model_json(text)
+            self.assertIsNone(perr, f"{text!r} is valid JSON; the parser is not the gap")
+            out, err = validate_result("investigation", parsed)
+            self.assertIsNone(out, f"{text!r} should not pass as an investigation")
+            self.assertIn("summary", err)
+
+    def test_investigation_blank_summary_is_rejected(self):
+        for blank in ("", "   ", None):
+            out, err = validate_result("investigation", {"summary": blank})
+            self.assertIsNone(out, f"{blank!r} is not a narrative")
+
+    def test_investigation_real_report_is_kept_whole(self):
+        """
+        The shape of the six good replies on the board, including the one that
+        returned `connections` as a dict instead of a list. Nothing is dropped:
+        the trace shows the whole report, not only the fields the schema names.
+        """
+        for connections in ([{"entity": "Truong Hai Trading Co"}], {"related": []}):
+            report = {
+                "investigation_id": "INV-1",
+                "summary": "Shipment exhibits multiple red flags.",
+                "evidence": ["future-dated creation timestamp"],
+                "connections": connections,
+                "fraud_pattern": "Trade-based money laundering",
+                "exposure_estimate": "USD 88,000 cargo value plus penalties",
+                "confidence_level": 0.85,
+                "recommended_actions": ["hold shipment"],
+                "escalation_required": True,
+                "escalation_reason": "sanctioned destination",
+            }
+            out, err = validate_result("investigation", report)
+            self.assertIsNone(err)
+            self.assertEqual(out, report)
+
     def test_unregistered_agent_passes_through(self):
         payload = {"anything": 1}
         out, err = validate_result("document", payload)
@@ -390,7 +439,12 @@ class TestHumanReviewFallback(unittest.TestCase):
     The hole this module was written to close, asserted end to end.
     """
 
-    def _drive(self, fraud_text: str, compliance_text: str) -> dict:
+    def _drive(
+        self,
+        fraud_text: str,
+        compliance_text: str,
+        investigation_text: str = '{"summary": "x"}',
+    ) -> dict:
         _reset_store()
         # Without an ACTIVE boundary the governance gate is fail-closed and
         # nothing can be released, so the control case would pass for the wrong
@@ -416,7 +470,7 @@ class TestHumanReviewFallback(unittest.TestCase):
         ), patch.object(
             orchestrator, "investigate_case",
             new=AsyncMock(return_value=_envelope_for(
-                "investigation", '{"summary": "x"}', "investigation_result")),
+                "investigation", investigation_text, "investigation_result")),
         ):
             case = _run(orchestrator.ingest_shipment(dict(CLEARABLE_SHIPMENT)))
             for _ in range(10):
@@ -475,6 +529,115 @@ class TestHumanReviewFallback(unittest.TestCase):
         self.assertTrue(step["parse_error"])
         self.assertTrue(step.get("schema_error"))
         self.assertIn("NOPE", step["raw_response"])
+
+    def _investigated(self, investigation_text: str) -> tuple[dict, dict]:
+        """A valid REVIEW_REQUIRED screening, so the case goes to investigation."""
+        case = self._drive(
+            VALID_FRAUD,
+            VALID_COMPLIANCE.replace('"CLEARED"', '"REVIEW_REQUIRED"'),
+            investigation_text,
+        )
+        steps = [s for s in case["steps"] if s["agent"] == "investigation"]
+        self.assertEqual(len(steps), 1, "the fixture must reach the investigation")
+        return case, steps[0]
+
+    def test_good_investigation_is_not_counted_as_a_failure(self):
+        """Control for the test below: same route, a usable report."""
+        case, step = self._investigated('{"summary": "Red flags on the lane."}')
+        self.assertFalse(step["parse_error"])
+        self.assertEqual(case.get("_model_failures", 0), 0)
+        self.assertEqual(case["state"], "ESCALATED")
+
+    def test_fragment_investigation_is_a_counted_failure_and_still_escalates(self):
+        """
+        The reply Super gave on 8 of 16 board investigations. It must show as
+        failed on the step and be named in _model_failure_agents, which is what
+        b2b._review_reason reports to the integrator. Routing is unchanged: the
+        case was already going to a human and still does.
+        """
+        case, step = self._investigated('{": {}}": null}')
+        self.assertTrue(step["parse_error"])
+        self.assertTrue(step.get("schema_error"))
+        self.assertEqual(step["result"], {})
+        self.assertEqual(case["_model_failure_agents"], ["investigation"])
+        self.assertEqual(case["state"], "ESCALATED")
+
+
+class TestInvestigationRequest(unittest.TestCase):
+    """
+    How the investigation agent asks Super, and what it does with a fragment.
+
+    Measured on the live model: json_object with reasoning gave 6/12 usable
+    reports, the same prompt without response_format 12/12. These pin the request
+    shape that measurement chose, and the one retry that covers what is left.
+    """
+
+    FRAGMENT = '{": {}}": null}'
+    GOOD = '{"summary": "Red flags on the lane.", "fraud_pattern": "undervaluation"}'
+
+    def _investigate(self, *replies: str):
+        from vf_logistics import tavily_client
+        from vf_logistics.agents import investigation_agent
+
+        calls = AsyncMock(side_effect=[(r, 1000, 300) for r in replies])
+        with patch.object(investigation_agent.nebius_client, "complete_json", calls), \
+             patch.object(
+                 investigation_agent.tavily_client, "search_with_status",
+                 new=AsyncMock(return_value=([], tavily_client.OK)),
+             ):
+            out = _run(investigation_agent.investigate_case({
+                "case_id": "CASE-T", "trigger_reason": "test",
+                "primary_shipment": {"shipper_name": "A Co"},
+            }))
+        return out, calls
+
+    def test_super_is_not_asked_through_json_object(self):
+        out, calls = self._investigate(self.GOOD)
+        self.assertIs(calls.await_args.kwargs["json_mode"], False)
+
+    def test_json_mode_false_sends_no_response_format(self):
+        captured: dict = {}
+
+        class FakeCompletions:
+            async def create(self, **kw):
+                captured.update(kw)
+                message = type("M", (), {"content": "{}"})()
+                choice = type("C", (), {"message": message, "finish_reason": "stop"})()
+                usage = type("U", (), {"prompt_tokens": 1, "completion_tokens": 1})()
+                return type("R", (), {"choices": [choice], "usage": usage})()
+
+        client = type("Client", (), {
+            "chat": type("Chat", (), {"completions": FakeCompletions()})(),
+        })()
+        with patch.object(nebius_client, "get_client", return_value=client), \
+             patch.object(nebius_client.budget, "assert_within_budget", new=AsyncMock()):
+            _run(nebius_client.complete_json(
+                model="m", system_prompt="s", user_text="u", json_mode=False))
+            self.assertNotIn("response_format", captured)
+            captured.clear()
+            _run(nebius_client.complete_json(model="m", system_prompt="s", user_text="u"))
+            self.assertEqual(captured["response_format"], {"type": "json_object"})
+
+    def test_good_first_reply_is_one_call(self):
+        out, calls = self._investigate(self.GOOD)
+        self.assertEqual(calls.await_count, 1)
+        self.assertFalse(out["parse_error"])
+        self.assertEqual(out["attempts"], 1)
+
+    def test_a_fragment_is_asked_again_and_both_calls_are_billed(self):
+        out, calls = self._investigate(self.FRAGMENT, self.GOOD)
+        self.assertEqual(calls.await_count, 2)
+        self.assertFalse(out["parse_error"])
+        self.assertEqual(out["result"]["summary"], "Red flags on the lane.")
+        self.assertEqual(out["attempts"], 2)
+        self.assertEqual((out["input_tokens"], out["output_tokens"]), (2000, 600))
+
+    def test_two_fragments_stop_and_are_reported(self):
+        out, calls = self._investigate(self.FRAGMENT, self.FRAGMENT)
+        self.assertEqual(calls.await_count, 2)
+        self.assertTrue(out["parse_error"])
+        self.assertTrue(out.get("schema_error"))
+        self.assertEqual(out["raw"], self.FRAGMENT)
 
 
 if __name__ == "__main__":
