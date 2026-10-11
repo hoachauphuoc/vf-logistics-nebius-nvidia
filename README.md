@@ -1141,6 +1141,10 @@ and 20 per source address. The email is normalised once (trimmed and lower-cased
 one value is both counted and checked. The count lives on the API's shared ledger
 (`/internal/login-throttle`, Firestore collection `login_throttle`), so every instance
 spends one allowance; if the ledger cannot answer, each instance falls back to its own.
+On Firestore the ledger is a fixed one-minute window counted with an atomic increment
+rather than a transaction: under a burst of attempts a transaction queues on its lock,
+the console gives up after three seconds, and the per-instance fallback would decide.
+Finished windows are deleted by a TTL policy on `login_throttle.expire_at`.
 
 ### Creating your own account
 

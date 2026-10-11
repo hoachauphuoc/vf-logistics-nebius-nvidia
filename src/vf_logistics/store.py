@@ -40,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import random
 import threading
 import time
 import uuid
@@ -116,6 +117,27 @@ class AuditImmutabilityError(Exception):
 
 class BoundaryConflict(Exception):
     """A publish would have overwritten a boundary that already exists."""
+
+
+# How many times a Firestore transaction is attempted before giving up. The
+# client's default is 5, and the emulator showed that is too few for six
+# concurrent publishes, or a dozen concurrent sign-in attempts, contending on one
+# counter document: they failed with "Transaction lock timeout" after 5 attempts.
+_TXN_ATTEMPTS = 25
+
+# How many times the WHOLE transaction is run again after losing on contention.
+# The client's own retry covers a failed commit only; an Aborted raised by a
+# read inside the transaction ("Transaction lock timeout", seen against the
+# emulator with client 2.34) escapes it, so that case is retried here.
+_TXN_ROUNDS = 8
+
+
+def _is_contention(exc: BaseException, aborted: type[BaseException]) -> bool:
+    if isinstance(exc, aborted):
+        return True
+    # transactional() reports a commit retried out as this ValueError. Any other
+    # ValueError is a real error and must not be retried as if it were a race.
+    return isinstance(exc, ValueError) and "Failed to commit transaction" in str(exc)
 
 
 # --------------------------------------------------------------------------
@@ -888,6 +910,12 @@ class FirestoreStore:
                                             # never needs the dependency
 
         self._fs = firestore
+        # What a transaction that lost on contention raises (see _is_contention).
+        # Resolved here, beside the client import, so memory mode never imports
+        # google.api_core.
+        from google.api_core.exceptions import Aborted
+
+        self._aborted: type[BaseException] = Aborted
         self._db = firestore.Client(project=project)
         self._cases = self._db.collection("cases")
         self._events = self._db.collection("events")
@@ -902,6 +930,24 @@ class FirestoreStore:
     # Every query below adds a tenant filter. The helper keeps the pattern in one
     # place so a new query cannot be written without one -- a missing filter here
     # is not a slow query, it is another customer's data in the response.
+    def _run_transaction(self, body: Any) -> Any:
+        """
+        Run a @transactional `body`, retrying the whole of it on contention.
+
+        Each round is a fresh transaction, so every read is repeated and nothing
+        decided on stale data is committed. The jittered pause keeps contending
+        callers from retrying in lockstep. Anything that is not contention is
+        raised at once.
+        """
+        for round_ in range(_TXN_ROUNDS):
+            try:
+                return body(self._db.transaction(max_attempts=_TXN_ATTEMPTS))
+            except Exception as exc:  # noqa: BLE001 - narrowed by _is_contention
+                if round_ == _TXN_ROUNDS - 1 or not _is_contention(exc, self._aborted):
+                    raise
+                time.sleep(random.uniform(0.05, 0.25) * (round_ + 1))
+        raise AssertionError("unreachable")
+
     def _scoped(self, collection, scope: str):
         return collection.where(
             filter=self._fs.FieldFilter(TENANT_FIELD, "==", scope)
@@ -944,39 +990,44 @@ class FirestoreStore:
         self, key: str, window_seconds: int, limit: int, tenant_id: str | None = None,
     ) -> bool:
         """
-        MemoryStore.hit_rate_limit, as one transaction on one document per key.
+        The same contract as MemoryStore.hit_rate_limit, on Firestore.
 
-        The document carries an `expire_at` timestamp so a Firestore TTL policy on
-        login_throttle.expire_at can delete idle counters; without one they are a
-        few hundred bytes each and simply stay.
+        A fixed window, one document per (key, window), counted with an atomic
+        server-side Increment and read back. NOT a transaction, deliberately: the
+        first version used one, and against the emulator a dozen concurrent
+        attempts on one counter queued on its lock for minutes. The console waits
+        three seconds for this answer and then falls back to its per-instance
+        limiter -- so under exactly the burst this exists to stop, the
+        transactional ledger handed the decision back to the weakness of finding
+        A04. An increment takes no lock and does not retry.
+
+        Correctness without a lock: attempt k's increment makes the count at least
+        k before it reads, so any attempt that reads a count within the limit was
+        one of the first `limit` -- at most `limit` are ever admitted per window.
+        Under a race an admitted attempt can read a higher count and be refused;
+        that errs toward refusing. Two differences from the sliding window in
+        memory: a refused attempt is counted too, and a burst straddling a window
+        boundary can see up to twice the limit. Both are bounded by one window.
+
+        Each document carries `expire_at` for the TTL policy on
+        login_throttle.expire_at, so finished windows are deleted.
         """
         scope = tenant.resolve(tenant_id)
-        ref = self._throttle.document(_throttle_id(scope, key))
+        now = time.time()
+        window = int(now // window_seconds)
+        ref = self._throttle.document(_throttle_id(scope, f"{key}\x00{window}"))
+        expire_at = datetime.fromtimestamp((window + 2) * window_seconds, timezone.utc)
 
-        def _txn() -> bool:
-            @self._fs.transactional
-            def _do(t: Any) -> bool:
-                snap = ref.get(transaction=t)
-                now = time.time()
-                stored = (snap.to_dict() or {}).get("stamps") if snap.exists else None
-                stamps = [
-                    float(s) for s in (stored or [])
-                    if isinstance(s, (int, float)) and s > now - window_seconds
-                ]
-                if len(stamps) >= limit:
-                    return True
-                stamps.append(now)
-                t.set(ref, {
-                    "stamps": stamps,
-                    "expire_at": datetime.fromtimestamp(now + window_seconds, timezone.utc),
-                    TENANT_FIELD: scope,
-                })
-                return False
+        def _count() -> bool:
+            ref.set({
+                "count": self._fs.Increment(1),
+                "expire_at": expire_at,
+                TENANT_FIELD: scope,
+            }, merge=True)
+            seen = (ref.get().to_dict() or {}).get("count")
+            return not isinstance(seen, int) or seen > limit
 
-            result: bool = _do(self._db.transaction())
-            return result
-
-        return await asyncio.to_thread(_txn)
+        return await asyncio.to_thread(_count)
 
     async def put_boundary(
         self, boundary: dict[str, Any], tenant_id: str | None = None
@@ -1040,7 +1091,7 @@ class FirestoreStore:
                 })
                 return boundary
 
-            result: dict[str, Any] = _do(self._db.transaction())
+            result: dict[str, Any] = self._run_transaction(_do)
             return result
 
         return await asyncio.to_thread(_txn)
@@ -1075,7 +1126,7 @@ class FirestoreStore:
                 newest = max((d for _, d in active), key=lambda d: _as_version(d.get("version")))
                 return {**newest, **change}
 
-            result: dict[str, Any] | None = _do(self._db.transaction())
+            result: dict[str, Any] | None = self._run_transaction(_do)
             return result
 
         return await asyncio.to_thread(_txn)

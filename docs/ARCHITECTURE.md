@@ -722,7 +722,15 @@ An architecture document that omits these is marketing.
   tenant and would raise under it, and every behavioural isolation test runs on
   `MemoryStore` -- `FirestoreStore` is covered only by signature parity, despite the two
   backends filtering by different mechanisms. Membership resolution itself is
-  backend-independent and is tested end to end (`tests/test_membership.py`).
+  backend-independent and is tested end to end (`tests/test_membership.py`). The
+  Firestore transactions behind boundary publish/revoke and the sign-in ledger are
+  exercised against the emulator in `tests/test_firestore_emulator.py`, which is skipped
+  unless `FIRESTORE_EMULATOR_HOST` is set.
+- **Concurrent publishes in one tenant queue.** Publish and revoke are one Firestore
+  transaction on the tenant's `boundary_counters` document, retried as a whole on
+  contention. Against the emulator six simultaneous publishes all succeeded with distinct
+  versions and one ACTIVE boundary, but took 55-155 s to clear. Publishing is a rare,
+  deliberate act, so this is acceptable; it would not be for a hot path.
 - **`/internal/execute` is the one place a caller may name a tenant**, gated on the
   service identity. With multi-tenancy on, the tenant must be one the `service`
   principal is a registered member of; `case_id` membership within that tenant is
