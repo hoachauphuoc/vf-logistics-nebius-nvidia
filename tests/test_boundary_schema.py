@@ -245,12 +245,27 @@ class TestTheGateReadsStoredPoliciesStrictly(unittest.TestCase):
     """Defence in depth for anything written before the schema existed."""
 
     def test_a_stored_string_false_does_not_release(self):
-        """The exact reproduction from the review, now denied at the gate."""
+        """
+        The exact reproduction from the review, now denied at the gate.
+
+        Built from the template, with both ceilings present, so the ONLY thing
+        wrong with this grant is how `permitted` is spelt. A bare
+        {"permitted": "false"} would also be denied for its missing ceilings and
+        so would pass even with the truthiness bug back -- which is exactly what
+        the mutation check caught this test doing in its first version.
+        """
         verdict = governance.check(
-            "release_shipment", CLEAN_CASE,
-            _boundary({"auto_release": {"permitted": "false"}}),
+            "release_shipment", CLEAN_CASE, _boundary(_with_release(permitted="false")),
         )
         self.assertFalse(verdict["allowed"])
+        self.assertIn("not delegated", verdict["reason"])
+
+    def test_the_same_grant_spelt_correctly_does_release(self):
+        """The control for the test above: with a real boolean, the case clears."""
+        verdict = governance.check(
+            "release_shipment", CLEAN_CASE, _boundary(_with_release(permitted=True)),
+        )
+        self.assertTrue(verdict["allowed"], verdict["reason"])
 
     def test_a_grant_without_ceilings_does_not_release(self):
         for missing in ("max_effective_risk", "max_declared_value_usd"):
