@@ -59,12 +59,16 @@ describe("matchWrite", () => {
     for (const path of PASSWORD_ONLY_POST) expect(ALLOWED_POST.has(path)).toBe(true);
   });
 
-  it("marks revoke and the prefilter rules edit as password-only, and nothing else", () => {
-    expect([...PASSWORD_ONLY_POST].sort()).toEqual(["governance/revoke", "orchestrator/reset"]);
+  it("marks publish, revoke and the prefilter rules edit as password-only, and nothing else", () => {
+    expect([...PASSWORD_ONLY_POST].sort()).toEqual([
+      "governance/publish",
+      "governance/revoke",
+      "orchestrator/reset",
+    ]);
     expect([...PASSWORD_ONLY_PUT]).toEqual(["governance/prefilter-rules"]);
     for (const path of PASSWORD_ONLY_PUT) expect(ALLOWED_PUT.has(path)).toBe(true);
-    // Publish and simulate stay with the one-click judge.
-    expect(PASSWORD_ONLY_POST.has("governance/publish")).toBe(false);
+    // Simulate writes nothing and stays with the one-click judge. Publish does
+    // not: review finding A01 showed a deny-all publish suspends the agent.
     expect(PASSWORD_ONLY_POST.has("governance/simulate")).toBe(false);
   });
 

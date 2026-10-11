@@ -118,10 +118,16 @@ export const ALLOWED_POST = new Set([
  * and reads well in the UI; Flask enforces the same rule independently.
  *
  * Each one changes the demo for every visitor after the person who pressed it:
- * Clear board empties it, revoking the boundary suspends the agent, and the
- * prefilter rules decide what clears with no model at all.
+ * Clear board empties it, revoking the boundary suspends the agent, publishing
+ * replaces the shared boundary (and `{"allowed_actions": []}` suspends the agent
+ * as surely as a revoke), and the prefilter rules decide what clears with no
+ * model at all. Simulate writes nothing and stays open.
  */
-export const PASSWORD_ONLY_POST = new Set(["orchestrator/reset", "governance/revoke"]);
+export const PASSWORD_ONLY_POST = new Set([
+  "orchestrator/reset",
+  "governance/revoke",
+  "governance/publish",
+]);
 
 export const ALLOWED_PUT = new Set(["governance/prefilter-rules"]);
 

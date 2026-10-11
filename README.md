@@ -27,8 +27,8 @@ visitor is a real `viewer` and both sit above it. **Recording a decision needs a
 account**, because the audit trail names the person who released a shipment rather than
 the service that called the API, and a free-text name field would make that record
 worthless. Judges: **Continue as guest judge** on the login page signs you in with one
-click and can do everything except clear the board, revoke the agent's authority or
-edit the screening rules; the password accounts are in the
+click and can do everything except clear the board, publish or revoke the agent's
+authority, or edit the screening rules; the password accounts are in the
 Devpost submission's testing-instructions field — a governance-admin account, and one
 that holds only the Reviewer role, so you can watch the access control refuse something.
 
@@ -1108,14 +1108,16 @@ a judge never has to touch `gcloud`.
 The login page and the board's **Start here** strip offer **Continue as guest judge**:
 one click, no password, and the session is `guest-judge@vf-logistics.demo`, a separate
 account listed in `ADMIN_EMAILS`. It can do everything the judge account can — inject
-shipments, decide cases, simulate and publish policy — **except three changes that
-would carry over to the next judge**: clear the board, revoke the delegation boundary
-(which suspends the agent), and edit the pre-AI screening rules.
+shipments, decide cases, simulate a policy against the board — **except four changes
+that would carry over to the next judge**: clear the board, publish or revoke the
+delegation boundary (a revoke suspends the agent, and so does publishing one that
+permits nothing), and edit the pre-AI screening rules.
 
 Those exceptions are enforced twice, not hidden. The session token carries an `amr`
 claim (`password` or `one_click`) inside the same HMAC as the email, so it cannot be
-edited. The console's BFF refuses `orchestrator/reset`, `governance/revoke` and the
-`governance/prefilter-rules` PUT to any session that does not say `password`, and the
+edited. The console's BFF refuses `orchestrator/reset`, `governance/publish`,
+`governance/revoke` and the `governance/prefilter-rules` PUT to any session that does
+not say `password`, and the
 API refuses them again with `auth.require_password_session`, which
 returns 403 with `required_auth: "password"`. A token without the claim — one minted
 before it existed — counts as *not* a password. A script holding only the API key still

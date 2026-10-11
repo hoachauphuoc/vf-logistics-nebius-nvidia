@@ -24,11 +24,12 @@ Collections / keys:
   audit_log             - append-only record of actions taken on behalf of the
                           operator
   delegation_boundaries - the versioned policies that grant the agent authority
+  boundary_counters     - the highest boundary version ever allotted, per tenant
   prefilter_rules       - deterministic rules applied before any model runs
 
-Five collections, not three. The two that were missing from this list are the two
-that carry governance state, which is the opposite of the right thing to leave out
-of a map of where state lives.
+Six collections, not three. The ones that were missing from this list are the
+ones that carry governance state, which is the opposite of the right thing to
+leave out of a map of where state lives.
 
 Track: Best Apps and Agents
 Hackathon: Nebius x NVIDIA Global AI Hackathon
@@ -111,6 +112,10 @@ class AuditImmutabilityError(Exception):
         )
 
 
+class BoundaryConflict(Exception):
+    """A publish would have overwritten a boundary that already exists."""
+
+
 # --------------------------------------------------------------------------
 # In-memory backend
 # --------------------------------------------------------------------------
@@ -185,6 +190,44 @@ def _within_window(
     return True
 
 
+def _boundary_key(tenant_id: str, boundary_id: str) -> str:
+    """
+    Where a boundary is stored: a key that includes its tenant.
+
+    Review finding T01: the key used to be the bare boundary_id, so every tenant's
+    first publish wrote BOUNDARY-v1 to the same slot and the later one erased the
+    earlier one's policy and history. The implicit single tenant keeps the bare id,
+    because the three documents the live service already holds are keyed that way
+    and a rename would orphan them; any other tenant is prefixed. `__` cannot occur
+    in a boundary id, so the two forms never collide.
+    """
+    if tenant_id == tenant.SINGLE_TENANT_ID:
+        return boundary_id
+    return f"{tenant_id}__{boundary_id}"
+
+
+def _as_version(value: Any) -> int:
+    """A stored version as an int, treating anything unreadable as 0."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _next_boundary(
+    draft: dict[str, Any], version: int, current: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The record a publish writes, given the version it was allotted."""
+    boundary = dict(draft)
+    boundary.update({
+        "boundary_id": f"BOUNDARY-v{version}",
+        "version": version,
+        "status": "ACTIVE",
+        "supersedes": current.get("boundary_id") if current else None,
+    })
+    return boundary
+
+
 class MemoryStore:
     """Process-local store. Fine for a single Cloud Run instance."""
 
@@ -195,6 +238,10 @@ class MemoryStore:
         self._events: list[dict[str, Any]] = []
         self._audit: list[dict[str, Any]] = []
         self._boundaries: dict[str, dict[str, Any]] = {}
+        # The highest version ever allotted per tenant. Kept apart from the
+        # boundaries themselves so a version is never handed out twice even if
+        # the record that carried it were ever removed.
+        self._boundary_counters: dict[str, int] = {}
         self._prefilter: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
@@ -230,8 +277,77 @@ class MemoryStore:
         self, boundary: dict[str, Any], tenant_id: str | None = None
     ) -> None:
         with self._lock:
-            _stamp_tenant(boundary, tenant_id)
-            self._boundaries[boundary["boundary_id"]] = boundary
+            scope = _stamp_tenant(boundary, tenant_id)
+            self._boundaries[_boundary_key(scope, boundary["boundary_id"])] = boundary
+
+    async def publish_boundary(
+        self, draft: dict[str, Any], tenant_id: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Allot the next version, supersede the active boundary, and store the new
+        one -- as one step.
+
+        Review finding A02: the version used to be "active version + 1", so after
+        a revoke (no active boundary) the next publish was v1 again and replaced
+        the original v1 -- its permissions, its author and its revocation. The
+        version now comes from the highest ever allotted for the tenant, and a key
+        that already exists is refused rather than overwritten.
+        """
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            owned = {
+                key: b for key, b in self._boundaries.items() if _owned_by(b, scope)
+            }
+            version = max(
+                [self._boundary_counters.get(scope, 0)]
+                + [_as_version(b.get("version")) for b in owned.values()]
+            ) + 1
+            active = {k: b for k, b in owned.items() if b.get("status") == "ACTIVE"}
+            current = max(
+                active.values(), key=lambda b: _as_version(b.get("version")), default=None,
+            )
+
+            boundary = _next_boundary(draft, version, current)
+            _stamp_tenant(boundary, scope)
+            key = _boundary_key(scope, boundary["boundary_id"])
+            if key in self._boundaries:
+                raise BoundaryConflict(f"{key} already exists; refusing to overwrite it")
+
+            # Staged, then committed in one go, so a failure above leaves the
+            # store exactly as it was. Every ACTIVE record is superseded, not
+            # only the newest: two ACTIVE ones would be a defect to repair.
+            now = utcnow()
+            staged = {
+                k: {**b, "status": "SUPERSEDED", "superseded_at": now,
+                    "superseded_by": boundary["boundary_id"]}
+                for k, b in active.items()
+            }
+            self._boundaries.update(staged)
+            self._boundaries[key] = boundary
+            self._boundary_counters[scope] = version
+            return dict(boundary)
+
+    async def revoke_active_boundary(
+        self, revoked_by: str, note: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Mark the active boundary REVOKED, keeping its content. None if none."""
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            active = {
+                k: b for k, b in self._boundaries.items()
+                if b.get("status") == "ACTIVE" and _owned_by(b, scope)
+            }
+            if not active:
+                return None
+            now = utcnow()
+            staged = {
+                k: {**b, "status": "REVOKED", "revoked_at": now,
+                    "revoked_by": revoked_by, "revocation_note": note}
+                for k, b in active.items()
+            }
+            self._boundaries.update(staged)
+            newest = max(staged.values(), key=lambda b: _as_version(b.get("version")))
+            return dict(newest)
 
     async def active_boundary(
         self, tenant_id: str | None = None
@@ -738,6 +854,7 @@ class FirestoreStore:
         self._events = self._db.collection("events")
         self._audit = self._db.collection("audit_log")
         self._boundaries = self._db.collection("delegation_boundaries")
+        self._boundary_counters = self._db.collection("boundary_counters")
         self._prefilter = self._db.collection("prefilter_rules")
 
     # -- delegation boundaries --------------------------------------------
@@ -786,10 +903,104 @@ class FirestoreStore:
     async def put_boundary(
         self, boundary: dict[str, Any], tenant_id: str | None = None
     ) -> None:
-        _stamp_tenant(boundary, tenant_id or boundary.get(TENANT_FIELD))
+        scope = _stamp_tenant(boundary, tenant_id or boundary.get(TENANT_FIELD))
         await asyncio.to_thread(
-            self._boundaries.document(boundary["boundary_id"]).set, boundary
+            self._boundaries.document(_boundary_key(scope, boundary["boundary_id"])).set,
+            boundary,
         )
+
+    async def publish_boundary(
+        self, draft: dict[str, Any], tenant_id: str | None = None
+    ) -> dict[str, Any]:
+        """
+        MemoryStore.publish_boundary, inside one Firestore transaction.
+
+        Every read precedes every write, as Firestore requires: the tenant's
+        counter and its boundaries are read, then the new boundary is CREATED
+        (which fails if the document exists, so nothing is ever overwritten), the
+        active ones are superseded, and the counter is advanced. Two concurrent
+        publishes contend on the counter document, and the loser's transaction is
+        retried from the reads, so it is allotted the next version rather than
+        the same one.
+        """
+        scope = tenant.resolve(tenant_id)
+        counter_ref = self._boundary_counters.document(scope)
+        query = self._scoped(self._boundaries, scope)
+
+        def _txn() -> dict[str, Any]:
+            @self._fs.transactional
+            def _do(t: Any) -> dict[str, Any]:
+                counter = counter_ref.get(transaction=t)
+                counted = _as_version((counter.to_dict() or {}).get("last_version")) if counter.exists else 0
+                snaps = list(t.get(query))
+                docs = [(s.reference, s.to_dict() or {}) for s in snaps]
+                version = max([counted] + [_as_version(d.get("version")) for _, d in docs]) + 1
+                active = [(ref, d) for ref, d in docs if d.get("status") == "ACTIVE"]
+                current = max(
+                    (d for _, d in active), key=lambda d: _as_version(d.get("version")),
+                    default=None,
+                )
+
+                boundary = _next_boundary(draft, version, current)
+                _stamp_tenant(boundary, scope)
+                t.create(
+                    self._boundaries.document(_boundary_key(scope, boundary["boundary_id"])),
+                    boundary,
+                )
+                now = utcnow()
+                for ref, _ in active:
+                    t.update(ref, {
+                        "status": "SUPERSEDED",
+                        "superseded_at": now,
+                        "superseded_by": boundary["boundary_id"],
+                    })
+                t.set(counter_ref, {
+                    "last_version": version,
+                    "active_boundary_id": boundary["boundary_id"],
+                    "updated_at": now,
+                    TENANT_FIELD: scope,
+                })
+                return boundary
+
+            result: dict[str, Any] = _do(self._db.transaction())
+            return result
+
+        return await asyncio.to_thread(_txn)
+
+    async def revoke_active_boundary(
+        self, revoked_by: str, note: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
+        scope = tenant.resolve(tenant_id)
+        counter_ref = self._boundary_counters.document(scope)
+        query = self._scoped(self._boundaries, scope).where(
+            filter=self._fs.FieldFilter("status", "==", "ACTIVE")
+        )
+
+        def _txn() -> dict[str, Any] | None:
+            @self._fs.transactional
+            def _do(t: Any) -> dict[str, Any] | None:
+                counter = counter_ref.get(transaction=t)
+                active = [(s.reference, s.to_dict() or {}) for s in t.get(query)]
+                if not active:
+                    return None
+                now = utcnow()
+                change = {
+                    "status": "REVOKED",
+                    "revoked_at": now,
+                    "revoked_by": revoked_by,
+                    "revocation_note": note,
+                }
+                for ref, _ in active:
+                    t.update(ref, change)
+                if counter.exists:
+                    t.update(counter_ref, {"active_boundary_id": None, "updated_at": now})
+                newest = max((d for _, d in active), key=lambda d: _as_version(d.get("version")))
+                return {**newest, **change}
+
+            result: dict[str, Any] | None = _do(self._db.transaction())
+            return result
+
+        return await asyncio.to_thread(_txn)
 
     async def active_boundary(
         self, tenant_id: str | None = None

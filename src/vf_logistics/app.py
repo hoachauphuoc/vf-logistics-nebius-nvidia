@@ -1174,6 +1174,13 @@ def governance_boundaries():
 
 @app.route("/api/v1/governance/publish", methods=["POST"])
 @require_governance_admin
+# Password-only, like revoke. Gating revoke alone was not enough: publishing
+# {"allowed_actions": []} replaces the shared boundary with one that denies every
+# protected action, which suspends the agent just as surely while still reading
+# ACTIVE. The authorization review of bd6a210 reproduced exactly that from a
+# one-click session (finding A01), and BOUNDARY-v2 on the live service was in fact
+# published by the judge account. Judges keep simulate, which writes nothing.
+@require_password_session
 def governance_publish():
     """
     Publish a delegation boundary. This is the only way an agent gains authority.
@@ -1217,12 +1224,21 @@ def governance_publish():
             permissions = governance.proposed_boundary(
                 "Published from the default template"
             )
+        errors = governance.validate_permissions(permissions)
+        if errors:
+            # 422 rather than 400: the body parsed, and it is the policy it states
+            # that is refused. Every error is returned, under `details` because
+            # that is the list the console's api.ts already joins into its
+            # message, so an author fixing a boundary sees them all at once.
+            return jsonify({"error": "permissions do not match the schema", "details": errors}), 422
         note = str(body.get("note") or "").strip()
 
         boundary = _on_worker(governance.publish_boundary(
             permissions, author, note, tenant_id=_tenant(), author_auth=author_auth,
         ))
         return jsonify({"published": True, "boundary": boundary}), 201
+    except governance.BoundaryValidationError as e:
+        return jsonify({"error": "permissions do not match the schema", "details": e.errors}), 422
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -1249,6 +1265,9 @@ def governance_simulate():
             return jsonify({
                 "error": "permissions must be a non-empty object"
             }), 400
+        errors = governance.validate_permissions(permissions)
+        if errors:
+            return jsonify({"error": "permissions do not match the schema", "details": errors}), 422
 
         action = str(body.get("action") or "release_shipment")
         try:
@@ -1270,8 +1289,8 @@ def governance_simulate():
 @require_governance_admin
 # Password-only for the same reason as the board reset. The one-click judge button
 # is public and mints an admin, and revoking the boundary suspends the agent for
-# every visitor after this one until someone with a password re-publishes. Judges
-# keep publish and simulate; the kill switch is shown in the video and the trail.
+# every visitor after this one until someone with a password re-publishes. Publish
+# is gated the same way (see governance_publish); judges keep simulate.
 @require_password_session
 def governance_revoke():
     """

@@ -148,7 +148,7 @@ describe("Clear board needs a password sign-in", () => {
   });
 });
 
-describe("The two policy kill switches need a password sign-in too", () => {
+describe("The policy writes need a password sign-in too", () => {
   let spy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -186,31 +186,43 @@ describe("The two policy kill switches need a password sign-in too", () => {
     );
   }
 
-  it("refuses a one-click revoke and rules edit without calling the API", async () => {
+  function publish(token: string | null) {
+    return POST(
+      new Request("https://vf.example/api/proxy/governance/publish", {
+        method: "POST",
+        headers: { cookie: `vf_session=${token}` },
+        body: JSON.stringify({ permissions: { allowed_actions: [] } }),
+      }),
+      params("governance/publish"),
+    );
+  }
+
+  it("refuses a one-click publish, revoke and rules edit without calling the API", async () => {
     const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
-    for (const response of [await revoke(token), await putRules(token)]) {
+    for (const response of [await publish(token), await revoke(token), await putRules(token)]) {
       expect(response.status).toBe(403);
       expect(await response.json()).toMatchObject({ required_auth: "password" });
     }
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("forwards both for a password session", async () => {
+  it("forwards all three for a password session", async () => {
     const token = await signSession("judge@vf-logistics.demo", "password");
+    expect((await publish(token)).status).toBe(200);
     expect((await revoke(token)).status).toBe(200);
     expect((await putRules(token)).status).toBe(200);
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledTimes(3);
   });
 
-  it("leaves publish open to a one-click session", async () => {
+  it("leaves simulate open to a one-click session", async () => {
     const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
     const response = await POST(
-      new Request("https://vf.example/api/proxy/governance/publish", {
+      new Request("https://vf.example/api/proxy/governance/simulate", {
         method: "POST",
         headers: { cookie: `vf_session=${token}` },
         body: "{}",
       }),
-      params("governance/publish"),
+      params("governance/simulate"),
     );
     expect(response.status).toBe(200);
   });

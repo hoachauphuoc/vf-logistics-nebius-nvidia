@@ -279,10 +279,12 @@ function BoundaryTab() {
   });
   const identity = useIdentity().data;
   const adminLock = lockReason(identity, "governance_admin");
-  // Revoke suspends the agent for every visitor after this one, so the public
-  // one-click judge session cannot reach it (the BFF and the API both refuse).
-  // Publish and simulate stay open to it.
+  // Revoke suspends the agent for every visitor after this one, and publish can
+  // do the same by replacing the shared boundary with one that permits nothing,
+  // so the public one-click judge session reaches neither (the BFF and the API
+  // both refuse). Simulate writes nothing and stays open to it.
   const revokeLock = adminLock ?? passwordLockReason(identity);
+  const publishLock = adminLock ?? passwordLockReason(identity);
   const simulateLock = lockReason(identity, "viewer");
 
   const [note, setNote] = useState("");
@@ -492,10 +494,10 @@ function BoundaryTab() {
                 </Button>
               </Gated>
 
-              <Gated reason={adminLock}>
+              <Gated reason={publishLock}>
                 <Button
                   size="sm"
-                  disabled={publish.isPending || adminLock !== null}
+                  disabled={publish.isPending || publishLock !== null}
                   onClick={() => {
                     if (parsePermissions()) setConfirmPublish(true);
                   }}

@@ -308,6 +308,59 @@ MUTATIONS = [
         '                raise RuntimeError("no Google Cloud project to publish to: set PROJECT_ID")',
         "tests/test_pure_logic.py::TestNoProjectIsRefusedNotGuessed",
     ),
+    # Authorization review of bd6a210 -- findings A01, A03, A02 and T01.
+    (
+        "A01: a one-click session can publish the shared boundary again",
+        "src/vf_logistics/app.py",
+        "@require_password_session\ndef governance_publish():",
+        "def governance_publish():",
+        "tests/test_rbac.py::TestPublishNeedsAPassword",
+    ),
+    (
+        "A03: the gate reads `permitted` by truthiness, so \"false\" releases",
+        "src/vf_logistics/governance.py",
+        'if rules.get("permitted") is not True:',
+        'if not rules.get("permitted"):',
+        "tests/test_boundary_schema.py::TestTheGateReadsStoredPoliciesStrictly",
+    ),
+    (
+        "A03: a release grant with a missing ceiling has no ceiling",
+        "src/vf_logistics/governance.py",
+        "if not _is_number(ceiling) or not _is_number(max_value):",
+        "if False:",
+        "tests/test_boundary_schema.py::TestTheGateReadsStoredPoliciesStrictly",
+    ),
+    (
+        "A03: publish accepts a non-boolean `permitted`",
+        "src/vf_logistics/governance.py",
+        "    if not isinstance(permitted, bool):",
+        "    if False:",
+        "tests/test_boundary_schema.py::TestTheSchemaRefusesWhatWouldBeMisread",
+    ),
+    (
+        "A03: an unknown top-level key is stored as a control nobody reads",
+        "src/vf_logistics/governance.py",
+        "for key in sorted(set(permissions) - _TOP_LEVEL_KEYS):",
+        "for key in []:",
+        "tests/test_boundary_schema.py::TestTheSchemaRefusesWhatWouldBeMisread",
+    ),
+    (
+        "A02: the next version is the ACTIVE one plus one again, reusing v1 after a revoke",
+        "src/vf_logistics/store.py",
+        '[self._boundary_counters.get(scope, 0)]\n'
+        '                + [_as_version(b.get("version")) for b in owned.values()]',
+        '[0]\n'
+        '                + [_as_version(b.get("version")) for b in owned.values()'
+        ' if b.get("status") == "ACTIVE"]',
+        "tests/test_boundary_history.py::TestRepublishAfterRevoke",
+    ),
+    (
+        "T01: every tenant's boundaries share one storage key again",
+        "src/vf_logistics/store.py",
+        'return f"{tenant_id}__{boundary_id}"',
+        "return boundary_id",
+        "tests/test_boundary_history.py::TestTenantsDoNotShareASlot",
+    ),
 ]
 
 

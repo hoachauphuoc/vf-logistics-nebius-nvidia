@@ -305,14 +305,88 @@ class TestPolicyKillSwitchesNeedAPassword(unittest.TestCase):
                     f"{path} refused a password sign-in",
                 )
 
-    def test_a_one_click_admin_can_still_read_simulate_and_publish(self):
-        """The judge keeps everything else: reading the rules, and the publish route's gate."""
+    def test_a_one_click_admin_can_still_read_and_simulate(self):
+        """The judge keeps everything that writes nothing: reading the rules, and simulate."""
         headers = _session(ADMIN, amr="one_click")
         self.assertEqual(
             self.client.get("/api/v1/governance/prefilter-rules", headers=headers).status_code, 200
         )
-        response = self.client.post("/api/v1/governance/publish", json={}, headers=headers)
-        self.assertNotEqual((response.get_json() or {}).get("required_auth"), "password")
+        response = self.client.post(
+            "/api/v1/governance/simulate",
+            json={"permissions": {"auto_release": {"permitted": False}}},
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+
+class TestPublishNeedsAPassword(unittest.TestCase):
+    """
+    Finding A01 of the authorization review of bd6a210.
+
+    Revoke was password-only and publish was not, so the one-click guest admin
+    could publish {"allowed_actions": []} -- a boundary that reads ACTIVE and
+    denies every protected action, which suspends the agent as surely as a revoke.
+    Gating the kill switch while leaving the switch that replaces the whole policy
+    open protected nothing.
+    """
+
+    DENY_ALL = {"permissions": {"allowed_actions": []}, "note": "A01 reproduction"}
+
+    def setUp(self):
+        import asyncio
+
+        from vf_logistics import app as app_mod
+        from vf_logistics import store as store_mod
+
+        self.env = patch.dict(os.environ, dict(ROLE_ENV, STORE_BACKEND="memory"))
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        # A fresh store per test: the history assertions below compare before and
+        # after, and a boundary left by another test would make them vacuous.
+        # Reset the module singleton the way the rest of the suite does, because
+        # governance.py binds get_store at import and a patch would miss it.
+        store_mod._store = None
+        self.addCleanup(setattr, store_mod, "_store", None)
+        self.store = store_mod.get_store()
+        self._run = asyncio.run
+        limiter_was = app_mod.limiter.enabled
+        app_mod.limiter.enabled = False
+        self.addCleanup(setattr, app_mod.limiter, "enabled", limiter_was)
+        self.client = app_mod.app.test_client()
+
+    def _history(self) -> list[dict]:
+        return self._run(self.store.list_boundaries(50))
+
+    def _audit_actions(self) -> list[str]:
+        return [r.get("action") for r in self._run(self.store.list_audit(limit=50))]
+
+    def test_refused_sessions_change_neither_the_policy_nor_the_trail(self):
+        for label, amr in (("one-click", "one_click"), ("no claim", None), ("unknown claim", "magic")):
+            with self.subTest(session=label):
+                before_history, before_audit = self._history(), self._audit_actions()
+                response = self.client.post(
+                    "/api/v1/governance/publish", json=self.DENY_ALL,
+                    headers=_session(ADMIN, amr=amr),
+                )
+                self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+                self.assertEqual(response.get_json()["required_auth"], "password")
+                self.assertEqual(self._history(), before_history)
+                self.assertEqual(self._audit_actions(), before_audit)
+
+    def test_a_password_admin_publishes(self):
+        response = self.client.post(
+            "/api/v1/governance/publish", json={"note": "template"}, headers=_session(ADMIN),
+        )
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["boundary"]["published_by"], ADMIN)
+
+    def test_the_key_alone_still_publishes(self):
+        """seed_full_board.py publishes this way; it has no session to ask about."""
+        response = self.client.post(
+            "/api/v1/governance/publish", json={"author": "seed-script"},
+            headers={"X-VF-API-Key": TEST_KEY},
+        )
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
 
 
 class TestWhoami(unittest.TestCase):
@@ -410,7 +484,7 @@ class TestRoutePolicy(unittest.TestCase):
         self.assertEqual(by_path[("/api/v1/billing/usage", ("GET",))], "operator")
         self.assertEqual(by_path[("/api/v1/governance/publish", ("POST",))], "governance_admin")
 
-    def test_only_the_board_reset_and_the_two_policy_kill_switches_ask_for_a_password(self):
+    def test_only_the_board_reset_and_the_policy_writes_ask_for_a_password(self):
         """
         The flag survives the rate limiter and the role decorator above it, and it
         is on exactly the routes it was put on. Widening it would quietly take a
@@ -419,10 +493,13 @@ class TestRoutePolicy(unittest.TestCase):
         Revoke and the prefilter PUT joined the reset because each one changes the
         demo for every visitor after the person who pressed it: a revoked boundary
         suspends the agent, an emptied blacklist clears what it should hold.
+        Publish joined them after review finding A01: replacing the shared boundary
+        with one that permits nothing suspends the agent too.
         """
         flagged = {r["path"] for r in self.rows if r["requires_password_session"]}
         self.assertEqual(flagged, {
             "/api/v1/orchestrator/reset",
+            "/api/v1/governance/publish",
             "/api/v1/governance/revoke",
             "/api/v1/governance/prefilter-rules",
         })

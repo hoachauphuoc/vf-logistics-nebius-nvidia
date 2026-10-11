@@ -34,7 +34,9 @@ Three properties are deliberate:
 
 from __future__ import annotations
 
+import math
 import os
+import re
 from typing import Any
 
 from vf_logistics import tools
@@ -107,6 +109,206 @@ def proposed_boundary(reason: str = "Initial delegation proposal") -> dict[str, 
     }
 
 
+# --------------------------------------------------------------------------
+# Permissions schema
+# --------------------------------------------------------------------------
+
+# The triggers _human_triggers() can actually detect. A name outside this set
+# would be stored, displayed, and never fire.
+KNOWN_HUMAN_TRIGGERS = frozenset({
+    "score_disputed",
+    "injection_detected",
+    "forbidden_field_attempted",
+    "compliance_blocked",
+    "exposure_claim_unsupported",
+})
+
+# release_shipment is governed by auto_release, not by allowed_actions: check()
+# skips the allowed_actions test for it. Listing it there would look like a grant
+# and do nothing, so it is refused rather than silently ignored.
+_LISTABLE_ACTIONS = frozenset(PROTECTED_ACTIONS - {"release_shipment"})
+
+_TOP_LEVEL_KEYS = frozenset({
+    "allowed_actions", "auto_release", "require_human_when", "sar_filing", "reason",
+})
+_AUTO_RELEASE_KEYS = frozenset({
+    "permitted",
+    "max_declared_value_usd",
+    "max_effective_risk",
+    "require_zero_deterministic_findings",
+    "forbidden_hs_prefixes",
+    "forbidden_destinations",
+})
+_SAR_KEYS = frozenset({"may_draft", "may_file"})
+_HS_PREFIX = re.compile(r"^\d{4}$")
+_MAX_LIST = 200
+_MAX_TEXT = 500
+
+
+class BoundaryValidationError(ValueError):
+    """A permissions object that does not match the schema. Carries every error."""
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = errors
+        super().__init__("invalid permissions: " + "; ".join(errors))
+
+
+def _is_number(value: Any) -> bool:
+    # bool is an int subclass in Python, and True as a value ceiling means 1.
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
+def _string_list(
+    value: Any, where: str, errors: list[str], allowed: frozenset[str] | None = None,
+) -> list[str]:
+    if not isinstance(value, list):
+        errors.append(f"{where} must be a list of strings")
+        return []
+    if len(value) > _MAX_LIST:
+        errors.append(f"{where} has {len(value)} entries; at most {_MAX_LIST}")
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            errors.append(f"{where} entries must be non-empty strings, got {item!r}")
+        elif allowed is not None and item not in allowed:
+            errors.append(f"{where} has unknown entry {item!r}")
+        else:
+            out.append(item)
+    if len(set(out)) != len(out):
+        errors.append(f"{where} has duplicate entries")
+    return out
+
+
+def validate_permissions(permissions: Any) -> list[str]:
+    """
+    Every way `permissions` departs from the schema, or [] when it is valid.
+
+    Finding A03 of the authorization review of bd6a210: publish accepted any
+    non-empty object, and _check_release() read `permitted` by Python truthiness,
+    so {"permitted": "false"} was stored and evaluated as PERMITTED. The intent
+    "do not allow" came out as "allow". Nothing here coerces: a boolean is a JSON
+    boolean, a number is a JSON number, and a key this module does not read is an
+    error rather than a silent no-op, because a misspelt key is a control the
+    author believes is in force and is not.
+
+    Absence is allowed where absence narrows authority -- no auto_release means no
+    release, no allowed_actions means nothing else either -- and refused where it
+    would widen it: a release grant without both ceilings used to skip the
+    missing check entirely.
+    """
+    errors: list[str] = []
+    if not isinstance(permissions, dict) or not permissions:
+        return ["permissions must be a non-empty object"]
+
+    for key in sorted(set(permissions) - _TOP_LEVEL_KEYS):
+        errors.append(f"unknown key {key!r}")
+
+    if "allowed_actions" in permissions:
+        actions = permissions["allowed_actions"]
+        if isinstance(actions, list) and "release_shipment" in actions:
+            errors.append(
+                "allowed_actions may not list release_shipment; release is "
+                "governed by auto_release"
+            )
+            actions = [a for a in actions if a != "release_shipment"]
+        _string_list(actions, "allowed_actions", errors, _LISTABLE_ACTIONS)
+
+    if "require_human_when" in permissions:
+        _string_list(
+            permissions["require_human_when"], "require_human_when", errors,
+            KNOWN_HUMAN_TRIGGERS,
+        )
+
+    if "reason" in permissions:
+        reason = permissions["reason"]
+        if not isinstance(reason, str) or len(reason) > _MAX_TEXT:
+            errors.append(f"reason must be a string of at most {_MAX_TEXT} characters")
+
+    if "sar_filing" in permissions:
+        sar = permissions["sar_filing"]
+        if not isinstance(sar, dict):
+            errors.append("sar_filing must be an object")
+        else:
+            for key in sorted(set(sar) - _SAR_KEYS):
+                errors.append(f"sar_filing has unknown key {key!r}")
+            for key in _SAR_KEYS & set(sar):
+                if not isinstance(sar[key], bool):
+                    errors.append(f"sar_filing.{key} must be true or false")
+            if sar.get("may_file") is True:
+                errors.append("sar_filing.may_file cannot be delegated; the agent never files")
+
+    if "auto_release" in permissions:
+        _validate_auto_release(permissions["auto_release"], errors)
+
+    return errors
+
+
+def _validate_auto_release(rules: Any, errors: list[str]) -> None:
+    if not isinstance(rules, dict):
+        errors.append("auto_release must be an object")
+        return
+    for key in sorted(set(rules) - _AUTO_RELEASE_KEYS):
+        errors.append(f"auto_release has unknown key {key!r}")
+
+    permitted = rules.get("permitted")
+    if not isinstance(permitted, bool):
+        errors.append(
+            "auto_release.permitted is required and must be true or false "
+            f"(got {permitted!r})"
+        )
+
+    if "require_zero_deterministic_findings" in rules and not isinstance(
+        rules["require_zero_deterministic_findings"], bool
+    ):
+        errors.append("auto_release.require_zero_deterministic_findings must be true or false")
+
+    for key, low, high in (
+        ("max_effective_risk", 0, 100),
+        ("max_declared_value_usd", 0, None),
+    ):
+        if key in rules:
+            value = rules[key]
+            if not _is_number(value) or value < low or (high is not None and value > high):
+                bound = f"{low}-{high}" if high is not None else f">= {low}"
+                errors.append(f"auto_release.{key} must be a number {bound} (got {value!r})")
+        elif permitted is True:
+            # A missing ceiling used to mean "no ceiling": the check that reads
+            # it was skipped. Granting release must state both limits.
+            errors.append(f"auto_release.{key} is required when permitted is true")
+
+    if "forbidden_hs_prefixes" in rules:
+        for prefix in _string_list(
+            rules["forbidden_hs_prefixes"], "auto_release.forbidden_hs_prefixes", errors,
+        ):
+            if not _HS_PREFIX.match(prefix):
+                errors.append(
+                    f"auto_release.forbidden_hs_prefixes entry {prefix!r} must be 4 digits"
+                )
+
+    if "forbidden_destinations" in rules:
+        for dest in _string_list(
+            rules["forbidden_destinations"], "auto_release.forbidden_destinations", errors,
+        ):
+            # Matched against a lowercased destination, so an entry with a capital
+            # letter can never match and forbids nothing.
+            if dest != dest.strip().lower():
+                errors.append(
+                    f"auto_release.forbidden_destinations entry {dest!r} must be "
+                    "lowercase with no surrounding spaces"
+                )
+
+
+def require_valid_permissions(permissions: Any) -> None:
+    """Raise BoundaryValidationError unless `permissions` matches the schema."""
+    errors = validate_permissions(permissions)
+    if errors:
+        raise BoundaryValidationError(errors)
+
+
 async def publish_boundary(
     permissions: dict[str, Any], author: str, note: str,
     tenant_id: str | None = None,
@@ -121,36 +323,29 @@ async def publish_boundary(
     `permissions` must be a non-empty mapping. Publishing None or {} used to be
     accepted and silently produced an ACTIVE boundary granting whatever the
     caller's fallback supplied, which is the opposite of a safe default for the
-    one function that hands out authority.
+    one function that hands out authority. It must also match the schema
+    (validate_permissions); a mistyped grant is refused before anything is
+    written, not stored and read generously later.
     """
     if not isinstance(permissions, dict) or not permissions:
         raise ValueError(
             "permissions must be a non-empty object. To remove the agent's "
             "authority use revoke_boundary() instead."
         )
+    require_valid_permissions(permissions)
 
     store = get_store()
-    current = await store.active_boundary(tenant_id=tenant_id)
-
-    version = (current.get("version", 0) + 1) if current else 1
-    boundary = {
-        "boundary_id": f"BOUNDARY-v{version}",
-        "version": version,
-        "status": "ACTIVE",
+    # The version, id, status and `supersedes` are allotted by the store inside
+    # one transaction (review findings A02 and T01): computed here from the active
+    # boundary, a publish after a revoke reused v1 and overwrote the original.
+    boundary: dict[str, Any] = await store.publish_boundary({
         "permissions": permissions,
         "published_by": author,
         "note": note,
         "published_at": utcnow(),
-        "supersedes": current.get("boundary_id") if current else None,
-    }
+    }, tenant_id=tenant_id)
+    version = boundary["version"]
 
-    if current:
-        current["status"] = "SUPERSEDED"
-        current["superseded_at"] = utcnow()
-        current["superseded_by"] = boundary["boundary_id"]
-        await store.put_boundary(current, tenant_id=tenant_id)
-
-    await store.put_boundary(boundary, tenant_id=tenant_id)
     await store.add_audit({
         "audit_id": new_id("audit"),
         "case_id": "-",
@@ -165,6 +360,9 @@ async def publish_boundary(
             "actor_auth": author_auth,
             "note": note,
             "superseded": boundary["supersedes"],
+            # The full grant, so the append-only trail can answer "what exactly
+            # was the agent allowed to do" on its own, without the boundary record.
+            "permissions": permissions,
         },
         "at": utcnow(),
     }, tenant_id=tenant_id)
@@ -186,7 +384,9 @@ async def revoke_boundary(
     can never be mistaken for granting.
     """
     store = get_store()
-    current = await store.active_boundary(tenant_id=tenant_id)
+    # In place, in one step, and keeping the content: a revoked boundary is
+    # history an auditor reads, not a record to replace.
+    current = await store.revoke_active_boundary(author, note, tenant_id=tenant_id)
 
     if not current:
         return {
@@ -194,12 +394,6 @@ async def revoke_boundary(
             "reason": "No active boundary to revoke; the agent is already suspended.",
             "boundary": None,
         }
-
-    current["status"] = "REVOKED"
-    current["revoked_at"] = utcnow()
-    current["revoked_by"] = author
-    current["revocation_note"] = note
-    await store.put_boundary(current, tenant_id=tenant_id)
 
     await store.add_audit({
         "audit_id": new_id("audit"),
@@ -435,7 +629,7 @@ def check(
     if action == "release_shipment":
         return _check_release(case, perms, boundary)
 
-    if action == "draft_sar" and not perms.get("sar_filing", {}).get("may_draft", False):
+    if action == "draft_sar" and perms.get("sar_filing", {}).get("may_draft") is not True:
         return {
             "allowed": False,
             "reason": f"DENIED: drafting filings not delegated under {boundary['boundary_id']}",
@@ -464,33 +658,42 @@ def _check_release(
     def deny(reason: str) -> dict[str, Any]:
         return {"allowed": False, "reason": f"DENIED: {reason}", "boundary_version": version}
 
-    if not rules.get("permitted", False):
+    # `is True`, not truthiness. A stored {"permitted": "false"} is a non-empty
+    # string and used to read as a grant (review finding A03). publish now refuses
+    # it, and this refuses it again for anything already in the store.
+    if rules.get("permitted") is not True:
         return deny("auto-release not delegated")
 
     shipment = case.get("shipment") or {}
     validation = case.get("validation") or {}
     reconciliation = case.get("reconciliation") or {}
 
-    risk = case.get("risk_score")
+    # Both ceilings must be stated numbers. An absent one used to skip its
+    # check, so a grant that forgot a limit had none.
     ceiling = rules.get("max_effective_risk")
-    if ceiling is not None and (risk is None or risk > ceiling):
+    max_value = rules.get("max_declared_value_usd")
+    if not _is_number(ceiling) or not _is_number(max_value):
+        return deny("auto-release grant does not state both a risk and a value ceiling")
+    risk_ceiling, value_ceiling = float(ceiling), float(max_value)
+
+    risk = case.get("risk_score")
+    if not _is_number(risk) or float(risk) > risk_ceiling:
         return deny(f"effective risk {risk} exceeds delegated ceiling {ceiling}")
 
-    if rules.get("require_zero_deterministic_findings", True):
+    if rules.get("require_zero_deterministic_findings", True) is not False:
         count = validation.get("finding_count", 0)
         if count:
             return deny(f"{count} deterministic finding(s) present")
 
-    if not reconciliation.get("auto_clear_permitted", False):
+    if reconciliation.get("auto_clear_permitted") is not True:
         return deny("deterministic validation vetoed auto-clear")
 
     try:
         value = float(shipment.get("declared_value") or 0)
     except (TypeError, ValueError):
         value = 0.0
-    max_value = rules.get("max_declared_value_usd")
-    if max_value is not None and value > max_value:
-        return deny(f"declared value {value:,.0f} USD exceeds delegated {max_value:,.0f} USD")
+    if value > value_ceiling:
+        return deny(f"declared value {value:,.0f} USD exceeds delegated {value_ceiling:,.0f} USD")
 
     hs = "".join(ch for ch in str(shipment.get("hs_code") or "") if ch.isdigit())[:4]
     if hs and hs in set(rules.get("forbidden_hs_prefixes", [])):
@@ -534,6 +737,9 @@ async def simulate_boundary(
     """
     if not isinstance(candidate_permissions, dict) or not candidate_permissions:
         raise ValueError("candidate permissions must be a non-empty object")
+    # The same schema as publish, so a preview cannot describe a boundary that
+    # publishing would then refuse -- or, worse, one it would read differently.
+    require_valid_permissions(candidate_permissions)
 
     store = get_store()
     current = await store.active_boundary(tenant_id=tenant_id)
