@@ -34,6 +34,8 @@
  * available in both Node and Edge runtimes with no polyfill.
  */
 
+import { oneClickJudge } from "./one-click";
+
 const COOKIE_NAME = "vf_session";
 
 /**
@@ -248,6 +250,16 @@ export async function verifySession(
       typeof session.amr === "string" && SIGN_IN_METHODS.has(session.amr)
         ? session.amr
         : undefined;
+    // A guest token is honoured only while the guest door is open. Without this,
+    // VF_ONE_CLICK_JUDGE=false stopped new guest sign-ins while every guest
+    // already signed in kept a four-hour session (authorization review finding
+    // S01). Checked on every verification, so closing the door -- or reaching
+    // VF_ONE_CLICK_UNTIL -- turns every guest back into an anonymous visitor at
+    // once. Flask applies the same rule (auth.one_click_sessions_allowed).
+    if (amr === "one_click") {
+      const judge = oneClickJudge();
+      if (!judge || judge.email !== session.email.trim().toLowerCase()) return null;
+    }
     return amr
       ? { email: session.email, exp: session.exp, amr }
       : { email: session.email, exp: session.exp };

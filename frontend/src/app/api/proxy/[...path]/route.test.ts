@@ -105,6 +105,9 @@ describe("Clear board needs a password sign-in", () => {
     vi.stubEnv("VF_API_KEY", "console-secret-key");
     vi.stubEnv("VF_SESSION_SECRET", SECRET);
     vi.stubEnv("FLASK_API_BASE", "http://127.0.0.1:9090");
+    // A guest token is honoured only while the guest door is open (finding S01).
+    vi.stubEnv("VF_ONE_CLICK_JUDGE", "true");
+    vi.stubEnv("VF_ONE_CLICK_EMAIL", "guest-judge@vf-logistics.demo");
     spy = vi.fn(async () => Response.json({ cleared: 3 }));
     globalThis.fetch = spy as unknown as typeof fetch;
   });
@@ -154,6 +157,8 @@ describe("The policy writes need a password sign-in too", () => {
   beforeEach(() => {
     vi.stubEnv("VF_API_KEY", "console-secret-key");
     vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    vi.stubEnv("VF_ONE_CLICK_JUDGE", "true");
+    vi.stubEnv("VF_ONE_CLICK_EMAIL", "guest-judge@vf-logistics.demo");
     vi.stubEnv("FLASK_API_BASE", "http://127.0.0.1:9090");
     spy = vi.fn(async () => Response.json({ ok: true }));
     globalThis.fetch = spy as unknown as typeof fetch;
@@ -225,5 +230,15 @@ describe("The policy writes need a password sign-in too", () => {
       params("governance/simulate"),
     );
     expect(response.status).toBe(200);
+  });
+
+  it("treats a guest cookie as signed out once the guest door is closed", async () => {
+    // Finding S01: the cookie was minted while the door was open, and closing
+    // the door must end it rather than only stopping the next guest.
+    const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
+    vi.stubEnv("VF_ONE_CLICK_JUDGE", "false");
+    const response = await publish(token);
+    expect(response.status).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
   });
 });

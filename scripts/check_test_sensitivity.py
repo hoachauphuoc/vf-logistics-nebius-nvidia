@@ -361,6 +361,28 @@ MUTATIONS = [
         "return boundary_id",
         "tests/test_boundary_history.py::TestTenantsDoNotShareASlot",
     ),
+    # Findings S01 and A04.
+    (
+        "S01: a guest token outlives the guest door being closed",
+        "src/vf_logistics/auth.py",
+        "if method == ONE_CLICK_SESSION and not one_click_sessions_allowed(normalised):",
+        "if False:",
+        "tests/test_console_session.py::TestClosingTheGuestDoorEndsGuestSessions",
+    ),
+    (
+        "A04: the shared sign-in ledger never says limited",
+        "src/vf_logistics/store.py",
+        "            limited = len(stamps) >= limit",
+        "            limited = False",
+        "tests/test_login_throttle.py::TestTheLedger",
+    ),
+    (
+        "A04: a signed-in operator may consult and burn the sign-in ledger",
+        "src/vf_logistics/app.py",
+        "if context is None or not context.is_service_identity or context.via_session:",
+        "if context is None:",
+        "tests/test_login_throttle.py::TestTheRoute",
+    ),
 ]
 
 

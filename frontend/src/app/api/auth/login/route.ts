@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { flaskBase } from "@/lib/config";
+import { canonicalEmail, isLoginRateLimited } from "@/lib/login-limit";
 import { verifyOperator } from "@/lib/operators";
-import { clientIp, slidingWindowLimiter } from "@/lib/rate-limit";
 import { cookieOptions, COOKIE_NAME, signSession, TTL_SECONDS } from "@/lib/session";
 
 /**
@@ -13,12 +14,6 @@ import { cookieOptions, COOKIE_NAME, signSession, TTL_SECONDS } from "@/lib/sess
 export const runtime = "nodejs";
 
 const REJECTED = "Email or password is incorrect.";
-
-// Keyed on (IP, email): per-IP so a single source cannot exhaust the CPU with
-// PBKDF2 iterations, and per-email so a distributed credential-stuff against
-// one account is also bounded. Both halves must be present, because email-only
-// keys let an attacker lock out a legitimate user by spraying their address.
-const isRateLimited = slidingWindowLimiter(60_000, 5);
 
 export async function POST(request: Request) {
   let email = "";
@@ -32,7 +27,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: REJECTED }, { status: 400 });
   }
 
-  if (!email || !password) {
+  // Normalised once, here, and this one value is what is both counted and
+  // checked -- see lib/login-limit.ts for the bypass two normalisations allowed.
+  const account = canonicalEmail(email);
+  if (!account || !password) {
     return NextResponse.json({ error: REJECTED }, { status: 400 });
   }
 
@@ -41,14 +39,14 @@ export async function POST(request: Request) {
   // enumeration via timing) is also skipped, but timing on a 429 is not a
   // signal because the response is instant regardless of whether the email
   // exists, and the status code already says "you are being throttled".
-  if (isRateLimited(`${clientIp(request)}|${email.toLowerCase()}`)) {
+  if (await isLoginRateLimited(account, request, flaskBase(), process.env.VF_API_KEY)) {
     return NextResponse.json(
       { error: "Too many login attempts. Try again in a minute." },
       { status: 429 },
     );
   }
 
-  const verified = await verifyOperator(email, password);
+  const verified = await verifyOperator(account, password);
   if (!verified) {
     return NextResponse.json({ error: REJECTED }, { status: 401 });
   }

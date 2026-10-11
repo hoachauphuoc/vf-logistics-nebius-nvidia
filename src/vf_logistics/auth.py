@@ -27,8 +27,10 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable
 
@@ -91,6 +93,50 @@ PASSWORD_SESSION = "password"
 ONE_CLICK_SESSION = "one_click"
 UNKNOWN_SESSION = "unknown"
 _SESSION_METHODS = frozenset({PASSWORD_SESSION, ONE_CLICK_SESSION})
+
+_ONE_CLICK_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+$")
+
+
+def one_click_sessions_allowed(email: str, now: float | None = None) -> bool:
+    """
+    Whether a one-click session for `email` may still be honoured.
+
+    Review finding S01: VF_ONE_CLICK_JUDGE=false closed the guest door for NEW
+    sign-ins only. A guest already signed in kept a valid four-hour session,
+    because verification never looked at the switch -- so "stop guest access now"
+    at the end of judging, or during an incident, did not stop it.
+
+    Read on every verification rather than at sign-in, so turning the switch off
+    (or reaching VF_ONE_CLICK_UNTIL) refuses every guest token at once, on every
+    instance of the revision that carries the new value. The email must also be
+    the configured guest account: renaming that account retires the old one's
+    tokens rather than leaving them valid under a name nobody configures.
+
+    MUST MATCH frontend/src/lib/one-click.ts (oneClickJudge), which applies the
+    same three variables to the same decision in the console. The one deliberate
+    difference is that a VF_ONE_CLICK_UNTIL Python cannot parse closes the door
+    here even if JavaScript's laxer Date.parse would have read it -- the safe
+    direction for a disagreement.
+    """
+    if os.getenv("VF_ONE_CLICK_JUDGE", "").strip().lower() != "true":
+        return False
+
+    configured = os.getenv("VF_ONE_CLICK_EMAIL", "").strip().lower()
+    if not _ONE_CLICK_EMAIL.match(configured) or (email or "").strip().lower() != configured:
+        return False
+
+    until = os.getenv("VF_ONE_CLICK_UNTIL", "").strip()
+    if until:
+        try:
+            # A bare date is midnight UTC, as Date.parse reads it.
+            end = datetime.fromisoformat(until.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if (time.time() if now is None else now) >= end.timestamp():
+            return False
+    return True
 
 
 def console_session_secret() -> str | None:
@@ -194,7 +240,13 @@ def _console_session_claims() -> tuple[str, str] | None:
 
     amr = claims.get("amr")
     method = amr if isinstance(amr, str) and amr in _SESSION_METHODS else UNKNOWN_SESSION
-    return email.strip().lower(), method
+    normalised = email.strip().lower()
+    # A guest token is honoured only while the guest door is open (finding S01).
+    # Refused here, with every other verification failure, so a closed door makes
+    # a keyed request carrying an old guest token a 401 rather than a viewer.
+    if method == ONE_CLICK_SESSION and not one_click_sessions_allowed(normalised):
+        return None
+    return normalised, method
 
 
 class Role(str, Enum):
@@ -551,8 +603,9 @@ def _api_key_context() -> AuthContext | None:
                 "API must be configured with the same secret."
             )
         raise InvalidConsoleSession(
-            "The X-VF-Session header did not verify: it is expired, malformed, or "
-            "signed with a different secret. Sign in again."
+            "The X-VF-Session header did not verify: it is expired, malformed, "
+            "signed with a different secret, or a guest session issued before "
+            "guest sign-in was closed. Sign in again."
         )
 
     return AuthContext(

@@ -1129,6 +1129,19 @@ Trail can tag what was done from the public guest session. The button is off unl
 cannot parse closes it too. The session lasts four hours, and the route is POST-only and
 rate-limited to 10 a minute per address.
 
+Closing the door ends the guest sessions already issued, not only new ones. Both the
+console and the API re-read `VF_ONE_CLICK_*` on every request and refuse a `one_click`
+token once the door is closed, the end date has passed, or the token names an account
+other than `VF_ONE_CLICK_EMAIL`. Changing a variable creates a new revision, so the
+cut-off takes effect as soon as Cloud Run moves traffic to it. Password sessions are not
+affected.
+
+Password sign-in is limited twice, before PBKDF2 runs: 5 attempts a minute per account
+and 20 per source address. The email is normalised once (trimmed and lower-cased) and that
+one value is both counted and checked. The count lives on the API's shared ledger
+(`/internal/login-throttle`, Firestore collection `login_throttle`), so every instance
+spends one allowance; if the ledger cannot answer, each instance falls back to its own.
+
 ### Creating your own account
 
 There is no self-service sign-up. Accounts live in `VF_OPERATORS` as

@@ -47,6 +47,10 @@ ROLE_ENV = {
     "ADMIN_EMAILS": ADMIN,
     "OPERATOR_EMAILS": OPERATOR,
     "REVIEWER_EMAILS": REVIEWER,
+    # The one-click tests below mint a guest session for ADMIN; a guest token is
+    # honoured only while the guest door is open for that account (finding S01).
+    "VF_ONE_CLICK_JUDGE": "true",
+    "VF_ONE_CLICK_EMAIL": ADMIN,
 }
 
 

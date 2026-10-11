@@ -38,8 +38,10 @@ Hackathon: Nebius x NVIDIA Global AI Hackathon
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -158,6 +160,17 @@ def _owned_by(doc: dict[str, Any] | None, tenant_id: str) -> bool:
     return owner == tenant_id
 
 
+def _throttle_id(tenant_id: str, key: str) -> str:
+    """
+    The document id for a rate-limit counter.
+
+    Hashed so a stored counter does not carry the email address or IP it counts:
+    the collection exists to say "too many attempts", not to keep a log of who
+    tried to sign in.
+    """
+    return hashlib.sha256(f"{tenant_id}\x00{key}".encode("utf-8")).hexdigest()
+
+
 def _within_window(
     created_at: Any, since: str | None, until: str | None
 ) -> bool:
@@ -243,6 +256,7 @@ class MemoryStore:
         # the record that carried it were ever removed.
         self._boundary_counters: dict[str, int] = {}
         self._prefilter: dict[str, dict[str, Any]] = {}
+        self._throttle: dict[str, list[float]] = {}
         self._lock = threading.Lock()
 
     # -- pre-filter rules --------------------------------------------------
@@ -270,6 +284,31 @@ class MemoryStore:
         scope = tenant.resolve(tenant_id)
         with self._lock:
             self._prefilter[scope] = dict(rules)
+
+    # -- shared rate limits -----------------------------------------------
+
+    async def hit_rate_limit(
+        self, key: str, window_seconds: int, limit: int, tenant_id: str | None = None,
+    ) -> bool:
+        """
+        True when `key` has already used `limit` attempts in the last
+        `window_seconds`; otherwise record this attempt and return False.
+
+        Review finding A04: the console's sign-in limiter was a Map in each Node
+        process, so every Cloud Run instance had its own allowance. Counting here
+        puts every instance on one ledger. A refused attempt is not recorded, so
+        waiting out the window is always enough to get back in.
+        """
+        scope = tenant.resolve(tenant_id)
+        doc = _throttle_id(scope, key)
+        now = time.time()
+        with self._lock:
+            stamps = [s for s in self._throttle.get(doc, []) if s > now - window_seconds]
+            limited = len(stamps) >= limit
+            if not limited:
+                stamps.append(now)
+            self._throttle[doc] = stamps
+            return limited
 
     # -- delegation boundaries --------------------------------------------
 
@@ -856,6 +895,7 @@ class FirestoreStore:
         self._boundaries = self._db.collection("delegation_boundaries")
         self._boundary_counters = self._db.collection("boundary_counters")
         self._prefilter = self._db.collection("prefilter_rules")
+        self._throttle = self._db.collection("login_throttle")
 
     # -- delegation boundaries --------------------------------------------
 
@@ -899,6 +939,44 @@ class FirestoreStore:
         payload = dict(rules)
         _stamp_tenant(payload, scope)
         await asyncio.to_thread(self._prefilter.document(scope).set, payload)
+
+    async def hit_rate_limit(
+        self, key: str, window_seconds: int, limit: int, tenant_id: str | None = None,
+    ) -> bool:
+        """
+        MemoryStore.hit_rate_limit, as one transaction on one document per key.
+
+        The document carries an `expire_at` timestamp so a Firestore TTL policy on
+        login_throttle.expire_at can delete idle counters; without one they are a
+        few hundred bytes each and simply stay.
+        """
+        scope = tenant.resolve(tenant_id)
+        ref = self._throttle.document(_throttle_id(scope, key))
+
+        def _txn() -> bool:
+            @self._fs.transactional
+            def _do(t: Any) -> bool:
+                snap = ref.get(transaction=t)
+                now = time.time()
+                stored = (snap.to_dict() or {}).get("stamps") if snap.exists else None
+                stamps = [
+                    float(s) for s in (stored or [])
+                    if isinstance(s, (int, float)) and s > now - window_seconds
+                ]
+                if len(stamps) >= limit:
+                    return True
+                stamps.append(now)
+                t.set(ref, {
+                    "stamps": stamps,
+                    "expire_at": datetime.fromtimestamp(now + window_seconds, timezone.utc),
+                    TENANT_FIELD: scope,
+                })
+                return False
+
+            result: bool = _do(self._db.transaction())
+            return result
+
+        return await asyncio.to_thread(_txn)
 
     async def put_boundary(
         self, boundary: dict[str, Any], tenant_id: str | None = None

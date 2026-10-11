@@ -1842,6 +1842,63 @@ def review_document(case_id: str):
 # The separation is enforced by IAM, not by this file. If the analysis runtime
 # were subverted and tried to publish directly, Google refuses it.
 
+@app.route("/internal/login-throttle", methods=["POST"])
+@require_operator
+# Exempt from the per-identity default limit: every console sign-in arrives here
+# as the one service identity, so the default bucket would throttle all sign-ins
+# together and turn the shared counter into the thing that locks people out.
+@limiter.exempt
+def internal_login_throttle() -> Any:
+    """
+    One shared sign-in attempt counter for every console instance.
+
+    Review finding A04: the console counted attempts in a Map in each Node
+    process, so the configured limit was really "per instance". The console's
+    login route now asks here, and FirestoreStore keeps one ledger for all of them.
+
+    Reachable only from the console's server: Flask binds 127.0.0.1, and the
+    console forwards neither /internal/* nor this route. It is also refused to
+    anything but the service identity (the key alone), so a signed-in person
+    holding operator cannot use it to probe or exhaust someone else's allowance.
+
+    Body: {"checks": [{"key": str, "limit": int, "window_seconds": int}, ...]}
+    Each check is counted independently; the answer is limited if any one is.
+    """
+    context = get_auth_context()
+    if context is None or not context.is_service_identity or context.via_session:
+        return jsonify({"error": "service identity only"}), 403
+
+    body = request.get_json(silent=True) or {}
+    checks = body.get("checks")
+    if not isinstance(checks, list) or not 1 <= len(checks) <= 4:
+        return jsonify({"error": "checks must be a list of 1-4 objects"}), 400
+
+    parsed: list[tuple[str, int, int]] = []
+    for check in checks:
+        if not isinstance(check, dict):
+            return jsonify({"error": "each check must be an object"}), 400
+        key, limit, window = check.get("key"), check.get("limit"), check.get("window_seconds")
+        if (
+            not isinstance(key, str) or not 1 <= len(key) <= 300
+            or not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000
+            or not isinstance(window, int) or isinstance(window, bool) or not 1 <= window <= 3600
+        ):
+            return jsonify({"error": "each check needs key (str), limit (1-1000) and window_seconds (1-3600)"}), 400
+        parsed.append((key, limit, window))
+
+    try:
+        from vf_logistics.store import get_store
+
+        store = get_store()
+        results = [
+            _on_worker(store.hit_rate_limit(key, window, limit, tenant_id=_tenant()))
+            for key, limit, window in parsed
+        ]
+        return jsonify({"limited": any(results), "results": results})
+    except Exception as e:
+        return _safe_error(e)
+
+
 @app.route("/internal/execute", methods=["POST"])
 @require_operator
 @limiter.limit("60 per minute")

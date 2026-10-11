@@ -45,3 +45,46 @@ export function slidingWindowLimiter(windowMs: number, limit: number): Limiter {
 export function clientIp(request: Request): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }
+
+/** One counter to consult: `limit` attempts per `windowSeconds` for `key`. */
+export type LimitCheck = { key: string; limit: number; windowSeconds: number };
+
+/** How long to wait for the shared counter before falling back to the local one. */
+export const SHARED_LIMIT_TIMEOUT_MS = 3_000;
+
+/**
+ * Ask Flask's shared counter whether any of `checks` is over its limit.
+ *
+ * Review finding A04: the per-instance Map above made the configured limit a
+ * per-instance limit. Flask keeps one ledger for every console instance (in
+ * Firestore on the deployed service), reached over the loopback with the
+ * console's own key -- `/internal/login-throttle` is not forwarded to browsers.
+ *
+ * Returns null when the shared counter cannot answer (unconfigured key, Flask
+ * down, a timeout, an unexpected reply). The caller then uses its local limiter,
+ * so a slow Flask degrades the limit to per-instance rather than either locking
+ * everyone out or letting every attempt through.
+ */
+export async function sharedLimited(
+  checks: LimitCheck[],
+  base: string,
+  apiKey: string | undefined,
+): Promise<boolean | null> {
+  if (!apiKey) return null;
+  try {
+    const response = await fetch(`${base}/internal/login-throttle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-VF-API-Key": apiKey },
+      body: JSON.stringify({
+        checks: checks.map((c) => ({ key: c.key, limit: c.limit, window_seconds: c.windowSeconds })),
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(SHARED_LIMIT_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { limited?: unknown };
+    return typeof body.limited === "boolean" ? body.limited : null;
+  } catch {
+    return null;
+  }
+}

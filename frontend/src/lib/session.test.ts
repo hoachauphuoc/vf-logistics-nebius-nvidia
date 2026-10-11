@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isPasswordSession, signSession, tokenFromCookieHeader, verifySession } from "./session";
 
+const GUEST = "guest@x.example";
+
+/** Open the guest door for GUEST, the way VF_ONE_CLICK_* does on the service. */
+function openGuestDoor(email: string = GUEST) {
+  vi.stubEnv("VF_ONE_CLICK_JUDGE", "true");
+  vi.stubEnv("VF_ONE_CLICK_EMAIL", email);
+}
+
 /**
  * The `amr` claim on the console session: how someone signed in.
  *
@@ -32,12 +40,15 @@ async function signedBody(body: object): Promise<string> {
 }
 
 describe("sign-in method on the session", () => {
-  beforeEach(() => vi.stubEnv("VF_SESSION_SECRET", SECRET));
+  beforeEach(() => {
+    vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    openGuestDoor();
+  });
   afterEach(() => vi.unstubAllEnvs());
 
   it("round-trips both methods", async () => {
     const password = await verifySession(await signSession("a@x.example", "password"));
-    const oneClick = await verifySession(await signSession("b@x.example", "one_click"));
+    const oneClick = await verifySession(await signSession(GUEST, "one_click"));
     expect(password?.amr).toBe("password");
     expect(oneClick?.amr).toBe("one_click");
     expect(isPasswordSession(password)).toBe(true);
@@ -65,7 +76,7 @@ describe("sign-in method on the session", () => {
   });
 
   it("honours a shorter lifetime for the one-click session", async () => {
-    const session = await verifySession(await signSession("g@x.example", "one_click", 60));
+    const session = await verifySession(await signSession(GUEST, "one_click", 60));
     const now = Math.floor(Date.now() / 1000);
     expect(session?.exp).toBeGreaterThan(now);
     expect(session?.exp).toBeLessThanOrEqual(now + 61);
@@ -75,5 +86,45 @@ describe("sign-in method on the session", () => {
     expect(tokenFromCookieHeader("a=1; vf_session=abc.def; b=2")).toBe("abc.def");
     expect(tokenFromCookieHeader("a=1")).toBeNull();
     expect(tokenFromCookieHeader(null)).toBeNull();
+  });
+});
+
+/**
+ * Review finding S01: closing the guest door used to stop only NEW guest
+ * sign-ins. A guest already signed in kept a four-hour session, because
+ * verification never looked at VF_ONE_CLICK_*.
+ */
+describe("closing the guest door ends guest sessions", () => {
+  beforeEach(() => {
+    vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    openGuestDoor();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("refuses a guest token minted while the door was open, once it is switched off", async () => {
+    const token = await signSession(GUEST, "one_click");
+    expect(await verifySession(token)).not.toBeNull();
+    vi.stubEnv("VF_ONE_CLICK_JUDGE", "false");
+    expect(await verifySession(token)).toBeNull();
+  });
+
+  it("refuses it once the end date has passed", async () => {
+    const token = await signSession(GUEST, "one_click");
+    vi.stubEnv("VF_ONE_CLICK_UNTIL", "2020-01-01");
+    expect(await verifySession(token)).toBeNull();
+  });
+
+  it("refuses a guest token for an account that is no longer the guest", async () => {
+    const token = await signSession(GUEST, "one_click");
+    openGuestDoor("new-guest@x.example");
+    expect(await verifySession(token)).toBeNull();
+  });
+
+  it("leaves password and legacy sessions alone", async () => {
+    const password = await signSession("a@x.example", "password");
+    const legacy = await signedBody({ email: "a@x.example", exp: Math.floor(Date.now() / 1000) + 60 });
+    vi.stubEnv("VF_ONE_CLICK_JUDGE", "false");
+    expect((await verifySession(password))?.email).toBe("a@x.example");
+    expect((await verifySession(legacy))?.email).toBe("a@x.example");
   });
 });

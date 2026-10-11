@@ -70,6 +70,11 @@ TEST_SECRET = "test-session-secret-do-not-ship-0123456789abcdef"
 
 PERSON = "reviewer@forwarder.example"
 
+# The guest door, open for PERSON. A one-click token is honoured only while
+# VF_ONE_CLICK_* says the door is open and names that account (finding S01), so
+# the tests that mint one for PERSON run with it open unless they close it.
+ONE_CLICK_OPEN = {"VF_ONE_CLICK_JUDGE": "true", "VF_ONE_CLICK_EMAIL": PERSON}
+
 
 def b64url(raw: bytes) -> str:
     """Unpadded base64url, matching what frontend/src/lib/session.ts emits."""
@@ -123,6 +128,7 @@ def context_for(headers: dict[str, str], **env: str):
         "VF_SESSION_SECRET": TEST_SECRET,
         "IAP_ENABLED": "false",
         "MULTI_TENANT": "false",
+        **ONE_CLICK_OPEN,
     }
     base_env.update(env)
 
@@ -527,6 +533,69 @@ class TestSignInMethod(unittest.TestCase):
         self.assertEqual(anon_ctx.actor_auth, "anonymous")
 
 
+class TestClosingTheGuestDoorEndsGuestSessions(unittest.TestCase):
+    """
+    Finding S01 of the authorization review of bd6a210.
+
+    VF_ONE_CLICK_JUDGE=false stopped new guest sign-ins, and every guest already
+    signed in kept a valid four-hour session: verification never looked at the
+    switch. The guest token is now honoured only while the door is open, checked
+    on every request.
+    """
+
+    def _refused(self, token: str, **env: str) -> None:
+        ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": token}, **env)
+        self.assertIsNone(ctx)
+        self.assertIsNotNone(error)
+        self.assertEqual(error[1], 401)
+
+    def test_an_open_door_honours_the_guest(self):
+        ctx, error = context_for({"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(amr="one_click")})
+        self.assertIsNone(error)
+        self.assertEqual(ctx.session_method, auth.ONE_CLICK_SESSION)
+
+    def test_switching_it_off_refuses_a_token_minted_while_it_was_on(self):
+        token = mint(amr="one_click")
+        for value in ("false", "", "no"):
+            with self.subTest(VF_ONE_CLICK_JUDGE=value):
+                self._refused(token, VF_ONE_CLICK_JUDGE=value)
+
+    def test_reaching_the_end_date_refuses_it(self):
+        self._refused(mint(amr="one_click"), VF_ONE_CLICK_UNTIL="2020-01-01")
+
+    def test_an_unreadable_end_date_closes_the_door(self):
+        self._refused(mint(amr="one_click"), VF_ONE_CLICK_UNTIL="after judging")
+
+    def test_a_future_end_date_keeps_it(self):
+        ctx, error = context_for(
+            {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(amr="one_click")},
+            VF_ONE_CLICK_UNTIL="2999-01-01",
+        )
+        self.assertIsNone(error)
+        self.assertEqual(ctx.email, PERSON)
+
+    def test_renaming_the_guest_account_retires_the_old_ones_tokens(self):
+        self._refused(mint(amr="one_click"), VF_ONE_CLICK_EMAIL="new-guest@forwarder.example")
+
+    def test_password_sessions_are_untouched_by_the_guest_switch(self):
+        """Only the guest door closes. Nobody outside its scope is signed out."""
+        for token in (mint(amr="password"), mint(amr=None)):
+            ctx, error = context_for(
+                {"X-VF-API-Key": TEST_KEY, "X-VF-Session": token}, VF_ONE_CLICK_JUDGE="false",
+            )
+            self.assertIsNone(error)
+            self.assertEqual(ctx.email, PERSON)
+
+    def test_the_end_date_is_read_as_utc_midnight(self):
+        """As Date.parse reads a bare date, so the two halves close at the same instant."""
+        import datetime as dt
+
+        midnight = dt.datetime(2026, 12, 16, tzinfo=dt.timezone.utc).timestamp()
+        with patch.dict(os.environ, {**ONE_CLICK_OPEN, "VF_ONE_CLICK_UNTIL": "2026-12-16"}):
+            self.assertTrue(auth.one_click_sessions_allowed(PERSON, now=midnight - 1))
+            self.assertFalse(auth.one_click_sessions_allowed(PERSON, now=midnight))
+
+
 class TestReviewerAttribution(unittest.TestCase):
     """
     Who `POST /review/<id>/decide` records as the reviewer.
@@ -594,6 +663,7 @@ class TestReviewerAttribution(unittest.TestCase):
         env = {
             "VF_API_KEY": TEST_KEY, "VF_SESSION_SECRET": TEST_SECRET,
             "IAP_ENABLED": "false", "MULTI_TENANT": "false", "REVIEWER_EMAILS": PERSON,
+            **ONE_CLICK_OPEN,
         }
         for amr, expected in (("one_click", "one_click"), ("password", "password"), (None, "unknown")):
             with self.subTest(amr=amr):
