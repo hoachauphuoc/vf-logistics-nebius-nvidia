@@ -149,37 +149,38 @@ class TenantResolutionTests(unittest.TestCase):
     def test_ids_are_case_insensitive(self):
         self.assertEqual(tenant.validate("Acme-Freight"), "acme-freight")
 
-    def test_free_mail_does_not_become_a_shared_tenant(self):
-        """Otherwise every gmail user would read every other gmail user's data."""
-        for address in (
-            "someone@gmail.com", "x@outlook.com", "y@zohomail.com",
-            "z@protonmail.com",
-        ):
-            self.assertIsNone(tenant.tenant_from_email(address), address)
-
-    def test_corporate_domain_maps_to_a_tenant(self):
-        self.assertEqual(tenant.tenant_from_email("ops@acme.com"), "acme")
-        self.assertEqual(tenant.tenant_from_email("ops@acme.co.uk"), "acme")
+    def test_no_tenant_is_derived_from_an_email_address(self):
+        """
+        Finding T02: tenant_from_email() made acme.com and acme.net one tenant and
+        yahoo.co.jp the tenant "yahoo". Membership is declared in the registry
+        (test_membership.py); the helper is gone so nothing can call it again.
+        """
+        self.assertFalse(hasattr(tenant, "tenant_from_email"))
 
     def test_isolation_guard_refuses_the_dangerous_combination(self):
         """
-        auth.py grants GOVERNANCE_ADMIN to every request when IAP is off. With
-        real tenants behind that, a caller who can assert any identity can assert
-        any tenant, and the isolation is decoration. Failing to boot is the only
-        safe response.
+        Multi-tenant on real data with no identity source -- no IAP and no console
+        session secret -- cannot tell one organisation's caller from another's.
+        Failing to boot is the only safe response.
         """
         with patch.dict(os.environ, {
             "MULTI_TENANT": "true", "STORE_BACKEND": "firestore",
-            "IAP_ENABLED": "false",
+            "IAP_ENABLED": "false", "VF_SESSION_SECRET": "",
         }):
             with self.assertRaises(tenant.TenantIsolationError):
                 tenant.assert_isolation_is_enforceable()
 
     def test_isolation_guard_allows_the_safe_combinations(self):
+        signed = "s" * 32
         safe = [
-            {"MULTI_TENANT": "false", "STORE_BACKEND": "firestore", "IAP_ENABLED": "false"},
-            {"MULTI_TENANT": "true", "STORE_BACKEND": "firestore", "IAP_ENABLED": "true"},
-            {"MULTI_TENANT": "true", "STORE_BACKEND": "memory", "IAP_ENABLED": "false"},
+            {"MULTI_TENANT": "false", "STORE_BACKEND": "firestore", "IAP_ENABLED": "false",
+             "VF_SESSION_SECRET": ""},
+            {"MULTI_TENANT": "true", "STORE_BACKEND": "firestore", "IAP_ENABLED": "true",
+             "VF_SESSION_SECRET": ""},
+            {"MULTI_TENANT": "true", "STORE_BACKEND": "firestore", "IAP_ENABLED": "false",
+             "VF_SESSION_SECRET": signed},
+            {"MULTI_TENANT": "true", "STORE_BACKEND": "memory", "IAP_ENABLED": "false",
+             "VF_SESSION_SECRET": ""},
         ]
         for env in safe:
             with patch.dict(os.environ, env):
@@ -503,6 +504,24 @@ class RouteTenantCompletenessTests(unittest.TestCase):
         self.auth_patch = patch.object(app_mod, "get_auth_context", lambda: ctx)
         self.auth_patch.start()
         self.addCleanup(self.auth_patch.stop)
+
+        # The role decorators authenticate the request themselves. Before the
+        # membership registry (findings T02/T03) an unauthenticated request fell
+        # through to the anonymous viewer, even with MULTI_TENANT on, so they
+        # passed here; an anonymous caller now has no tenant and is refused. The
+        # walk is about handlers dropping the tenant, not about authentication,
+        # so the request is authenticated as the same tenant-A identity.
+        from flask import g
+
+        from vf_logistics import auth
+
+        def _authenticated() -> None:
+            g.auth_context = ctx
+            return None
+
+        self.authn_patch = patch.object(auth, "authenticate_request", _authenticated)
+        self.authn_patch.start()
+        self.addCleanup(self.authn_patch.stop)
 
     def _gettable_paths(self) -> list[str]:
         paths = []

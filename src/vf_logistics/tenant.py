@@ -32,12 +32,15 @@ resolved to the single implicit one.
 The guard that matters
 ----------------------
 `assert_isolation_is_enforceable()` refuses to let the process serve multi-tenant
-traffic on top of permissive auth. auth.py grants GOVERNANCE_ADMIN to every
-request when IAP_ENABLED is not "true", which is correct for local development and
-catastrophic with real tenants: a caller who can assert any identity can assert
-any tenant, and the isolation below becomes decoration. Failing to boot is the
-only safe response, because the alternative is a service that looks isolated and
-is not.
+traffic with no way to know who a caller is. Every tenant is resolved from a
+verified identity through the membership registry (membership.py), so with no
+identity source a multi-tenant Firestore service could only refuse everyone --
+or, if that refusal were ever weakened, serve them. Failing to boot is the safe
+response.
+
+Tenant ids are never derived from an email address. tenant_from_email() did
+that -- one tenant per domain's first label -- and it made acme.com and acme.net
+one customer (review finding T02). Membership is declared, not inferred.
 """
 
 from __future__ import annotations
@@ -128,14 +131,20 @@ def assert_isolation_is_enforceable() -> None:
     """
     Refuse to promise isolation the process cannot deliver.
 
-    Called at import time from app.py. Three conditions have to coincide for this
-    to raise, and when they do the service would be serving real tenants while
-    granting every anonymous caller governance_admin:
+    Called at import time from app.py. Raises when the service would hold real
+    tenants' data with no way to tell its callers apart:
 
       * MULTI_TENANT is on, so the service claims to isolate tenants
       * the store is Firestore, so the data is real rather than a test fixture
-      * IAP_ENABLED is not "true", so a caller could assert any identity -- and
-        therefore any tenant
+      * there is no identity source: IAP_ENABLED is not "true", and there is no
+        console session secret (VF_SESSION_SECRET, 32+ characters) to verify the
+        signed sessions the console forwards
+
+    The console's signed session counts because it is how this deployment
+    actually identifies people -- IAP cannot be enabled on a project with no
+    organisation -- and it is verified here with the same HMAC the console mints
+    it with. Which tenant each identity may enter is then the membership
+    registry's decision, checked by membership.assert_registry_is_usable().
 
     Raising here is deliberately worse-behaved than logging a warning. A warning
     in a startup log is a thing nobody reads until after the incident.
@@ -150,51 +159,13 @@ def assert_isolation_is_enforceable() -> None:
 
     backend = os.getenv("STORE_BACKEND", "firestore").strip().lower()
     iap_on = os.getenv("IAP_ENABLED", "false").strip().lower() == "true"
+    sessions_on = len(os.getenv("VF_SESSION_SECRET", "")) >= 32
 
-    if backend == "firestore" and not iap_on:
+    if backend == "firestore" and not (iap_on or sessions_on):
         raise TenantIsolationError(
-            "MULTI_TENANT is enabled with STORE_BACKEND=firestore but "
-            "IAP_ENABLED is not 'true'. auth.py grants GOVERNANCE_ADMIN to every "
-            "request when IAP is off, so any caller could assert any tenant and "
-            "the isolation would be decoration. Set IAP_ENABLED=true and "
-            "configure Identity-Aware Proxy, or run with STORE_BACKEND=memory "
-            "for local development."
+            "MULTI_TENANT is enabled with STORE_BACKEND=firestore but there is no "
+            "identity source: IAP_ENABLED is not 'true' and VF_SESSION_SECRET is "
+            "unset or under 32 characters. Without one the service cannot tell "
+            "which organisation a caller belongs to. Configure IAP or the console "
+            "session secret, or run with STORE_BACKEND=memory for local development."
         )
-
-
-def tenant_from_email(email: str) -> str | None:
-    """
-    Derive a tenant from an email domain.
-
-    A deliberately simple default for a first multi-tenant deployment: one
-    customer organisation per email domain. It is wrong for two situations that
-    will arrive -- a customer with several domains, and a consultant who audits
-    for several customers -- and both need an explicit user-to-tenant mapping
-    rather than a cleverer regex. Stated here so the limit is known before it is
-    discovered.
-
-    Free-mail domains return None rather than becoming a shared tenant that every
-    gmail user can read.
-    """
-    cleaned = (email or "").strip().lower()
-    if "@" not in cleaned:
-        return None
-
-    domain = cleaned.rsplit("@", 1)[1]
-    if domain in _FREE_MAIL:
-        return None
-
-    # example.co.uk -> example; example.com -> example
-    label = domain.split(".")[0]
-    candidate = re.sub(r"[^a-z0-9_-]", "-", label)
-    try:
-        return validate(candidate)
-    except TenantError:
-        return None
-
-
-_FREE_MAIL = frozenset({
-    "gmail.com", "googlemail.com", "yahoo.com", "outlook.com", "hotmail.com",
-    "live.com", "icloud.com", "proton.me", "protonmail.com", "zohomail.com",
-    "qq.com", "163.com", "yandex.ru", "mail.ru",
-})

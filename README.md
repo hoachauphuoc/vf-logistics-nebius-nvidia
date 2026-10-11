@@ -1501,6 +1501,7 @@ collection.
 |---|---|---|
 | `FLASK_API_BASE` | Backend base URL, read server-side per request. `entrypoint.sh` sets it to `http://127.0.0.1:9090` in the container; set it yourself only when running the console against a separate API. | set by `entrypoint.sh` |
 | `VF_SESSION_SECRET` | HMAC key for session cookies. Must be at least 32 characters; a shorter one is treated as absent. | unset — **required in production**, where a missing value takes the console offline rather than opening it |
+| `VF_TENANT_MEMBERS` | Multi-tenant only: JSON `{principal: {tenant: role}}`, where a principal is a console email, `iap:<subject>`, or `service` for the API key. Each request's tenant and role come from here, and a person in several organisations picks one (sent as `X-VF-Tenant`). Unlisted principals are refused. With `MULTI_TENANT=true` the service will not boot if this is empty or malformed. Keep it in Secret Manager. | unset (ignored when `MULTI_TENANT` is off) |
 | `VF_OPERATORS` | Semicolon-separated `email:iterations:salt:hash` records, PBKDF2-SHA256. Generate with `node frontend/scripts/make-operator.mjs <email> --out <dir>`, which writes the password to a file rather than printing it. | unset |
 | `VF_PUBLIC_READS` | `true` lets anonymous visitors read the console. Writes are never covered by it — the split is on the HTTP method, not a path list. Defaults to false so a deployment that forgets it is locked, not open. | `false` |
 | `VF_ONE_CLICK_JUDGE` | `true` offers the one-click guest-judge sign-in. Off unless set, like `VF_PUBLIC_READS`. | unset |

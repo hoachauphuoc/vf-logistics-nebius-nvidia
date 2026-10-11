@@ -13,6 +13,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { roleLabel, useIdentity } from "@/lib/identity";
+import { chooseTenant } from "@/lib/tenant-choice";
 import { useTenant } from "@/lib/tenant-context";
 import type { Tenant } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -20,16 +22,78 @@ import { cn } from "@/lib/utils";
 /**
  * Organisation selector.
  *
- * In live mode this is a read-only display, and that is not a limitation to
- * work around. The API derives the tenant from the authenticated identity
- * (`_tenant()` in app.py) precisely so that a caller cannot select one; making
- * this control writable would mean adding a tenant parameter to the API, which
- * is the hole tests/test_tenant_isolation.py exists to keep shut. Switching
- * tenant for real means authenticating as someone else.
+ * In live mode the API decides the tenant from the authenticated identity
+ * (`_tenant()` in app.py), and a caller cannot name an arbitrary one -- that is
+ * the hole tests/test_tenant_isolation.py exists to keep shut. What a caller CAN
+ * do, with multi-tenancy on, is choose among the organisations they are a
+ * registered member of (whoami `memberships`). The choice travels as a cookie
+ * the BFF forwards as X-VF-Tenant, and the API refuses any value outside that
+ * person's own memberships. With one membership, or multi-tenancy off, this is a
+ * read-only display.
  */
 export function TenantSwitcher({ display }: { display?: Tenant }) {
   const { tenant: selected, tenants, canSwitch, setTenantId } = useTenant();
+  const identity = useIdentity().data;
   const tenant = display ?? selected;
+  const memberships = Object.entries(identity?.memberships ?? {});
+
+  if (!canSwitch && memberships.length > 1) {
+    return (
+      <Select value={identity?.tenant_id ?? undefined} onValueChange={chooseTenant}>
+        <SelectTrigger
+          aria-label="Switch organisation"
+          className={cn(
+            "h-auto w-[15.5rem] gap-2.5 rounded-lg border-white/10 bg-black/30 px-2.5 py-1.5",
+            "transition-colors hover:border-white/20 hover:bg-black/45",
+            "[&>svg:last-child]:hidden",
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <TenantMark name={tenant.name} />
+            <span className="min-w-0 text-left">
+              <span className="block truncate text-[13px] font-medium leading-tight text-white">
+                {tenant.name}
+              </span>
+              <span className="block truncate text-[11px] leading-tight text-faint">
+                {roleLabel(identity?.role)} here · {memberships.length} organisations
+              </span>
+            </span>
+          </span>
+          <ChevronDown className="ml-auto size-3.5 shrink-0 text-dim opacity-70" aria-hidden />
+        </SelectTrigger>
+        <SelectContent
+          align="start"
+          className="w-[17rem] border-white/10 bg-[#0a0f1f]/95 backdrop-blur-xl"
+        >
+          <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+            Your organisations
+          </div>
+          {memberships.map(([id, role]) => (
+            <SelectItem
+              key={id}
+              value={id}
+              className="gap-2.5 rounded-md py-1.5 pl-2 pr-2 focus:bg-white/[0.07] [&>span:last-child]:hidden"
+            >
+              <span className="flex w-full items-center gap-2.5">
+                <TenantMark name={id} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium leading-tight text-white">
+                    {id}
+                  </span>
+                  <span className="block truncate text-[11px] leading-tight text-faint">
+                    {roleLabel(role)}
+                  </span>
+                </span>
+                {id === identity?.tenant_id ? (
+                  <Check className="size-3.5 shrink-0 text-brand" aria-hidden />
+                ) : null}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
 
   if (!canSwitch) {
     return (

@@ -42,6 +42,11 @@ export interface Identity {
    * claim existed; null without a session. Only "password" may clear the board.
    */
   session_method?: "password" | "one_click" | "unknown" | null;
+  /**
+   * The organisations this caller may switch to, with their role in each. Their
+   * own only; null when multi-tenancy is off and there is one implicit tenant.
+   */
+  memberships?: Record<string, Role> | null;
 }
 
 /** GET /api/v1/auth/policy. */

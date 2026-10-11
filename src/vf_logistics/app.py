@@ -40,6 +40,7 @@ from vf_logistics.auth import (
 
 from vf_logistics import document_store
 from vf_logistics import governance
+from vf_logistics import membership
 from vf_logistics import orchestrator
 from vf_logistics import simulator
 from vf_logistics import tenant
@@ -200,6 +201,11 @@ _IS_PRODUCTION = store_backend() == "firestore"
 # a warning on purpose: a warning in a startup log is a thing nobody reads until
 # after the incident.
 tenant.assert_isolation_is_enforceable()
+
+# Multi-tenant mode resolves every request's tenant from VF_TENANT_MEMBERS
+# (findings T02/T03). Without a usable registry every request would be refused,
+# which is safe but looks like an outage, so it is refused at boot instead.
+membership.assert_registry_is_usable()
 
 # The companion guard, and the one that would have caught what shipped. The
 # check above returns early when MULTI_TENANT is false, which it was, so it never
@@ -1925,6 +1931,13 @@ def internal_execute():
         context = get_auth_context()
         if context is not None and context.is_service_identity:
             tenant_id = body.get("tenant_id") or _tenant()
+            # With multi-tenancy on, the service may name only a tenant it is a
+            # registered member of. The one platform key used to be able to name
+            # any tenant at all (docs/ARCHITECTURE.md, known limitations).
+            if tenant.multi_tenant_enabled() and tenant.normalise(tenant_id) not in (
+                membership.memberships(membership.SERVICE_PRINCIPAL)
+            ):
+                return jsonify({"error": "the service is not a member of that tenant"}), 403
         else:
             tenant_id = _tenant()
 

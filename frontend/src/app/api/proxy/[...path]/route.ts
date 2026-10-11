@@ -18,6 +18,7 @@ import {
   tokenFromCookieHeader,
   verifySession,
 } from "@/lib/session";
+import { tenantChoiceFromCookieHeader } from "@/lib/tenant-choice";
 import { forwardedHeaders } from "@/lib/upstream";
 
 /**
@@ -72,6 +73,12 @@ function upstreamHeaders(
     // because a bare email is an assertion and this is evidence: Flask holds the
     // same VF_SESSION_SECRET and re-verifies the HMAC and the expiry itself.
     headers["X-VF-Session"] = sessionToken;
+
+    // Which of their organisations a person in several is acting in. Only with a
+    // verified session, like the key: it selects among that person's own
+    // memberships, and Flask refuses any other value (membership.resolve).
+    const tenantChoice = tenantChoiceFromCookieHeader(request.headers.get("cookie"));
+    if (tenantChoice) headers["X-VF-Tenant"] = tenantChoice;
   }
 
   // Set when the console runs behind IAP with a service credential.

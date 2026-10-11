@@ -65,6 +65,39 @@ describe("BFF credential attachment", () => {
     expect(headers.get("x-vf-session")).toBeNull();
   });
 
+  it("forwards the chosen organisation only beside a verified session", async () => {
+    // Findings T02/T03: the choice selects among the person's own memberships.
+    // Without a session there is nobody whose memberships it could select from.
+    const token = await signSession("reviewer@forwarder.example", "password");
+    await GET(
+      new Request("https://vf.example/api/proxy/review/queue", {
+        headers: { cookie: `vf_session=${token}; vf_tenant=acme` },
+      }),
+      params("review/queue"),
+    );
+    expect(sentHeaders(spy).get("x-vf-tenant")).toBe("acme");
+
+    spy.mockClear();
+    await GET(
+      new Request("https://vf.example/api/proxy/review/queue", {
+        headers: { cookie: "vf_tenant=acme" },
+      }),
+      params("review/queue"),
+    );
+    expect(sentHeaders(spy).get("x-vf-tenant")).toBeNull();
+  });
+
+  it("never forwards a malformed organisation id", async () => {
+    const token = await signSession("reviewer@forwarder.example", "password");
+    await GET(
+      new Request("https://vf.example/api/proxy/review/queue", {
+        headers: { cookie: `vf_session=${token}; vf_tenant=..%2Fother` },
+      }),
+      params("review/queue"),
+    );
+    expect(sentHeaders(spy).get("x-vf-tenant")).toBeNull();
+  });
+
   it("attaches the key and the session together for a signed-in person", async () => {
     const token = await signSession("reviewer@forwarder.example", "password");
     await GET(

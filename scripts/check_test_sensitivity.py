@@ -383,6 +383,28 @@ MUTATIONS = [
         "if context is None:",
         "tests/test_login_throttle.py::TestTheRoute",
     ),
+    # Findings T02 and T03.
+    (
+        "T02/T03: X-VF-Tenant may name a tenant the principal is not a member of",
+        "src/vf_logistics/membership.py",
+        "        if wanted not in granted:",
+        "        if False:",
+        "tests/test_membership.py::TestConsoleSessions",
+    ),
+    (
+        "T03: console sessions land in the implicit tenant again under MULTI_TENANT",
+        "src/vf_logistics/auth.py",
+        "        tenant_id, member_roles = _membership(acting)",
+        "        tenant_id, member_roles = tenant.SINGLE_TENANT_ID, _get_user_roles(acting)",
+        "tests/test_membership.py::TestConsoleSessions",
+    ),
+    (
+        "T03: the service may name any tenant on /internal/execute again",
+        "src/vf_logistics/app.py",
+        "            if tenant.multi_tenant_enabled() and tenant.normalise(tenant_id) not in (",
+        "            if False and tenant.normalise(tenant_id) not in (",
+        "tests/test_membership.py::TestRoutesSeeTheResolvedTenant",
+    ),
 ]
 
 

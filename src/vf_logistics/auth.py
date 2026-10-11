@@ -36,7 +36,7 @@ from typing import Any, Callable
 
 from flask import Response, g, jsonify, request
 
-from vf_logistics import tenant
+from vf_logistics import membership, tenant
 
 # IAP audience is the Cloud Run service URL
 IAP_AUDIENCE = os.getenv("IAP_AUDIENCE", "")
@@ -583,6 +583,17 @@ def _api_key_context() -> AuthContext | None:
     # A blank header carries no claim at all, so it is the same as none.
     presented = (request.headers.get(CONSOLE_SESSION_HEADER) or "").strip()
     if not presented:
+        if tenant.multi_tenant_enabled():
+            # The platform key is a principal like any other (finding T03): it
+            # acts only in the tenants VF_TENANT_MEMBERS lists for "service".
+            tenant_id, member_roles = _membership(membership.SERVICE_PRINCIPAL)
+            return AuthContext(
+                email=SERVICE_IDENTITY_EMAIL,
+                roles=narrow_roles(member_roles, API_KEY_GRANT),
+                iap_subject=None,
+                tenant_id=tenant_id,
+                via_api_key=True,
+            )
         return AuthContext(
             email=SERVICE_IDENTITY_EMAIL,
             roles={API_KEY_GRANT},
@@ -608,6 +619,22 @@ def _api_key_context() -> AuthContext | None:
             "guest sign-in was closed. Sign in again."
         )
 
+    if tenant.multi_tenant_enabled():
+        # Finding T03: this branch used to set SINGLE_TENANT_ID whatever email the
+        # session named, so every company's users shared one tenant. The tenant
+        # and the role now both come from that person's registered memberships,
+        # and the global role lists play no part.
+        tenant_id, member_roles = _membership(acting)
+        return AuthContext(
+            email=acting,
+            roles=narrow_roles(member_roles, API_KEY_GRANT),
+            iap_subject=None,
+            tenant_id=tenant_id,
+            via_api_key=True,
+            via_session=True,
+            session_method=claims[1] if claims else UNKNOWN_SESSION,
+        )
+
     return AuthContext(
         email=acting,
         roles=narrow_roles(_get_user_roles(acting), API_KEY_GRANT),
@@ -617,6 +644,34 @@ def _api_key_context() -> AuthContext | None:
         via_session=True,
         session_method=claims[1] if claims else UNKNOWN_SESSION,
     )
+
+
+def _membership(principal: str) -> tuple[str, set[Role]]:
+    """
+    (tenant, roles) for `principal` from VF_TENANT_MEMBERS. MULTI_TENANT only.
+
+    X-VF-Tenant may choose among the principal's own memberships and nothing
+    else; membership.resolve() raises MembershipError otherwise, and
+    authenticate_request() turns that into the refusal.
+    """
+    tenant_id, role = membership.resolve(
+        principal, request.headers.get(membership.TENANT_HEADER),
+    )
+    return tenant_id, {Role.VIEWER, Role(role)}
+
+
+def _membership_refusal(exc: "membership.MembershipError") -> tuple[Response, int]:
+    """
+    The refusal for a principal outside the tenant it asked for.
+
+    `choices` lists only the caller's OWN memberships, so a console can offer the
+    organisations this person may switch to without revealing any other.
+    """
+    return jsonify({
+        "error": "Not a member of this organisation",
+        "detail": str(exc),
+        "choices": exc.choices,
+    }), exc.status
 
 
 def authenticate_request() -> tuple[Response, int] | None:
@@ -657,6 +712,8 @@ def authenticate_request() -> tuple[Response, int] | None:
             context = _api_key_context()
         except InvalidConsoleSession as exc:
             return jsonify({"error": "Invalid console session", "detail": str(exc)}), 401
+        except membership.MembershipError as exc:
+            return _membership_refusal(exc)
         if context is None:
             # Presented a key and it did not match. Said plainly rather than
             # falling through, so a rotation mistake reads as a rotation mistake.
@@ -681,37 +738,45 @@ def authenticate_request() -> tuple[Response, int] | None:
         if not email:
             return jsonify({"error": "No email in IAP claims"}), 401
 
-        # An explicit claim wins over the domain heuristic, so an identity
-        # provider that knows the real tenant can say so. tenant_from_email()
-        # documents why the heuristic is only a default.
-        claimed_tenant = (
-            claims.get("tenant_id")
-            or claims.get("https://vflogistics.io/tenant_id")
-        )
-        tenant_id = tenant.normalise(claimed_tenant) or tenant.tenant_from_email(email)
-
-        if tenant.multi_tenant_enabled() and not tenant_id:
-            # Refusing is the only safe answer. Serving the request would mean
-            # choosing a tenant for someone whose tenant we could not determine,
-            # and any choice is potentially another customer's data.
-            return jsonify({
-                "error": "Could not determine a tenant for this identity",
-                "detail": (
-                    "No tenant_id claim was present and the email domain did not "
-                    "resolve to one. A free-mail address cannot be mapped to a "
-                    "tenant."
-                ),
-            }), 403
+        if tenant.multi_tenant_enabled():
+            # Finding T02: the tenant used to come from a `tenant_id` claim or,
+            # failing that, from the first label of the email domain -- so
+            # acme.com and acme.net were one tenant. Membership is now looked up
+            # by the identity provider's stable subject, and nothing in the token
+            # can name a tenant.
+            subject = str(claims.get("sub") or "").strip()
+            if not subject:
+                return jsonify({"error": "No subject in IAP claims"}), 401
+            try:
+                tenant_id, member_roles = _membership(f"iap:{subject}")
+            except membership.MembershipError as exc:
+                return _membership_refusal(exc)
+            g.auth_context = AuthContext(
+                email=email,
+                roles=member_roles,
+                iap_subject=subject,
+                tenant_id=tenant_id,
+            )
+            return None
 
         g.auth_context = AuthContext(
             email=email,
             roles=_get_user_roles(email),
             iap_subject=claims.get("sub"),
-            tenant_id=tenant_id or tenant.SINGLE_TENANT_ID,
+            tenant_id=tenant.SINGLE_TENANT_ID,
         )
         return None
 
-    # 3. No credential. The role floor decides what this caller may do, and
+    # 3. No credential. With multi-tenancy on there is no tenant an anonymous
+    #    caller could belong to, so there is nothing to read: the old floor put
+    #    them in the implicit tenant, which under MULTI_TENANT is still somebody's.
+    if tenant.multi_tenant_enabled():
+        return jsonify({
+            "error": "Authentication required",
+            "detail": "Every organisation's data needs a signed-in member of it.",
+        }), 401
+
+    #    Otherwise the role floor decides what this caller may do, and
     #    ANONYMOUS_ROLE defaults to VIEWER -- so reads answer and writes 403.
     floor = anonymous_role()
     if floor is None:
@@ -966,11 +1031,28 @@ def describe_identity(ctx: AuthContext) -> dict[str, Any]:
         "grants": [r.value for r in grants],
         "role_source": source,
         "tenant_id": ctx.tenant_id,
+        # Every organisation this caller may switch to with X-VF-Tenant, and the
+        # role in each -- their own, never anyone else's. None when multi-tenancy
+        # is off and there is exactly one implicit organisation.
+        "memberships": _own_memberships(ctx),
         # How the session was signed in, or None without one. A separate field
         # rather than a new `authenticated_by` value, so a client switching on
         # that set keeps working.
         "session_method": ctx.session_method,
     }
+
+
+def _own_memberships(ctx: AuthContext) -> dict[str, str] | None:
+    """The caller's own {tenant: role} map for whoami, or None when single-tenant."""
+    if not tenant.multi_tenant_enabled():
+        return None
+    if ctx.via_session or (ctx.iap_subject is None and not ctx.via_api_key):
+        principal = ctx.email
+    elif ctx.iap_subject is not None:
+        principal = f"iap:{ctx.iap_subject}"
+    else:
+        principal = membership.SERVICE_PRINCIPAL
+    return membership.memberships(principal)
 
 
 # Convenience decorators for common role requirements

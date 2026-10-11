@@ -692,9 +692,11 @@ about one.
 An architecture document that omits these is marketing.
 
 - **No end-user identity store.** The console session proves *an* email, but there is
-  no user record, sign-up or password reset. Roles come from three comma-separated
-  environment variables (`ADMIN_EMAILS`, `OPERATOR_EMAILS`, `REVIEWER_EMAILS`), are
-  global rather than tenant-scoped, and need a new revision to change.
+  no user record, sign-up or password reset. In single-tenant mode roles come from three
+  comma-separated environment variables (`ADMIN_EMAILS`, `OPERATOR_EMAILS`,
+  `REVIEWER_EMAILS`) and are global. With `MULTI_TENANT=true` they come instead from
+  `VF_TENANT_MEMBERS`, a per-organisation registry (see `membership.py`). Either way a
+  change needs a new revision.
 - **`ANONYMOUS_ROLE=viewer` on a service open to the internet** means case, review-queue
   and audit reads need no credential. The console no longer lends its key to anonymous
   reads, so a visitor holds exactly `viewer`, but that is still every case on the board.
@@ -712,18 +714,23 @@ An architecture document that omits these is marketing.
   Cloud Storage and Tavily are unmetered, which understates cost of service most for
   the rules-cleared traffic the unit economics lean on.
 - **`config.PRICING` is cost, not price.** There is no rate card, plan, invoice, or
-  customer entity; the billable party is an email domain, and the domain-to-tenant
-  helper names the two cases it gets wrong -- a customer with several domains, and a
-  consultant serving several.
-- **`MULTI_TENANT=true` has never run.** The ingest sinks resolve no tenant and would
-  raise under it, and every behavioural isolation test runs on `MemoryStore` --
-  `FirestoreStore` is covered only by signature parity, despite the two backends
-  filtering by different mechanisms.
-- **`/internal/execute` is the one place a caller may assert a tenant**, gated on the
-  service identity. Because there is one platform-wide key, its holder can name any
-  tenant, and `case_id` membership is not checked.
-- **The rate limiter keys on email or IP, never on a tenant**, and its storage is
-  `memory://`, so limits are per-instance and reset on deploy.
+  customer entity; the billable party is a tenant, and a tenant is whatever
+  `VF_TENANT_MEMBERS` declares. No tenant is derived from an email domain any more:
+  `tenant_from_email()` did that, and it made `acme.com` and `acme.net` one customer
+  (authorization review finding T02).
+- **`MULTI_TENANT=true` has never run against Firestore.** The ingest sinks resolve no
+  tenant and would raise under it, and every behavioural isolation test runs on
+  `MemoryStore` -- `FirestoreStore` is covered only by signature parity, despite the two
+  backends filtering by different mechanisms. Membership resolution itself is
+  backend-independent and is tested end to end (`tests/test_membership.py`).
+- **`/internal/execute` is the one place a caller may name a tenant**, gated on the
+  service identity. With multi-tenancy on, the tenant must be one the `service`
+  principal is a registered member of; `case_id` membership within that tenant is
+  still not checked.
+- **The general rate limiter keys on email or IP, never on a tenant**, and its storage
+  is `memory://`, so limits are per-instance and reset on deploy. Console password
+  sign-in is the exception: it is counted on a shared Firestore ledger
+  (`login_throttle`) per account and per source.
 
 ---
 
