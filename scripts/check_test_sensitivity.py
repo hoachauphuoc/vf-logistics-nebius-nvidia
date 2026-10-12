@@ -561,6 +561,62 @@ MUTATIONS = [
         "    if (true) {",
         "frontend/src/lib/activity.test.ts",
     ),
+    # Plan 1, step 1: the origin watch and the evidence check.
+    (
+        "P1: a whitelisted shipper's cargo on a watched lane is cleared by the rules",
+        "src/vf_logistics/verifier.py",
+        '        f["severity"] in ("HIGH", "CRITICAL") or f.get("blocks_auto_clear")\n'
+        '        for f in findings\n'
+        '        if not f.get("auto_clear_by_rules")',
+        '        f["severity"] in ("HIGH", "CRITICAL")\n'
+        '        for f in findings\n'
+        '        if not f.get("auto_clear_by_rules")',
+        "tests/test_origin_inputs.py::TestTheRulesCannotClearIt",
+    ),
+    (
+        "P1: a watched lane is no longer flagged",
+        "src/vf_logistics/verifier.py",
+        "    rule = watched_lane(shipment)\n    if rule is None:\n        return []\n    declared = _canon_country",
+        "    return []\n    declared = _canon_country",
+        "tests/test_origin_inputs.py::TestTheWatch",
+    ),
+    (
+        "P1: a country alias hides a watched destination",
+        "src/vf_logistics/verifier.py",
+        "    return _COUNTRY_ALIASES.get(name, name)",
+        "    return name",
+        "tests/test_origin_inputs.py::TestTheWatch",
+    ),
+    (
+        "P1: complete, consistent papers lower the case's floor",
+        "src/vf_logistics/verifier.py",
+        '    status = "contradicted" if findings else ("provided" if not missing else "missing")',
+        '    status = "contradicted" if findings else ("provided" if not missing else "missing")\n'
+        '    if status == "provided":\n'
+        '        findings = [{"code": "ORIGIN_CLEARED", "severity": "INFO", "floor": -45, "detail": "ok"}]',
+        "tests/test_origin_inputs.py::TestTheEvidence",
+    ),
+    (
+        "P1: a Chinese-origin input invoice is not a contradiction",
+        "src/vf_logistics/verifier.py",
+        "            if goods_origin == watched:",
+        "            if False:",
+        "tests/test_origin_inputs.py::TestTheEvidence",
+    ),
+    (
+        "P1: a different producer on the certificate is not a mismatch",
+        "src/vf_logistics/verifier.py",
+        "    producer_mismatch = bool(certified and others and not (certified & others))",
+        "    producer_mismatch = False",
+        "tests/test_origin_inputs.py::TestTheEvidence",
+    ),
+    (
+        "P1: company legal suffixes make the same producer look different",
+        "src/vf_logistics/verifier.py",
+        "    return \" \".join(w for w in words if w not in _COMPANY_SUFFIXES)",
+        "    return \" \".join(words)",
+        "tests/test_origin_inputs.py::TestTheEvidence",
+    ),
 ]
 
 

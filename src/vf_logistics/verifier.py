@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, NamedTuple
 
 from vf_logistics import hs_reference
 
@@ -1133,6 +1133,282 @@ def check_routing(shipment: dict[str, Any]) -> list[dict[str, Any]]:
     return findings
 
 
+# --------------------------------------------------------------------------
+# Origin circumvention: where the inputs came from is not on a booking
+# --------------------------------------------------------------------------
+
+class CircumventionRule(NamedTuple):
+    """
+    A goods/origin/destination lane where a public authority found the declared
+    origin to be a way around a duty -- the final step was done in one country
+    from inputs made in another.
+    """
+    rule_id: str
+    goods: str
+    hs_prefixes: tuple[str, ...]
+    declared_origins: frozenset[str]
+    destinations: frozenset[str]
+    input_origin: str       # where the inputs the authority found came from
+    inputs: str
+    authority: str
+    source_url: str
+
+
+_EU_MEMBERS = frozenset({
+    "austria", "belgium", "bulgaria", "croatia", "cyprus", "czechia", "czech republic",
+    "denmark", "estonia", "finland", "france", "germany", "greece", "hungary", "ireland",
+    "italy", "latvia", "lithuania", "luxembourg", "malta", "netherlands", "poland",
+    "portugal", "romania", "slovakia", "slovenia", "spain", "sweden",
+})
+_US = frozenset({"united states"})
+
+# Each row is a public decision already in data/public_cases.json, so a reviewer
+# who opens a finding can follow it to the source. A lane is listed only where an
+# authority has said so; this is not a general country-of-origin opinion.
+CIRCUMVENTION_WATCH: tuple[CircumventionRule, ...] = (
+    CircumventionRule(
+        "ITA-2023-PLYWOOD-VN", "hardwood plywood", ("4412",),
+        frozenset({"vietnam"}), _US, "china", "veneers and cores",
+        "US Department of Commerce (ITA), 20 July 2023",
+        "https://www.govinfo.gov/content/pkg/FR-2023-07-20/html/2023-15431.htm",
+    ),
+    CircumventionRule(
+        "ITA-2023-SOLAR-SEA", "solar cells and modules", ("8541",),
+        frozenset({"cambodia", "malaysia", "thailand", "vietnam"}), _US, "china", "wafers",
+        "US Department of Commerce (ITA), 23 August 2023",
+        "https://www.govinfo.gov/content/pkg/FR-2023-08-23/html/2023-18161.htm",
+    ),
+    CircumventionRule(
+        "ITA-2024-STAPLES-VN", "collated staples", ("830520",),
+        frozenset({"vietnam"}), _US, "china", "steel wire",
+        "US Department of Commerce (ITA), 30 January 2024",
+        "https://www.govinfo.gov/content/pkg/FR-2024-01-30/html/2024-01792.htm",
+    ),
+    CircumventionRule(
+        "ITA-2023-LWRPT-VN", "light-walled rectangular pipe", ("730661",),
+        frozenset({"vietnam"}), _US, "china", "hot-rolled steel",
+        "US Department of Commerce (ITA), 9 November 2023",
+        "https://www.govinfo.gov/content/pkg/FR-2023-11-09/html/2023-24796.htm",
+    ),
+    CircumventionRule(
+        "EPPO-2024-ALFOIL-DE", "aluminium foil", ("7607",),
+        frozenset({"myanmar"}), _EU_MEMBERS, "china", "aluminium foil",
+        "European Public Prosecutor's Office, 29 July 2024",
+        "https://www.eppo.europa.eu/media/news/germany-eppo-brings-charges-against-two-evading-anti-dumping-duties-aluminium-foil-imports-2024-07-29_en",
+    ),
+    CircumventionRule(
+        "EPPO-2024-ALSHEETS-ES", "aluminium sheets", ("7606",),
+        frozenset({"united arab emirates"}), _EU_MEMBERS, "china", "aluminium sheets",
+        "European Public Prosecutor's Office, 19 December 2024",
+        "https://www.eppo.europa.eu/media/news/spain-eppo-dismantles-organised-crime-group-evaded-eur33-million-antidumping-duties-2024-12-19_en",
+    ),
+)
+
+# What a shipper has to send for a watched lane, as dossier.EVIDENCE_CATALOGUE keys.
+# The minimum that can answer the question "where did the inputs come from, and who
+# made the goods": the origin certificate names the producer and the country, the
+# producer's own declaration names the inputs, and the purchase invoices show it.
+ORIGIN_EVIDENCE_DOCS: tuple[str, ...] = (
+    "certificate_of_origin", "producer_declaration", "input_purchase_invoices",
+)
+
+_COUNTRY_ALIASES = {
+    "usa": "united states", "us": "united states", "u.s.": "united states",
+    "u.s.a.": "united states", "united states of america": "united states",
+    "uae": "united arab emirates", "u.a.e.": "united arab emirates",
+    "viet nam": "vietnam", "prc": "china", "people's republic of china": "china",
+    "burma": "myanmar", "czech republic": "czechia",
+}
+
+
+def _canon_country(text: Any) -> str:
+    name = str(text or "").strip().lower()
+    return _COUNTRY_ALIASES.get(name, name)
+
+
+def watched_lane(shipment: dict[str, Any]) -> CircumventionRule | None:
+    """The watch row this shipment's declared lane matches, if any."""
+    digits = re.sub(r"\D", "", str(shipment.get("hs_code") or ""))
+    if not digits:
+        return None
+    destination = _canon_country(_country(shipment.get("destination")))
+    declared = {
+        _canon_country(_country(shipment.get("origin"))),
+        _canon_country(shipment.get("shipper_country")),
+    } - {""}
+    for rule in CIRCUMVENTION_WATCH:
+        if (
+            destination in rule.destinations
+            and declared & rule.declared_origins
+            and any(digits.startswith(prefix) for prefix in rule.hs_prefixes)
+        ):
+            return rule
+    return None
+
+
+def check_origin_inputs(shipment: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Goods on a lane where an authority found the declared origin to be a way
+    around a duty. The booking cannot answer it -- the inputs' origin is not on
+    one -- so the finding asks for documents rather than asserting fraud.
+
+    MEDIUM and floor 45: below INVESTIGATE_AT, so the case waits for a person
+    rather than escalating, and above zero, so nothing releases it unseen.
+    `blocks_auto_clear` is what stops a whitelisted shipper's cargo on one of
+    these lanes from being cleared: the findings below HIGH are otherwise
+    discarded when a whitelist fires, and the authorities' conclusions here are
+    about the lane, not about who ships on it.
+    """
+    rule = watched_lane(shipment)
+    if rule is None:
+        return []
+    declared = _canon_country(_country(shipment.get("origin"))) or _canon_country(
+        shipment.get("shipper_country")
+    )
+    return [{
+        "code": "ORIGIN_INPUTS_UNVERIFIED",
+        "severity": "MEDIUM",
+        "floor": 45,
+        "blocks_auto_clear": True,
+        "detail": (
+            f"{rule.goods.capitalize()} declared as {declared.title()} origin, shipped to "
+            f"{_country(shipment.get('destination')).title()}. {rule.authority} found "
+            f"{rule.goods} completed in {declared.title()} from {rule.input_origin.title()} "
+            f"{rule.inputs} to be circumventing the duty. A booking does not show where "
+            "the inputs came from; the origin certificate, the producer's declaration and "
+            "the input purchase invoices do."
+        ),
+        "measured": {
+            "rule_id": rule.rule_id,
+            "declared_origin": declared,
+            "watched_input_origin": rule.input_origin,
+            "source": rule.source_url,
+            "documents_needed": list(ORIGIN_EVIDENCE_DOCS),
+        },
+    }]
+
+
+_COMPANY_SUFFIXES = frozenset({
+    "co", "company", "ltd", "limited", "corp", "corporation", "inc", "llc", "jsc",
+    "joint", "stock", "sdn", "bhd", "pte", "gmbh", "sa", "plc", "the",
+})
+
+
+def _company_key(name: Any) -> str:
+    """A company name reduced to the words that tell two companies apart."""
+    words = re.sub(r"[^\w\s]", " ", str(name or "").lower()).split()
+    return " ".join(w for w in words if w not in _COMPANY_SUFFIXES)
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None or value == "":
+        return []
+    return list(value) if isinstance(value, (list, tuple, set)) else [value]
+
+
+def check_origin_evidence(
+    shipment: dict[str, Any], documents: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    What the origin paperwork shows, decided by rules on the extracted facts.
+
+    `documents` are {doc_type, extracted: {...}} as the evidence extractor writes
+    them. The extracted keys read here:
+      certificate_of_origin   producer_name, origin_country
+      producer_declaration    producer_name, input_origins (countries)
+      input_purchase_invoices supplier_name, goods_origin_country / supplier_country,
+                              producer_name
+
+    A good set of papers does NOT lower anything: this only reports `provided`.
+    Contradictions are the one direction that moves a score, and only upward --
+    the extractor is a model, so a wrongly read document can raise a false alarm a
+    reviewer then dismisses, and can never clear a shipment.
+
+    Returns {"status": "missing"|"provided"|"contradicted", "present", "missing",
+    "findings", "contradictions"}; `findings` are extra findings to add to the case
+    (empty unless something contradicts).
+    """
+    rule = watched_lane(shipment)
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for doc in documents or []:
+        if isinstance(doc, dict) and isinstance(doc.get("extracted"), dict):
+            by_type.setdefault(str(doc.get("doc_type")), []).append(doc["extracted"])
+    present = [d for d in ORIGIN_EVIDENCE_DOCS if by_type.get(d)]
+    missing = [d for d in ORIGIN_EVIDENCE_DOCS if d not in present]
+
+    declared = _canon_country(_country(shipment.get("origin"))) or _canon_country(
+        shipment.get("shipper_country")
+    )
+    watched = rule.input_origin if rule else ""
+    contradictions: list[dict[str, Any]] = []
+
+    for cert in by_type.get("certificate_of_origin", []):
+        stated = _canon_country(cert.get("origin_country"))
+        if stated and declared and stated != declared:
+            contradictions.append({
+                "kind": "certificate_country",
+                "detail": f"The certificate of origin states {stated.title()}; the shipment declares {declared.title()}.",
+            })
+
+    if watched:
+        for dec in by_type.get("producer_declaration", []):
+            hit = sorted({_canon_country(c) for c in _as_list(dec.get("input_origins"))} & {watched})
+            if hit:
+                contradictions.append({
+                    "kind": "input_origin",
+                    "detail": f"The producer's declaration lists {hit[0].title()}-origin inputs, the origin the authority found.",
+                })
+        for inv in by_type.get("input_purchase_invoices", []):
+            goods_origin = _canon_country(inv.get("goods_origin_country") or inv.get("supplier_country"))
+            if goods_origin == watched:
+                contradictions.append({
+                    "kind": "input_origin",
+                    "detail": f"An input purchase invoice is for {watched.title()}-origin goods"
+                              + (f" from {inv.get('supplier_name')}" if inv.get("supplier_name") else "")
+                              + ".",
+                })
+
+    producers: dict[str, set[str]] = {}
+    for doc_type in ORIGIN_EVIDENCE_DOCS:
+        for extracted in by_type.get(doc_type, []):
+            key = _company_key(extracted.get("producer_name"))
+            if key:
+                producers.setdefault(doc_type, set()).add(key)
+    certified = producers.get("certificate_of_origin", set())
+    others = set().union(*(v for k, v in producers.items() if k != "certificate_of_origin"))
+    producer_mismatch = bool(certified and others and not (certified & others))
+
+    findings: list[dict[str, Any]] = []
+    if any(c["kind"] != "producer" for c in contradictions):
+        findings.append({
+            "code": "ORIGIN_EVIDENCE_CONTRADICTION",
+            "severity": "HIGH",
+            "floor": 80,
+            "detail": " ".join(c["detail"] for c in contradictions),
+            "measured": {"contradictions": contradictions},
+        })
+    if producer_mismatch:
+        contradictions.append({
+            "kind": "producer",
+            "detail": "The producer named on the certificate of origin is not the producer named in the other documents.",
+        })
+        findings.append({
+            "code": "ORIGIN_PRODUCER_MISMATCH",
+            "severity": "HIGH",
+            "floor": 75,
+            "detail": contradictions[-1]["detail"],
+        })
+
+    status = "contradicted" if findings else ("provided" if not missing else "missing")
+    return {
+        "status": status,
+        "present": present,
+        "missing": missing,
+        "findings": findings,
+        "contradictions": contradictions,
+    }
+
+
 def check_counterparty(shipment: dict[str, Any]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
 
@@ -1333,6 +1609,7 @@ def validate(
     findings.extend(check_mandatory_fields(shipment))
     findings.extend(check_hs_code(shipment))
     findings.extend(check_routing(shipment))
+    findings.extend(check_origin_inputs(shipment))
     findings.extend(check_counterparty(shipment))
 
     # Deterministic, so it counts as part of the baseline rather than as a model
@@ -1388,8 +1665,8 @@ def validate(
         "observations": observations,
         "high_severity_count": high_count,
         "skip_ai": bool(skip_ai_findings) and not any(
-            f["severity"] in ("HIGH", "CRITICAL") 
-            for f in findings 
+            f["severity"] in ("HIGH", "CRITICAL") or f.get("blocks_auto_clear")
+            for f in findings
             if not f.get("skip_ai")
         ),
         "auto_clear_by_rules": auto_clear_by_rules,
@@ -1409,7 +1686,7 @@ def validate(
         "checks_run": [
             "whitelist", "blacklist", "low_value_domestic",
             "freight_ratio", "value_density", "mandatory_fields",
-            "hs_code", "routing", "counterparty",
+            "hs_code", "routing", "origin_inputs", "counterparty",
         ]
         + (["sanctions_screening"] if screening is not None else [])
         + (["hs_description_consistency"] if hs_verdict is not None else [])
@@ -1429,7 +1706,7 @@ def _floor_for(findings: list[dict[str, Any]]) -> tuple[int, int, bool, bool]:
     if auto_reject:
         floor = 100
     elif auto_clear and not any(
-        f["severity"] in ("HIGH", "CRITICAL")
+        f["severity"] in ("HIGH", "CRITICAL") or f.get("blocks_auto_clear")
         for f in findings
         if not f.get("auto_clear_by_rules")
     ):

@@ -2271,6 +2271,60 @@ def orchestrator_case_dossier(case_id: str) -> Any:
         return _safe_error(e)
 
 
+@app.route("/api/v1/orchestrator/case/<case_id>/dossier.json", methods=["GET"])
+# Viewer, like the PDF beside it and for the same reason: it is the stored case's
+# findings with their guidance attached, nothing the case JSON does not already say.
+@require_viewer
+@limiter.limit("60 per minute")
+def orchestrator_case_dossier_json(case_id: str) -> Any:
+    """
+    The findings of a case with what to do about each: the regulation it rests on,
+    a comparable public case, the action a reviewer should take, and -- for an
+    origin finding -- the documents that would answer it (dossier.EVIDENCE_CATALOGUE).
+
+    The console reads this to offer the request for documents; it is the same
+    guidance the PDF prints, as data.
+    """
+    try:
+        from vf_logistics import dossier
+        from vf_logistics.store import get_store
+
+        case = _on_worker(get_store().get_case(case_id, tenant_id=_tenant()))
+        if not case:
+            return jsonify({"error": "case not found"}), 404
+        findings = dossier.dossier_findings(case)
+        for finding in findings:
+            needed = next(
+                (
+                    f.get("measured", {}).get("documents_needed")
+                    for f in (case.get("validation") or {}).get("findings") or []
+                    if f.get("code") == finding["code"]
+                ),
+                None,
+            )
+            finding["documents_needed"] = [
+                {"doc_type": d, "label": dossier.evidence_label(d),
+                 "purpose": (dossier.EVIDENCE_CATALOGUE.get(d) or {}).get("purpose")}
+                for d in needed or []
+            ]
+        return jsonify({
+            "case_id": case.get("case_id"),
+            "state": case.get("state"),
+            "findings": findings,
+            "references": {
+                key: dossier.REFERENCES[key]
+                for finding in findings for key in finding["references"]
+                if key in dossier.REFERENCES
+            },
+            "precedents": {
+                finding["precedent"]: dossier.PRECEDENTS[finding["precedent"]]
+                for finding in findings if finding["precedent"] in dossier.PRECEDENTS
+            },
+        })
+    except Exception as e:
+        return _safe_error(e)
+
+
 # ============== DEMO ENDPOINT ==============
 
 @app.route("/demo", methods=["GET"])

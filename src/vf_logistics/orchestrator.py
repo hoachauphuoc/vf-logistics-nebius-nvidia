@@ -934,7 +934,8 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             # routine AI-graded traffic.
             competing = [
                 f for f in validation["findings"]
-                if f["severity"] in ("HIGH", "CRITICAL") and not f.get("skip_ai")
+                if (f["severity"] in ("HIGH", "CRITICAL") or f.get("blocks_auto_clear"))
+                and not f.get("skip_ai")
             ]
             await emit(
                 case_id,

@@ -131,6 +131,12 @@ FINDING_GUIDANCE: dict[str, tuple[tuple[str, ...], str | None, str]] = {
     "HIGH_RISK_TRANSIT": (("OFAC_SDN", "EAR_KYC"), "sanctions",
                           "Confirm the routing is necessary and that no party in the transit country is involved."),
     "MULTIPLE_DIVERSION_HUBS": (("EAR_KYC",), "route", "Ask why the routing passes through several transhipment hubs."),
+    "ORIGIN_INPUTS_UNVERIFIED": (("VN_CUSTOMS_LAW",), "origin",
+                                 "Ask for the certificate of origin, the producer's declaration and the input purchase invoices; the booking does not show where the inputs came from."),
+    "ORIGIN_EVIDENCE_CONTRADICTION": (("VN_CUSTOMS_LAW",), "origin",
+                                      "The papers contradict the declared origin. Do not release; escalate to the compliance officer with the documents."),
+    "ORIGIN_PRODUCER_MISMATCH": (("VN_CUSTOMS_LAW",), "origin",
+                                 "Ask the shipper which company made the goods, and for the producer's registration."),
     "ROUTE_CHANGED_AFTER_BOOKING": (("EAR_KYC",), "route", "Ask who changed the destination and why, in writing."),
     "SHIPPER": (("EAR_KYC",), None, "Verify the shipper's registration and trading history."),
     "RECENTLY_REGISTERED_SHIPPER": (("EAR_KYC",), None, "Verify the shipper's registration and trading history."),
@@ -152,6 +158,36 @@ def guidance_for(code: str) -> tuple[tuple[str, ...], str | None, str]:
     if best:
         return FINDING_GUIDANCE[best]
     return (("INTERNAL",), None, "Review the finding detail.")
+
+
+# What can be asked of a shipper, as a closed list. A reviewer picks from it and
+# so may the model that suggests the next question: an answer outside this list is
+# discarded rather than shown, because a request for a document nobody can extract
+# facts from would stall a case with no way to end. `fields` are the facts the
+# extractor reads from the document, and the ones verifier.check_origin_evidence
+# compares.
+EVIDENCE_CATALOGUE: dict[str, dict[str, Any]] = {
+    "certificate_of_origin": {
+        "label": "Certificate of origin",
+        "purpose": "States the producer and the country the goods are certified to come from.",
+        "fields": ("producer_name", "origin_country"),
+    },
+    "producer_declaration": {
+        "label": "Producer's declaration",
+        "purpose": "The manufacturer's own statement of what the goods were made from and where those inputs came from.",
+        "fields": ("producer_name", "input_origins"),
+    },
+    "input_purchase_invoices": {
+        "label": "Input purchase invoices",
+        "purpose": "Shows who sold the inputs to the producer and where those goods were made.",
+        "fields": ("supplier_name", "supplier_country", "goods_origin_country", "producer_name"),
+    },
+}
+
+
+def evidence_label(doc_type: str) -> str:
+    entry = EVIDENCE_CATALOGUE.get(doc_type)
+    return str(entry["label"]) if entry else doc_type.replace("_", " ").capitalize()
 
 
 # --------------------------------------------------------------------------
