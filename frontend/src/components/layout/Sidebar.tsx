@@ -2,9 +2,11 @@
 
 import {
   Activity,
+  CalendarCheck,
   ChevronLeft,
   FileClock,
   FlaskConical,
+  Gauge,
   Inbox,
   KeyRound,
   LayoutGrid,
@@ -22,19 +24,35 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useSidebarCollapsed } from "@/lib/sidebar-state";
 import { cn } from "@/lib/utils";
 
+export type NavSection = "work" | "oversight";
+
 export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
   /** One line, shown collapsed as the tooltip body and expanded as a subtitle. */
   blurb: string;
+  /** Which group of the sidebar it sits in (NAV_SECTIONS). */
+  section: NavSection;
 }
 
+/** The sidebar's two groups, in order, with the heading each is shown under. */
+export const NAV_SECTIONS: ReadonlyArray<{ id: NavSection; label: string }> = [
+  { id: "work", label: "Your work" },
+  { id: "oversight", label: "Verification & oversight" },
+];
+
 /**
- * Every section of the console, in the order a new reader needs them.
+ * Every section of the console, grouped by who it is for.
  *
- * Order follows the old dashboard's sidebar so that muscle memory survives the
- * port, with deliberate differences:
+ * "Your work" comes first and is the operator's day: what to handle today, the
+ * decision form, and whether the work got done. Everything else -- the live
+ * board, the audit trail, governance, the models, the benchmark, access control
+ * -- is how that work is checked, so it sits below under its own heading. The
+ * screens did not change; what changed is which ones a person doing the job is
+ * pointed at first.
+ *
+ * Within the oversight group the old order survives, with deliberate differences:
  *
  * - "Dashboard" is called Pipeline, because that is what it shows. A section
  *   named Dashboard in a console that is entirely a dashboard tells a reader
@@ -48,60 +66,96 @@ export interface NavItem {
  */
 export const NAV_ITEMS: NavItem[] = [
   {
-    href: "/",
-    label: "Pipeline",
-    icon: LayoutGrid,
-    blurb: "Live board, by workflow state",
-  },
-  {
-    href: "/radar",
-    label: "Risk Radar",
-    icon: Radar,
-    blurb: "Completed audits, with provenance",
+    href: "/today",
+    label: "Today",
+    icon: CalendarCheck,
+    blurb: "Cases to handle, who owns them, what next",
+    section: "work",
   },
   {
     href: "/review",
     label: "Review Queue",
     icon: Inbox,
     blurb: "Cases waiting on a person",
+    section: "work",
+  },
+  {
+    href: "/outcomes",
+    label: "Outcomes",
+    icon: Gauge,
+    blurb: "Resolved, handling time, rounds, cost",
+    section: "work",
+  },
+  {
+    href: "/",
+    label: "Pipeline",
+    icon: LayoutGrid,
+    blurb: "Live board, by workflow state",
+    section: "oversight",
+  },
+  {
+    href: "/radar",
+    label: "Risk Radar",
+    icon: Radar,
+    blurb: "Completed audits, with provenance",
+    section: "oversight",
   },
   {
     href: "/audit",
     label: "Audit Trail",
     icon: ScrollText,
     blurb: "Every action, including refusals",
+    section: "oversight",
   },
   {
     href: "/governance",
     label: "Governance",
     icon: ShieldCheck,
     blurb: "Delegated authority and drift",
+    section: "oversight",
   },
   {
     href: "/devops",
     label: "DevOps",
     icon: Terminal,
     blurb: "Inject, upload, bulk load",
+    section: "oversight",
   },
   {
     href: "/agents",
     label: "Agent Console",
     icon: Activity,
     blurb: "Models, cost and injection probes",
+    section: "oversight",
   },
   {
     href: "/evaluation",
     label: "Evaluation",
     icon: FlaskConical,
     blurb: "Measured detection, false alarms, cost",
+    section: "oversight",
   },
   {
     href: "/admin",
     label: "Access Control",
     icon: KeyRound,
     blurb: "Your role, the policy, the proxy",
+    section: "oversight",
   },
 ];
+
+/**
+ * Whether `pathname` is on the screen `href` names.
+ *
+ * Exact for "/" so every route does not light up Pipeline; a prefix match for the
+ * rest so /review/CASE-1 keeps Review Queue selected. A case page, /cases/<id>, is
+ * reached from Today and is shown as part of it.
+ */
+export function navItemActive(href: string, pathname: string): boolean {
+  if (href === "/") return pathname === "/";
+  if (href === "/today" && pathname.startsWith("/cases/")) return true;
+  return pathname.startsWith(href);
+}
 
 export function Sidebar({ reviewCount }: { reviewCount?: number | null }) {
   const [collapsed, setCollapsed] = useSidebarCollapsed();
@@ -132,31 +186,37 @@ export function Sidebar({ reviewCount }: { reviewCount?: number | null }) {
         )}
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto scrollbar-thin px-2 pt-2">
-        {NAV_ITEMS.map((item) => (
-          // The help dot is a SIBLING of the link, never a child. NavLink renders
-          // an <a>, and a <button> inside an anchor is invalid nesting and gives
-          // the row two competing click targets.
-          //
-          // Suppressed while collapsed: there is no room, and the collapsed
-          // tooltip already carries the blurb.
-          <div key={item.href} className="flex items-center gap-1">
-            <div className="min-w-0 flex-1">
-              <NavLink
-                item={item}
-                collapsed={collapsed}
-                // Exact match for "/" so every route does not light up the first
-                // item; prefix match for the rest so /review/CASE-1 keeps Review
-                // Queue selected.
-                active={
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href)
-                }
-                badge={item.href === "/review" ? reviewCount : undefined}
-              />
-            </div>
-            {!collapsed && <HelpDot id={`nav:${item.href}`} side="right" />}
+      <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 pt-2">
+        {NAV_SECTIONS.map((section, index) => (
+          <div key={section.id} className={cn("space-y-0.5", index > 0 && "mt-4")}>
+            {/* Collapsed there is no room for a heading, so a rule separates the
+                groups instead -- the grouping still reads without the words. */}
+            {collapsed ? (
+              index > 0 && <div className="mx-2 mb-2 border-t border-white/[0.06]" aria-hidden />
+            ) : (
+              <p className="px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+                {section.label}
+              </p>
+            )}
+            {NAV_ITEMS.filter((item) => item.section === section.id).map((item) => (
+              // The help dot is a SIBLING of the link, never a child. NavLink renders
+              // an <a>, and a <button> inside an anchor is invalid nesting and gives
+              // the row two competing click targets.
+              //
+              // Suppressed while collapsed: there is no room, and the collapsed
+              // tooltip already carries the blurb.
+              <div key={item.href} className="flex items-center gap-1">
+                <div className="min-w-0 flex-1">
+                  <NavLink
+                    item={item}
+                    collapsed={collapsed}
+                    active={navItemActive(item.href, pathname)}
+                    badge={item.href === "/review" ? reviewCount : undefined}
+                  />
+                </div>
+                {!collapsed && <HelpDot id={`nav:${item.href}`} side="right" />}
+              </div>
+            ))}
           </div>
         ))}
       </nav>

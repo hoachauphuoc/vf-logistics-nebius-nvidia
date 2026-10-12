@@ -493,6 +493,74 @@ MUTATIONS = [
         "",
         "frontend/src/app/api/auth/login/route.test.ts",
     ),
+    # Plan 2: the operator screens (Today, a case's page, Outcomes).
+    (
+        "P2: a request for information is grouped as waiting on a reviewer",
+        "src/vf_logistics/worklist.py",
+        '        if last is not None and last.get("action") == "request_info":\n'
+        '            return "awaiting_documents"',
+        '        if False:\n'
+        '            return "awaiting_documents"',
+        "tests/test_worklist.py::TestWhatEachCaseIsWaitingFor",
+    ),
+    (
+        "P2: every review counts as a round of requests for information",
+        "src/vf_logistics/worklist.py",
+        '    return sum(1 for r in _reviews(case) if r.get("action") == "request_info")',
+        "    return len(_reviews(case))",
+        "tests/test_worklist.py::TestOutcomeArithmetic",
+    ),
+    (
+        "P2: the boundary's refusal is not offered as the next action",
+        "src/vf_logistics/worklist.py",
+        '    denials = case.get("gate_denials") or []',
+        "    denials = []",
+        "tests/test_worklist.py::TestWhatEachCaseIsWaitingFor",
+    ),
+    (
+        "P2: an unmeasured cost is reported as zero",
+        "src/vf_logistics/worklist.py",
+        '    cost_summary["mean"] = (sum(costs) / len(costs)) if costs else None',
+        '    cost_summary["mean"] = (sum(costs) / len(costs)) if costs else 0.0',
+        "tests/test_worklist.py::TestOutcomeArithmetic",
+    ),
+    (
+        "P2: handling time is recorded under a name from the body",
+        "src/vf_logistics/app.py",
+        "store.add_activity(case_id, context.email, active_ms,",
+        'store.add_activity(case_id, str(body.get("actor") or context.email), active_ms,',
+        "tests/test_worklist.py::TestRecordingActivity",
+    ),
+    (
+        "P2: handling time is recorded for a case outside the caller's tenant",
+        "src/vf_logistics/app.py",
+        "        if _on_worker(store.get_case(case_id, tenant_id=_tenant())) is None:\n"
+        '            return jsonify({"error": "case not found"}), 404\n'
+        "        _on_worker(store.add_activity(",
+        "        _on_worker(store.add_activity(",
+        "tests/test_worklist.py::TestRecordingActivity",
+    ),
+    (
+        "P2: a refusal on the case timeline reads the key governance never writes",
+        "frontend/src/lib/operations.ts",
+        'const reason = typeof nested === "string" && nested ? nested : receipt.gate_reason ?? null;',
+        "const reason = receipt.gate_reason ?? null;",
+        "frontend/src/lib/operations.test.ts",
+    ),
+    (
+        "P2: an idle tab keeps adding handling time",
+        "frontend/src/lib/activity.ts",
+        "      const activeUntil = Math.min(upTo, lastInput + IDLE_MS);",
+        "      const activeUntil = upTo;",
+        "frontend/src/lib/activity.test.ts",
+    ),
+    (
+        "P2: a hidden page keeps adding handling time",
+        "frontend/src/lib/activity.ts",
+        "    if (visible) {",
+        "    if (true) {",
+        "frontend/src/lib/activity.test.ts",
+    ),
 ]
 
 

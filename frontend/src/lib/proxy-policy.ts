@@ -43,6 +43,9 @@ export const ALLOWED_GET = new Set([
   "metrics/summary",
   // Review
   "review/queue",
+  // Operator screens: Today and Outcomes (worklist.py)
+  "worklist",
+  "outcomes",
   // Audit trail
   "audit",
   // Governance
@@ -89,6 +92,9 @@ export const ALLOWED_POST = new Set([
   // Review decisions
   "review/decide",
   "review/deep-review",
+  // Time a reviewer had a case page in view, for the Outcomes screen. Matched as
+  // `cases/<id>/activity`; reviewer upstream.
+  "cases/activity",
   // Governance
   "governance/publish",
   "governance/revoke",
@@ -155,9 +161,14 @@ export function matchWrite(joined: string, allowed: Set<string>): boolean {
     }
     return false;
   }
-  // `review/decide` and `review/deep-review` are templates for the id-carrying
-  // form above, not routes of their own; Flask has neither without an id.
-  if (joined === "review/decide" || joined === "review/deep-review") return false;
+  if (parts.length === 3 && parts[0] === "cases" && CASE_ID.test(parts[1])) {
+    return parts[2] === "activity" && allowed.has("cases/activity");
+  }
+  // These are templates for the id-carrying forms above, not routes of their own;
+  // Flask has none of them without an id.
+  if (joined === "review/decide" || joined === "review/deep-review" || joined === "cases/activity") {
+    return false;
+  }
   return allowed.has(joined);
 }
 
@@ -227,7 +238,11 @@ export function describedReads(): string[] {
 export function describedWrites(): Array<{ method: "POST" | "PUT"; path: string }> {
   const posts = [...ALLOWED_POST].map((path) => ({
     method: "POST" as const,
-    path: path.startsWith("review/") ? path.replace("review/", "review/<id>/") : path,
+    path: path.startsWith("review/")
+      ? path.replace("review/", "review/<id>/")
+      : path.startsWith("cases/")
+        ? path.replace("cases/", "cases/<id>/")
+        : path,
   }));
   const puts = [...ALLOWED_PUT].map((path) => ({ method: "PUT" as const, path }));
   return [...posts, ...puts].sort((a, b) => a.path.localeCompare(b.path));

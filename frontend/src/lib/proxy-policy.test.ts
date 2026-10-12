@@ -23,6 +23,8 @@ describe("matchRead", () => {
     expect(matchRead("orchestrator/case/../dossier")).toBe(false);
     expect(matchRead("review/CASE-1/document")).toBe(true);
     expect(matchRead("compliance/audit/AUD-9")).toBe(true);
+    expect(matchRead("worklist")).toBe(true);
+    expect(matchRead("outcomes")).toBe(true);
   });
 
   it("refuses traversal hidden in an id and routes nobody listed", () => {
@@ -42,6 +44,14 @@ describe("matchWrite", () => {
   it("does not forward the id-less templates as routes of their own", () => {
     expect(matchWrite("review/decide", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/deep-review", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("cases/activity", ALLOWED_POST)).toBe(false);
+  });
+
+  it("forwards a case's activity report by shape, and nothing else under cases/", () => {
+    expect(matchWrite("cases/CASE-1/activity", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("cases/../activity", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("cases/CASE-1/decide", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("cases/CASE-1/activity/extra", ALLOWED_POST)).toBe(false);
   });
 
   it("refuses the still-unproxied destructive routes and a traversal", () => {
@@ -90,7 +100,9 @@ describe("the lists the Access Control screen shows", () => {
   it("spell the review writes with their id segment", () => {
     const shown = describedWrites().map((w) => `${w.method} ${w.path}`);
     expect(shown).toContain("POST review/<id>/decide");
+    expect(shown).toContain("POST cases/<id>/activity");
     expect(shown).toContain("PUT governance/prefilter-rules");
     expect(shown).not.toContain("POST review/decide");
+    expect(shown).not.toContain("POST cases/activity");
   });
 });

@@ -296,6 +296,13 @@ export interface HumanReview {
   note?: string | null;
   at?: string | null;
   decided_by?: string | null;
+  /** The state the case was in before, and the one this review put it in. */
+  state_before?: string | null;
+  state_after?: string | null;
+  /** The outcome the agent had proposed, which the reviewer confirmed or overturned. */
+  agent_proposed?: string | null;
+  /** The SAR draft reference this review signed, if any. */
+  sar_signed?: string | null;
 }
 
 /**
@@ -329,7 +336,17 @@ export interface Case {
   decision?: { outcome?: string; rationale?: string } | null;
   proposed_outcome?: string | null;
   gate_denials?: GateDenial[] | null;
+  /**
+   * Every human decision on the case, oldest first (orchestrator.human_decide appends
+   * one per decision). PLURAL: the stored case has never carried a singular `review`
+   * -- that key exists only on the decide response -- so a screen reading `review`
+   * off a fetched case found nothing, on every case.
+   */
+  reviews?: HumanReview[] | null;
+  /** @deprecated Present on the decide response only, never on a stored case. Read `reviews`. */
   review?: HumanReview | null;
+  /** How an auto-cleared case was cleared: by the rules alone, or after the agents. */
+  cleared_by?: "rules" | "ai" | string | null;
   requires_human?: boolean | null;
   provenance?: Record<string, unknown> | null;
   input_security?: Record<string, unknown> | null;
@@ -560,4 +577,93 @@ export const HUMAN_ACTION_RESULT: Record<HumanAction, CaseState> = {
   block: "BLOCKED_BY_HUMAN",
   request_info: "PENDING_HUMAN",
 };
+
+// ==========================================================================
+// Operator screens (worklist.py): Today and Outcomes
+// ==========================================================================
+
+/** What a case is waiting for. Mirrors worklist.BUCKETS, in display order. */
+export type WorkBucket =
+  | "awaiting_documents"
+  | "awaiting_review"
+  | "awaiting_sign_off"
+  | "awaiting_execution";
+
+export const WORK_BUCKETS: readonly WorkBucket[] = [
+  "awaiting_documents",
+  "awaiting_review",
+  "awaiting_sign_off",
+  "awaiting_execution",
+];
+
+export interface WorkOwner {
+  kind: "person" | "queue" | "unassigned";
+  name: string | null;
+}
+
+/** One row of the Today screen: a projection of a case, never the case. */
+export interface WorkItem {
+  case_id: string;
+  shipment_id?: string | null;
+  /** A case state, or a state of the verification loop the union does not list yet. */
+  state: string;
+  bucket: WorkBucket;
+  risk_score?: number | null;
+  owner: WorkOwner;
+  next_action: { code: string; text: string } | null;
+  waiting_since?: string | null;
+  sla_hours?: number | null;
+  due_at?: string | null;
+  information_rounds: number;
+  finding_count: number;
+  top_finding?: string | null;
+  created_at?: string | null;
+}
+
+/** GET /api/v1/worklist */
+export interface Worklist {
+  buckets: Record<WorkBucket, { count: number; items: WorkItem[] }>;
+  total: number;
+  scanned: number;
+  /** True when the tenant has more waiting cases than one call reads. */
+  truncated: boolean;
+  at: string;
+}
+
+/** A distribution. Every figure is null when nothing was measured. */
+export interface MeasuredSummary {
+  n: number;
+  median: number | null;
+  p95: number | null;
+  total: number | null;
+}
+
+/** GET /api/v1/outcomes */
+export interface Outcomes {
+  window: { since: string | null; until: string | null };
+  resolved: {
+    total: number;
+    by: {
+      cleared_by_rules: number;
+      cleared_by_ai: number;
+      released_by_reviewer: number;
+      blocked_by_reviewer: number;
+    };
+  };
+  time_to_resolution_ms: MeasuredSummary;
+  human_handling_ms: MeasuredSummary & { of_human_resolved: number };
+  information_rounds: {
+    total: number;
+    cases_with_rounds: number;
+    mean_per_resolved: number | null;
+  };
+  cost_per_resolved_usd: MeasuredSummary & { mean: number | null };
+  model_latency_ms: MeasuredSummary;
+  held_now: { total: number; by_state: Record<string, number> };
+  refused_actions: { total: number };
+  external_wait_ms: { value: number | null; reason: string };
+  scanned: number;
+  truncated: boolean;
+  at: string;
+}
 

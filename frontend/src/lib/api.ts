@@ -13,10 +13,12 @@ import type {
   HumanAction,
   MetricsSummary,
   OrchestratorSnapshot,
+  Outcomes,
   Page,
   PrefilterRules,
   ReviewDecisionResult,
   TenantUsageResponse,
+  Worklist,
 } from "./types";
 
 export class ApiError extends Error {
@@ -801,6 +803,42 @@ export async function fetchEvaluation(): Promise<EvaluationSummary> {
 }
 
 // --------------------------------------------------------------------------
+// Operator screens
+// --------------------------------------------------------------------------
+
+/** Every case waiting on someone, grouped on the server (worklist.py). */
+export async function fetchWorklist(): Promise<Worklist> {
+  if (DEMO_MODE) liveOnly("Today's worklist");
+  return getJson<Worklist>("worklist");
+}
+
+/** Resolved cases and what they took, over cases created in [since, until). */
+export async function fetchOutcomes(
+  window: { since?: string | null; until?: string | null } = {},
+): Promise<Outcomes> {
+  if (DEMO_MODE) liveOnly("Outcomes");
+  const params = new URLSearchParams();
+  if (window.since) params.set("since", window.since);
+  if (window.until) params.set("until", window.until);
+  const query = params.toString();
+  return getJson<Outcomes>(query ? `outcomes?${query}` : "outcomes");
+}
+
+/**
+ * Report time the signed-in reviewer spent with a case in view.
+ *
+ * Fire-and-forget by design: a lost report under-counts handling time, which is
+ * the safe direction for a productivity figure, and a failure here must never get
+ * in the way of the review itself.
+ */
+export async function reportCaseActivity(caseId: string, activeMs: number): Promise<void> {
+  if (DEMO_MODE) return;
+  await postJson<unknown>(`cases/${encodeURIComponent(caseId)}/activity`, {
+    active_ms: Math.round(activeMs),
+  });
+}
+
+// --------------------------------------------------------------------------
 // Query keys
 //
 // Every key carries the tenant id, even though the tenant is never sent. That
@@ -831,4 +869,7 @@ export const queryKeys = {
   prefilter: (tenantId: string) => ["prefilter", tenantId] as const,
   modelConfig: (tenantId: string) => ["model-config", tenantId] as const,
   attacks: (tenantId: string) => ["attacks", tenantId] as const,
+  worklist: (tenantId: string) => ["worklist", tenantId] as const,
+  outcomes: (tenantId: string, since: string | null) =>
+    ["outcomes", tenantId, since ?? ""] as const,
 };

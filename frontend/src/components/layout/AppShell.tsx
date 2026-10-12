@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Header } from "@/components/layout/Header";
-import { NAV_ITEMS, Sidebar } from "@/components/layout/Sidebar";
+import { NAV_ITEMS, NAV_SECTIONS, navItemActive, Sidebar } from "@/components/layout/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { fetchReviewQueue, queryKeys } from "@/lib/api";
@@ -106,17 +106,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <SheetTitle className="px-4 pt-4 text-[13px] font-semibold tracking-display text-white">
                 Floorline
               </SheetTitle>
-              <nav className="space-y-0.5 p-2">
-                {NAV_ITEMS.map((item) => (
-                  <MobileNavLink
-                    key={item.href}
-                    href={item.href}
-                    label={item.label}
-                    blurb={item.blurb}
-                    current={item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)}
-                    badge={item.href === "/review" ? reviewCount : null}
-                    onNavigate={() => setMobileOpen(false)}
-                  />
+              <nav className="p-2">
+                {NAV_SECTIONS.map((section, index) => (
+                  <div key={section.id} className={cn("space-y-0.5", index > 0 && "mt-3")}>
+                    <p className="px-2.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+                      {section.label}
+                    </p>
+                    {NAV_ITEMS.filter((item) => item.section === section.id).map((item) => (
+                      <MobileNavLink
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        blurb={item.blurb}
+                        current={navItemActive(item.href, pathname)}
+                        badge={item.href === "/review" ? reviewCount : null}
+                        onNavigate={() => setMobileOpen(false)}
+                      />
+                    ))}
+                  </div>
                 ))}
               </nav>
             </SheetContent>

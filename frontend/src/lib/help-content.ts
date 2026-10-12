@@ -28,6 +28,20 @@ export type HelpEntry = {
 // ---------------------------------------------------------------------------
 
 export const NAV_HELP: Record<string, HelpEntry> = {
+  "/today": {
+    title: "Today",
+    body:
+      "Every case waiting on someone, grouped by what it is waiting for: documents from the shipper, a reviewer's decision, or a decision above the reviewer. Each card names who holds it and the next thing to do.",
+    note:
+      "The grouping comes from the API (worklist.py), not from this screen, so the count in each group is the whole queue rather than the page that happened to load.",
+  },
+  "/outcomes": {
+    title: "Outcomes",
+    body:
+      "Whether the work got done: cases resolved and how, time from arrival to resolution, rounds of requests for information, model cost per resolved case, and the cases still held.",
+    note:
+      "Human handling time is the time a reviewer actually had a case page open and in front of them, recorded as it happens. A figure nobody measured is shown as a dash, never as zero.",
+  },
   "/": {
     title: "Pipeline",
     body:
@@ -473,6 +487,88 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
     title: "Decision",
     body:
       "Release, block, or ask for more information. The decision is recorded under your signed-in account -- never a typed name -- and a note is required for anything other than a plain release.",
+  },
+
+  // Today screen
+  "today.groups": {
+    title: "Waiting on someone",
+    body:
+      "Every case that a person still has to act on, counted across the whole organisation rather than the page that loaded. A case is in exactly one group.",
+  },
+  "today.awaiting_documents": {
+    title: "Waiting for documents",
+    body:
+      "A reviewer pressed Request info, so the case waits on the shipper. Nothing a colleague does will move it until the documents arrive; the card says what was asked for.",
+  },
+  "today.awaiting_review": {
+    title: "Waiting for a reviewer",
+    body:
+      "Held by the rules, parked by the delegation boundary, or stopped by the injection screen. The card's next step says which, from the case's own record.",
+  },
+  "today.awaiting_sign_off": {
+    title: "Waiting for sign-off",
+    body:
+      "The agent escalated these. An escalation is not final until a person signs it off or overturns it, and a SAR draft needs a signature before it can be filed.",
+  },
+  "today.awaiting_execution": {
+    title: "Approved, not yet carried out",
+    body:
+      "A decision that has been approved but not executed. Shown only when there is one: today a reviewer's decision is carried out in the same step it is recorded.",
+  },
+
+  // Case page
+  "case.timeline": {
+    title: "What happened",
+    body:
+      "The case in order: when it arrived, what the rules found and the floor each finding set, which agents ran, what the delegation boundary refused and why, what was asked for, and who decided what.",
+    note:
+      "Drawn from the case record and its audit trail. A refusal recorded only on the trail still appears here.",
+  },
+
+  // Outcomes screen
+  "outcomes.resolved": {
+    title: "Resolved",
+    body:
+      "Cases that arrived in the window and are finished: cleared by the rules alone, cleared after the agents ran, or released or blocked by a named reviewer.",
+  },
+  "outcomes.time_to_resolution": {
+    title: "Arrival to resolution",
+    body:
+      "From the case arriving to it being finished, for a reviewer's case the moment their decision was recorded. This includes time the case sat waiting, so it is elapsed time, not effort.",
+  },
+  "outcomes.handling": {
+    title: "Human handling time",
+    body:
+      "Time a reviewer had the case's page open, in view, and was using it -- idle tabs stop counting after a minute. This is effort, as opposed to the elapsed time beside it.",
+    note:
+      "Recording began with this screen, so older cases have none. The coverage line says how many of the reviewer-decided cases it was measured on.",
+  },
+  "outcomes.rounds": {
+    title: "Requests for information",
+    body:
+      "How many times a reviewer had to ask the shipper for more before a case could be decided. Fewer rounds for the same cases means the right documents were asked for first time.",
+  },
+  "outcomes.cost": {
+    title: "Model cost per resolved case",
+    body:
+      "Nebius Token Factory spend recorded on each resolved case, from the tokens its model calls used at the configured rates.",
+    note:
+      "Web searches are counted per case but not priced into this figure.",
+  },
+  "outcomes.latency": {
+    title: "Model latency per case",
+    body:
+      "The sum of model call times on each resolved case. Cases with no recorded model time are left out rather than counted as instant.",
+  },
+  "outcomes.held": {
+    title: "Held now",
+    body:
+      "Cases waiting on a person at this moment, whatever window is selected. The Today screen lists them.",
+  },
+  "outcomes.refused": {
+    title: "Actions refused",
+    body:
+      "Agent actions the delegation boundary refused in the window, read from the audit trail. A refusal is the control working, not a failure.",
   },
 
   // Audit screen

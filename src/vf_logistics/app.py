@@ -893,6 +893,90 @@ def metrics_summary():
         return _safe_error(e)
 
 
+@app.route("/api/v1/worklist", methods=["GET"])
+# Viewer, like the review queue it regroups: every case on it is already readable
+# by a viewer through /orchestrator/case/<id>. Acting on one still needs reviewer.
+@require_viewer
+def worklist_route() -> Any:
+    """
+    The Today screen: every case waiting on someone, grouped by what it waits for,
+    with an owner and a next action each (worklist.py). Counts cover the whole
+    tenant, not a page, up to worklist.SCAN_LIMIT, past which `truncated` is true.
+    """
+    from vf_logistics import worklist
+
+    try:
+        return jsonify(_on_worker(worklist.build_worklist(_tenant())))
+    except Exception as e:
+        return _safe_error(e)
+
+
+@app.route("/api/v1/outcomes", methods=["GET"])
+@require_viewer
+def outcomes_route() -> Any:
+    """
+    The Outcomes screen: cases resolved and how, time to resolution, information
+    rounds, cost per resolved case, cases still held, refused actions -- over the
+    cases created in [since, until) when given (ISO-8601 UTC, as billing/usage).
+    """
+    from vf_logistics import worklist
+
+    try:
+        since = request.args.get("since") or None
+        until = request.args.get("until") or None
+        for value in (since, until):
+            if value is not None and not _ISO_INSTANT.match(value):
+                return jsonify({"error": "since and until must be ISO-8601 instants"}), 400
+        return jsonify(_on_worker(worklist.build_outcomes(_tenant(), since=since, until=until)))
+    except Exception as e:
+        return _safe_error(e)
+
+
+# A bounded ISO-8601 instant: what utcnow() writes, with or without fractions and
+# zone. Compared as a string by the store, so anything else is refused rather than
+# silently mis-ordered.
+_ISO_INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})?)?$")
+
+# One report covers at most this much time. The console reports every 30 seconds,
+# so anything near the cap is a client bug or a forged number, not a person.
+MAX_ACTIVITY_REPORT_MS = 120_000
+
+
+@app.route("/api/v1/cases/<case_id>/activity", methods=["POST"])
+# Reviewer: the figure this feeds is "time a person spent handling the case", and
+# handling means being able to decide it. A viewer reading a case is not that.
+@require_reviewer
+@limiter.limit("60 per minute")
+def case_activity(case_id: str) -> Any:
+    """
+    Add the time the signed-in reviewer had this case's page open and in view.
+
+    Body: {"active_ms": int, 1..120000}. Recorded against the person the session
+    names, never a name in the body, and only for a case of the caller's tenant.
+    """
+    try:
+        context = get_auth_context()
+        if context is None or not context.acts_for_a_person:
+            return jsonify({"error": "activity is recorded for a signed-in person only"}), 403
+        body = request.get_json(silent=True) or {}
+        active_ms = body.get("active_ms")
+        if (
+            not isinstance(active_ms, int) or isinstance(active_ms, bool)
+            or not 1 <= active_ms <= MAX_ACTIVITY_REPORT_MS
+        ):
+            return jsonify({"error": f"active_ms must be an integer from 1 to {MAX_ACTIVITY_REPORT_MS}"}), 400
+
+        from vf_logistics.store import get_store
+
+        store = get_store()
+        if _on_worker(store.get_case(case_id, tenant_id=_tenant())) is None:
+            return jsonify({"error": "case not found"}), 404
+        _on_worker(store.add_activity(case_id, context.email, active_ms, tenant_id=_tenant()))
+        return jsonify({"recorded_ms": active_ms}), 201
+    except Exception as e:
+        return _safe_error(e)
+
+
 @app.route("/api/v1/orchestrator/drain", methods=["POST"])
 @require_operator
 @limiter.limit("20 per minute")

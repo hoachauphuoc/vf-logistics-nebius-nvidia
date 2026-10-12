@@ -193,6 +193,13 @@ def _throttle_id(tenant_id: str, key: str) -> str:
     return hashlib.sha256(f"{tenant_id}\x00{key}".encode("utf-8")).hexdigest()
 
 
+def _activity_id(tenant_id: str, case_id: str, actor: str) -> str:
+    """The document id for one person's running time on one case. Hashed: no email in the id."""
+    return hashlib.sha256(
+        f"{tenant_id}\x00{case_id}\x00{actor}".encode("utf-8")
+    ).hexdigest()
+
+
 # The one ledger scope every console sign-in attempt is counted in. Not a tenant:
 # a sign-in comes before anyone has an organisation (re-review finding R04), and a
 # per-tenant scope would give a caller who could name one a fresh allowance.
@@ -285,6 +292,7 @@ class MemoryStore:
         self._boundary_counters: dict[str, int] = {}
         self._prefilter: dict[str, dict[str, Any]] = {}
         self._throttle: dict[str, list[float]] = {}
+        self._activity: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
     # -- pre-filter rules --------------------------------------------------
@@ -337,6 +345,36 @@ class MemoryStore:
                 stamps.append(now)
             self._throttle[doc] = stamps
             return limited
+
+    # -- operator activity ------------------------------------------------
+
+    async def add_activity(
+        self, case_id: str, actor: str, active_ms: int, tenant_id: str | None = None,
+    ) -> None:
+        """
+        Add `active_ms` to the time `actor` has spent with `case_id` in front of them.
+
+        One running total per (tenant, case, person), not one row per report, so the
+        console can report every 30 seconds without the collection growing with it,
+        and so it is not the audit trail: this is a measurement for the Outcomes
+        screen, and an immutable regulator's record is the wrong place for heartbeats.
+        """
+        scope = tenant.resolve(tenant_id)
+        doc = _activity_id(scope, case_id, actor)
+        now = utcnow()
+        with self._lock:
+            row = self._activity.setdefault(doc, {
+                "case_id": case_id, "actor": actor, "active_ms": 0,
+                "first_at": now, TENANT_FIELD: scope,
+            })
+            row["active_ms"] += int(active_ms)
+            row["last_at"] = now
+
+    async def list_activity(self, tenant_id: str | None = None) -> list[dict[str, Any]]:
+        """Every (case, person) running total for the tenant."""
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            return [dict(r) for r in self._activity.values() if r.get(TENANT_FIELD) == scope]
 
     # -- delegation boundaries --------------------------------------------
 
@@ -930,6 +968,7 @@ class FirestoreStore:
         self._boundary_counters = self._db.collection("boundary_counters")
         self._prefilter = self._db.collection("prefilter_rules")
         self._throttle = self._db.collection("login_throttle")
+        self._activity = self._db.collection("operator_activity")
 
     # -- delegation boundaries --------------------------------------------
 
@@ -1035,6 +1074,41 @@ class FirestoreStore:
             return not isinstance(seen, int) or seen > limit
 
         return await asyncio.to_thread(_count)
+
+    async def add_activity(
+        self, case_id: str, actor: str, active_ms: int, tenant_id: str | None = None,
+    ) -> None:
+        """
+        The same contract as MemoryStore.add_activity, on Firestore.
+
+        An atomic Increment on one document per (tenant, case, person), like the
+        sign-in ledger: two tabs reporting at once both count, with no read and no
+        lock. `first_at` is not maintained here -- a merge cannot set a field only
+        when it is absent without a read -- and nothing reads it.
+        """
+        scope = tenant.resolve(tenant_id)
+        ref = self._activity.document(_activity_id(scope, case_id, actor))
+        payload = {
+            "case_id": case_id,
+            "actor": actor,
+            "active_ms": self._fs.Increment(int(active_ms)),
+            "last_at": utcnow(),
+            TENANT_FIELD: scope,
+        }
+        await asyncio.to_thread(ref.set, payload, merge=True)
+
+    async def list_activity(self, tenant_id: str | None = None) -> list[dict[str, Any]]:
+        """
+        Every (case, person) running total for the tenant.
+
+        An equality filter on the tenant alone, which Firestore serves from its
+        automatic single-field index -- no composite index to deploy. Bounded,
+        because this feeds one screen's aggregate.
+        """
+        scope = tenant.resolve(tenant_id)
+        query = self._scoped(self._activity, scope).limit(20_000)
+        docs = await asyncio.to_thread(lambda: list(query.stream()))
+        return [d.to_dict() or {} for d in docs]
 
     async def put_boundary(
         self, boundary: dict[str, Any], tenant_id: str | None = None
