@@ -56,6 +56,8 @@ class CaseState(str, Enum):
     RELEASED_BY_HUMAN = "RELEASED_BY_HUMAN"
     BLOCKED_BY_HUMAN = "BLOCKED_BY_HUMAN"
     DEAD_LETTER = "DEAD_LETTER"
+    # A reviewer asked the shipper for documents (evidence.py).
+    AWAITING_EVIDENCE = "AWAITING_EVIDENCE"
 
 
 class ReviewAction(str, Enum):

@@ -140,6 +140,10 @@ TERMINAL = (
     "RELEASED_BY_HUMAN",
     "BLOCKED_BY_HUMAN",
     "DEAD_LETTER",
+    # A reviewer asked the shipper for documents (evidence.py). Terminal for the
+    # agent -- it has nothing more to do -- but NOT in AWAITING_HUMAN: a decision
+    # cannot be recorded on a case while a request is open. Answer it or cancel it.
+    "AWAITING_EVIDENCE",
 )
 
 # Cases sitting in a human's queue. Nothing leaves these states without a named

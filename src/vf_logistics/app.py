@@ -1839,6 +1839,98 @@ def review_decide(case_id: str):
         return _safe_error(e)
 
 
+def _json_object() -> dict[str, Any]:
+    """The request body when it is a JSON object, else an empty one. Never a list."""
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else {}
+
+
+def _acting_person(body: dict[str, Any]) -> tuple[str, str | None]:
+    """
+    The name to record and how that person signed in -- the verified session when
+    there is one, the body only for a caller with no person behind it (a script
+    holding the API key). The same rule review_decide applies, in one place.
+    """
+    context = get_auth_context()
+    if context is not None and context.acts_for_a_person:
+        return context.email, context.actor_auth
+    return (
+        str(body.get("reviewer") or "").strip(),
+        context.actor_auth if context is not None else None,
+    )
+
+
+def _evidence_response(work: Any, status: int = 200) -> Any:
+    """Run an evidence.py operation and answer, mapping its refusals to their status."""
+    from vf_logistics import evidence
+
+    try:
+        response = jsonify(_on_worker(work))
+        response.status_code = status
+        # The body can carry a link. Nothing between here and the reviewer may keep it.
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except evidence.EvidenceError as e:
+        return jsonify({"error": e.message}), e.status
+    except Exception as e:
+        return _safe_error(e)
+
+
+@app.route("/api/v1/review/<case_id>/request-evidence", methods=["POST"])
+@require_reviewer
+@limiter.limit("20 per minute")
+def review_request_evidence(case_id: str) -> Any:
+    """
+    Ask the shipper for documents on a case's findings, and get the link to send.
+
+    Body (all optional): {"finding_codes": [...], "documents": [...], "owner": "",
+    "note": ""}. With none, the minimum the case's findings ask for, less what has
+    already arrived. The case moves to AWAITING_EVIDENCE. The response carries the
+    link once (`path`); it is not kept anywhere a viewer can read it.
+    """
+    from vf_logistics import evidence
+
+    body = _json_object()
+    person, actor_auth = _acting_person(body)
+    return _evidence_response(evidence.request_evidence(
+        case_id, person,
+        finding_codes=body.get("finding_codes"), documents=body.get("documents"),
+        owner=body.get("owner"), note=body.get("note"),
+        actor_auth=actor_auth, tenant_id=_tenant(),
+    ), 201)
+
+
+@app.route("/api/v1/review/<case_id>/evidence/<request_id>/link", methods=["POST"])
+@require_reviewer
+@limiter.limit("20 per minute")
+def review_evidence_link(case_id: str, request_id: str) -> Any:
+    """A new link for an open request. The previous link stops working."""
+    from vf_logistics import evidence
+
+    person, actor_auth = _acting_person(_json_object())
+    return _evidence_response(evidence.reissue_link(
+        case_id, request_id, person, actor_auth=actor_auth, tenant_id=_tenant(),
+    ))
+
+
+@app.route("/api/v1/review/<case_id>/evidence/<request_id>/cancel", methods=["POST"])
+@require_reviewer
+@limiter.limit("20 per minute")
+def review_evidence_cancel(case_id: str, request_id: str) -> Any:
+    """
+    Withdraw an open request, with a reason. When it was the last open one the
+    case returns to the state it was in before the first was made.
+    """
+    from vf_logistics import evidence
+
+    body = _json_object()
+    person, actor_auth = _acting_person(body)
+    return _evidence_response(evidence.cancel_request(
+        case_id, request_id, person, body.get("reason"),
+        actor_auth=actor_auth, tenant_id=_tenant(),
+    ))
+
+
 @app.route("/api/v1/review/<case_id>/deep-review", methods=["POST"])
 @require_reviewer
 # Nemotron 3 Ultra debate plus Tavily searches. The docstring below calls it
