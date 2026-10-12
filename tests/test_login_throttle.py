@@ -15,6 +15,7 @@ Class names use the `Test*` prefix: see test_console_session.py for why.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import unittest
@@ -22,6 +23,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from vf_logistics import membership  # noqa: E402
 from vf_logistics import store as store_mod  # noqa: E402
 from test_console_session import TEST_KEY, TEST_SECRET, mint  # noqa: E402
 
@@ -101,16 +103,22 @@ class TestTheRoute(unittest.TestCase):
         self.assertTrue(body["limited"])
         self.assertEqual(body["results"], [True, False])
 
-    def test_nobody_but_the_service_identity_may_ask(self):
+    def test_nobody_but_the_key_alone_may_ask(self):
         """
         A signed-in admin holds operator, so the role alone would let them probe
-        or burn someone else's allowance. Anonymous callers get the role refusal.
+        or burn someone else's allowance. Without the key there is nothing to ask
+        with; with the wrong one, the same.
         """
         cases = {
-            "anonymous": ({}, 403),
+            "anonymous": ({}, 401),
+            "a wrong key": ({"X-VF-API-Key": "not-the-key"}, 401),
             "admin with a password session": (
                 {"X-VF-API-Key": TEST_KEY,
                  "X-VF-Session": mint("admin@forwarder.example", amr="password")},
+                403,
+            ),
+            "the key with a session that does not verify": (
+                {"X-VF-API-Key": TEST_KEY, "X-VF-Session": "forged"},
                 403,
             ),
         }
@@ -118,6 +126,11 @@ class TestTheRoute(unittest.TestCase):
             with self.subTest(caller=label):
                 response = self.client.post(ROUTE, json={"checks": [_check()]}, headers=headers)
                 self.assertEqual(response.status_code, want, response.get_data(as_text=True))
+
+    def test_no_key_configured_refuses_everyone(self):
+        with patch.dict(os.environ, {"VF_API_KEY": ""}):
+            response = self.post({"checks": [_check()]}, headers={"X-VF-API-Key": ""})
+        self.assertEqual(response.status_code, 401)
 
     def test_malformed_bodies_are_refused(self):
         for label, body in {
@@ -147,6 +160,69 @@ class TestTheRoute(unittest.TestCase):
             for i in range(210)
         }
         self.assertEqual(statuses, {200})
+
+
+class TestUnderMultiTenancy(unittest.TestCase):
+    """
+    Re-review finding R04: with MULTI_TENANT on and the service a member of two
+    organisations, the console's key-only call was told to choose a tenant (403)
+    before the route ran, and the console fell back to per-instance counting.
+    """
+
+    REGISTRY = {"service": {"acme": "operator", "beta-shipping": "viewer"}}
+
+    def setUp(self):
+        from vf_logistics import app as app_mod
+
+        self.env = patch.dict(os.environ, {
+            **ENV,
+            "MULTI_TENANT": "true",
+            membership.MEMBERS_ENV: json.dumps(self.REGISTRY),
+        })
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        store_mod._store = None
+        self.addCleanup(setattr, store_mod, "_store", None)
+        self.app = app_mod.app
+
+    def test_the_key_alone_counts_without_choosing_an_organisation(self):
+        response = self.app.test_client().post(
+            ROUTE, json={"checks": [_check()]}, headers={"X-VF-API-Key": TEST_KEY},
+        )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertFalse(response.get_json()["limited"])
+
+    def test_a_tenant_header_changes_nothing(self):
+        """One ledger whatever organisation a caller names, or a header would buy an allowance."""
+        client = self.app.test_client()
+        answers = []
+        for choice in [None, "acme", "beta-shipping", "gamma"]:
+            headers = {"X-VF-API-Key": TEST_KEY}
+            if choice:
+                headers[membership.TENANT_HEADER] = choice
+            response = client.post(ROUTE, json={"checks": [_check(limit=2)]}, headers=headers)
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            answers.append(response.get_json()["limited"])
+        self.assertEqual(answers, [False, False, True, True])
+
+    def test_two_console_instances_spend_one_allowance(self):
+        """Two clients, one store: what two Cloud Run instances share in Firestore."""
+        first, second = self.app.test_client(), self.app.test_client()
+        answers = [
+            (first if i % 2 == 0 else second).post(
+                ROUTE, json={"checks": [_check(limit=5)]}, headers={"X-VF-API-Key": TEST_KEY},
+            ).get_json()["limited"]
+            for i in range(7)
+        ]
+        self.assertEqual(answers, [False] * 5 + [True, True])
+
+    def test_a_session_is_still_refused(self):
+        response = self.app.test_client().post(
+            ROUTE,
+            json={"checks": [_check()]},
+            headers={"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint("a@acme.com", amr="password")},
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -73,6 +73,8 @@ describe("POST /api/auth/judge", () => {
     // Four hours, not the twelve a password sign-in gets.
     expect(session!.exp - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(4 * 60 * 60 + 1);
     expect(response.headers.get("set-cookie")).toMatch(/HttpOnly/i);
+    // The previous person's organisation choice does not carry over (R03).
+    expect(response.headers.get("set-cookie")).toMatch(/vf_tenant=;[^,]*Max-Age=0/i);
   });
 
   it("throttles one address pressing it in a loop", async () => {

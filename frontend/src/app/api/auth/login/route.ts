@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { flaskBase } from "@/lib/config";
-import { canonicalEmail, isLoginRateLimited } from "@/lib/login-limit";
+import { canonicalEmail, loginAttemptVerdict } from "@/lib/login-limit";
 import { verifyOperator } from "@/lib/operators";
 import { cookieOptions, COOKIE_NAME, signSession, TTL_SECONDS } from "@/lib/session";
+import { EXPIRED_TENANT_CHOICE, TENANT_COOKIE } from "@/lib/tenant-choice";
 
 /**
  * Sign in an operator.
@@ -39,10 +40,18 @@ export async function POST(request: Request) {
   // enumeration via timing) is also skipped, but timing on a 429 is not a
   // signal because the response is instant regardless of whether the email
   // exists, and the status code already says "you are being throttled".
-  if (await isLoginRateLimited(account, request, flaskBase(), process.env.VF_API_KEY)) {
+  const verdict = await loginAttemptVerdict(account, request, flaskBase(), process.env.VF_API_KEY);
+  if (verdict === "limited") {
     return NextResponse.json(
       { error: "Too many login attempts. Try again in a minute." },
       { status: 429 },
+    );
+  }
+  if (verdict === "unavailable") {
+    // No limit could be established, so no password is checked (finding R01).
+    return NextResponse.json(
+      { error: "Sign-in is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "5" } },
     );
   }
 
@@ -63,5 +72,8 @@ export async function POST(request: Request) {
 
   const response = NextResponse.json({ email: verified });
   response.cookies.set(COOKIE_NAME, token, cookieOptions(TTL_SECONDS));
+  // A choice left by whoever signed in here before is not this person's
+  // (finding R03); with several organisations the switcher asks afresh.
+  response.cookies.set(TENANT_COOKIE, "", EXPIRED_TENANT_CHOICE);
   return response;
 }

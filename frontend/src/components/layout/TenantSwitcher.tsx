@@ -13,7 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { roleLabel, useIdentity } from "@/lib/identity";
+import { roleLabel, type TenantChoiceRequired, useIdentity, useTenantChoice } from "@/lib/identity";
 import { chooseTenant } from "@/lib/tenant-choice";
 import { useTenant } from "@/lib/tenant-context";
 import type { Tenant } from "@/lib/types";
@@ -30,12 +30,20 @@ import { cn } from "@/lib/utils";
  * the BFF forwards as X-VF-Tenant, and the API refuses any value outside that
  * person's own memberships. With one membership, or multi-tenancy off, this is a
  * read-only display.
+ *
+ * Before any of that, the API may refuse to answer until a choice is made: on
+ * first sign-in with several organisations, or with a remembered choice that is
+ * not this person's. Then the switcher offers the choices from that refusal
+ * (re-review finding R03) -- there is no successful whoami to read them from.
  */
 export function TenantSwitcher({ display }: { display?: Tenant }) {
   const { tenant: selected, tenants, canSwitch, setTenantId } = useTenant();
   const identity = useIdentity().data;
+  const pending = useTenantChoice();
   const tenant = display ?? selected;
   const memberships = Object.entries(identity?.memberships ?? {});
+
+  if (!canSwitch && pending) return <ChoiceRequired pending={pending} />;
 
   if (!canSwitch && memberships.length > 1) {
     return (
@@ -180,6 +188,59 @@ export function TenantSwitcher({ display }: { display?: Tenant }) {
               {t.id === tenant.id ? (
                 <Check className="size-3.5 shrink-0 text-brand" aria-hidden />
               ) : null}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * The chooser shown while the API waits for a choice. Its value is empty: until
+ * the person picks, the console is acting in no organisation at all.
+ */
+function ChoiceRequired({ pending }: { pending: TenantChoiceRequired }) {
+  const stale = pending.reason !== "tenant_choice_required";
+  return (
+    <Select onValueChange={chooseTenant}>
+      <SelectTrigger
+        aria-label="Choose organisation"
+        className={cn(
+          "h-auto w-[15.5rem] gap-2.5 rounded-lg border-amber-400/40 bg-amber-500/10 px-2.5 py-1.5",
+          "transition-colors hover:border-amber-400/60",
+          "[&>svg:last-child]:hidden",
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-2.5">
+          <Building2 className="size-4 shrink-0 text-amber-300" aria-hidden />
+          <span className="min-w-0 text-left">
+            <span className="block truncate text-[13px] font-medium leading-tight text-white">
+              Choose an organisation
+            </span>
+            <span className="block truncate text-[11px] leading-tight text-faint">
+              {stale ? "Your previous choice is not available" : `${pending.choices.length} available to you`}
+            </span>
+          </span>
+        </span>
+        <ChevronDown className="ml-auto size-3.5 shrink-0 text-dim opacity-70" aria-hidden />
+      </SelectTrigger>
+      <SelectContent
+        align="start"
+        className="w-[17rem] border-white/10 bg-[#0a0f1f]/95 backdrop-blur-xl"
+      >
+        <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+          Your organisations
+        </div>
+        {pending.choices.map((id) => (
+          <SelectItem
+            key={id}
+            value={id}
+            className="gap-2.5 rounded-md py-1.5 pl-2 pr-2 focus:bg-white/[0.07] [&>span:last-child]:hidden"
+          >
+            <span className="flex w-full items-center gap-2.5">
+              <TenantMark name={id} />
+              <span className="block truncate text-[13px] font-medium leading-tight text-white">{id}</span>
             </span>
           </SelectItem>
         ))}

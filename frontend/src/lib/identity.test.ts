@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type Identity, holds, isOneClick, lockReason, passwordLockReason, roleLabel } from "./identity";
+import { type Identity, holds, isOneClick, lockReason, passwordLockReason, roleLabel, TenantChoiceRequired, tenantChoiceFromRefusal } from "./identity";
 
 function identity(overrides: Partial<Identity>): Identity {
   return {
@@ -65,6 +65,38 @@ describe("roleLabel", () => {
   it("labels the known roles and treats no role as public", () => {
     expect(roleLabel("governance_admin")).toBe("Governance admin");
     expect(roleLabel(null)).toBe("Public");
+  });
+});
+
+describe("tenantChoiceFromRefusal (re-review R03)", () => {
+  it("reads the choices and why a choice is needed", () => {
+    const choice = tenantChoiceFromRefusal({
+      error: "Not a member of this organisation",
+      reason: "tenant_choice_required",
+      choices: ["acme", "beta-shipping"],
+    });
+    expect(choice).toBeInstanceOf(TenantChoiceRequired);
+    expect(choice?.choices).toEqual(["acme", "beta-shipping"]);
+    expect(choice?.reason).toBe("tenant_choice_required");
+  });
+
+  it("treats a stale choice as a choice to make again", () => {
+    expect(tenantChoiceFromRefusal({ reason: "not_member_of_requested", choices: ["acme"] })?.choices)
+      .toEqual(["acme"]);
+  });
+
+  it("is null for any other refusal, so a role 403 is not mistaken for one", () => {
+    for (const body of [
+      null,
+      "no",
+      { error: "Insufficient permissions" },
+      { reason: "no_membership", choices: [] },
+      { reason: "tenant_choice_required", choices: [] },
+      { reason: "tenant_choice_required", choices: "acme" },
+      { reason: "something_else", choices: ["acme"] },
+    ]) {
+      expect(tenantChoiceFromRefusal(body), JSON.stringify(body)).toBeNull();
+    }
   });
 });
 

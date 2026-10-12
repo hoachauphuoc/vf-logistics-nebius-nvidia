@@ -45,3 +45,14 @@ export function chooseTenant(tenantId: string): void {
   document.cookie = `${TENANT_COOKIE}=${encodeURIComponent(tenantId)}; path=/; samesite=lax; max-age=${60 * 60 * 24 * 30}`;
   window.location.reload();
 }
+
+/**
+ * Options that expire the choice at once, for the routes that start or end a
+ * session: `response.cookies.set(TENANT_COOKIE, "", EXPIRED_TENANT_CHOICE)`.
+ *
+ * Re-review finding R03: the choice outlived the session, so the next person to
+ * sign in on the same browser inherited it -- a tenant they are not in, and a 403
+ * on every screen. A choice belongs to one person's session, and goes with it.
+ * The path matches chooseTenant's, or the browser would keep a second cookie.
+ */
+export const EXPIRED_TENANT_CHOICE = { path: "/", maxAge: 0, sameSite: "lax" } as const;

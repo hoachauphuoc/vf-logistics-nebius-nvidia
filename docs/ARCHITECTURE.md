@@ -731,14 +731,21 @@ An architecture document that omits these is marketing.
   contention. Against the emulator six simultaneous publishes all succeeded with distinct
   versions and one ACTIVE boundary, but took 55-155 s to clear. Publishing is a rare,
   deliberate act, so this is acceptable; it would not be for a hot path.
-- **`/internal/execute` is the one place a caller may name a tenant**, gated on the
-  service identity. With multi-tenancy on, the tenant must be one the `service`
-  principal is a registered member of; `case_id` membership within that tenant is
-  still not checked.
+- **`/internal/execute` acts only for the key alone, in the organisation it checked.**
+  A request carrying a console session is refused. The organisation is the one
+  `X-VF-Tenant` selected among the `service` principal's own memberships, where the
+  operator role is checked; a body `tenant_id` must repeat it (409 otherwise), and the
+  `case_id` must be a case of that organisation (404 otherwise). This route is the
+  only place `case_id` ownership is checked before egress; ingestion paths are still
+  not multi-tenant.
 - **The general rate limiter keys on email or IP, never on a tenant**, and its storage
   is `memory://`, so limits are per-instance and reset on deploy. Console password
   sign-in is the exception: it is counted on a shared Firestore ledger
-  (`login_throttle`) per account and per source.
+  (`login_throttle`) per account and per source, the source being the last
+  X-Forwarded-For entry (the one Cloud Run appends). When the ledger cannot answer,
+  the sign-in is refused with 503 rather than counted per instance. The ledger is
+  reached with the platform key alone and consults no tenant registry.
+  It is a fixed window, so a burst straddling a boundary can see up to twice the limit.
 
 ---
 

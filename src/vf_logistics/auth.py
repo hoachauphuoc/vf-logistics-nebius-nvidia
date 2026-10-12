@@ -409,6 +409,20 @@ class AuthContext:
         return self.iap_subject is None and self.via_api_key
 
     @property
+    def is_machine_identity(self) -> bool:
+        """
+        True when the key alone authorised this request: no session, no IAP.
+
+        Narrower than is_service_identity, which stays true when the console
+        forwards a signed session -- the key authorised that request, but a person
+        is on the other end of it. Re-review finding R02: /internal/execute let
+        "service identity" name a tenant in its body, so a request acting for
+        Alice could publish into an organisation Alice is not in. Anything that
+        is meant only for a machine asks this instead.
+        """
+        return self.iap_subject is None and self.via_api_key and not self.via_session
+
+    @property
     def acts_for_a_person(self) -> bool:
         """
         True when a human is on the other end of this request.
@@ -666,10 +680,14 @@ def _membership_refusal(exc: "membership.MembershipError") -> tuple[Response, in
 
     `choices` lists only the caller's OWN memberships, so a console can offer the
     organisations this person may switch to without revealing any other.
+    `reason` says which refusal this is (membership.REASON_*), so the console can
+    show a chooser on first sign-in and recover from a stale choice instead of
+    reading an opaque 403 as "the API is down" (re-review finding R03).
     """
     return jsonify({
         "error": "Not a member of this organisation",
         "detail": str(exc),
+        "reason": exc.reason,
         "choices": exc.choices,
     }), exc.status
 
@@ -959,6 +977,51 @@ def require_password_session(f: Callable) -> Callable:
             }), 403
         return f(*args, **kwargs)
     decorated._requires_password_session = True  # type: ignore[attr-defined]
+    return decorated
+
+
+def require_platform_key(f: Callable) -> Callable:
+    """
+    Decorator: the platform key alone -- no session, and no tenant.
+
+    For work that happens before anyone is signed in and belongs to no
+    organisation: the console's sign-in attempt counter (/internal/login-throttle).
+
+    Re-review finding R04: that route sat behind require_operator, which runs the
+    whole of authenticate_request -- including the membership lookup for the
+    "service" principal. With MULTI_TENANT on and the service a member of two
+    organisations, the lookup refused the console with "choose one" before the
+    route ran, the console fell back to per-instance counting, and the shared
+    limit was gone without anything having failed. Choosing an organisation is a
+    question about business data, and a sign-in attempt is not business data.
+
+    Still strict about the machine: the key is compared in constant time, a
+    request carrying a console session is refused (a signed-in person holding the
+    key's role must not probe or exhaust someone else's allowance), and the
+    context carries no tenant, so nothing tenant-scoped can be reached through it.
+    """
+    @functools.wraps(f)
+    def decorated(*args: Any, **kwargs: Any) -> Any:
+        expected = api_key()
+        supplied = _presented_api_key()
+        if not expected or not supplied or not hmac.compare_digest(supplied, expected):
+            return jsonify({
+                "error": "Platform key required",
+                "detail": f"Present this service's {API_KEY_HEADER}.",
+            }), 401
+        if (request.headers.get(CONSOLE_SESSION_HEADER) or "").strip():
+            return jsonify({"error": "service identity only"}), 403
+        g.auth_context = AuthContext(
+            email=SERVICE_IDENTITY_EMAIL,
+            roles={API_KEY_GRANT},
+            iap_subject=None,
+            tenant_id=None,
+            via_api_key=True,
+        )
+        return f(*args, **kwargs)
+    # The key's own grant, which is what holding it amounts to in route_policy.
+    decorated._required_role = API_KEY_GRANT.value  # type: ignore[attr-defined]
+    decorated._platform_key_only = True  # type: ignore[attr-defined]
     return decorated
 
 

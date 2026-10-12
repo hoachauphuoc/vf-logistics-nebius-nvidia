@@ -167,8 +167,8 @@ class TestSignInLedgerOnFirestore(_EmulatorCase):
 
     def test_a_burst_is_answered_quickly(self):
         """
-        The console waits 3 s and then falls back to its per-instance limiter. A
-        ledger that queues under a burst hands the decision back to finding A04.
+        The console waits 3 s and then refuses the sign-in (finding R01). A ledger
+        that queues under a burst would turn the limit into an outage.
         """
         started = time.monotonic()
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -181,6 +181,23 @@ class TestSignInLedgerOnFirestore(_EmulatorCase):
         self.assertEqual(len(docs), 1)
         self.assertNotIn("judge", docs[0].id)
         self.assertIn("expire_at", docs[0].to_dict())
+
+
+class TestSignInLedgerUnderMultiTenancy(_EmulatorCase):
+    """Re-review R04: the console's one ledger scope, not a tenant, under MULTI_TENANT."""
+
+    MULTI_TENANT = "true"
+
+    def test_the_platform_scope_counts_as_one_ledger(self):
+        scope = store_mod.LOGIN_THROTTLE_SCOPE
+
+        def hit() -> bool:
+            return _run(self.store.hit_rate_limit("acct:x", 3600, 3, tenant_id=scope))
+
+        self.assertEqual([hit() for _ in range(5)], [False, False, False, True, True])
+        docs = list(self.store._throttle.stream())
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0].to_dict()[store_mod.TENANT_FIELD], scope)
 
 
 class TestOnlyContentionIsRetried(unittest.TestCase):

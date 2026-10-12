@@ -193,6 +193,12 @@ def _throttle_id(tenant_id: str, key: str) -> str:
     return hashlib.sha256(f"{tenant_id}\x00{key}".encode("utf-8")).hexdigest()
 
 
+# The one ledger scope every console sign-in attempt is counted in. Not a tenant:
+# a sign-in comes before anyone has an organisation (re-review finding R04), and a
+# per-tenant scope would give a caller who could name one a fresh allowance.
+LOGIN_THROTTLE_SCOPE = "platform-login"
+
+
 def _within_window(
     created_at: Any, since: str | None, until: str | None
 ) -> bool:
@@ -996,10 +1002,11 @@ class FirestoreStore:
         server-side Increment and read back. NOT a transaction, deliberately: the
         first version used one, and against the emulator a dozen concurrent
         attempts on one counter queued on its lock for minutes. The console waits
-        three seconds for this answer and then falls back to its per-instance
-        limiter -- so under exactly the burst this exists to stop, the
-        transactional ledger handed the decision back to the weakness of finding
-        A04. An increment takes no lock and does not retry.
+        three seconds for this answer and then gives up -- it used to fall back to
+        its per-instance limiter, and now refuses the sign-in (finding R01) -- so
+        under exactly the burst this exists to stop, the transactional ledger
+        would have turned the limit into an outage. An increment takes no lock and
+        does not retry.
 
         Correctness without a lock: attempt k's increment makes the count at least
         k before it reads, so any attempt that reads a count within the limit was

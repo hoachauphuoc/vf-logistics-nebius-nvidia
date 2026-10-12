@@ -121,6 +121,25 @@ class TestTheRegistry(unittest.TestCase):
     def test_principals_are_case_and_space_insensitive(self):
         self.assertEqual(membership.resolve("  Alice@ACME.com "), ("acme", "governance_admin"))
 
+    def test_every_refusal_says_why(self):
+        """Re-review R03: the console acts on the reason; the status cannot tell them apart."""
+        cases = {
+            membership.REASON_CHOICE_REQUIRED: (AUDITOR, None),
+            membership.REASON_NOT_MEMBER_OF_REQUESTED: (BOB, "acme"),
+            membership.REASON_NO_MEMBERSHIP: (STRANGER, None),
+            membership.REASON_INVALID_CHOICE: (BOB, "Not/A/Tenant"),
+        }
+        for reason, (principal, choice) in cases.items():
+            with self.subTest(reason=reason):
+                with self.assertRaises(membership.MembershipError) as raised:
+                    membership.resolve(principal, choice)
+                self.assertEqual(raised.exception.reason, reason)
+
+    def test_a_stale_choice_comes_back_with_the_persons_own_choices(self):
+        with self.assertRaises(membership.MembershipError) as raised:
+            membership.resolve(AUDITOR, "gamma")
+        self.assertEqual(raised.exception.choices, ["acme", "beta-shipping"])
+
     def test_malformed_registries_are_refused(self):
         for label, raw in {
             "not json": "{nope",
@@ -261,13 +280,30 @@ class TestRoutesSeeTheResolvedTenant(unittest.TestCase):
         self.assertEqual(me["tenant_id"], "acme")
         self.assertEqual(me["memberships"], {"acme": "reviewer", "beta-shipping": "viewer"})
 
-    def test_internal_execute_cannot_name_a_tenant_the_service_is_not_in(self):
+    def test_first_sign_in_with_two_organisations_is_asked_to_choose(self):
+        """Re-review R03: the refusal is what the console builds its chooser from."""
+        response = self.client.get("/api/v1/auth/whoami", headers=_console(AUDITOR))
+        self.assertEqual(response.status_code, 403)
+        body = response.get_json()
+        self.assertEqual(body["reason"], membership.REASON_CHOICE_REQUIRED)
+        self.assertEqual(body["choices"], ["acme", "beta-shipping"])
+
+    def test_a_choice_left_by_another_person_is_recoverable(self):
+        """Bob's browser remembers acme from Alice; Bob is offered his own instead."""
+        response = self.client.get("/api/v1/auth/whoami", headers=_console(BOB, "acme"))
+        self.assertEqual(response.status_code, 403)
+        body = response.get_json()
+        self.assertEqual(body["reason"], membership.REASON_NOT_MEMBER_OF_REQUESTED)
+        self.assertEqual(body["choices"], ["beta-shipping"])
+
+    def test_internal_execute_cannot_name_a_tenant_other_than_the_selected_one(self):
+        """Re-review R02: the body may repeat the selected tenant, never replace it."""
         response = self.client.post(
             "/internal/execute",
             json={"action": "publish_decision", "case_id": "C-1", "tenant_id": "gamma"},
             headers={"X-VF-API-Key": TEST_KEY, membership.TENANT_HEADER: "acme"},
         )
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
 
 
 class TestSingleTenantIsUnchanged(unittest.TestCase):

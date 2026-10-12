@@ -67,13 +67,29 @@ class MembershipConfigError(ValueError):
     """VF_TENANT_MEMBERS is not a registry this module can enforce."""
 
 
+# Why a membership was refused, for a console to act on rather than parse the
+# message (re-review finding R03). The status alone cannot tell "choose one"
+# from "the one you chose is not yours": both are 403.
+REASON_CHOICE_REQUIRED = "tenant_choice_required"
+REASON_NOT_MEMBER_OF_REQUESTED = "not_member_of_requested"
+REASON_NO_MEMBERSHIP = "no_membership"
+REASON_INVALID_CHOICE = "invalid_choice"
+
+
 class MembershipError(Exception):
     """This principal may not act in the tenant it asked for (or in any)."""
 
-    def __init__(self, message: str, status: int = 403, choices: list[str] | None = None):
+    def __init__(
+        self,
+        message: str,
+        status: int = 403,
+        choices: list[str] | None = None,
+        reason: str = REASON_NO_MEMBERSHIP,
+    ):
         super().__init__(message)
         self.status = status
         self.choices = choices or []
+        self.reason = reason
 
 
 def normalise_principal(principal: str) -> str:
@@ -138,7 +154,8 @@ def resolve(principal: str, requested: str | None = None) -> tuple[str, str]:
     granted = memberships(principal)
     if not granted:
         raise MembershipError(
-            "This identity is not a member of any organisation on this service."
+            "This identity is not a member of any organisation on this service.",
+            reason=REASON_NO_MEMBERSHIP,
         )
 
     choice = (requested or "").strip()
@@ -146,11 +163,16 @@ def resolve(principal: str, requested: str | None = None) -> tuple[str, str]:
         try:
             wanted = tenant.validate(choice)
         except tenant.TenantError as exc:
-            raise MembershipError(str(exc), status=400) from exc
+            raise MembershipError(
+                str(exc), status=400, choices=sorted(granted), reason=REASON_INVALID_CHOICE,
+            ) from exc
         if wanted not in granted:
+            # Also what a stale choice looks like -- a cookie left by whoever
+            # signed in on this browser before -- so the choices go with it.
             raise MembershipError(
                 "This identity is not a member of the requested organisation.",
                 choices=sorted(granted),
+                reason=REASON_NOT_MEMBER_OF_REQUESTED,
             )
         return wanted, granted[wanted]
 
@@ -161,6 +183,7 @@ def resolve(principal: str, requested: str | None = None) -> tuple[str, str]:
     raise MembershipError(
         f"This identity belongs to several organisations; choose one with {TENANT_HEADER}.",
         choices=sorted(granted),
+        reason=REASON_CHOICE_REQUIRED,
     )
 
 

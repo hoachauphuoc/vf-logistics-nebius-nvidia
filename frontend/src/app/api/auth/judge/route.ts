@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { ONE_CLICK_TTL_SECONDS, oneClickJudge } from "@/lib/one-click";
 import { clientIp, slidingWindowLimiter } from "@/lib/rate-limit";
 import { cookieOptions, COOKIE_NAME, signSession } from "@/lib/session";
+import { EXPIRED_TENANT_CHOICE, TENANT_COOKIE } from "@/lib/tenant-choice";
 
 /**
  * Sign in as the guest judge with one click. See lib/one-click.ts.
@@ -48,5 +49,7 @@ export async function POST(request: Request) {
 
   const response = NextResponse.json({ email: judge.email, amr: "one_click" });
   response.cookies.set(COOKIE_NAME, token, cookieOptions(ONE_CLICK_TTL_SECONDS));
+  // As on a password sign-in: the previous person's organisation choice goes.
+  response.cookies.set(TENANT_COOKIE, "", EXPIRED_TENANT_CHOICE);
   return response;
 }

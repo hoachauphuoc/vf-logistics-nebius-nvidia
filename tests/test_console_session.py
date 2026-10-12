@@ -274,6 +274,20 @@ class TestSessionNeverWidensTheKey(unittest.TestCase):
         self.assertTrue(with_session.is_service_identity)
         self.assertFalse(with_session.is_development_identity)
 
+    def test_only_the_key_alone_is_a_machine(self):
+        """
+        Re-review R02: the key with a session acts for a person, and a route meant
+        for the analysis runtime alone must be able to tell the two apart.
+        """
+        keyed, _ = context_for({"X-VF-API-Key": TEST_KEY})
+        with_session, _ = context_for(
+            {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint()}
+        )
+        anonymous, _ = context_for({})
+        self.assertTrue(keyed.is_machine_identity)
+        self.assertFalse(with_session.is_machine_identity)
+        self.assertFalse(anonymous.is_machine_identity)
+
 
 class TestForgedSessionsAreRefused(unittest.TestCase):
     """

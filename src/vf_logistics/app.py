@@ -35,6 +35,7 @@ from vf_logistics.auth import (
     require_operator,
     require_governance_admin,
     require_password_session,
+    require_platform_key,
     get_auth_context,
 )
 
@@ -1849,7 +1850,7 @@ def review_document(case_id: str):
 # were subverted and tried to publish directly, Google refuses it.
 
 @app.route("/internal/login-throttle", methods=["POST"])
-@require_operator
+@require_platform_key
 # Exempt from the per-identity default limit: every console sign-in arrives here
 # as the one service identity, so the default bucket would throttle all sign-ins
 # together and turn the shared counter into the thing that locks people out.
@@ -1863,17 +1864,15 @@ def internal_login_throttle() -> Any:
     login route now asks here, and FirestoreStore keeps one ledger for all of them.
 
     Reachable only from the console's server: Flask binds 127.0.0.1, and the
-    console forwards neither /internal/* nor this route. It is also refused to
-    anything but the service identity (the key alone), so a signed-in person
-    holding operator cannot use it to probe or exhaust someone else's allowance.
+    console forwards neither /internal/* nor this route. require_platform_key
+    admits the key alone and refuses a request carrying a session, so a
+    signed-in person holding operator cannot use it to probe or exhaust someone
+    else's allowance -- and it consults no tenant registry, so a service that
+    belongs to several organisations is not told to choose one (finding R04).
 
     Body: {"checks": [{"key": str, "limit": int, "window_seconds": int}, ...]}
     Each check is counted independently; the answer is limited if any one is.
     """
-    context = get_auth_context()
-    if context is None or not context.is_service_identity or context.via_session:
-        return jsonify({"error": "service identity only"}), 403
-
     body = request.get_json(silent=True) or {}
     checks = body.get("checks")
     if not isinstance(checks, list) or not 1 <= len(checks) <= 4:
@@ -1893,11 +1892,11 @@ def internal_login_throttle() -> Any:
         parsed.append((key, limit, window))
 
     try:
-        from vf_logistics.store import get_store
+        from vf_logistics.store import LOGIN_THROTTLE_SCOPE, get_store
 
         store = get_store()
         results = [
-            _on_worker(store.hit_rate_limit(key, window, limit, tenant_id=_tenant()))
+            _on_worker(store.hit_rate_limit(key, window, limit, tenant_id=LOGIN_THROTTLE_SCOPE))
             for key, limit, window in parsed
         ]
         return jsonify({"limited": any(results), "results": results})
@@ -1915,7 +1914,7 @@ def internal_execute():
         action = str(body.get("action") or "")
         case_id = str(body.get("case_id") or "")
         payload = body.get("payload") or {}
-        # A body-supplied tenant is honoured only for a service identity.
+        # WHO may ask: the key alone -- the analysis runtime, as a machine.
         #
         # The original reasoning -- that the caller is the analysis service over
         # an OIDC hop and therefore trustworthy -- rested on this route being
@@ -1924,22 +1923,27 @@ def internal_execute():
         # this route was decorated above, any anonymous caller could forge a
         # decision into any tenant and publish it to the ERP.
         #
-        # Now the assertion is tied to *who is asking*. A service identity may
-        # name a tenant, because it is the same identity whose word is already
-        # being taken for "publish this decision". Anyone else gets their own
-        # tenant, so a claim cannot cross a boundary it did not earn.
+        # Re-review finding R02: the next version let any "service identity" name
+        # a tenant in the body, and that included the key with a console session
+        # acting for a person. Nothing a person does in the console reaches this
+        # route, so a request acting for one is refused outright.
         context = get_auth_context()
-        if context is not None and context.is_service_identity:
-            tenant_id = body.get("tenant_id") or _tenant()
-            # With multi-tenancy on, the service may name only a tenant it is a
-            # registered member of. The one platform key used to be able to name
-            # any tenant at all (docs/ARCHITECTURE.md, known limitations).
-            if tenant.multi_tenant_enabled() and tenant.normalise(tenant_id) not in (
-                membership.memberships(membership.SERVICE_PRINCIPAL)
-            ):
-                return jsonify({"error": "the service is not a member of that tenant"}), 403
-        else:
-            tenant_id = _tenant()
+        if context is None or not context.is_machine_identity:
+            return jsonify({"error": "only the analysis runtime's key may ask the executor"}), 403
+
+        # WHERE: the organisation the authentication step selected (X-VF-Tenant,
+        # resolved against the service's own memberships) -- the same one in
+        # which @require_operator has just checked the role. R02's other half:
+        # the body used to override it after that check, so a service that was an
+        # operator in A and a viewer in B could publish into B by asking for A.
+        # A body that names a tenant must name that one.
+        target = _tenant()
+        claimed = tenant.normalise(body.get("tenant_id"))
+        if claimed is not None and claimed != tenant.resolve(target):
+            return jsonify({
+                "error": "tenant_id in the body does not match the selected organisation",
+                "detail": f"Send the organisation in {membership.TENANT_HEADER} and nowhere else, or the same in both.",
+            }), 409
 
         # Only egress actions are delegated here. Everything else stays in the
         # analysis service, where it is only a Firestore write.
@@ -1948,6 +1952,15 @@ def internal_execute():
                 "error": f"executor does not perform '{action}'",
                 "delegated_actions": ["publish_decision"]
             }), 400
+
+        # WHAT: a case of that organisation. Checked before anything leaves the
+        # building; one answer for "not there" and "someone else's", so the
+        # route cannot be used to learn which case ids exist elsewhere.
+        from vf_logistics.store import get_store
+
+        if not case_id or _on_worker(get_store().get_case(case_id, tenant_id=target)) is None:
+            return jsonify({"error": "case not found"}), 404
+        tenant_id = target
 
         receipt = _on_worker(tools.publish_decision_direct(
             case_id, payload, tenant_id=tenant_id,

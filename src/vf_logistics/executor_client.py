@@ -25,6 +25,8 @@ from typing import Any
 
 import httpx
 
+from vf_logistics import membership
+
 # Set on the analysis service only. Empty means "no executor configured", in
 # which case protected egress simply does not happen and says so.
 EXECUTOR_URL = os.getenv("EXECUTOR_URL", "").strip().rstrip("/")
@@ -80,19 +82,23 @@ async def request_protected_action(
     reported, never swallowed: an action that did not happen must not look like
     one that did.
 
-    `tenant_id` travels in the request body, which is the one place in this
-    codebase a tenant is taken from a caller rather than from an authenticated
-    identity. That is sound here and nowhere else: the caller is the analysis
-    service itself, holding `run.invoker` on an endpoint deployed
-    --no-allow-unauthenticated, so it is the same identity whose word is already
-    being taken for "publish this decision".
+    `tenant_id` selects the organisation the executor acts in, sent the way every
+    other caller selects one: X-VF-Tenant, which the executor resolves against
+    the service's OWN memberships and in which it then checks the operator role.
+    It is repeated in the body, and the executor refuses the two disagreeing.
 
-    The executor now also requires the shared API key, and the body tenant is
-    honoured only for that service identity. Two reasons the OIDC token alone was
-    not enough: the same app.py serves /internal/execute on the public analysis
-    service as well as on the executor, so "unreachable by a customer" was not
-    true of every deployment of this route; and IAM tells the executor that *a*
-    permitted identity called, not that the caller is entitled to name a tenant.
+    Re-review finding R02: this used to travel in the body alone, and the
+    executor honoured it after checking the role in whichever tenant the header
+    had selected -- so a service that was an operator in one organisation could
+    publish into another where it was only a viewer. And with no header at all, a
+    service in two organisations was refused with "choose one" before anything ran.
+
+    The executor also requires the shared API key alone (no console session).
+    Two reasons the OIDC token by itself was not enough: the same app.py serves
+    /internal/execute on the public analysis service as well as on the executor,
+    so "unreachable by a customer" was not true of every deployment of this route;
+    and IAM tells the executor that *a* permitted identity called, not which
+    organisation it may act in.
 
     Without the tenant the executor writes its audit receipt with no owner, which
     under multi-tenancy raises rather than misfiling -- so the publish would
@@ -119,6 +125,8 @@ async def request_protected_action(
     shared_key = os.getenv("VF_API_KEY", "").strip()
     if shared_key:
         headers["X-VF-API-Key"] = shared_key
+    if tenant_id:
+        headers[membership.TENANT_HEADER] = tenant_id
 
     try:
         async with httpx.AsyncClient(timeout=30) as http:

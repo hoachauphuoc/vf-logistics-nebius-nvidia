@@ -21,6 +21,7 @@ Run: python scripts/check_test_sensitivity.py
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -377,10 +378,12 @@ MUTATIONS = [
         "tests/test_login_throttle.py::TestTheLedger",
     ),
     (
-        "A04: a signed-in operator may consult and burn the sign-in ledger",
-        "src/vf_logistics/app.py",
-        "if context is None or not context.is_service_identity or context.via_session:",
-        "if context is None:",
+        "A04/R04: a signed-in operator may consult and burn the sign-in ledger",
+        "src/vf_logistics/auth.py",
+        'if (request.headers.get(CONSOLE_SESSION_HEADER) or "").strip():\n'
+        '            return jsonify({"error": "service identity only"}), 403',
+        'if False:\n'
+        '            return jsonify({"error": "service identity only"}), 403',
         "tests/test_login_throttle.py::TestTheRoute",
     ),
     # Findings T02 and T03.
@@ -398,12 +401,97 @@ MUTATIONS = [
         "        tenant_id, member_roles = tenant.SINGLE_TENANT_ID, _get_user_roles(acting)",
         "tests/test_membership.py::TestConsoleSessions",
     ),
+    # Re-review findings R01-R04 (on 923d36f). Selectors under frontend/ run vitest.
     (
-        "T03: the service may name any tenant on /internal/execute again",
+        "R01: the source is the caller-written first X-Forwarded-For entry again",
+        "frontend/src/lib/rate-limit.ts",
+        'const last = header.slice(header.lastIndexOf(",") + 1).trim();',
+        'const last = header.split(",")[0].trim();',
+        "frontend/src/lib/rate-limit.test.ts",
+    ),
+    (
+        "R01: a malformed address is a bucket of its own",
+        "frontend/src/lib/rate-limit.ts",
+        "return last.length <= MAX_IP_LENGTH && isIP(last) !== 0 ? last : UNKNOWN_SOURCE;",
+        "return last || UNKNOWN_SOURCE;",
+        "frontend/src/lib/rate-limit.test.ts",
+    ),
+    (
+        "R01: a ledger key carries the raw value, so a long one is a 400",
+        "frontend/src/lib/rate-limit.ts",
+        'return `${kind}:${createHash("sha256").update(value, "utf8").digest("hex")}`;',
+        "return `${kind}:${value}`;",
+        "frontend/src/lib/login-limit.test.ts",
+    ),
+    (
+        "R01: a ledger failure falls through to fresh local counters again",
+        "frontend/src/lib/login-limit.ts",
+        "if (!mayCountLocally(apiKey)) {",
+        "if (false) {",
+        "frontend/src/lib/login-limit.test.ts",
+    ),
+    (
+        "R01: the login route checks a password with no limit established",
+        "frontend/src/app/api/auth/login/route.ts",
+        'if (verdict === "unavailable") {',
+        "if (false) {",
+        "frontend/src/app/api/auth/login/route.test.ts",
+    ),
+    (
+        "R04: the sign-in ledger goes through tenant selection again",
         "src/vf_logistics/app.py",
-        "            if tenant.multi_tenant_enabled() and tenant.normalise(tenant_id) not in (",
-        "            if False and tenant.normalise(tenant_id) not in (",
+        '@app.route("/internal/login-throttle", methods=["POST"])\n@require_platform_key',
+        '@app.route("/internal/login-throttle", methods=["POST"])\n@require_operator',
+        "tests/test_login_throttle.py::TestUnderMultiTenancy",
+    ),
+    (
+        "R02: a body tenant may differ from the organisation the role was checked in",
+        "src/vf_logistics/app.py",
+        "        if claimed is not None and claimed != tenant.resolve(target):",
+        "        if False:",
+        "tests/test_internal_execute.py::TestTheReviewsRequestsAreRefused",
+    ),
+    (
+        "R02: a request acting for a person reaches the executor again",
+        "src/vf_logistics/app.py",
+        "if context is None or not context.is_machine_identity:",
+        "if context is None or not context.is_service_identity:",
+        "tests/test_internal_execute.py::TestTheReviewsRequestsAreRefused",
+    ),
+    (
+        "R02: a case of another organisation is published",
+        "src/vf_logistics/app.py",
+        "if not case_id or _on_worker(get_store().get_case(case_id, tenant_id=target)) is None:",
+        "if not case_id:",
+        "tests/test_internal_execute.py::TestTheReviewsRequestsAreRefused",
+    ),
+    (
+        "R02: the executor client stops selecting the organisation",
+        "src/vf_logistics/executor_client.py",
+        "        headers[membership.TENANT_HEADER] = tenant_id",
+        "        pass",
+        "tests/test_internal_execute.py::TestTheClientSelectsTheOrganisation",
+    ),
+    (
+        "R03: a membership refusal no longer says why",
+        "src/vf_logistics/auth.py",
+        '        "reason": exc.reason,\n',
+        "",
         "tests/test_membership.py::TestRoutesSeeTheResolvedTenant",
+    ),
+    (
+        "R03: getAuth throws the choices in a 403 away again",
+        "frontend/src/lib/identity.ts",
+        "      if (choice) throw choice;",
+        "      if (false) throw choice;",
+        "frontend/src/components/layout/TenantSwitcher.test.tsx",
+    ),
+    (
+        "R03: signing out keeps the organisation choice for the next person",
+        "frontend/src/app/api/auth/logout/route.ts",
+        '  response.cookies.set(TENANT_COOKIE, "", EXPIRED_TENANT_CHOICE);',
+        "",
+        "frontend/src/app/api/auth/login/route.test.ts",
     ),
 ]
 
@@ -421,7 +509,16 @@ def require_clean_tree() -> None:
 
 
 def run_test(selector: str) -> bool:
-    """True if the tests passed."""
+    """True if the tests passed. A selector under frontend/ is a vitest file."""
+    if selector.startswith("frontend/"):
+        npx = shutil.which("npx")
+        if npx is None:
+            raise SystemExit("npx is not on PATH; the frontend mutations need it.")
+        proc = subprocess.run(
+            [npx, "vitest", "run", selector.removeprefix("frontend/")],
+            cwd=ROOT / "frontend", capture_output=True, text=True,
+        )
+        return proc.returncode == 0
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", selector, "-q", "--no-header", "-p", "no:cacheprovider"],
         cwd=ROOT, capture_output=True, text=True,

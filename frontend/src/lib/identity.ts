@@ -70,13 +70,61 @@ export function roleLabel(role: string | null | undefined): string {
   return ROLE_LABEL[role as Role] ?? role.replace(/_/g, " ");
 }
 
+/** Why the API refused to pick an organisation (membership.REASON_*). */
+export type TenantChoiceReason =
+  | "tenant_choice_required"
+  | "not_member_of_requested"
+  | "invalid_choice";
+
+const CHOICE_REASONS: readonly string[] = [
+  "tenant_choice_required",
+  "not_member_of_requested",
+  "invalid_choice",
+];
+
+/**
+ * The API needs this person to pick one of their organisations before it can
+ * answer -- on first sign-in with several, or when the remembered choice is not
+ * theirs (another person's, left on this browser).
+ *
+ * Re-review finding R03: whoami's 403 carried the choices, and getAuth threw
+ * them away with every other non-2xx, so the switcher -- which read only a
+ * successful whoami -- never appeared and the person was stuck. Thrown as its
+ * own type so the switcher can offer exactly these.
+ */
+export class TenantChoiceRequired extends Error {
+  constructor(
+    readonly reason: TenantChoiceReason,
+    readonly choices: string[],
+  ) {
+    super(`auth/whoami: choose an organisation (${reason})`);
+    this.name = "TenantChoiceRequired";
+  }
+}
+
+/** A TenantChoiceRequired from a 403/400 body, or null when the body is anything else. */
+export function tenantChoiceFromRefusal(body: unknown): TenantChoiceRequired | null {
+  if (!body || typeof body !== "object") return null;
+  const { reason, choices } = body as { reason?: unknown; choices?: unknown };
+  if (typeof reason !== "string" || !CHOICE_REASONS.includes(reason)) return null;
+  if (!Array.isArray(choices)) return null;
+  const ids = choices.filter((c): c is string => typeof c === "string" && c.length > 0);
+  return ids.length > 0 ? new TenantChoiceRequired(reason as TenantChoiceReason, ids) : null;
+}
+
 async function getAuth<T>(path: "whoami" | "policy"): Promise<T> {
   const response = await fetch(`/api/proxy/auth/${path}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
     signal: AbortSignal.timeout(20_000),
   });
-  if (!response.ok) throw new Error(`auth/${path}: HTTP ${response.status}`);
+  if (!response.ok) {
+    if (response.status === 403 || response.status === 400) {
+      const choice = tenantChoiceFromRefusal(await response.json().catch(() => null));
+      if (choice) throw choice;
+    }
+    throw new Error(`auth/${path}: HTTP ${response.status}`);
+  }
   return (await response.json()) as T;
 }
 
@@ -100,6 +148,16 @@ export function useIdentity(options: { enabled?: boolean } = {}) {
     // Refetched with the session so a sign-in or an expiry is reflected.
     refetchInterval: 60_000,
   });
+}
+
+/**
+ * The organisations this person must choose among before the API will answer,
+ * or null when no choice is pending. Read from the identity query's error, so it
+ * clears itself the moment a whoami succeeds.
+ */
+export function useTenantChoice(): TenantChoiceRequired | null {
+  const { error } = useIdentity();
+  return error instanceof TenantChoiceRequired ? error : null;
 }
 
 export function usePolicy() {

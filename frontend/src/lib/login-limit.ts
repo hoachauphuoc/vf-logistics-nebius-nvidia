@@ -1,4 +1,4 @@
-import { clientIp, type LimitCheck, sharedLimited, slidingWindowLimiter } from "@/lib/rate-limit";
+import { clientIp, type LimitCheck, limitKey, sharedLimited, slidingWindowLimiter } from "@/lib/rate-limit";
 
 /**
  * The sign-in attempt limits (authorization review finding A04).
@@ -17,7 +17,8 @@ import { clientIp, type LimitCheck, sharedLimited, slidingWindowLimiter } from "
  *   not lock out the rest.
  *
  * Counted on Flask's shared ledger so every Cloud Run instance spends one
- * allowance; per-instance counters are the fallback when Flask cannot answer.
+ * allowance. When the ledger cannot answer, a deployed console refuses the
+ * attempt (re-review finding R01) -- see isLoginRateLimited.
  */
 export const ACCOUNT_LIMIT = 5;
 export const SOURCE_LIMIT = 20;
@@ -45,24 +46,60 @@ export function resetLocalLoginLimits(): void {
 }
 
 /**
- * Whether this sign-in attempt is over either limit. Counts the attempt when it
- * is not. `account` must already be canonical (see canonicalEmail).
+ * The verdict on one sign-in attempt.
+ *
+ * - "allowed": under both limits; the attempt has been counted.
+ * - "limited": over a limit -- 429.
+ * - "unavailable": no limit could be established -- 503, and no password check.
  */
-export async function isLoginRateLimited(
+export type LoginLimitVerdict = "allowed" | "limited" | "unavailable";
+
+/**
+ * Whether per-instance counters may stand in for the shared ledger: only on a
+ * development server with no key to reach Flask's ledger with. A deployed
+ * console always has the key, and there a missing answer means a fault, not a
+ * reason to count somewhere weaker.
+ */
+function mayCountLocally(apiKey: string | undefined): boolean {
+  return !apiKey && process.env.NODE_ENV !== "production";
+}
+
+/**
+ * The verdict on this sign-in attempt. Counts the attempt when it is allowed.
+ * `account` must already be canonical (see canonicalEmail).
+ *
+ * Re-review finding R01: any failure of the shared ledger used to fall through
+ * to local counters that had never seen the attempts the ledger had counted, so
+ * an attacker who could make the ledger refuse (an over-long key was enough)
+ * got a second allowance -- and a fresh one on every instance. Without the
+ * ledger's answer the attempt is now refused outright: Flask runs in the same
+ * container, so when it cannot answer the console cannot do anything else
+ * either, and refusing a sign-in is the only outcome that keeps the limit.
+ */
+export async function loginAttemptVerdict(
   account: string,
   request: Request,
   base: string,
   apiKey: string | undefined,
-): Promise<boolean> {
+): Promise<LoginLimitVerdict> {
   const source = clientIp(request);
+  const accountKey = limitKey("acct", account);
+  const sourceKey = limitKey("ip", source);
   const checks: LimitCheck[] = [
-    { key: `acct:${account}`, limit: ACCOUNT_LIMIT, windowSeconds: WINDOW_SECONDS },
-    { key: `ip:${source}`, limit: SOURCE_LIMIT, windowSeconds: WINDOW_SECONDS },
+    { key: accountKey, limit: ACCOUNT_LIMIT, windowSeconds: WINDOW_SECONDS },
+    { key: sourceKey, limit: SOURCE_LIMIT, windowSeconds: WINDOW_SECONDS },
   ];
   const shared = await sharedLimited(checks, base, apiKey);
-  if (shared !== null) return shared;
+  if (shared.limited !== null) return shared.limited ? "limited" : "allowed";
+
+  if (!mayCountLocally(apiKey)) {
+    // Loud, so a misconfiguration (a wrong key, a ledger refusing every key) is
+    // an alert and not a quietly weaker limit.
+    console.error(`sign-in refused: the shared attempt counter did not answer (${shared.reason})`);
+    return "unavailable";
+  }
   // Both counted rather than short-circuited, so each limit sees every attempt.
-  const overAccount = local.account(`acct:${account}`);
-  const overSource = local.source(`ip:${source}`);
-  return overAccount || overSource;
+  const overAccount = local.account(accountKey);
+  const overSource = local.source(sourceKey);
+  return overAccount || overSource ? "limited" : "allowed";
 }
