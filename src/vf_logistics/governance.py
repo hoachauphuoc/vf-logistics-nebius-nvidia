@@ -37,7 +37,7 @@ from __future__ import annotations
 import math
 import os
 import re
-from typing import Any
+from typing import Any, TypeGuard
 
 from vf_logistics import tools
 from vf_logistics.store import get_store, new_id, utcnow
@@ -153,8 +153,10 @@ class BoundaryValidationError(ValueError):
         super().__init__("invalid permissions: " + "; ".join(errors))
 
 
-def _is_number(value: Any) -> bool:
+def _is_number(value: Any) -> TypeGuard[float]:
     # bool is an int subclass in Python, and True as a value ceiling means 1.
+    # A TypeGuard rather than bool so the callers' float(...) after the check is
+    # known to receive a number, not Any | None.
     return (
         isinstance(value, (int, float))
         and not isinstance(value, bool)
