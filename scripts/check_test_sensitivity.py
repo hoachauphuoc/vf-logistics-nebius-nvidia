@@ -514,9 +514,12 @@ def run_test(selector: str) -> bool:
         npx = shutil.which("npx")
         if npx is None:
             raise SystemExit("npx is not on PATH; the frontend mutations need it.")
+        # UTF-8 explicitly: vitest prints check marks, and the Windows default
+        # code page cannot decode them, which raises in the reader thread.
         proc = subprocess.run(
             [npx, "vitest", "run", selector.removeprefix("frontend/")],
             cwd=ROOT / "frontend", capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
         )
         return proc.returncode == 0
     proc = subprocess.run(
