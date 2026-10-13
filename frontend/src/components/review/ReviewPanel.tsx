@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toaster";
-import { caseDossierUrl, decideReview, requestDeepReview, reviewDocumentUrl } from "@/lib/api";
+import { approveCase, caseDossierUrl, decideReview, executeApproval, requestDeepReview, requestEvidence, reviewDocumentUrl } from "@/lib/api";
 import { caseHref } from "@/lib/case-links";
 import {
   actionLabel,
@@ -310,6 +310,42 @@ export function ReviewPanel({
   const findings = c.validation?.findings ?? [];
   const observations = c.validation?.observations ?? [];
 
+  const hasVerification = (c.verification?.evidence_version ?? 0) > 0;
+
+  // N08: For cases in the verification loop, route decisions through the new API.
+  const verificationApprove = useMutation({
+    mutationFn: async (action: "release" | "block") => {
+      const res = await approveCase(c.case_id, action, note);
+      if ((res as Record<string, unknown>).approval) {
+        const approval = res.approval as Record<string, string>;
+        return executeApproval(c.case_id, approval.approval_id);
+      }
+      return res;
+    },
+    onSuccess: () => {
+      setFormError(null);
+      setNote("");
+      onDecided();
+      toast({ title: "Decision executed via the verification loop" });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : String(error));
+    },
+  });
+
+  const verificationRequest = useMutation({
+    mutationFn: () => requestEvidence(c.case_id),
+    onSuccess: () => {
+      setFormError(null);
+      setNote("");
+      onDecided();
+      toast({ title: "Evidence requested" });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : String(error));
+    },
+  });
+
   function submit(action: HumanAction) {
     // Validated here as well as server-side, so the reviewer is told what is
     // missing before a round trip rather than after one.
@@ -325,6 +361,15 @@ export function ReviewPanel({
     }
     setFormError(null);
     setPending(action);
+    // N08: route through the verification loop for cases that have evidence.
+    if (hasVerification) {
+      if (action === "request_info") {
+        verificationRequest.mutate();
+      } else {
+        verificationApprove.mutate(action as "release" | "block");
+      }
+      return;
+    }
   }
 
   return (
