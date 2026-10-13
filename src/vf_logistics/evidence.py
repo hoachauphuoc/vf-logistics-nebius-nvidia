@@ -51,7 +51,7 @@ AWAITING_EVIDENCE = "AWAITING_EVIDENCE"
 
 # States a reviewer can ask for documents from: the ones that wait on a person, and
 # AWAITING_EVIDENCE itself so a second request can be added to an open one.
-REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE)
+REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE, "APPROVED")
 
 OPEN_STATUSES = ("OPEN", "SENT")
 LINK_TTL_S = 7 * 24 * 3600
@@ -652,4 +652,205 @@ async def receive_evidence(
         "blocked": blocked,
         "extracted": doc_record["extracted"] is not None,
         "superseded_approvals": len(superseded),
+    }
+
+
+# --------------------------------------------------------------------------
+# Re-evaluation (step 4) and approval (step 5)
+# --------------------------------------------------------------------------
+
+async def reevaluate(
+    case_id: str, *, tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Run the origin checks again on the case's shipment and the evidence received.
+
+    Creates an evaluation record on the case: which findings were clarified, which
+    remain, which contradict, what to ask next, and what evidence version all of that
+    was computed at. Changes the floor if the evidence contradicts, but NEVER lowers
+    it. The case moves to HELD_FOR_REVIEW (or ESCALATED if floor >= 70).
+    """
+    from vf_logistics import verifier
+
+    store = get_store()
+    stored = await store.get_case(case_id, tenant_id=tenant_id)
+    if not stored:
+        raise EvidenceError("case not found", 404)
+    expected_version = stored.get("_version")
+    case = copy.deepcopy(stored)
+    record = verification_of(case)
+    shipment = case.get("shipment") or {}
+
+    # Gather the extracted facts from all non-blocked documents.
+    documents = [
+        d for d in record["documents"]
+        if isinstance(d, dict) and not d.get("blocked") and isinstance(d.get("extracted"), dict)
+    ]
+    evidence_result = verifier.check_origin_evidence(shipment, documents)
+
+    # Re-run the deterministic checks on the shipment. This picks up the origin
+    # watch finding plus every other check, so the evaluation's findings match what
+    # the verifier would say today (rules may have changed since the case arrived).
+    validation = verifier.validate(shipment)
+    base_findings = list(validation["findings"])
+    # Add the evidence findings (contradictions, mismatches). They can only raise.
+    for f in evidence_result["findings"]:
+        base_findings.append(f)
+    from vf_logistics.verifier import _floor_for
+    floor, high_count, _, _ = _floor_for(base_findings)
+
+    now = utcnow()
+    ev_version = record.get("evidence_version") or 0
+    evaluation: dict[str, Any] = {
+        "evaluation_id": new_id("eveval"),
+        "evidence_version": ev_version,
+        "at": now,
+        "risk_floor": floor,
+        "findings": [f["code"] for f in base_findings],
+        "clarified": evidence_result.get("present") or [],
+        "unresolved": evidence_result.get("missing") or [],
+        "contradictions": evidence_result.get("contradictions") or [],
+        "status": evidence_result["status"],
+        "ruleset_version": case.get("validation", {}).get("checks_run"),
+    }
+    record["evaluations"].append(evaluation)
+
+    # Update the case's floor if the evidence raised it.
+    old_floor = (case.get("reconciliation") or {}).get("risk_floor") or (case.get("validation") or {}).get("risk_floor") or 0
+    if floor > old_floor:
+        rec = case.get("reconciliation") or {}
+        rec["risk_floor"] = floor
+        rec["effective_risk"] = max(rec.get("effective_risk") or 0, floor)
+        rec["score_disputed"] = (floor - (rec.get("model_risk") or 0)) >= 15
+        rec["veto_reasons"] = [f["detail"] for f in base_findings]
+        case["reconciliation"] = rec
+        case["risk_score"] = rec["effective_risk"]
+
+    # State transition
+    new_state = "ESCALATED" if floor >= 70 else "HELD_FOR_REVIEW"
+    case["state"] = new_state
+    case["updated_at"] = now
+    # Close all open requests: the evaluation consumed what they asked for.
+    for req in record["requests"]:
+        if isinstance(req, dict) and req.get("status") in OPEN_STATUSES:
+            req["status"] = "RECONCILED"
+            req["reconciled_at"] = now
+
+    await _write(case, expected_version, tenant_id)
+    await _audit(case_id, "evidence_reconciled", "system", None, {
+        "evaluation_id": evaluation["evaluation_id"],
+        "evidence_version": ev_version,
+        "floor": floor,
+        "status": evidence_result["status"],
+        "state_after": new_state,
+    }, tenant_id)
+    return {
+        "evaluation": evaluation,
+        "state": new_state,
+        "floor": floor,
+    }
+
+
+APPROVED = "APPROVED"
+
+# States from which a reviewer may approve. HELD_FOR_REVIEW is the expected one;
+# ESCALATED too (a senior can sign off on it); PENDING_HUMAN for legacy paths.
+APPROVABLE_STATES = ("HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")
+
+
+async def approve(
+    case_id: str,
+    action: str,
+    approver: str,
+    *,
+    note: str = "",
+    actor_auth: str | None = None,
+    execute: bool = True,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Approve a release or block, binding the decision to the evidence version.
+
+    The approval is a record; whether it also executes depends on `execute`. The
+    demo uses two steps (approve then execute) so the judge sees the chain; the
+    seed script uses one (execute=True) so seeding is not a 2N round trip.
+
+    Preconditions:
+    - state in APPROVABLE_STATES
+    - no request OPEN or SENT (all evidence must have been accounted for)
+    - the evaluation at the current evidence_version exists
+    - actor_auth == "password" for a release (policy A01 for one-click)
+    """
+    if action not in ("release", "block"):
+        raise EvidenceError(f"'{action}' is not a decision that can be approved")
+    if not approver:
+        raise EvidenceError("An approval is made by a named person")
+
+    store = get_store()
+    stored = await store.get_case(case_id, tenant_id=tenant_id)
+    if not stored:
+        raise EvidenceError("case not found", 404)
+    expected_version = stored.get("_version")
+    case = copy.deepcopy(stored)
+    record = verification_of(case)
+    state = case.get("state")
+
+    if state not in APPROVABLE_STATES:
+        raise EvidenceError(f"The case is {state}, which is not awaiting approval.", 409)
+    if open_requests(case):
+        raise EvidenceError(
+            "There is still an open request for documents. Close or cancel it before approving.", 409,
+        )
+
+    ev_version = record.get("evidence_version") or 0
+    latest_eval = None
+    for ev in reversed(record.get("evaluations") or []):
+        if isinstance(ev, dict) and ev.get("evidence_version") == ev_version:
+            latest_eval = ev
+            break
+    if latest_eval is None and ev_version > 0:
+        raise EvidenceError(
+            "The evidence has been updated but not yet re-evaluated. Re-evaluate first.", 409,
+        )
+
+    if action == "release" and actor_auth != "password":
+        raise EvidenceError(
+            "A release approval needs a password sign-in, not a one-click session.", 403,
+        )
+
+    now = utcnow()
+    approval: dict[str, Any] = {
+        "approval_id": new_id("evapr"),
+        "action": action,
+        "approver": approver,
+        "approver_auth": actor_auth,
+        "evidence_version": ev_version,
+        "evaluation_id": latest_eval["evaluation_id"] if latest_eval else None,
+        "at": now,
+        "note": note,
+        "status": "VALID",
+    }
+    record["approvals"].append(approval)
+    case["state"] = APPROVED
+    case["updated_at"] = now
+
+    case.setdefault("reviews", []).append({
+        "action": action,
+        "reviewer": approver,
+        "note": note,
+        "at": now,
+        "state_before": state,
+        "state_after": APPROVED,
+        "approval_id": approval["approval_id"],
+    })
+
+    await _write(case, expected_version, tenant_id)
+    await _audit(case_id, f"evidence_approval_{action}", approver, actor_auth, {
+        "approval_id": approval["approval_id"],
+        "evidence_version": ev_version,
+        "evaluation_id": approval["evaluation_id"],
+    }, tenant_id)
+    return {
+        "approval": approval,
+        "state": APPROVED,
     }
