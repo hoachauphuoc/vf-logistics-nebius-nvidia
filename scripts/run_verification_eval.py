@@ -119,7 +119,7 @@ def evaluate_case(case_spec):
                                 run(evidence.receive_evidence(out["token"], tiny_pdf(), f"{dt}.pdf", "application/pdf"))
 
             # Reevaluate
-            eval_result = run(evidence.reevaluate(case_id))
+            run(evidence.reevaluate(case_id))
 
             # Approve and execute only if we expect a terminal decision
             if case_spec["expected_outcome"] in ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN"):
@@ -200,7 +200,7 @@ def main():
         "cases": results,
     }
 
-    print(f"\n--- Summary ---")
+    print("\n--- Summary ---")
     print(f"  Total: {summary['total_cases']}")
     print(f"  Resolved: {summary['resolved']}")
     print(f"  Legitimate resolved: {summary['resolution_rate_legitimate']}")
