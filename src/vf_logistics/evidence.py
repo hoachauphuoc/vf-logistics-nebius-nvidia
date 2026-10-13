@@ -854,3 +854,164 @@ async def approve(
         "approval": approval,
         "state": APPROVED,
     }
+
+
+# --------------------------------------------------------------------------
+# Execution (step 6)
+# --------------------------------------------------------------------------
+
+def approval_is_executable(
+    case: dict[str, Any], approval_id: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    (approval, reason) — the approval if it can be executed right now, else None
+    with the reason. Pure: no IO, so the route and the unit test call the same code.
+    """
+    record = verification_of(case)
+    approval = None
+    for a in record.get("approvals") or []:
+        if isinstance(a, dict) and a.get("approval_id") == approval_id:
+            approval = a
+            break
+    if approval is None:
+        return None, "approval not found"
+    if approval.get("status") != "VALID":
+        return None, f"approval is {approval.get('status')}, not VALID"
+    if case.get("state") != APPROVED:
+        return None, f"case is {case.get('state')}, not APPROVED"
+    ev_version = record.get("evidence_version") or 0
+    if (approval.get("evidence_version") or 0) != ev_version:
+        return None, (
+            f"approval was for evidence v{approval.get('evidence_version')}; "
+            f"the case is now v{ev_version}"
+        )
+    if open_requests(case):
+        return None, "a request for documents is still open"
+    return approval, None
+
+
+async def execute_approval(
+    case_id: str,
+    approval_id: str,
+    executor: str,
+    *,
+    actor_auth: str | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Carry out an approved decision: call the tool, publish on Pub/Sub, record it.
+
+    Checks everything once more right before the side effect, so a stale approval
+    or a version mismatch discovered between "approve" and "execute" is caught
+    rather than becoming an incorrect release.
+    """
+    from vf_logistics import tools
+
+    if not executor:
+        raise EvidenceError("An execution is done by a named person")
+    if actor_auth != "password":
+        raise EvidenceError("Executing a decision needs a password sign-in", 403)
+
+    store = get_store()
+    stored = await store.get_case(case_id, tenant_id=tenant_id)
+    if not stored:
+        raise EvidenceError("case not found", 404)
+    expected_version = stored.get("_version")
+    case = copy.deepcopy(stored)
+
+    approval, reason = approval_is_executable(case, approval_id)
+    if approval is None:
+        # Record the refusal so the audit trail says what was tried.
+        record = verification_of(case)
+        record.setdefault("executions", []).append({
+            "execution_id": new_id("evexe"),
+            "approval_id": approval_id,
+            "executor": executor,
+            "at": utcnow(),
+            "status": "denied",
+            "reason": reason,
+        })
+        case["updated_at"] = utcnow()
+        await _write(case, expected_version, tenant_id)
+        await _audit(case_id, "execution_denied", executor, actor_auth, {
+            "approval_id": approval_id, "reason": reason,
+        }, tenant_id)
+        raise EvidenceError(reason or "execution refused", 409)
+
+    action = approval["action"]
+    shipment_id = case.get("shipment_id") or case_id
+    now = utcnow()
+
+    # -- The side effect: tool call + Pub/Sub --
+    if action == "release":
+        tool_receipt = await tools.release_shipment(
+            case_id, shipment_id,
+            f"Approved by {approval['approver']} at evidence v{approval['evidence_version']}",
+            tenant_id=tenant_id,
+        )
+        new_state = "RELEASED_BY_HUMAN"
+    else:
+        tool_receipt = await tools.hold_shipment(
+            case_id, shipment_id,
+            f"Blocked by {approval['approver']} at evidence v{approval['evidence_version']}",
+            tenant_id=tenant_id,
+        )
+        new_state = "BLOCKED_BY_HUMAN"
+
+    pub_receipt = await tools.publish_decision(
+        case_id,
+        {
+            "outcome": new_state,
+            "action": action,
+            "approval_id": approval_id,
+            "evidence_version": approval.get("evidence_version"),
+            "evaluation_id": approval.get("evaluation_id"),
+            "approver": approval["approver"],
+            "executor": executor,
+        },
+        tenant_id=tenant_id,
+    )
+    message_id = (pub_receipt.get("detail") or {}).get("message_id")
+
+    # -- Record --
+    record = verification_of(case)
+    execution = {
+        "execution_id": new_id("evexe"),
+        "approval_id": approval_id,
+        "executor": executor,
+        "at": now,
+        "status": "done",
+        "message_id": message_id,
+    }
+    record.setdefault("executions", []).append(execution)
+    approval["status"] = "EXECUTED"
+    case["state"] = new_state
+    case["updated_at"] = now
+    case["decision"] = {
+        "outcome": new_state,
+        "rationale": f"{approval['approver']} approved {action}; executed by {executor}.",
+        "decided_by": "human",
+    }
+    case.setdefault("reviews", []).append({
+        "action": action,
+        "reviewer": executor,
+        "note": f"Executed approval {approval_id}",
+        "at": now,
+        "state_before": APPROVED,
+        "state_after": new_state,
+    })
+    case.setdefault("actions", []).extend([tool_receipt, pub_receipt])
+
+    await _write(case, expected_version, tenant_id)
+    await _audit(case_id, f"evidence_executed_{action}", executor, actor_auth, {
+        "execution_id": execution["execution_id"],
+        "approval_id": approval_id,
+        "evidence_version": approval.get("evidence_version"),
+        "message_id": message_id,
+        "state_after": new_state,
+    }, tenant_id)
+    return {
+        "execution": execution,
+        "state": new_state,
+        "message_id": message_id,
+    }

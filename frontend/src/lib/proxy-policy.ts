@@ -92,7 +92,18 @@ export const ALLOWED_POST = new Set([
   // Review decisions
   "review/decide",
   "review/deep-review",
-  // Time a reviewer had a case page in view, for the Outcomes screen. Matched as
+  // Verification loop: request, evaluate, approve, execute, cancel, re-link.
+  "review/request-evidence",
+  "review/reevaluate",
+  "review/approve",
+  "review/execute",
+  // Verification loop: request evidence, sub-actions on a request.
+  "review/request-evidence",
+  "review/reevaluate",
+  "review/approve",
+  "review/execute",
+  "review/evidence/link",
+  "review/evidence/cancel",
   // `cases/<id>/activity`; reviewer upstream.
   "cases/activity",
   // Governance
@@ -133,6 +144,9 @@ export const PASSWORD_ONLY_POST = new Set([
   "orchestrator/reset",
   "governance/revoke",
   "governance/publish",
+  // Verification loop: approve and execute change downstream state.
+  "review/approve",
+  "review/execute",
 ]);
 
 export const ALLOWED_PUT = new Set(["governance/prefilter-rules"]);
@@ -156,9 +170,16 @@ export const CASE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 export function matchWrite(joined: string, allowed: Set<string>): boolean {
   const parts = joined.split("/");
   if (parts.length === 3 && parts[0] === "review" && CASE_ID.test(parts[1])) {
-    if (parts[2] === "decide" || parts[2] === "deep-review") {
-      return allowed.has(`review/${parts[2]}`);
+    const action = parts[2];
+    if (["decide", "deep-review", "request-evidence", "reevaluate", "approve", "execute"].includes(action)) {
+      return allowed.has(`review/${action}`);
     }
+    return false;
+  }
+  // review/<id>/evidence/<rid>/link and review/<id>/evidence/<rid>/cancel
+  if (parts.length === 5 && parts[0] === "review" && CASE_ID.test(parts[1]) && parts[2] === "evidence" && CASE_ID.test(parts[3])) {
+    const sub = parts[4];
+    if (sub === "link" || sub === "cancel") return allowed.has(`review/evidence/${sub}`);
     return false;
   }
   if (parts.length === 3 && parts[0] === "cases" && CASE_ID.test(parts[1])) {
@@ -166,7 +187,10 @@ export function matchWrite(joined: string, allowed: Set<string>): boolean {
   }
   // These are templates for the id-carrying forms above, not routes of their own;
   // Flask has none of them without an id.
-  if (joined === "review/decide" || joined === "review/deep-review" || joined === "cases/activity") {
+  if (joined === "review/decide" || joined === "review/deep-review" || joined === "cases/activity"
+      || joined === "review/request-evidence" || joined === "review/reevaluate"
+      || joined === "review/approve" || joined === "review/execute"
+      || joined === "review/evidence/link" || joined === "review/evidence/cancel") {
     return false;
   }
   return allowed.has(joined);
@@ -238,11 +262,13 @@ export function describedReads(): string[] {
 export function describedWrites(): Array<{ method: "POST" | "PUT"; path: string }> {
   const posts = [...ALLOWED_POST].map((path) => ({
     method: "POST" as const,
-    path: path.startsWith("review/")
-      ? path.replace("review/", "review/<id>/")
-      : path.startsWith("cases/")
-        ? path.replace("cases/", "cases/<id>/")
-        : path,
+    path: path.startsWith("review/evidence/")
+      ? path.replace("review/evidence/", "review/<id>/evidence/<id>/")
+      : path.startsWith("review/")
+        ? path.replace("review/", "review/<id>/")
+        : path.startsWith("cases/")
+          ? path.replace("cases/", "cases/<id>/")
+          : path,
   }));
   const puts = [...ALLOWED_PUT].map((path) => ({ method: "PUT" as const, path }));
   return [...posts, ...puts].sort((a, b) => a.path.localeCompare(b.path));

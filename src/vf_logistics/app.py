@@ -2416,6 +2416,48 @@ def orchestrator_case_dossier_json(case_id: str) -> Any:
     except Exception as e:
         return _safe_error(e)
 
+@app.route("/api/v1/review/<case_id>/reevaluate", methods=["POST"])
+@require_reviewer
+@limiter.limit("10 per minute")
+def review_reevaluate(case_id: str) -> Any:
+    """Re-run the origin checks against the evidence received so far."""
+    from vf_logistics import evidence
+
+    return _evidence_response(evidence.reevaluate(case_id, tenant_id=_tenant()))
+
+
+@app.route("/api/v1/review/<case_id>/approve", methods=["POST"])
+@require_reviewer
+@require_password_session
+@limiter.limit("10 per minute")
+def review_approve(case_id: str) -> Any:
+    """Approve a release or block, binding it to the evidence version."""
+    from vf_logistics import evidence
+
+    body = _json_object()
+    person, actor_auth = _acting_person(body)
+    return _evidence_response(evidence.approve(
+        case_id, str(body.get("action") or "").strip(), person,
+        note=str(body.get("note") or "").strip(),
+        actor_auth=actor_auth, tenant_id=_tenant(),
+    ))
+
+
+@app.route("/api/v1/review/<case_id>/execute", methods=["POST"])
+@require_reviewer
+@require_password_session
+@limiter.limit("10 per minute")
+def review_execute(case_id: str) -> Any:
+    """Carry out an approved decision: call the tool, publish on Pub/Sub."""
+    from vf_logistics import evidence
+
+    body = _json_object()
+    person, actor_auth = _acting_person(body)
+    return _evidence_response(evidence.execute_approval(
+        case_id, str(body.get("approval_id") or "").strip(), person,
+        actor_auth=actor_auth, tenant_id=_tenant(),
+    ))
+
 
 @app.route("/api/v1/evidence/respond", methods=["POST"])
 # Not behind require_reviewer: the shipper has no account. Authentication is the

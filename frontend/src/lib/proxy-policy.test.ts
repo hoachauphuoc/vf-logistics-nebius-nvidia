@@ -39,11 +39,29 @@ describe("matchWrite", () => {
   it("resolves the review routes by shape", () => {
     expect(matchWrite("review/CASE-1/decide", ALLOWED_POST)).toBe(true);
     expect(matchWrite("review/CASE-1/deep-review", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/request-evidence", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/reevaluate", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/approve", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/execute", ALLOWED_POST)).toBe(true);
+  });
+
+  it("resolves the evidence sub-routes by shape", () => {
+    expect(matchWrite("review/CASE-1/evidence/evreq-1/link", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/evidence/evreq-1/cancel", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/evidence/evreq-1/decide", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/CASE-1/evidence/../link", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/CASE-1/evidence/evreq-1/link/extra", ALLOWED_POST)).toBe(false);
   });
 
   it("does not forward the id-less templates as routes of their own", () => {
     expect(matchWrite("review/decide", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/deep-review", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/request-evidence", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/reevaluate", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/approve", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/execute", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/evidence/link", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/evidence/cancel", ALLOWED_POST)).toBe(false);
     expect(matchWrite("cases/activity", ALLOWED_POST)).toBe(false);
   });
 
@@ -69,11 +87,13 @@ describe("matchWrite", () => {
     for (const path of PASSWORD_ONLY_POST) expect(ALLOWED_POST.has(path)).toBe(true);
   });
 
-  it("marks publish, revoke and the prefilter rules edit as password-only, and nothing else", () => {
+  it("marks publish, revoke, the prefilter, approve and execute as password-only", () => {
     expect([...PASSWORD_ONLY_POST].sort()).toEqual([
       "governance/publish",
       "governance/revoke",
       "orchestrator/reset",
+      "review/approve",
+      "review/execute",
     ]);
     expect([...PASSWORD_ONLY_PUT]).toEqual(["governance/prefilter-rules"]);
     for (const path of PASSWORD_ONLY_PUT) expect(ALLOWED_PUT.has(path)).toBe(true);
@@ -100,6 +120,11 @@ describe("the lists the Access Control screen shows", () => {
   it("spell the review writes with their id segment", () => {
     const shown = describedWrites().map((w) => `${w.method} ${w.path}`);
     expect(shown).toContain("POST review/<id>/decide");
+    expect(shown).toContain("POST review/<id>/request-evidence");
+    expect(shown).toContain("POST review/<id>/approve");
+    expect(shown).toContain("POST review/<id>/execute");
+    expect(shown).toContain("POST review/<id>/evidence/<id>/link");
+    expect(shown).toContain("POST review/<id>/evidence/<id>/cancel");
     expect(shown).toContain("POST cases/<id>/activity");
     expect(shown).toContain("PUT governance/prefilter-rules");
     expect(shown).not.toContain("POST review/decide");
