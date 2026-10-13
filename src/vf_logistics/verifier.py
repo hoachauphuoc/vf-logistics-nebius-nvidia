@@ -1342,18 +1342,34 @@ def check_origin_evidence(
             return False
         return value.strip().lower() not in _NOT_MEANINGFUL
 
+    # `by_type` holds the documents complete enough to count as provided. `read_by_type`
+    # holds every document that yielded anything: a contradiction is read from the
+    # latter, because an invoice that names China-origin goods but omits the supplier
+    # is incomplete as proof and still a reason to look harder. Incompleteness may
+    # leave a paper unproven; it must never hide what the paper says.
     by_type: dict[str, list[dict[str, Any]]] = {}
-    _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
-        "certificate_of_origin": ("origin_country",),
-        "producer_declaration": ("producer_name",),
-        "input_purchase_invoices": ("supplier_name", "goods_origin_country", "supplier_country"),
+    read_by_type: dict[str, list[dict[str, Any]]] = {}
+    # Every group must hold a meaningful value; within a group any one field will do.
+    # An invoice names who sold the inputs AND where the goods came from: one without
+    # the other does not show where the inputs originate, so it is not evidence.
+    _REQUIRED_FIELDS: dict[str, tuple[tuple[str, ...], ...]] = {
+        "certificate_of_origin": (("origin_country",),),
+        "producer_declaration": (("producer_name",),),
+        "input_purchase_invoices": (
+            ("supplier_name",),
+            ("goods_origin_country", "supplier_country"),
+        ),
     }
     for doc in documents or []:
         if isinstance(doc, dict) and isinstance(doc.get("extracted"), dict):
             dt = str(doc.get("doc_type"))
             ext = doc["extracted"]
+            if ext:
+                read_by_type.setdefault(dt, []).append(ext)
             required = _REQUIRED_FIELDS.get(dt, ())
-            if required and not any(_is_meaningful(ext.get(f)) for f in required):
+            if required and not all(
+                any(_is_meaningful(ext.get(f)) for f in group) for group in required
+            ):
                 continue
             if not ext:
                 continue
@@ -1367,7 +1383,7 @@ def check_origin_evidence(
     watched = rule.input_origin if rule else ""
     contradictions: list[dict[str, Any]] = []
 
-    for cert in by_type.get("certificate_of_origin", []):
+    for cert in read_by_type.get("certificate_of_origin", []):
         stated = _canon_country(cert.get("origin_country"))
         if stated and declared and stated != declared:
             contradictions.append({
@@ -1376,14 +1392,14 @@ def check_origin_evidence(
             })
 
     if watched:
-        for dec in by_type.get("producer_declaration", []):
+        for dec in read_by_type.get("producer_declaration", []):
             hit = sorted({_canon_country(c) for c in _as_list(dec.get("input_origins"))} & {watched})
             if hit:
                 contradictions.append({
                     "kind": "input_origin",
                     "detail": f"The producer's declaration lists {hit[0].title()}-origin inputs, the origin the authority found.",
                 })
-        for inv in by_type.get("input_purchase_invoices", []):
+        for inv in read_by_type.get("input_purchase_invoices", []):
             goods_origin = _canon_country(inv.get("goods_origin_country") or inv.get("supplier_country"))
             if goods_origin == watched:
                 contradictions.append({
@@ -1395,8 +1411,10 @@ def check_origin_evidence(
 
     producers: dict[str, set[str]] = {}
     for doc_type in ORIGIN_EVIDENCE_DOCS:
-        for extracted in by_type.get(doc_type, []):
-            key = _company_key(extracted.get("producer_name"))
+        for extracted in read_by_type.get(doc_type, []):
+            name = extracted.get("producer_name")
+            # "not stated" is a company name to _company_key; it is not a producer.
+            key = _company_key(name) if _is_meaningful(name) else ""
             if key:
                 producers.setdefault(doc_type, set()).add(key)
     certified = producers.get("certificate_of_origin", set())

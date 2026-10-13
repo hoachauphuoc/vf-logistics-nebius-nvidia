@@ -315,3 +315,45 @@ class TestN07LegacyDecide(Base):
         result = self._decide("release", "one_click")
         assert result["ok"] is False
         assert "password" in result["error"].lower()
+
+
+class TestN06EveryRequiredField(Base):
+    def _eval(self, invoice, declaration=None):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _submit_per_type(links, {
+            "certificate_of_origin": {"origin_country": "Vietnam", "producer_name": "Saigon Plywood"},
+            "producer_declaration": declaration or {"producer_name": "Saigon Plywood"},
+            "input_purchase_invoices": invoice,
+        })
+        return run(evidence.reevaluate("CASE-1"))["evaluation"]
+
+    def test_an_invoice_with_a_supplier_but_no_origin_is_not_provided(self):
+        ev = self._eval({
+            "supplier_name": "VN Timber", "goods_origin_country": "not stated",
+            "supplier_country": "unknown",
+        })
+        assert ev["status"] == "missing"
+        assert ev["unresolved"] == ["input_purchase_invoices"]
+
+    def test_an_invoice_with_an_origin_but_no_supplier_is_not_provided(self):
+        ev = self._eval({"supplier_name": "n/a", "goods_origin_country": "Vietnam"})
+        assert "input_purchase_invoices" in ev["unresolved"]
+
+    def test_a_complete_invoice_is_provided(self):
+        ev = self._eval({"supplier_name": "VN Timber", "goods_origin_country": "Vietnam"})
+        assert ev["status"] == "provided"
+
+    def test_an_incomplete_invoice_still_raises_a_contradiction(self):
+        """Unproven is not hidden: China-origin goods on a nameless invoice still flag."""
+        ev = self._eval({"supplier_name": "not stated", "goods_origin_country": "China"})
+        assert "input_purchase_invoices" in ev["unresolved"]
+        assert ev["contradictions"], ev
+
+    def test_a_not_stated_producer_is_not_a_mismatch(self):
+        ev = self._eval(
+            {"supplier_name": "VN Timber", "goods_origin_country": "Vietnam"},
+            declaration={"producer_name": "not stated"},
+        )
+        assert not any(c.get("kind") == "producer" for c in ev["contradictions"])

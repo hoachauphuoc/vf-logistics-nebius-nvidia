@@ -275,3 +275,51 @@ describe("The policy writes need a password sign-in too", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+describe("Evidence upload is authenticated by its token, not a session", () => {
+  let spy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv("VF_API_KEY", "console-secret-key");
+    vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    vi.stubEnv("FLASK_API_BASE", "http://127.0.0.1:9090");
+    spy = vi.fn(async () => Response.json({ received: true }, { status: 201 }));
+    globalThis.fetch = spy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const upload = () =>
+    new Request("https://vf.example/api/proxy/evidence/respond", {
+      method: "POST",
+      headers: { "X-VF-Evidence-Token": "signed.token" },
+      body: "file",
+    });
+
+  it("lets a shipper with no console session reach the API (Rev2 N08: it was a 401)", async () => {
+    const response = await POST(upload(), params("evidence/respond"));
+    expect(response.status).toBe(201);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the shipper's token but never the console's API key", async () => {
+    await POST(upload(), params("evidence/respond"));
+    const headers = sentHeaders(spy);
+    expect(headers.get("x-vf-evidence-token")).toBe("signed.token");
+    expect(headers.get("x-vf-api-key")).toBeNull();
+  });
+
+  it("does not open any other write to an anonymous caller", async () => {
+    for (const path of ["review/CASE-1/approve", "review/CASE-1/execute", "review/CASE-1/reevaluate"]) {
+      const response = await POST(
+        new Request(`https://vf.example/api/proxy/${path}`, { method: "POST", body: "{}" }),
+        params(path),
+      );
+      expect(response.status).toBe(401);
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
