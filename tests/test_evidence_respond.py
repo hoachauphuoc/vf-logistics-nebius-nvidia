@@ -122,7 +122,9 @@ class TestReceiving(Base):
         assert doc["doc_type"] == "certificate_of_origin"
         assert doc["extracted"]["producer_name"] == "Saigon Plywood"
         request = case["verification"]["requests"][0]
-        assert request["status"] == "RECEIVED"
+        # N03: 3 documents requested, 1 received -- request stays SENT until all in.
+        assert request["status"] == "SENT"
+        assert "certificate_of_origin" in request.get("received_docs", {})
 
     def test_a_second_document_on_a_new_request_increments_the_version(self):
         self.put()

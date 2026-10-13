@@ -67,8 +67,8 @@ class Base:
     def stored(self, case_id="CASE-1"):
         return run(self.store.get_case(case_id))
 
-    def request_and_submit(self, case_id="CASE-1", extracted=None):
-        out = run(evidence.request_evidence(case_id, REVIEWER))
+    def request_and_submit(self, case_id="CASE-1", extracted=None, documents=None):
+        out = run(evidence.request_evidence(case_id, REVIEWER, documents=documents or ["certificate_of_origin"]))
         token = out["token"]
         ext = extracted or {"producer_name": "Saigon Plywood", "origin_country": "Vietnam"}
         mock = {
@@ -107,12 +107,15 @@ class TestReevaluation(Base):
         assert (case["reconciliation"] or {}).get("risk_floor", 0) >= 80
         assert any(c.get("kind") == "certificate_country" for c in result["evaluation"]["contradictions"])
 
-    def test_open_requests_are_closed_after_evaluation(self):
+    def test_open_requests_are_closed_after_evaluation_when_all_docs_received(self):
+        """N04: reevaluate closes requests only when all documents are in."""
         self.put()
-        self.request_and_submit()
+        # Request 3 doc types but only submit 1 -- request stays open.
+        self.request_and_submit(documents=["certificate_of_origin", "producer_declaration", "input_purchase_invoices"])
         run(evidence.reevaluate("CASE-1"))
         case = self.stored()
-        assert all(r["status"] not in evidence.OPEN_STATUSES for r in case["verification"]["requests"])
+        req = case["verification"]["requests"][0]
+        assert req["status"] in evidence.OPEN_STATUSES  # still open, 2 docs missing
 
     def test_missing_case_is_not_found(self):
         with pytest.raises(evidence.EvidenceError) as raised:

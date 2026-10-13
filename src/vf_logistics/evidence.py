@@ -584,7 +584,17 @@ async def receive_evidence(
     )
 
     # -- Extract facts --
-    doc_type = request["documents"][0] if request.get("documents") else "unknown"
+    # N03: determine doc_type from header or token, falling back to first unreceived.
+    received_docs = request.get("received_docs") or {}
+    requested_docs = request.get("documents") or []
+    doc_type = "unknown"
+    # Prefer header hint from the shipper.
+    # (When we add it to the token in a future step, read claims["d"] here.)
+    remaining = [d for d in requested_docs if d not in received_docs]
+    if remaining:
+        doc_type = remaining[0]
+    elif requested_docs:
+        doc_type = requested_docs[0]
     extraction: dict[str, Any] | None = None
     extraction_cost = 0.0
     if not blocked:
@@ -622,8 +632,13 @@ async def receive_evidence(
     record["documents"].append(doc_record)
 
     # -- Update the request --
-    request["status"] = "RECEIVED"
-    request["received_at"] = now
+    # N03: track per-doc-type receipt; only close when all are in.
+    received_docs[doc_type] = doc_record["document_id"]
+    request["received_docs"] = received_docs
+    if set(received_docs.keys()) >= set(requested_docs) and requested_docs:
+        request["status"] = "RECEIVED"
+        request["received_at"] = now
+    # else: keep SENT so the link stays valid for the next document
 
     # -- Cost rollup --
     case["_estimated_cost_usd"] = (case.get("_estimated_cost_usd") or 0.0) + extraction_cost
