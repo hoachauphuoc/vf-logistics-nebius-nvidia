@@ -58,6 +58,9 @@ class CaseState(str, Enum):
     DEAD_LETTER = "DEAD_LETTER"
     # A reviewer asked the shipper for documents (evidence.py).
     AWAITING_EVIDENCE = "AWAITING_EVIDENCE"
+    APPROVED = "APPROVED"
+    EXECUTING = "EXECUTING"
+    EXECUTION_FAILED = "EXECUTION_FAILED"
 
 
 class ReviewAction(str, Enum):

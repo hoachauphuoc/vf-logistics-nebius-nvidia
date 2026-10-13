@@ -1330,9 +1330,22 @@ def check_origin_evidence(
     """
     rule = watched_lane(shipment)
     by_type: dict[str, list[dict[str, Any]]] = {}
+    # N06: an empty dict is "received but not verified" -- do not count it.
+    _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+        "certificate_of_origin": ("origin_country",),
+        "producer_declaration": ("producer_name",),
+        "input_purchase_invoices": ("supplier_name", "goods_origin_country", "supplier_country"),
+    }
     for doc in documents or []:
         if isinstance(doc, dict) and isinstance(doc.get("extracted"), dict):
-            by_type.setdefault(str(doc.get("doc_type")), []).append(doc["extracted"])
+            dt = str(doc.get("doc_type"))
+            ext = doc["extracted"]
+            required = _REQUIRED_FIELDS.get(dt, ())
+            if required and not any(ext.get(f) for f in required):
+                continue  # empty or missing required fields
+            if not ext:
+                continue  # completely empty extraction
+            by_type.setdefault(dt, []).append(ext)
     present = [d for d in ORIGIN_EVIDENCE_DOCS if by_type.get(d)]
     missing = [d for d in ORIGIN_EVIDENCE_DOCS if d not in present]
 

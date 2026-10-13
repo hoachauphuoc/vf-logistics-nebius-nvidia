@@ -49,6 +49,9 @@ _OUTCOME_MAP: dict[str, AuditOutcome] = {
     # Waiting on the shipper's documents: a person is handling it, the same
     # instruction to a calling system as any other human-held state.
     "AWAITING_EVIDENCE": AuditOutcome.PENDING_HUMAN,
+    "APPROVED": AuditOutcome.PENDING_HUMAN,
+    "EXECUTING": AuditOutcome.PENDING_HUMAN,
+    "EXECUTION_FAILED": AuditOutcome.ERROR,
     "DEAD_LETTER": AuditOutcome.ERROR,
 }
 

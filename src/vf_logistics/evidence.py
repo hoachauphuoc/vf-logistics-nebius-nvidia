@@ -678,6 +678,15 @@ async def reevaluate(
         raise EvidenceError("case not found", 404)
     expected_version = stored.get("_version")
     case = copy.deepcopy(stored)
+
+    # N05: only reevaluate cases that are still in the verification loop.
+    REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")
+    if case.get("state") not in REEVALUABLE:
+        raise EvidenceError(
+            f"Cannot re-evaluate a case in state {case.get('state')}.",
+            409,
+        )
+
     record = verification_of(case)
     shipment = case.get("shipment") or {}
 
@@ -730,11 +739,14 @@ async def reevaluate(
     new_state = "ESCALATED" if floor >= 70 else "HELD_FOR_REVIEW"
     case["state"] = new_state
     case["updated_at"] = now
-    # Close all open requests: the evaluation consumed what they asked for.
+    # N04: only close requests that have received their documents.
     for req in record["requests"]:
         if isinstance(req, dict) and req.get("status") in OPEN_STATUSES:
-            req["status"] = "RECONCILED"
-            req["reconciled_at"] = now
+            received = set((req.get("received_docs") or {}).keys())
+            requested = set(req.get("documents") or [])
+            if received >= requested and requested:
+                req["status"] = "RECONCILED"
+                req["reconciled_at"] = now
 
     await _write(case, expected_version, tenant_id)
     await _audit(case_id, "evidence_reconciled", "system", None, {
@@ -875,10 +887,10 @@ def approval_is_executable(
             break
     if approval is None:
         return None, "approval not found"
-    if approval.get("status") != "VALID":
+    if approval.get("status") not in ("VALID",):
         return None, f"approval is {approval.get('status')}, not VALID"
-    if case.get("state") != APPROVED:
-        return None, f"case is {case.get('state')}, not APPROVED"
+    if case.get("state") not in (APPROVED, "EXECUTION_FAILED"):
+        return None, f"case is {case.get('state')}, not APPROVED or EXECUTION_FAILED"
     ev_version = record.get("evidence_version") or 0
     if (approval.get("evidence_version") or 0) != ev_version:
         return None, (
@@ -899,11 +911,15 @@ async def execute_approval(
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    Carry out an approved decision: call the tool, publish on Pub/Sub, record it.
+    Carry out an approved decision: claim, send, confirm.
 
-    Checks everything once more right before the side effect, so a stale approval
-    or a version mismatch discovered between "approve" and "execute" is caught
-    rather than becoming an incorrect release.
+    Three phases so that concurrent callers and publish failures are handled:
+    1. CLAIM -- atomically mark the approval CLAIMING via optimistic lock.
+       Only one caller wins; the loser gets a 409 from the store.
+    2. SEND -- call the tool + Pub/Sub.
+    3. CONFIRM -- write the outcome. If Pub/Sub failed, the execution is
+       recorded as send_failed and the case moves to EXECUTION_FAILED;
+       the approval reverts to VALID so a retry is possible.
     """
     from vf_logistics import tools
 
@@ -921,7 +937,6 @@ async def execute_approval(
 
     approval, reason = approval_is_executable(case, approval_id)
     if approval is None:
-        # Record the refusal so the audit trail says what was tried.
         record = verification_of(case)
         record.setdefault("executions", []).append({
             "execution_id": new_id("evexe"),
@@ -938,80 +953,127 @@ async def execute_approval(
         }, tenant_id)
         raise EvidenceError(reason or "execution refused", 409)
 
+    # -- Phase 1: CLAIM (atomic via optimistic lock) --
     action = approval["action"]
-    shipment_id = case.get("shipment_id") or case_id
     now = utcnow()
-
-    # -- The side effect: tool call + Pub/Sub --
-    if action == "release":
-        tool_receipt = await tools.release_shipment(
-            case_id, shipment_id,
-            f"Approved by {approval['approver']} at evidence v{approval['evidence_version']}",
-            tenant_id=tenant_id,
-        )
-        new_state = "RELEASED_BY_HUMAN"
-    else:
-        tool_receipt = await tools.hold_shipment(
-            case_id, shipment_id,
-            f"Blocked by {approval['approver']} at evidence v{approval['evidence_version']}",
-            tenant_id=tenant_id,
-        )
-        new_state = "BLOCKED_BY_HUMAN"
-
-    pub_receipt = await tools.publish_decision(
-        case_id,
-        {
-            "outcome": new_state,
-            "action": action,
-            "approval_id": approval_id,
-            "evidence_version": approval.get("evidence_version"),
-            "evaluation_id": approval.get("evaluation_id"),
-            "approver": approval["approver"],
-            "executor": executor,
-        },
-        tenant_id=tenant_id,
-    )
-    message_id = (pub_receipt.get("detail") or {}).get("message_id")
-
-    # -- Record --
-    record = verification_of(case)
+    execution_id = new_id("evexe")
     execution = {
-        "execution_id": new_id("evexe"),
+        "execution_id": execution_id,
         "approval_id": approval_id,
         "executor": executor,
         "at": now,
-        "status": "done",
-        "message_id": message_id,
+        "status": "claiming",
     }
+    record = verification_of(case)
     record.setdefault("executions", []).append(execution)
-    approval["status"] = "EXECUTED"
-    case["state"] = new_state
+    approval["status"] = "CLAIMING"
+    case["state"] = "EXECUTING"
     case["updated_at"] = now
-    case["decision"] = {
-        "outcome": new_state,
-        "rationale": f"{approval['approver']} approved {action}; executed by {executor}.",
-        "decided_by": "human",
-    }
-    case.setdefault("reviews", []).append({
+    await _write(case, expected_version, tenant_id)
+    # If another caller claimed first, _write raises a version conflict (409).
+
+    # -- Phase 2: SEND --
+    shipment_id = case.get("shipment_id") or case_id
+    try:
+        if action == "release":
+            tool_receipt = await tools.release_shipment(
+                case_id, shipment_id,
+                f"Approved by {approval['approver']} at evidence v{approval['evidence_version']}",
+                tenant_id=tenant_id,
+            )
+            new_state = "RELEASED_BY_HUMAN"
+        else:
+            tool_receipt = await tools.hold_shipment(
+                case_id, shipment_id,
+                f"Blocked by {approval['approver']} at evidence v{approval['evidence_version']}",
+                tenant_id=tenant_id,
+            )
+            new_state = "BLOCKED_BY_HUMAN"
+
+        pub_receipt = await tools.publish_decision(
+            case_id,
+            {
+                "outcome": new_state,
+                "action": action,
+                "approval_id": approval_id,
+                "evidence_version": approval.get("evidence_version"),
+                "evaluation_id": approval.get("evaluation_id"),
+                "approver": approval["approver"],
+                "executor": executor,
+                "idempotency_key": execution_id,
+            },
+            tenant_id=tenant_id,
+        )
+        message_id = (pub_receipt.get("detail") or {}).get("message_id")
+        pub_failed = message_id is None
+    except Exception:
+        tool_receipt = None
+        pub_receipt = None
+        message_id = None
+        pub_failed = True
+        new_state = action  # placeholder, overridden below
+
+    # -- Phase 3: CONFIRM --
+    stored2 = await store.get_case(case_id, tenant_id=tenant_id)
+    if not stored2:
+        raise EvidenceError("case disappeared during execution", 500)
+    ev2 = stored2.get("_version")
+    case2 = copy.deepcopy(stored2)
+    record2 = verification_of(case2)
+    exe2 = next(
+        (e for e in record2.get("executions") or [] if e.get("execution_id") == execution_id),
+        None,
+    )
+    apr2 = next(
+        (a for a in record2.get("approvals") or [] if a.get("approval_id") == approval_id),
+        None,
+    )
+    if exe2 is None or apr2 is None:
+        raise EvidenceError("execution record lost during write", 500)
+
+    if pub_failed:
+        exe2["status"] = "send_failed"
+        exe2["message_id"] = None
+        apr2["status"] = "VALID"  # revert so retry is possible
+        case2["state"] = "EXECUTION_FAILED"
+        final_state = "EXECUTION_FAILED"
+    else:
+        final_state = new_state
+        exe2["status"] = "sent"
+        exe2["message_id"] = message_id
+        apr2["status"] = "EXECUTED"
+        case2["state"] = final_state
+        case2["decision"] = {
+            "outcome": final_state,
+            "rationale": f"{approval['approver']} approved {action}; executed by {executor}.",
+            "decided_by": "human",
+        }
+
+    case2["updated_at"] = utcnow()
+    case2.setdefault("reviews", []).append({
         "action": action,
         "reviewer": executor,
-        "note": f"Executed approval {approval_id}",
+        "note": f"Executed approval {approval_id}" if not pub_failed else f"Execution failed for {approval_id}",
         "at": now,
         "state_before": APPROVED,
-        "state_after": new_state,
+        "state_after": final_state,
     })
-    case.setdefault("actions", []).extend([tool_receipt, pub_receipt])
+    if tool_receipt:
+        case2.setdefault("actions", []).append(tool_receipt)
+    if pub_receipt:
+        case2.setdefault("actions", []).append(pub_receipt)
 
-    await _write(case, expected_version, tenant_id)
+    await _write(case2, ev2, tenant_id)
     await _audit(case_id, f"evidence_executed_{action}", executor, actor_auth, {
-        "execution_id": execution["execution_id"],
+        "execution_id": execution_id,
         "approval_id": approval_id,
         "evidence_version": approval.get("evidence_version"),
         "message_id": message_id,
-        "state_after": new_state,
+        "state_after": final_state,
+        "pub_failed": pub_failed,
     }, tenant_id)
     return {
-        "execution": execution,
-        "state": new_state,
+        "execution": exe2,
+        "state": final_state,
         "message_id": message_id,
     }

@@ -144,6 +144,9 @@ TERMINAL = (
     # agent -- it has nothing more to do -- but NOT in AWAITING_HUMAN: a decision
     # cannot be recorded on a case while a request is open. Answer it or cancel it.
     "AWAITING_EVIDENCE",
+    "APPROVED",
+    "EXECUTING",
+    "EXECUTION_FAILED",
 )
 
 # Cases sitting in a human's queue. Nothing leaves these states without a named
@@ -1851,6 +1854,20 @@ async def human_decide(
         return {
             "ok": False,
             "error": f"case is in state {case.get('state')}, which is not awaiting review",
+        }
+
+    # N07: a case that entered the verification loop must go through
+    # evidence.approve + evidence.execute_approval. human_decide bypasses the
+    # evidence-version binding and the password requirement on release.
+    ev_ver = ((case.get("verification") or {}).get("evidence_version") or 0)
+    if ev_ver > 0:
+        return {
+            "ok": False,
+            "error": (
+                "This case has an evidence record (v"
+                + str(ev_ver)
+                + "). Use /approve and /execute instead."
+            ),
         }
 
     new_state, tool_action = HUMAN_ACTIONS[action]

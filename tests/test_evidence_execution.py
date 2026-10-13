@@ -44,7 +44,7 @@ class TestExecution(Base):
         approval = case["verification"]["approvals"][0]
         assert approval["status"] == "EXECUTED"
         exe = case["verification"]["executions"][0]
-        assert exe["status"] == "done"
+        assert exe["status"] == "sent"
         assert exe["message_id"] == "msg-1"
 
     def test_a_block_approval_is_executed(self):
@@ -102,3 +102,34 @@ class TestExecution(Base):
             with pytest.raises(evidence.EvidenceError):
                 run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
         mock_pub.assert_not_called()
+
+    def test_n02_publish_failure_records_send_failed(self):
+        """N02: Pub/Sub returning failed must NOT record done/RELEASED."""
+        approval_id = self._full_loop()
+        failed_receipt = {"detail": {}, "status": "failed"}
+        with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=failed_receipt)):
+            result = run(evidence.execute_approval(
+                "CASE-1", approval_id, REVIEWER, actor_auth="password",
+            ))
+        assert result["state"] == "EXECUTION_FAILED"
+        assert result["message_id"] is None
+        case = self.stored()
+        assert case["state"] == "EXECUTION_FAILED"
+        exe = case["verification"]["executions"][-1]
+        assert exe["status"] == "send_failed"
+        # Approval reverts to VALID so retry is possible.
+        approval = case["verification"]["approvals"][0]
+        assert approval["status"] == "VALID"
+
+    def test_n02_retry_after_failure_succeeds(self):
+        """N02: After EXECUTION_FAILED, retry with the same approval succeeds."""
+        approval_id = self._full_loop()
+        failed_receipt = {"detail": {}, "status": "failed"}
+        with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=failed_receipt)):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert self.stored()["state"] == "EXECUTION_FAILED"
+        ok_receipt = {"detail": {"message_id": "msg-retry"}, "status": "done"}
+        with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=ok_receipt)):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        assert result["message_id"] == "msg-retry"
