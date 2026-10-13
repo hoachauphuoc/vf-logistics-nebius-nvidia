@@ -150,9 +150,8 @@ class TestExecution(Base):
         approval_id = self._full_loop()
         boom = AsyncMock(side_effect=KeyboardInterrupt)
         # Simulate a crash after the claim: leave the case EXECUTING / CLAIMING.
-        with patch("vf_logistics.tools.publish_decision", new=boom):
-            with pytest.raises(KeyboardInterrupt):
-                run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        with patch("vf_logistics.tools.publish_decision", new=boom), pytest.raises(KeyboardInterrupt):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
         case = self.stored()
         assert case["state"] == "EXECUTING"
         claimed = case["verification"]["executions"][0]["execution_id"]
