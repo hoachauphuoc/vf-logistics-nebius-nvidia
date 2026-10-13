@@ -10,7 +10,6 @@ the board or touch existing cases.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import requests
