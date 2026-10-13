@@ -389,3 +389,26 @@ read rather than verified after; attaching the boundary to a real approval
 workflow rather than a published JSON document; broadening the deterministic
 floors with a trade-compliance specialist; and per-tenant boundaries so a
 forwarder can grant a narrower delegation than their customs broker.
+
+## The restructure (October 2026)
+
+The benchmark's six identical origin-fraud pairs proved that booking-time data alone
+cannot tell a fraudulent plywood shipment from a legitimate one. The question became:
+what does the system need to collect to reach a defensible decision?
+
+A restructuring proposal on 12 October outlined six steps: identify what is missing,
+request the right documents, receive and reconcile them, re-evaluate against the new
+facts, approve with the right authority, and execute with confirmation. Three plans
+turned this into code.
+
+An independent review on 13 October found eight issues in the first implementation,
+two of them critical: concurrent execution could send twice (N01), and a failed publish
+was recorded as done (N02). Both were fixed with a claim-before-send pattern and
+honest failure recording. The six remaining issues -- a single file closing a
+three-document request, reevaluate reopening concluded cases, empty extractions
+counted as evidence, the legacy API bypassing the new policy, and the UI not connected
+to the new endpoints -- were fixed in the same sprint.
+
+The result: 1,183 tests, 0 improper executions on a 7-case evaluation corpus, three
+operator screens, a public upload page for shippers, and a lineage record that carries
+the evidence version and approval through to the audit trail.

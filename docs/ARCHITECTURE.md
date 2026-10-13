@@ -483,6 +483,33 @@ against the policy of its time.
 
 ---
 
+## Verification loop (`evidence.py`)
+
+When booking data alone cannot distinguish a legitimate shipment from a fraudulent one
+(the six identical origin-fraud pairs in the benchmark), the system organises the work
+of collecting and evaluating the missing evidence.
+
+**States:** `AWAITING_EVIDENCE` (request is open), `APPROVED` (reviewer signed off),
+`EXECUTING` (claim-before-send in progress), `EXECUTION_FAILED` (Pub/Sub failed, retry
+possible). All are `TERMINAL` for the agent (it has nothing more to do).
+
+**Token authentication:** the shipper receives an HMAC-signed link. The signing key is
+domain-separated from the session key (`HMAC(secret, b"evidence-response\x00")`). The
+token is never stored on the case; only a 12-character fingerprint is kept for audit.
+
+**Claim-before-send (N01):** `execute_approval` writes an execution record with status
+`claiming` via optimistic lock before calling tools or Pub/Sub. A concurrent caller gets
+a 409 from the store, never a duplicate publish.
+
+**Publish failure (N02):** a missing `message_id` records `send_failed` and moves the
+case to `EXECUTION_FAILED`. The approval reverts to `VALID` for retry.
+
+**Policy gate (N07):** `human_decide` (the legacy `/decide` API) refuses any case with
+`evidence_version > 0`. Cases that entered the verification loop must go through
+`approve` + `execute`, which enforce password authentication and evidence-version binding.
+
+---
+
 ## Persistence
 
 Five Firestore collections:

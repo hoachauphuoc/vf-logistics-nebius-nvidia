@@ -48,17 +48,17 @@ its cut.
 
 | Clip | Scene | Length | Screen |
 |---|---|---|---|
-| 1 | The problem | 17s | Pipeline `/` |
-| 2 | A real document | 10s | DevOps `/devops` → *Upload a document* |
-| 3 | The design rule | 21s | Agent Console `/agents` |
-| 4 | The floor overrules the model | 19s | Pipeline → an escalated case → trace sheet, the three risk rows and the veto note |
-| 5 | Live evidence | 10s | Same sheet, scrolled to *Live evidence* |
-| 6 | The review queue | 12s | Review `/review` |
-| 7 | The dossier | 14s | Review → *Due-diligence dossier (PDF)* → the PDF in a new tab |
-| 8 | The delegation boundary | 24s | Governance `/governance` |
-| 9 | Prompt injection blocked | 14s | Review → the blocked case |
-| 10 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
-| 11 | Close | 16s | Evaluation `/evaluation` → *Public enforcement cases*, then Pipeline `/` |
+| 1 | The problem: two identical shipments | 15s | Today `/today` showing two plywood cases held |
+| 2 | What is missing and why it matters | 10s | Case page `/cases/[id]` with ORIGIN_INPUTS_UNVERIFIED finding |
+| 3 | AI requests the right documents | 15s | Case page: click "Request evidence", show the HMAC link, name Nemotron |
+| 4 | Evidence received and reconciled | 15s | `/respond/[token]` upload page, then case timeline shows document received |
+| 5 | Re-evaluation: clarified vs contradicted | 15s | Case page: re-evaluate, timeline shows clarified/unresolved/contradictions |
+| 6 | Case A: approved and executed | 15s | Case A: approve release (password), execute, Pub/Sub message_id |
+| 7 | Case B: contradiction holds it for review | 15s | Case B: re-evaluate shows contradiction, floor raised, stays ESCALATED |
+| 8 | Stale approval blocked | 15s | Case A: submit new evidence, old approval SUPERSEDED, execute refused |
+| 9 | Results and measurement | 15s | Outcomes `/outcomes`: resolved, cost, rounds, 0 improper executions |
+| 10 | The stack: Nebius Token Factory and NVIDIA | 10s | Agents `/agents` page, name Nebius Token Factory and Nemotron aloud |
+| 11 | Close: what Floorline does for the operator | 10s | Today `/today` with cleared cases, closing statement |
 | | | **165s** | |
 
 ### What changed on 10/10, and why

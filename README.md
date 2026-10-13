@@ -1314,12 +1314,53 @@ this for every report at 0.2%, 1% and 2%. The conclusion we draw is that the pro
 is not to hold fewer shipments but to make each hold quick and defensible to decide —
 which is what the case trace, the Review screen and the dossier are for.
 
+### When booking data is not enough: the verification loop
+
+The six identical origin-fraud pairs above prove that booking-time data alone cannot
+distinguish a fraudulent plywood shipment from a legitimate one. Floorline now addresses
+this directly: when a shipment lands on a watched lane (HS 4412, Vietnam to US), the
+deterministic checks identify what is unverified, and the system organises the work of
+collecting and evaluating the missing evidence.
+
+**Six steps, each with its own state and audit trail:**
+
+1. **Identify** -- `check_origin_inputs` flags the shipment with `ORIGIN_INPUTS_UNVERIFIED`
+   (floor 45, `blocks_auto_clear`). The dossier (`GET .../dossier.json`) lists the three
+   document types needed: certificate of origin, producer declaration, input purchase invoices.
+2. **Request** -- A reviewer asks the shipper for specific documents through a signed HMAC
+   link. The case moves to `AWAITING_EVIDENCE` and cannot be decided until the request is
+   answered or cancelled.
+3. **Receive and reconcile** -- The shipper uploads through `/respond/[token]` (public page,
+   no login). Each file is screened by Model Armor, archived, and extracted per document type.
+   The request tracks which types have been received and stays open until all are in.
+4. **Re-evaluate** -- `reevaluate` reruns the deterministic checks against the extracted
+   facts. Good evidence is reported as clarified; contradictions raise the floor. The AI
+   never lowers the floor.
+5. **Approve** -- A reviewer with a password session approves a release or block, binding
+   the decision to the evidence version. New evidence after approval supersedes it.
+6. **Execute** -- `execute_approval` claims the approval atomically before calling Pub/Sub.
+   A publish failure records `EXECUTION_FAILED` (not `RELEASED`); the approval reverts to
+   VALID for retry.
+
+**Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`):
+3/3 legitimate cases resolved correctly, 2/2 fraudulent blocked, 2 needs-evidence cases
+correctly held. **0 improper executions** (wrong authority, stale approval, or missing
+evidence). Median cost $0.000108/case, median latency 43ms.
+
+### Three operator screens
+
+| Screen | What the operator sees |
+|---|---|
+| **Today** (`/today`) | Four columns: waiting for documents, waiting for review, waiting for sign-off, approved but not executed. Who owns each case and what to do next. |
+| **Case** (`/cases/[id]`) | One timeline: arrival, findings, agents, evidence requests, documents received, evaluations, approvals, executions. Decision form routes through `approve` + `execute` for cases with evidence. |
+| **Outcomes** (`/outcomes`) | Cases resolved, human handling time (idle-aware), request rounds, model cost per case, cases held, executions refused. |
+
 ---
 
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 922, at 81% line coverage. CI fails below 75%.
+# Unit + integration tests: 1183, at 83% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
 # The mutation check: breaks 36 lines on purpose, one at a time, and requires the
