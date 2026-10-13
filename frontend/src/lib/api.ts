@@ -375,6 +375,54 @@ export function caseDossierUrl(caseId: string): string {
 }
 
 // --------------------------------------------------------------------------
+// Verification loop (evidence.py): the new API for N08
+// --------------------------------------------------------------------------
+
+export async function requestEvidence(
+  caseId: string,
+  documents?: string[],
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Requesting evidence");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/request-evidence`,
+    documents ? { documents } : undefined,
+  );
+}
+
+export async function reevaluateCase(
+  caseId: string,
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Re-evaluating");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/reevaluate`,
+    undefined,
+  );
+}
+
+export async function approveCase(
+  caseId: string,
+  action: "release" | "block",
+  note?: string,
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Approving");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/approve`,
+    { action, note: note ?? "" },
+  );
+}
+
+export async function executeApproval(
+  caseId: string,
+  approvalId: string,
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Executing");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/execute`,
+    { approval_id: approvalId },
+  );
+}
+
+// --------------------------------------------------------------------------
 // Audit trail
 // --------------------------------------------------------------------------
 

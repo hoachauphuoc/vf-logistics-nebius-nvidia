@@ -147,7 +147,11 @@ export type CaseState =
   | "PENDING_HUMAN"
   | "RELEASED_BY_HUMAN"
   | "BLOCKED_BY_HUMAN"
-  | "DEAD_LETTER";
+  | "DEAD_LETTER"
+  | "AWAITING_EVIDENCE"
+  | "APPROVED"
+  | "EXECUTING"
+  | "EXECUTION_FAILED";
 
 /** Cases sitting in a person's queue. Mirrors AWAITING_HUMAN. */
 export const AWAITING_HUMAN: readonly CaseState[] = [
@@ -386,6 +390,9 @@ export interface Case {
   last_error?: string | null;
   lineage_audit_id?: string | null;
 
+  /** Verification loop state (evidence.py). */
+  verification?: Verification | null;
+
   // Rollups, denormalised for aggregation.
   _agent_calls?: number | null;
   _input_tokens?: number | null;
@@ -529,6 +536,72 @@ export interface MetricsSummary {
   cleared_by_unknown: number;
   total_auto_cleared: number;
   at: string;
+}
+
+// ==========================================================================
+// Verification loop (evidence.py)
+// ==========================================================================
+
+export interface EvidenceRequest {
+  request_id: string;
+  documents: string[];
+  status: string;
+  received_docs?: Record<string, string> | null;
+  owner: string;
+  created_at: string;
+  received_at?: string | null;
+}
+
+export interface EvidenceDocument {
+  document_id: string;
+  request_id: string;
+  evidence_version: number;
+  doc_type: string;
+  filename: string;
+  sha256: string;
+  received_at: string;
+  blocked: boolean;
+  extracted?: Record<string, unknown> | null;
+}
+
+export interface EvidenceEvaluation {
+  evaluation_id: string;
+  evidence_version: number;
+  at: string;
+  risk_floor: number;
+  status: string;
+  clarified: string[];
+  unresolved: string[];
+  contradictions: Array<Record<string, unknown>>;
+}
+
+export interface EvidenceApproval {
+  approval_id: string;
+  action: string;
+  approver: string;
+  evidence_version: number;
+  status: string;
+  at: string;
+  note?: string | null;
+}
+
+export interface EvidenceExecution {
+  execution_id: string;
+  approval_id: string;
+  executor: string;
+  status: string;
+  message_id?: string | null;
+  at: string;
+  reason?: string | null;
+}
+
+export interface Verification {
+  evidence_version: number;
+  requests: EvidenceRequest[];
+  documents: EvidenceDocument[];
+  evaluations: EvidenceEvaluation[];
+  approvals: EvidenceApproval[];
+  executions?: EvidenceExecution[];
 }
 
 export interface Page<T> {

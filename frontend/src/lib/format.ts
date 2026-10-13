@@ -145,6 +145,10 @@ export const CASE_STATE_LABEL: Record<string, string> = {
   RELEASED_BY_HUMAN: "Released by a reviewer",
   BLOCKED_BY_HUMAN: "Blocked by a reviewer",
   DEAD_LETTER: "Abandoned after retries",
+  AWAITING_EVIDENCE: "Awaiting evidence from shipper",
+  APPROVED: "Approved, awaiting execution",
+  EXECUTING: "Executing decision",
+  EXECUTION_FAILED: "Execution failed (retry possible)",
 };
 
 export function caseStateLabel(state: string | null | undefined): string {
