@@ -19,7 +19,7 @@ import { caseStateLabel, formatUsd } from "@/lib/format";
 import { holds, useIdentity } from "@/lib/identity";
 import { buildCaseTimeline, informationRounds } from "@/lib/operations";
 import { useTenant } from "@/lib/tenant-context";
-import { AWAITING_HUMAN, type CaseState } from "@/lib/types";
+import { AWAITING_HUMAN, type CaseState, VERIFICATION_LOOP_STATES } from "@/lib/types";
 
 /**
  * One case, start to finish: what was found, what the agents did, what was
@@ -65,7 +65,13 @@ export default function CasePage() {
     identity?.acts_for_a_person === true && holds(identity, "reviewer") === true,
   );
 
-  const awaiting = c ? AWAITING_HUMAN.includes(c.state as CaseState) : false;
+  // The verification loop's own states still have something for a reviewer to do
+  // (copy the link, re-evaluate, cancel, execute, retry), so the panel stays. Hiding
+  // it on AWAITING_EVIDENCE threw away the request links, which are returned once.
+  const awaiting = c
+    ? AWAITING_HUMAN.includes(c.state as CaseState) ||
+      (c.verification != null && VERIFICATION_LOOP_STATES.includes(String(c.state)))
+    : false;
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["case", tenant.id] });

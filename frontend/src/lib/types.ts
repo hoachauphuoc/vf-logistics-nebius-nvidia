@@ -39,6 +39,8 @@ export interface AuditFinding {
    * omits the key entirely, which carries the same meaning as null.
    */
   evidence_urls?: string[] | null;
+  /** What the verifier measured. `documents_needed` names the papers that would answer it. */
+  measured?: { documents_needed?: string[] | null } & Record<string, unknown>;
 }
 
 export interface AuditLineage {
@@ -154,6 +156,13 @@ export type CaseState =
   | "EXECUTION_FAILED";
 
 /** Cases sitting in a person's queue. Mirrors AWAITING_HUMAN. */
+/** States of the verification loop in which a reviewer still has an action to take. */
+export const VERIFICATION_LOOP_STATES: readonly string[] = [
+  "AWAITING_EVIDENCE",
+  "APPROVED",
+  "EXECUTION_FAILED",
+];
+
 export const AWAITING_HUMAN: readonly CaseState[] = [
   "PENDING_HUMAN",
   "HELD_FOR_REVIEW",

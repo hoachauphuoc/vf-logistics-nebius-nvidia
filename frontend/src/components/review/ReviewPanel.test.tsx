@@ -14,6 +14,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
     ],
   })),
   executeApproval: vi.fn(async () => ({ state: "EXECUTION_FAILED" })),
+  decideReview: vi.fn(async () => ({ ok: true, state: "PENDING_HUMAN" })),
   cancelEvidenceRequest: vi.fn(async () => ({ state: "HELD_FOR_REVIEW" })),
 }));
 vi.mock("@/lib/identity", async (importOriginal) => ({
@@ -33,7 +34,7 @@ vi.mock("@/lib/identity", async (importOriginal) => ({
   }),
 }));
 
-import { cancelEvidenceRequest, executeApproval, reevaluateCase } from "@/lib/api";
+import { cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
 import type { Case } from "@/lib/types";
 
 import { ReviewPanel } from "./ReviewPanel";
@@ -100,6 +101,9 @@ describe("ReviewPanel verification actions", () => {
     renderPanel(makeCase("HELD_FOR_REVIEW"));
     fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "need papers" } });
     fireEvent.click(screen.getByRole("button", { name: "Request info" }));
+    // Nothing is sent before the confirmation.
+    expect(requestEvidence).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     const banner = await screen.findByTestId("evidence-links");
     expect(banner.textContent).toContain("certificate_of_origin: /respond/cert-token");
     expect(banner.textContent).toContain("producer_declaration: /respond/decl-token");
@@ -131,5 +135,31 @@ describe("ReviewPanel verification actions", () => {
       approvals: [{ approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" }],
     }));
     expect(screen.getByRole("button", { name: "Execute" })).toBeTruthy();
+  });
+
+  it("starts the verification loop on a fresh case whose finding asks for documents", async () => {
+    // Found in a browser run: the first Request info went to the legacy decide.
+    const fresh = {
+      ...makeCase("HELD_FOR_REVIEW", null),
+      validation: { findings: [{
+        code: "ORIGIN_INPUTS_UNVERIFIED", severity: "MEDIUM", detail: "d", floor: 45,
+        source_entity_ids: [], measured: { documents_needed: ["certificate_of_origin"] },
+      }] },
+    } as unknown as Case;
+    renderPanel(fresh);
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "need papers" } });
+    fireEvent.click(screen.getByRole("button", { name: "Request info" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(requestEvidence).toHaveBeenCalledWith("CASE-1"));
+    expect(decideReview).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy request for a case with nothing to ask documents for", async () => {
+    renderPanel(makeCase("HELD_FOR_REVIEW", null));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "call the shipper" } });
+    fireEvent.click(screen.getByRole("button", { name: "Request info" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(decideReview).toHaveBeenCalled());
+    expect(requestEvidence).not.toHaveBeenCalled();
   });
 });

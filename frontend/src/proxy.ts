@@ -26,6 +26,14 @@ import { isApiPassThrough } from "@/lib/upstream";
  * being re-reasoned about.
  */
 
+/**
+ * The one console API write a person with no account makes: a shipper submitting a
+ * document through a signed link. Its credential is the link's HMAC token, which
+ * Flask verifies; the BFF route forwards it without the console key. Without this
+ * the page at /respond/<token> loaded and every upload from it was a 401 (Rev2 N08).
+ */
+const TOKEN_AUTHENTICATED_POST = "/api/proxy/evidence/respond";
+
 /** Paths reachable with no session. Kept short on purpose. */
 const PUBLIC_PATHS = new Set([
   "/login",
@@ -41,6 +49,10 @@ const PUBLIC_PATHS = new Set([
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (pathname === TOKEN_AUTHENTICATED_POST && request.method === "POST") {
+    return NextResponse.next();
+  }
 
   // The public API is authorised by Flask, not by a console session: see
   // isApiPassThrough in lib/upstream.ts. Also excluded by the matcher below.

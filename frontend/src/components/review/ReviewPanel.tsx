@@ -33,7 +33,7 @@ import {
 } from "@/lib/format";
 import { helpFor } from "@/lib/help-content";
 import { type Identity, lockReason, roleLabel, useIdentity } from "@/lib/identity";
-import { HUMAN_ACTION_RESULT, type Case, type HumanAction } from "@/lib/types";
+import { AWAITING_HUMAN, HUMAN_ACTION_RESULT, type Case, type CaseState, type HumanAction } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -312,6 +312,16 @@ export function ReviewPanel({
   const observations = c.validation?.observations ?? [];
 
   const hasVerification = c.verification != null;
+  // A case enters the verification loop on its first request for documents. That is
+  // possible once a finding names the papers that would answer it; before this the
+  // first "Request info" went to the legacy decide and the loop could never start.
+  const asksForDocuments = (c.validation?.findings ?? []).some(
+    (f) => (f.measured?.documents_needed ?? []).length > 0,
+  );
+  const usesVerificationLoop = hasVerification || asksForDocuments;
+  // Release / Block / Request info only while the case is actually waiting on a
+  // decision; in the loop's other states the backend would refuse them.
+  const awaitingDecision = AWAITING_HUMAN.includes(c.state as CaseState);
 
   // N08: For cases in the verification loop, route decisions through the new API.
   const verificationApprove = useMutation({
@@ -433,18 +443,8 @@ export function ReviewPanel({
       return;
     }
     setFormError(null);
+    // Only opens the confirmation. Nothing is sent until Confirm, which routes it.
     setPending(action);
-    // N08: route through the verification loop for cases that have evidence.
-    // Do NOT mutate here -- set pending and let the confirmation dialog handle it.
-    if (hasVerification) {
-      if (action === "request_info") {
-        verificationRequest.mutate();
-      } else {
-        // For release/block, use the same confirmation pattern as the legacy path.
-        // The decide mutation is wired to call verificationApprove instead.
-      }
-      return;
-    }
   }
 
   return (
@@ -703,7 +703,7 @@ export function ReviewPanel({
             )}
 
           <div className="flex flex-wrap items-center gap-2">
-            {(["release", "block", "request_info"] as HumanAction[]).map((action) => (
+            {awaitingDecision && (["release", "block", "request_info"] as HumanAction[]).map((action) => (
               // The dot sits beside the button, not inside it: nesting it would
               // put a second click target inside a control whose whole job is to
               // be pressed deliberately.
@@ -711,7 +711,7 @@ export function ReviewPanel({
                 <Button
                   size="sm"
                   variant={action === "release" ? "default" : "outline"}
-                  disabled={decide.isPending}
+                  disabled={decide.isPending || verificationApprove.isPending || verificationRequest.isPending}
                   onClick={() => submit(action)}
                   className={cn(
                     "h-8 text-[12px]",
@@ -798,7 +798,9 @@ export function ReviewPanel({
               className="text-[12.5px]"
               onClick={() => {
                 if (pending) {
-                  if (hasVerification && pending !== "request_info") {
+                  if (pending === "request_info" && usesVerificationLoop) {
+                    verificationRequest.mutate();
+                  } else if (pending !== "request_info" && hasVerification) {
                     verificationApprove.mutate(pending as "release" | "block");
                   } else {
                     decide.mutate(pending);
