@@ -159,6 +159,7 @@ def build_decision_record(
     validation = case.get("validation") or {}
     reconciled = case.get("reconciliation") or {}
     sanctions = case.get("sanctions_snapshot") or {}
+    verification = case.get("verification") or {}
 
     return {
         "audit_id": new_id("AUD"),
@@ -212,12 +213,19 @@ def build_decision_record(
             "cost_usd": round(sum(s["cost_usd"] for s in steps), 8),
         },
 
-        # Where the deleted-on-request payload lived. Retained as references so
-        # the audit trail stays readable after an erasure: it can still say what
-        # evidence existed and prove a produced copy is genuine.
+        # The verification loop (evidence.py) state, when the case went through it.
+        "evidence_version": verification.get("evidence_version"),
+        "approval_id": next(
+            (a.get("approval_id") for a in reversed(verification.get("approvals") or [])
+             if isinstance(a, dict) and a.get("status") in ("VALID", "EXECUTED")),
+            None,
+        ),
+
+        # Where the deleted-on-request payload lived.
         "evidence_refs": {
             "case_document": case.get("case_id"),
             "document_archive": (case.get("document") or {}).get("archive_path"),
+            "provenance_uri": (case.get("provenance") or {}).get("uri"),
             "note": (
                 "Prompts, raw model replies and the shipment record live on the "
                 "case document and are deleted with it. The hashes above remain "
