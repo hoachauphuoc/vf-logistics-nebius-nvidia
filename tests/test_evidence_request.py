@@ -93,7 +93,12 @@ class TestTheToken(Base):
     def test_a_forged_signature_is_refused(self):
         token, _ = evidence.mint_token("default", "CASE-1", "evreq-1", 1)
         body, _, signature = token.partition(".")
-        flipped = signature[:-1] + ("A" if signature[-1] != "A" else "B")
+        # Flip a character in the MIDDLE of the signature so the actual bytes change.
+        # The last char of a 43-char base64url string may only differ in padding bits.
+        mid = len(signature) // 2
+        ch = signature[mid]
+        replacement = "A" if ch != "A" else "B"
+        flipped = signature[:mid] + replacement + signature[mid + 1:]
         assert evidence.read_token(f"{body}.{flipped}") is None
 
     def test_a_tampered_body_is_refused(self):
