@@ -270,7 +270,7 @@ class TestOrchestratorHumanDecide(unittest.TestCase):
     def test_human_release(self):
         from vf_logistics import orchestrator
         self._create_pending_case()
-        result = run(orchestrator.human_decide("CASE-PENDING", "release", "Reviewer1", "looks clean"))
+        result = run(orchestrator.human_decide("CASE-PENDING", "release", "Reviewer1", "looks clean", actor_auth="password"))
         self.assertIn(result.get("state", ""),
                       ["RELEASED", "RELEASED_BY_HUMAN", "release"])
 

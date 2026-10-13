@@ -121,11 +121,27 @@ def evaluate_case(case_spec):
             # Reevaluate
             run(evidence.reevaluate(case_id))
 
-            # Approve and execute only if we expect a terminal decision
-            if case_spec["expected_outcome"] in ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN"):
-                action = "release" if case_spec["expected_outcome"] == "RELEASED_BY_HUMAN" else "block"
+            # E01: decide based on evaluation status, NOT on expected_outcome.
+            stored_mid = run(store.get_case(case_id))
+            record = (stored_mid or {}).get("verification") or {}
+            evals = record.get("evaluations") or []
+            latest_eval = evals[-1] if evals else {}
+            eval_status = latest_eval.get("status", "missing")
+            eval_contradictions = latest_eval.get("contradictions") or []
+            eval_unresolved = latest_eval.get("unresolved") or []
+
+            if eval_status == "provided" and not eval_contradictions:
+                action = "release"
+            elif eval_contradictions or eval_status == "contradicted":
+                action = "block"
+            else:
+                # missing or unresolved -- do not approve, stay in review
+                action = None
+
+            if action:
                 approve_result = run(evidence.approve(
                     case_id, action, REVIEWER, actor_auth="password",
+                    note="Eval-based decision" if eval_unresolved else "",
                 ))
                 approval_id = approve_result["approval"]["approval_id"]
 
@@ -138,7 +154,6 @@ def evaluate_case(case_spec):
                 result["final_state"] = exec_result["state"]
                 result["resolved"] = exec_result["state"] in ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN")
             else:
-                # Case should stay in review
                 stored_after = run(store.get_case(case_id))
                 result["final_state"] = stored_after.get("state")
                 result["resolved"] = False

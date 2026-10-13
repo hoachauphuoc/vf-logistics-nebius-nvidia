@@ -1856,18 +1856,24 @@ async def human_decide(
             "error": f"case is in state {case.get('state')}, which is not awaiting review",
         }
 
-    # N07: a case that entered the verification loop must go through
-    # evidence.approve + evidence.execute_approval. human_decide bypasses the
-    # evidence-version binding and the password requirement on release.
-    ev_ver = ((case.get("verification") or {}).get("evidence_version") or 0)
-    if ev_ver > 0:
+    # N07: a case with a verification record must go through
+    # evidence.approve + evidence.execute_approval. Checking existence (not
+    # just version > 0) closes the loophole where a case at version 0 could
+    # still be released through the legacy API.
+    if case.get("verification") is not None:
         return {
             "ok": False,
             "error": (
-                "This case has an evidence record (v"
-                + str(ev_ver)
-                + "). Use /approve and /execute instead."
+                "This case has a verification record. "
+                "Use /approve and /execute instead."
             ),
+        }
+
+    # N07: password required for ALL releases, not just verification cases.
+    if action == "release" and actor_auth != "password":
+        return {
+            "ok": False,
+            "error": "Releasing a shipment needs a password sign-in.",
         }
 
     new_state, tool_action = HUMAN_ACTIONS[action]

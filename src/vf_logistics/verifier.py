@@ -1329,8 +1329,20 @@ def check_origin_evidence(
     (empty unless something contradicts).
     """
     rule = watched_lane(shipment)
+    # N06: values that mean "not verified" even though they are truthy strings.
+    _NOT_MEANINGFUL = frozenset({
+        "not stated", "n/a", "unknown", "unspecified", "none", "not available",
+        "not provided", "not applicable", "",
+    })
+
+    def _is_meaningful(value: Any) -> bool:
+        if value is None:
+            return False
+        if not isinstance(value, str):
+            return False
+        return value.strip().lower() not in _NOT_MEANINGFUL
+
     by_type: dict[str, list[dict[str, Any]]] = {}
-    # N06: an empty dict is "received but not verified" -- do not count it.
     _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "certificate_of_origin": ("origin_country",),
         "producer_declaration": ("producer_name",),
@@ -1341,10 +1353,10 @@ def check_origin_evidence(
             dt = str(doc.get("doc_type"))
             ext = doc["extracted"]
             required = _REQUIRED_FIELDS.get(dt, ())
-            if required and not any(ext.get(f) for f in required):
-                continue  # empty or missing required fields
+            if required and not any(_is_meaningful(ext.get(f)) for f in required):
+                continue
             if not ext:
-                continue  # completely empty extraction
+                continue
             by_type.setdefault(dt, []).append(ext)
     present = [d for d in ORIGIN_EVIDENCE_DOCS if by_type.get(d)]
     missing = [d for d in ORIGIN_EVIDENCE_DOCS if d not in present]

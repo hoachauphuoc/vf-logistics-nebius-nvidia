@@ -139,13 +139,13 @@ def _key() -> bytes:
     return hmac.new(secret.encode("utf-8"), _KEY_CONTEXT, hashlib.sha256).digest()
 
 
-def mint_token(scope: str, case_id: str, request_id: str, seq: int, now: float | None = None) -> tuple[str, int]:
+def mint_token(scope: str, case_id: str, request_id: str, seq: int, now: float | None = None, doc_type: str | None = None) -> tuple[str, int]:
     """A signed link token and its expiry (epoch seconds)."""
     expires = int((time.time() if now is None else now) + LINK_TTL_S)
-    payload = json.dumps(
-        {"v": 1, "t": scope, "c": case_id, "r": request_id, "s": seq, "e": expires},
-        separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
+    payload_dict: dict[str, Any] = {"v": 1, "t": scope, "c": case_id, "r": request_id, "s": seq, "e": expires}
+    if doc_type:
+        payload_dict["d"] = doc_type
+    payload = json.dumps(payload_dict, separators=(",", ":"), sort_keys=True).encode("utf-8")
     body = _b64(payload)
     signature = _b64(hmac.new(_key(), body.encode("ascii"), hashlib.sha256).digest())
     return f"{body}.{signature}", expires
@@ -378,7 +378,12 @@ async def request_evidence(
         "reconciled_at": None,
         "closed_at": None,
     }
+    # N03: mint one link per doc_type so the token carries which document to expect.
     token, _ = _issue(request, scope, case_id, requested_by, now)
+    links = []
+    for dt in wanted:
+        dt_token, dt_expires = mint_token(scope, case_id, str(request["request_id"]), int(request["link_seq"]), doc_type=dt)  # type: ignore[arg-type]
+        links.append({"doc_type": dt, "token": dt_token, "path": link_path(dt_token)})
     record["requests"].append(request)
 
     if state != AWAITING_EVIDENCE:
@@ -584,17 +589,15 @@ async def receive_evidence(
     )
 
     # -- Extract facts --
-    # N03: determine doc_type from header or token, falling back to first unreceived.
+    # N03: doc_type from the token (preferred), then first unreceived as fallback.
     received_docs = request.get("received_docs") or {}
     requested_docs = request.get("documents") or []
-    doc_type = "unknown"
-    # Prefer header hint from the shipper.
-    # (When we add it to the token in a future step, read claims["d"] here.)
-    remaining = [d for d in requested_docs if d not in received_docs]
-    if remaining:
-        doc_type = remaining[0]
-    elif requested_docs:
-        doc_type = requested_docs[0]
+    token_doc_type = claims.get("d")
+    if token_doc_type and token_doc_type in requested_docs:
+        doc_type = token_doc_type
+    else:
+        remaining = [d for d in requested_docs if d not in received_docs]
+        doc_type = remaining[0] if remaining else (requested_docs[0] if requested_docs else "unknown")
     extraction: dict[str, Any] | None = None
     extraction_cost = 0.0
     if not blocked:

@@ -310,7 +310,7 @@ export function ReviewPanel({
   const findings = c.validation?.findings ?? [];
   const observations = c.validation?.observations ?? [];
 
-  const hasVerification = (c.verification?.evidence_version ?? 0) > 0;
+  const hasVerification = c.verification != null;
 
   // N08: For cases in the verification loop, route decisions through the new API.
   const verificationApprove = useMutation({
@@ -322,7 +322,13 @@ export function ReviewPanel({
       }
       return res;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      const state = (result as Record<string, unknown>)?.state;
+      if (state === "EXECUTION_FAILED") {
+        setFormError("The decision was approved but execution failed. You can retry.");
+        setPending(null);
+        return;
+      }
       setFormError(null);
       setNote("");
       onDecided();
@@ -362,11 +368,13 @@ export function ReviewPanel({
     setFormError(null);
     setPending(action);
     // N08: route through the verification loop for cases that have evidence.
+    // Do NOT mutate here -- set pending and let the confirmation dialog handle it.
     if (hasVerification) {
       if (action === "request_info") {
         verificationRequest.mutate();
       } else {
-        verificationApprove.mutate(action as "release" | "block");
+        // For release/block, use the same confirmation pattern as the legacy path.
+        // The decide mutation is wired to call verificationApprove instead.
       }
       return;
     }
@@ -649,7 +657,13 @@ export function ReviewPanel({
             <AlertDialogAction
               className="text-[12.5px]"
               onClick={() => {
-                if (pending) decide.mutate(pending);
+                if (pending) {
+                  if (hasVerification && pending !== "request_info") {
+                    verificationApprove.mutate(pending as "release" | "block");
+                  } else {
+                    decide.mutate(pending);
+                  }
+                }
                 setPending(null);
               }}
             >
