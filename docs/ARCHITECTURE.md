@@ -46,6 +46,7 @@ flowchart LR
             Gate["untrusted.py plus model_armor.py"]
             Agents["7 model-calling agents"]
             Verifier["verifier.py deterministic floor"]
+            Evidence["evidence.py verification loop"]
             Governance["governance.py execution gate"]
         end
     end
@@ -60,6 +61,7 @@ flowchart LR
     Browser --> Login
     Browser --> Proxy
     Browser -->|"caller's own credential"| Pass
+    Shipper["Shipper via /respond link"] -->|"HMAC token"| Pass
     Proxy -->|"X-VF-API-Key + X-VF-Session, only with a verified session"| Auth
     Pass --> Auth
     Auth --> Gate
@@ -68,7 +70,8 @@ flowchart LR
     Agents --> Nebius
     Agents --> Tavily
     Agents --> Verifier
-    Verifier --> Governance
+    Verifier --> Evidence
+    Evidence --> Governance
     Governance --> PS
     Auth --> FS
     Auth --> GCS
@@ -484,6 +487,23 @@ against the policy of its time.
 ---
 
 ## Verification loop (`evidence.py`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> HELD_FOR_REVIEW: verifier flags ORIGIN_INPUTS_UNVERIFIED
+    HELD_FOR_REVIEW --> AWAITING_EVIDENCE: reviewer requests documents
+    AWAITING_EVIDENCE --> AWAITING_EVIDENCE: shipper uploads via /respond
+    AWAITING_EVIDENCE --> HELD_FOR_REVIEW: reevaluate (floor less than 70)
+    AWAITING_EVIDENCE --> ESCALATED: reevaluate (floor gte 70)
+    HELD_FOR_REVIEW --> APPROVED: reviewer approves (password required for release)
+    ESCALATED --> APPROVED: reviewer approves
+    APPROVED --> EXECUTING: claim via optimistic lock
+    EXECUTING --> RELEASED_BY_HUMAN: Pub/Sub succeeds
+    EXECUTING --> BLOCKED_BY_HUMAN: Pub/Sub succeeds (block)
+    EXECUTING --> EXECUTION_FAILED: Pub/Sub fails
+    EXECUTION_FAILED --> EXECUTING: retry with same approval
+    AWAITING_EVIDENCE --> HELD_FOR_REVIEW: cancel request (reason required)
+```
 
 When booking data alone cannot distinguish a legitimate shipment from a fraudulent one
 (the six identical origin-fraud pairs in the benchmark), the system organises the work
