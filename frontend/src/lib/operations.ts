@@ -14,6 +14,11 @@ import type {
   ActionReceipt,
   AuditRecord,
   Case,
+  EvidenceApproval,
+  EvidenceDocument,
+  EvidenceEvaluation,
+  EvidenceExecution,
+  EvidenceRequest,
   HumanReview,
   MeasuredSummary,
   WorkBucket,
@@ -98,7 +103,12 @@ export type TimelineKind =
   | "request"
   | "decision"
   | "action"
-  | "audit";
+  | "audit"
+  | "evidence_request"
+  | "evidence_received"
+  | "evidence_eval"
+  | "evidence_approval"
+  | "evidence_execution";
 
 export interface TimelineEvent {
   kind: TimelineKind;
@@ -223,6 +233,63 @@ export function buildCaseTimeline(c: Case, audit: AuditRecord[] = []): TimelineE
       who: row.actor ?? null,
       tone: row.status === "denied" ? "bad" : "neutral",
     });
+  }
+
+  // Verification loop events (evidence.py)
+  const v = c.verification;
+  if (v) {
+    for (const req of (v.requests ?? []) as EvidenceRequest[]) {
+      const docs = (req.documents ?? []).join(", ");
+      events.push({
+        kind: "evidence_request",
+        at: req.created_at ?? null,
+        title: `Requested: ${docs || "documents"}`,
+        detail: `Status: ${req.status}`,
+        who: req.owner ?? null,
+        tone: "neutral",
+      });
+    }
+    for (const doc of (v.documents ?? []) as EvidenceDocument[]) {
+      events.push({
+        kind: "evidence_received",
+        at: doc.received_at ?? null,
+        title: `Received ${humaniseCode(doc.doc_type)}`,
+        detail: doc.blocked ? "Blocked by Model Armor" : `sha256: ${(doc.sha256 ?? "").slice(0, 12)}...`,
+        tone: doc.blocked ? "bad" : "good",
+      });
+    }
+    for (const ev of (v.evaluations ?? []) as EvidenceEvaluation[]) {
+      const cl = (ev.clarified ?? []).length;
+      const un = (ev.unresolved ?? []).length;
+      const co = (ev.contradictions ?? []).length;
+      events.push({
+        kind: "evidence_eval",
+        at: ev.at ?? null,
+        title: `Re-evaluated (v${ev.evidence_version}): ${cl} clarified, ${un} unresolved${co ? `, ${co} contradictions` : ""}`,
+        detail: `Floor: ${ev.risk_floor} | Status: ${ev.status}`,
+        tone: co > 0 ? "bad" : un > 0 ? "neutral" : "good",
+      });
+    }
+    for (const apr of (v.approvals ?? []) as EvidenceApproval[]) {
+      events.push({
+        kind: "evidence_approval",
+        at: apr.at ?? null,
+        title: `${apr.action === "release" ? "Release" : "Block"} approved (v${apr.evidence_version})`,
+        detail: apr.status === "SUPERSEDED" ? "Superseded by new evidence" : `Status: ${apr.status}`,
+        who: apr.approver ?? null,
+        tone: apr.status === "SUPERSEDED" ? "bad" : apr.action === "release" ? "good" : "neutral",
+      });
+    }
+    for (const exe of (v.executions ?? []) as EvidenceExecution[]) {
+      events.push({
+        kind: "evidence_execution",
+        at: exe.at ?? null,
+        title: exe.status === "sent" ? `Executed (${exe.message_id ?? "no msg id"})` : `Execution ${exe.status}`,
+        detail: exe.reason ?? null,
+        who: exe.executor ?? null,
+        tone: exe.status === "sent" ? "good" : exe.status === "denied" ? "bad" : "neutral",
+      });
+    }
   }
 
   // Stable on equal or missing timestamps, so findings stay grouped under arrival.

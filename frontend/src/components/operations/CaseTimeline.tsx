@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Bot, CircleDot, FileQuestion, Gavel, Inbox, ScrollText, Wrench } from "lucide-react";
+import { Ban, Bot, CircleDot, FileCheck, FileQuestion, FileUp, Gavel, Inbox, RefreshCw, Rocket, ScrollText, ShieldCheck, Wrench } from "lucide-react";
 
 import { formatClock, NO_VALUE } from "@/lib/format";
 import type { TimelineEvent, TimelineKind } from "@/lib/operations";
@@ -15,6 +15,11 @@ const ICON: Record<TimelineKind, React.ElementType> = {
   decision: Gavel,
   action: Wrench,
   audit: ScrollText,
+  evidence_request: FileUp,
+  evidence_received: FileCheck,
+  evidence_eval: RefreshCw,
+  evidence_approval: ShieldCheck,
+  evidence_execution: Rocket,
 };
 
 const TONE: Record<NonNullable<TimelineEvent["tone"]>, string> = {

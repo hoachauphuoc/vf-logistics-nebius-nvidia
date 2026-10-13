@@ -59,6 +59,10 @@ function upstreamHeaders(
   };
   if (contentType) headers["content-type"] = contentType;
 
+  // The evidence respond route is authenticated by the token, not a session.
+  const evidenceToken = request.headers.get("X-VF-Evidence-Token");
+  if (evidenceToken) headers["X-VF-Evidence-Token"] = evidenceToken;
+
   // Only for a verified session: see the header comment. The key and the session
   // travel together or not at all. Flask refuses a session it cannot verify
   // (401) rather than falling back to the key, so sending an unverified one
@@ -261,7 +265,9 @@ export async function POST(
   const caller = await verified(request);
   // Deliberately NOT relaxed by publicReads(). Every route below either moves
   // cargo, changes the rules that decide what auto-clears, or spends money.
-  if (loginRequired() && !caller) return notAuthenticated();
+  // evidence/respond is authenticated by the HMAC token, not a console session.
+  const tokenAuthenticated = joined === "evidence/respond";
+  if (loginRequired() && !caller && !tokenAuthenticated) return notAuthenticated();
 
   // Clearing the board wants a password sign-in on top of the role. A caller
   // with no session at all only gets here in development without a secret, and

@@ -44,7 +44,7 @@ export async function proxy(request: NextRequest) {
 
   // The public API is authorised by Flask, not by a console session: see
   // isApiPassThrough in lib/upstream.ts. Also excluded by the matcher below.
-  if (PUBLIC_PATHS.has(pathname) || isApiPassThrough(pathname)) {
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/respond/") || isApiPassThrough(pathname)) {
     return NextResponse.next();
   }
 

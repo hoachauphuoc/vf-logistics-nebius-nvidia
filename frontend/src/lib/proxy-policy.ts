@@ -125,6 +125,8 @@ export const ALLOWED_POST = new Set([
   "security/screen",
   // DevOps: Clear board. Password sign-ins only -- see PASSWORD_ONLY_POST.
   "orchestrator/reset",
+  // Evidence respond: token-authenticated by Flask, no console session needed.
+  "evidence/respond",
 ]);
 
 /**

@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const queue = useQuery({
     queryKey: queryKeys.reviewQueue(tenant.id),
     queryFn: () => fetchReviewQueue({ limit: 40 }),
-    enabled: !DEMO_MODE && pathname !== "/login" && pathname !== "/legal",
+    enabled: !DEMO_MODE && pathname !== "/login" && pathname !== "/legal" && !pathname.startsWith("/respond/"),
     refetchInterval: 20_000,
     // A failed count must not surface as a broken screen. Rendering no badge is
     // honest -- it says nothing rather than saying zero.
@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // mode it resolves to null and the selected fixture is shown, as before. Not
   // asked on the sign-in and legal pages, which render without the header.
   const identity = useIdentity({
-    enabled: pathname !== "/login" && pathname !== "/legal",
+    enabled: pathname !== "/login" && pathname !== "/legal" && !pathname.startsWith("/respond/"),
   });
 
   const display = displayTenant(tenant, identity.data?.tenant_id, identity.isError);
@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Placed after the hooks rather than before them: hooks cannot be called
   // conditionally, and an early return above them would break the render on
   // navigation between these paths and the rest of the console.
-  if (pathname === "/login" || pathname === "/legal") return <>{children}</>;
+  if (pathname === "/login" || pathname === "/legal" || pathname.startsWith("/respond/")) return <>{children}</>;
 
   // `items.length` is the page, not the total: the queue endpoint is cursor
   // paginated at 40 and reports no count. So the badge means "at least this
