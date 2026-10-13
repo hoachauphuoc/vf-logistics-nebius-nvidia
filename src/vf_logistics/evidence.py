@@ -848,6 +848,15 @@ async def approve(
             "A release approval needs a password sign-in, not a one-click session.", 403,
         )
 
+    if action == "release" and latest_eval:
+        unresolved = [str(u) for u in (latest_eval.get("unresolved") or [])]
+        if unresolved and not (note or "").strip():
+            raise EvidenceError(
+                f"Release with unresolved evidence ({', '.join(unresolved)}) "
+                "requires a note explaining the exception.",
+                400,
+            )
+
     now = utcnow()
     approval: dict[str, Any] = {
         "approval_id": new_id("evapr"),
@@ -905,10 +914,16 @@ def approval_is_executable(
             break
     if approval is None:
         return None, "approval not found"
-    if approval.get("status") not in ("VALID",):
-        return None, f"approval is {approval.get('status')}, not VALID"
-    if case.get("state") not in (APPROVED, "EXECUTION_FAILED"):
-        return None, f"case is {case.get('state')}, not APPROVED or EXECUTION_FAILED"
+    status = approval.get("status")
+    state = case.get("state")
+    if status not in ("VALID", "CLAIMING"):
+        return None, f"approval is {status}, not VALID"
+    # A CLAIMING approval on an EXECUTING case is an interrupted execution
+    # (the process died between claim and confirm): it may be resumed.
+    if status == "CLAIMING" and state != "EXECUTING":
+        return None, f"approval is CLAIMING but the case is {state}, not EXECUTING"
+    if status == "VALID" and state not in (APPROVED, "EXECUTION_FAILED"):
+        return None, f"case is {state}, not APPROVED or EXECUTION_FAILED"
     ev_version = record.get("evidence_version") or 0
     if (approval.get("evidence_version") or 0) != ev_version:
         return None, (
@@ -974,18 +989,31 @@ async def execute_approval(
     # -- Phase 1: CLAIM (atomic via optimistic lock) --
     action = approval["action"]
     now = utcnow()
-    execution_id = new_id("evexe")
-    execution = {
-        "execution_id": execution_id,
-        "approval_id": approval_id,
-        "executor": executor,
-        "at": now,
-        "status": "claiming",
-    }
     record = verification_of(case)
-    record.setdefault("executions", []).append(execution)
-    approval["status"] = "CLAIMING"
-    case["state"] = "EXECUTING"
+    existing_exe = next(
+        (e for e in reversed(record.get("executions") or [])
+         if isinstance(e, dict)
+         and e.get("approval_id") == approval_id
+         and e.get("status") == "claiming"),
+        None,
+    )
+    if existing_exe is not None and case.get("state") == "EXECUTING":
+        # Recovery: reuse the interrupted claim rather than opening a second one.
+        execution_id = existing_exe["execution_id"]
+        execution = existing_exe
+        execution.setdefault("resumed", []).append({"executor": executor, "at": now})
+    else:
+        execution_id = new_id("evexe")
+        execution = {
+            "execution_id": execution_id,
+            "approval_id": approval_id,
+            "executor": executor,
+            "at": now,
+            "status": "claiming",
+        }
+        record.setdefault("executions", []).append(execution)
+        approval["status"] = "CLAIMING"
+        case["state"] = "EXECUTING"
     case["updated_at"] = now
     await _write(case, expected_version, tenant_id)
     # If another caller claimed first, _write raises a version conflict (409).
@@ -1018,7 +1046,9 @@ async def execute_approval(
                 "evaluation_id": approval.get("evaluation_id"),
                 "approver": approval["approver"],
                 "executor": executor,
-                "idempotency_key": execution_id,
+                # Fixed per approval so a retry after EXECUTION_FAILED or an
+                # interrupted claim is deduplicated downstream.
+                "idempotency_key": f"exec-{approval_id}",
             },
             tenant_id=tenant_id,
         )

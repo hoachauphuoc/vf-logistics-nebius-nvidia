@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toaster";
-import { approveCase, caseDossierUrl, decideReview, executeApproval, requestDeepReview, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+import { approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
 import { caseHref } from "@/lib/case-links";
 import {
   actionLabel,
@@ -221,6 +221,7 @@ export function ReviewPanel({
   const [pending, setPending] = useState<HumanAction | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeep, setConfirmDeep] = useState(false);
+  const [evidenceLinks, setEvidenceLinks] = useState<string[]>([]);
 
   // Who this decision will be recorded as, and whether they may record one.
   //
@@ -341,11 +342,77 @@ export function ReviewPanel({
 
   const verificationRequest = useMutation({
     mutationFn: () => requestEvidence(c.case_id),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setFormError(null);
       setNote("");
+      // The link is returned once and kept nowhere a viewer can read, so show it
+      // here for the reviewer to copy.
+      const links = Array.isArray(data?.links)
+        ? (data.links as Array<{ doc_type?: string; path?: string }>)
+            .map((l) => (l.path ? `${l.doc_type ? l.doc_type + ": " : ""}${l.path}` : ""))
+            .filter(Boolean)
+        : typeof data?.path === "string"
+          ? [data.path]
+          : [];
+      setEvidenceLinks(links);
       onDecided();
       toast({ title: "Evidence requested" });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : String(error));
+    },
+  });
+
+  const verificationReevaluate = useMutation({
+    mutationFn: () => reevaluateCase(c.case_id),
+    onSuccess: () => {
+      setFormError(null);
+      setEvidenceLinks([]);
+      onDecided();
+      toast({ title: "Evidence re-evaluated" });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : String(error));
+    },
+  });
+
+  const openRequest = (c.verification?.requests ?? []).find((r) =>
+    ["OPEN", "SENT"].includes(String(r.status).toUpperCase()),
+  );
+  const validApproval = (c.verification?.approvals ?? []).find(
+    (a) => a.status === "VALID",
+  );
+
+  const verificationCancel = useMutation({
+    mutationFn: () => {
+      if (!openRequest) throw new Error("No open request to cancel");
+      return cancelEvidenceRequest(c.case_id, openRequest.request_id, note.trim() || "Cancelled by reviewer");
+    },
+    onSuccess: () => {
+      setFormError(null);
+      setEvidenceLinks([]);
+      onDecided();
+      toast({ title: "Request cancelled" });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : String(error));
+    },
+  });
+
+  const verificationExecute = useMutation({
+    mutationFn: () => {
+      if (!validApproval) throw new Error("No valid approval to execute");
+      return executeApproval(c.case_id, validApproval.approval_id);
+    },
+    onSuccess: (result) => {
+      if ((result as Record<string, unknown>)?.state === "EXECUTION_FAILED") {
+        setFormError("Execution failed. You can retry.");
+        onDecided();
+        return;
+      }
+      setFormError(null);
+      onDecided();
+      toast({ title: "Decision executed" });
     },
     onError: (error) => {
       setFormError(error instanceof Error ? error.message : String(error));
@@ -561,6 +628,79 @@ export function ReviewPanel({
               {formError}
             </p>
           )}
+
+          {evidenceLinks.length > 0 && (
+            <div
+              role="status"
+              data-testid="evidence-links"
+              className="rounded-md border border-white/10 bg-black/30 px-2.5 py-2 text-[11.5px] leading-relaxed text-white/85"
+            >
+              <p className="text-dim">Send these links to the shipper (shown once):</p>
+              {evidenceLinks.map((l) => (
+                <p key={l} className="mt-1 break-all font-mono text-[11px]">{l}</p>
+              ))}
+            </div>
+          )}
+
+          {hasVerification && c.state === "AWAITING_EVIDENCE" && (
+            <p className="text-[11.5px] text-dim" data-testid="state-hint">
+              Waiting for the shipper to upload documents.
+            </p>
+          )}
+          {hasVerification && c.state === "APPROVED" && (
+            <p className="text-[11.5px] text-dim" data-testid="state-hint">
+              Approved, ready to execute.
+            </p>
+          )}
+          {hasVerification && c.state === "EXECUTION_FAILED" && (
+            <p className="text-[11.5px] text-risk-critical" data-testid="state-hint">
+              Execution failed. Retry to send the decision again.
+            </p>
+          )}
+
+          {hasVerification &&
+            (c.state === "AWAITING_EVIDENCE" || c.state === "HELD_FOR_REVIEW") && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={verificationReevaluate.isPending}
+                  onClick={() => verificationReevaluate.mutate()}
+                  className="h-8 border-white/10 text-[12px]"
+                >
+                  {verificationReevaluate.isPending && (
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none" />
+                  )}
+                  Re-evaluate
+                </Button>
+                {c.state === "AWAITING_EVIDENCE" && openRequest && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={verificationCancel.isPending}
+                    onClick={() => verificationCancel.mutate()}
+                    className="h-8 border-white/10 text-[12px]"
+                  >
+                    Cancel request
+                  </Button>
+                )}
+              </div>
+            )}
+          {hasVerification &&
+            (c.state === "APPROVED" || c.state === "EXECUTION_FAILED") &&
+            validApproval && (
+              <Button
+                size="sm"
+                disabled={verificationExecute.isPending}
+                onClick={() => verificationExecute.mutate()}
+                className="h-8 text-[12px]"
+              >
+                {verificationExecute.isPending && (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none" />
+                )}
+                {c.state === "EXECUTION_FAILED" ? "Retry" : "Execute"}
+              </Button>
+            )}
 
           <div className="flex flex-wrap items-center gap-2">
             {(["release", "block", "request_info"] as HumanAction[]).map((action) => (

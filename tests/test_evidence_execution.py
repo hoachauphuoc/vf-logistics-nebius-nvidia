@@ -28,7 +28,7 @@ class TestExecution(Base):
         self.put(case_id)
         self.request_and_submit(case_id)
         run(evidence.reevaluate(case_id))
-        result = run(evidence.approve(case_id, "release", REVIEWER, actor_auth="password"))
+        result = run(evidence.approve(case_id, "release", REVIEWER, note="Reviewed", actor_auth="password"))
         return result["approval"]["approval_id"]
 
     def test_a_valid_approval_is_executed(self):
@@ -133,3 +133,32 @@ class TestExecution(Base):
             result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
         assert result["state"] == "RELEASED_BY_HUMAN"
         assert result["message_id"] == "msg-retry"
+
+    def test_n01_idempotency_key_is_fixed_per_approval(self):
+        approval_id = self._full_loop()
+        failed = AsyncMock(return_value={"detail": {}, "status": "failed"})
+        with patch("vf_logistics.tools.publish_decision", new=failed):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        ok = AsyncMock(return_value={"detail": {"message_id": "m"}, "status": "done"})
+        with patch("vf_logistics.tools.publish_decision", new=ok):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        key1 = failed.call_args.args[1]["idempotency_key"]
+        key2 = ok.call_args.args[1]["idempotency_key"]
+        assert key1 == key2 == f"exec-{approval_id}"
+
+    def test_n01_executing_state_is_recoverable(self):
+        approval_id = self._full_loop()
+        boom = AsyncMock(side_effect=KeyboardInterrupt)
+        # Simulate a crash after the claim: leave the case EXECUTING / CLAIMING.
+        with patch("vf_logistics.tools.publish_decision", new=boom):
+            with pytest.raises(KeyboardInterrupt):
+                run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        case = self.stored()
+        assert case["state"] == "EXECUTING"
+        claimed = case["verification"]["executions"][0]["execution_id"]
+        ok = AsyncMock(return_value={"detail": {"message_id": "m"}, "status": "done"})
+        with patch("vf_logistics.tools.publish_decision", new=ok):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        exes = self.stored()["verification"]["executions"]
+        assert len(exes) == 1 and exes[0]["execution_id"] == claimed

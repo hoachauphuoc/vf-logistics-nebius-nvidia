@@ -399,6 +399,18 @@ export async function reevaluateCase(
   );
 }
 
+export async function cancelEvidenceRequest(
+  caseId: string,
+  requestId: string,
+  reason: string,
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Cancelling a request");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(requestId)}/cancel`,
+    { reason },
+  );
+}
+
 export async function approveCase(
   caseId: string,
   action: "release" | "block",

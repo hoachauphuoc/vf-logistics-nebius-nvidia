@@ -131,7 +131,7 @@ class TestApproval(Base):
 
     def test_a_release_approval_is_valid_and_moves_the_case(self):
         self._prepare()
-        result = run(evidence.approve("CASE-1", "release", REVIEWER, actor_auth="password"))
+        result = run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
         assert result["state"] == "APPROVED"
         case = self.stored()
         assert case["state"] == "APPROVED"
@@ -160,14 +160,14 @@ class TestApproval(Base):
         # moves back to AWAITING_EVIDENCE which is not approvable.
         run(evidence.request_evidence("CASE-1", REVIEWER, documents=["producer_declaration"]))
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, actor_auth="password"))
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
         assert raised.value.status == 409
         assert self.stored()["state"] != "APPROVED"
 
     def test_a_case_in_the_wrong_state_is_refused(self):
         self.put(state="AWAITING_EVIDENCE")
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, actor_auth="password"))
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
         assert raised.value.status == 409
 
     def test_an_invalid_action_is_refused(self):
@@ -178,7 +178,7 @@ class TestApproval(Base):
     def test_a_stale_approval_is_superseded_by_new_evidence(self):
         """Approve, then new evidence arrives: the approval is no longer valid."""
         self._prepare()
-        run(evidence.approve("CASE-1", "release", REVIEWER, actor_auth="password"))
+        run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
         # Submit more evidence
         out2 = run(evidence.request_evidence("CASE-1", REVIEWER, documents=["producer_declaration"]))
         mock = {
@@ -195,6 +195,35 @@ class TestApproval(Base):
         case = self.stored()
         approval = case["verification"]["approvals"][0]
         assert approval["status"] == "SUPERSEDED"
+
+    def _prepare_unresolved(self):
+        self.put()
+        self.request_and_submit(extracted={})
+        run(evidence.reevaluate("CASE-1"))
+        ev = self.stored()["verification"]["evaluations"][-1]
+        ev["unresolved"] = ev.get("unresolved") or ["certificate_of_origin"]
+        case = self.stored()
+        case["verification"]["evaluations"][-1] = ev
+        run(self.store.put_case(case))
+
+    def test_n04_release_with_unresolved_evidence_needs_a_note(self):
+        self._prepare_unresolved()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400
+        assert self.stored()["state"] != "APPROVED"
+
+    def test_n04_release_with_unresolved_evidence_and_a_note_is_allowed(self):
+        self._prepare_unresolved()
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Verified by phone", actor_auth="password",
+        ))
+        assert result["state"] == "APPROVED"
+
+    def test_n04_block_with_unresolved_evidence_needs_no_note(self):
+        self._prepare_unresolved()
+        result = run(evidence.approve("CASE-1", "block", REVIEWER, note="", actor_auth="password"))
+        assert result["state"] == "APPROVED"
 
     def test_the_review_entry_is_appended(self):
         self._prepare()
