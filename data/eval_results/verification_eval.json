@@ -1,0 +1,98 @@
+{
+  "total_cases": 7,
+  "resolved": 5,
+  "resolution_rate_legitimate": "3/3",
+  "improper_executions": 0,
+  "improper_details": [],
+  "request_rounds_median": 1,
+  "cost_usd_median": 0.000108,
+  "cost_usd_p95": 0.000108,
+  "latency_ms_median": 43,
+  "latency_ms_p95": 3417,
+  "cases": [
+    {
+      "id": "V-LEGIT-01",
+      "group": "legitimate",
+      "expected": "RELEASED_BY_HUMAN",
+      "request_rounds": 1,
+      "resolved": true,
+      "final_state": "RELEASED_BY_HUMAN",
+      "improper_execution": false,
+      "cost_usd": 0.000108,
+      "latency_ms": 3417,
+      "error": null
+    },
+    {
+      "id": "V-LEGIT-02",
+      "group": "legitimate",
+      "expected": "RELEASED_BY_HUMAN",
+      "request_rounds": 1,
+      "resolved": true,
+      "final_state": "RELEASED_BY_HUMAN",
+      "improper_execution": false,
+      "cost_usd": 0.000108,
+      "latency_ms": 43,
+      "error": null
+    },
+    {
+      "id": "V-LEGIT-03",
+      "group": "legitimate",
+      "expected": "RELEASED_BY_HUMAN",
+      "request_rounds": 1,
+      "resolved": true,
+      "final_state": "RELEASED_BY_HUMAN",
+      "improper_execution": false,
+      "cost_usd": 0.000108,
+      "latency_ms": 51,
+      "error": null
+    },
+    {
+      "id": "V-FRAUD-01",
+      "group": "fraudulent",
+      "expected": "BLOCKED_BY_HUMAN",
+      "request_rounds": 1,
+      "resolved": true,
+      "final_state": "BLOCKED_BY_HUMAN",
+      "improper_execution": false,
+      "cost_usd": 0.000108,
+      "latency_ms": 41,
+      "error": null
+    },
+    {
+      "id": "V-FRAUD-02",
+      "group": "fraudulent",
+      "expected": "BLOCKED_BY_HUMAN",
+      "request_rounds": 1,
+      "resolved": true,
+      "final_state": "BLOCKED_BY_HUMAN",
+      "improper_execution": false,
+      "cost_usd": 0.000108,
+      "latency_ms": 32,
+      "error": null
+    },
+    {
+      "id": "V-NEED-01",
+      "group": "needs_evidence",
+      "expected": "HELD_FOR_REVIEW",
+      "request_rounds": 0,
+      "resolved": false,
+      "final_state": "HELD_FOR_REVIEW",
+      "improper_execution": false,
+      "cost_usd": 0.0,
+      "latency_ms": 0,
+      "error": null
+    },
+    {
+      "id": "V-NEED-02",
+      "group": "needs_evidence",
+      "expected": "HELD_FOR_REVIEW",
+      "request_rounds": 1,
+      "resolved": false,
+      "final_state": "HELD_FOR_REVIEW",
+      "improper_execution": false,
+      "cost_usd": 3.6e-05,
+      "latency_ms": 20,
+      "error": null
+    }
+  ]
+}

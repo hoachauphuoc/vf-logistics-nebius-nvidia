@@ -1,0 +1,206 @@
+[
+  {
+    "id": "V-LEGIT-01",
+    "group": "legitimate",
+    "description": "Plywood shipment with valid origin, all documents consistent",
+    "shipment": {
+      "shipment_id": "V-LEGIT-01",
+      "shipper_name": "Saigon Wood Products Co., Ltd.",
+      "shipper_company": "Saigon Wood Products Co., Ltd.",
+      "shipper_tax_id": "VN0310001234",
+      "shipper_country": "Vietnam",
+      "receiver_name": "Pacific Lumber Corp.",
+      "receiver_country": "United States",
+      "origin": "Ho Chi Minh City, Vietnam",
+      "destination": "Los Angeles, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Hardwood plywood 18mm, Vietnam origin",
+      "declared_value": 25000,
+      "weight_kg": 20000,
+      "currency": "USD",
+      "shipping_cost": 2800,
+      "transport_mode": "sea",
+      "shipper_tx_count": 42
+    },
+    "evidence": {
+      "certificate_of_origin": {"producer_name": "Saigon Wood Products Co., Ltd.", "origin_country": "Vietnam"},
+      "producer_declaration": {"producer_name": "Saigon Wood Products Co., Ltd.", "input_origins": ["Vietnam", "Laos"]},
+      "input_purchase_invoices": {"supplier_name": "Mekong Timber JSC", "goods_origin_country": "Vietnam"}
+    },
+    "expected_outcome": "RELEASED_BY_HUMAN"
+  },
+  {
+    "id": "V-LEGIT-02",
+    "group": "legitimate",
+    "description": "Furniture shipment, origin matches across all documents",
+    "shipment": {
+      "shipment_id": "V-LEGIT-02",
+      "shipper_name": "Vietnam Furniture Export JSC",
+      "shipper_company": "Vietnam Furniture Export JSC",
+      "shipper_tax_id": "VN0310005678",
+      "shipper_country": "Vietnam",
+      "receiver_name": "European Home Goods GmbH",
+      "receiver_country": "United States",
+      "origin": "Da Nang, Vietnam",
+      "destination": "Long Beach, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Wooden furniture with plywood panels, Vietnam manufacture",
+      "declared_value": 18000,
+      "weight_kg": 5000,
+      "currency": "USD",
+      "shipping_cost": 2200,
+      "transport_mode": "sea",
+      "shipper_tx_count": 85
+    },
+    "evidence": {
+      "certificate_of_origin": {"producer_name": "Vietnam Furniture Export JSC", "origin_country": "Vietnam"},
+      "producer_declaration": {"producer_name": "Vietnam Furniture Export JSC", "input_origins": ["Vietnam"]},
+      "input_purchase_invoices": {"supplier_name": "Binh Duong Wood Supply", "goods_origin_country": "Vietnam"}
+    },
+    "expected_outcome": "RELEASED_BY_HUMAN"
+  },
+  {
+    "id": "V-LEGIT-03",
+    "group": "legitimate",
+    "description": "Plywood with minor supplier from a third country, but origin declared correctly",
+    "shipment": {
+      "shipment_id": "V-LEGIT-03",
+      "shipper_name": "Hai Phong Timber Co.",
+      "shipper_company": "Hai Phong Timber Co.",
+      "shipper_tax_id": "VN0300112233",
+      "shipper_country": "Vietnam",
+      "receiver_name": "US Plywood Distributors Inc.",
+      "receiver_country": "United States",
+      "origin": "Hai Phong, Vietnam",
+      "destination": "Long Beach, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Hardwood plywood sheets 15mm",
+      "declared_value": 30000,
+      "weight_kg": 24000,
+      "currency": "USD",
+      "shipping_cost": 3400,
+      "transport_mode": "sea",
+      "shipper_tx_count": 28
+    },
+    "evidence": {
+      "certificate_of_origin": {"producer_name": "Hai Phong Timber Co.", "origin_country": "Vietnam"},
+      "producer_declaration": {"producer_name": "Hai Phong Timber Co.", "input_origins": ["Vietnam", "Malaysia"]},
+      "input_purchase_invoices": {"supplier_name": "KL Wood Trading Sdn Bhd", "goods_origin_country": "Malaysia", "supplier_country": "Malaysia"}
+    },
+    "expected_outcome": "RELEASED_BY_HUMAN"
+  },
+  {
+    "id": "V-FRAUD-01",
+    "group": "fraudulent",
+    "description": "Certificate says Vietnam but invoices show Chinese timber",
+    "shipment": {
+      "shipment_id": "V-FRAUD-01",
+      "shipper_name": "Saigon Plywood Co., Ltd.",
+      "shipper_company": "Saigon Plywood Co., Ltd.",
+      "shipper_tax_id": "VN0300999001",
+      "shipper_country": "Vietnam",
+      "receiver_name": "US Hardwood Imports LLC",
+      "receiver_country": "United States",
+      "origin": "Hai Phong Port, Vietnam",
+      "destination": "Long Beach, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Hardwood plywood 18mm, declared Vietnam origin",
+      "declared_value": 28000,
+      "weight_kg": 22000,
+      "currency": "USD",
+      "shipping_cost": 3200,
+      "transport_mode": "sea",
+      "shipper_tx_count": 35
+    },
+    "evidence": {
+      "certificate_of_origin": {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": "Vietnam"},
+      "producer_declaration": {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": ["China"]},
+      "input_purchase_invoices": {"supplier_name": "Shandong Timber Trading Co.", "goods_origin_country": "China", "supplier_country": "China"}
+    },
+    "expected_outcome": "BLOCKED_BY_HUMAN"
+  },
+  {
+    "id": "V-FRAUD-02",
+    "group": "fraudulent",
+    "description": "Producer name on C/O does not match declaration",
+    "shipment": {
+      "shipment_id": "V-FRAUD-02",
+      "shipper_name": "Binh Duong Export Ltd.",
+      "shipper_company": "Binh Duong Export Ltd.",
+      "shipper_tax_id": "VN0300888002",
+      "shipper_country": "Vietnam",
+      "receiver_name": "US Hardwood Imports LLC",
+      "receiver_country": "United States",
+      "origin": "Binh Duong, Vietnam",
+      "destination": "Long Beach, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Hardwood plywood 12mm",
+      "declared_value": 22000,
+      "weight_kg": 18000,
+      "currency": "USD",
+      "shipping_cost": 2900,
+      "transport_mode": "sea",
+      "shipper_tx_count": 12
+    },
+    "evidence": {
+      "certificate_of_origin": {"producer_name": "Zhejiang Forest Products Co.", "origin_country": "Vietnam"},
+      "producer_declaration": {"producer_name": "Binh Duong Export Ltd.", "input_origins": ["Vietnam"]},
+      "input_purchase_invoices": {"supplier_name": "Binh Duong Export Ltd.", "goods_origin_country": "Vietnam"}
+    },
+    "expected_outcome": "BLOCKED_BY_HUMAN"
+  },
+  {
+    "id": "V-NEED-01",
+    "group": "needs_evidence",
+    "description": "On a watched lane, no documents submitted yet",
+    "shipment": {
+      "shipment_id": "V-NEED-01",
+      "shipper_name": "Delta Mekong Wood JSC",
+      "shipper_company": "Delta Mekong Wood JSC",
+      "shipper_tax_id": "VN0300777003",
+      "shipper_country": "Vietnam",
+      "receiver_name": "US Hardwood Imports LLC",
+      "receiver_country": "United States",
+      "origin": "Can Tho, Vietnam",
+      "destination": "Long Beach, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Plywood sheets 9mm",
+      "declared_value": 15000,
+      "weight_kg": 12000,
+      "currency": "USD",
+      "shipping_cost": 2100,
+      "transport_mode": "sea",
+      "shipper_tx_count": 55
+    },
+    "evidence": null,
+    "expected_outcome": "HELD_FOR_REVIEW"
+  },
+  {
+    "id": "V-NEED-02",
+    "group": "needs_evidence",
+    "description": "Partial evidence: C/O submitted, declaration and invoices missing",
+    "shipment": {
+      "shipment_id": "V-NEED-02",
+      "shipper_name": "Quang Nam Timber Co.",
+      "shipper_company": "Quang Nam Timber Co.",
+      "shipper_tax_id": "VN0300666004",
+      "shipper_country": "Vietnam",
+      "receiver_name": "Pacific Lumber Corp.",
+      "receiver_country": "United States",
+      "origin": "Quang Nam, Vietnam",
+      "destination": "Seattle, United States",
+      "hs_code": "4412.33",
+      "cargo_description": "Plywood panels 18mm",
+      "declared_value": 20000,
+      "weight_kg": 16000,
+      "currency": "USD",
+      "shipping_cost": 2500,
+      "transport_mode": "sea",
+      "shipper_tx_count": 20
+    },
+    "evidence": {
+      "certificate_of_origin": {"producer_name": "Quang Nam Timber Co.", "origin_country": "Vietnam"}
+    },
+    "expected_outcome": "HELD_FOR_REVIEW"
+  }
+]
