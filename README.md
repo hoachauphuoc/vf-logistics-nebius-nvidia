@@ -1345,7 +1345,9 @@ collecting and evaluating the missing evidence.
 **Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`):
 3/3 legitimate cases resolved correctly, 2/2 fraudulent blocked, 2 needs-evidence cases
 correctly held. **0 improper executions** (wrong authority, stale approval, or missing
-evidence). Median cost $0.000108/case, median latency 43ms.
+evidence). Median cost $0.000108/case, median latency 43ms -- **both from the mocked
+harness** (fixed token counts, no model or network calls), so they show the pipeline runs
+end to end, not what a real run costs or how long a person takes.
 
 ### Three operator screens
 

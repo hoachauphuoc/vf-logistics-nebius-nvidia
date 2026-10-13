@@ -282,3 +282,35 @@ class TestTheRoute(Base):
         func = app_mod.evidence_respond
         assert getattr(func, "_required_role", None) is not None
         assert getattr(func, "_required_role") not in (None, "viewer")
+
+
+class TestN03DocumentType(Base):
+    DOCS = ["certificate_of_origin", "producer_declaration", "input_purchase_invoices"]
+
+    def _links(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=self.DOCS))
+        return {link["doc_type"]: link["token"] for link in out["links"]}
+
+    def test_three_documents_in_any_order_are_each_stored_as_their_own_type(self):
+        links = self._links()
+        for dt in reversed(self.DOCS):
+            result = self.submit(links[dt])
+            assert result["doc_type"] == dt
+        stored = self.stored()["verification"]
+        assert sorted(d["doc_type"] for d in stored["documents"]) == sorted(self.DOCS)
+        assert stored["requests"][0]["status"] == "RECEIVED"
+
+    def test_a_repeated_type_is_refused_and_says_what_is_still_needed(self):
+        links = self._links()
+        self.submit(links["certificate_of_origin"])
+        with pytest.raises(evidence.EvidenceError) as raised:
+            self.submit(links["certificate_of_origin"])
+        assert raised.value.status == 409
+        assert "producer_declaration" in raised.value.message
+        assert len(self.stored()["verification"]["documents"]) == 1
+
+    def test_the_response_lists_what_is_still_missing(self):
+        links = self._links()
+        result = self.submit(links["producer_declaration"])
+        assert result["still_missing"] == ["certificate_of_origin", "input_purchase_invoices"]

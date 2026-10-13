@@ -161,3 +161,26 @@ class TestExecution(Base):
         assert result["state"] == "RELEASED_BY_HUMAN"
         exes = self.stored()["verification"]["executions"]
         assert len(exes) == 1 and exes[0]["execution_id"] == claimed
+
+    def test_n01_a_second_person_cannot_resume_inside_the_lease(self):
+        approval_id = self._full_loop()
+        boom = AsyncMock(side_effect=asyncio.CancelledError)
+        with patch("vf_logistics.tools.publish_decision", new=boom), pytest.raises(asyncio.CancelledError):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert self.stored()["state"] == "EXECUTING"
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.execute_approval("CASE-1", approval_id, "other@forwarder.example", actor_auth="password"))
+        assert raised.value.status == 409
+
+    def test_n01_a_second_person_can_resume_after_the_lease_expires(self):
+        approval_id = self._full_loop()
+        boom = AsyncMock(side_effect=asyncio.CancelledError)
+        with patch("vf_logistics.tools.publish_decision", new=boom), pytest.raises(asyncio.CancelledError):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        case = self.stored()
+        case["verification"]["executions"][0]["claim_expires_epoch"] = 0
+        run(self.store.put_case(case))
+        ok = AsyncMock(return_value={"detail": {"message_id": "m"}, "status": "done"})
+        with patch("vf_logistics.tools.publish_decision", new=ok):
+            result = run(evidence.execute_approval("CASE-1", approval_id, "other@forwarder.example", actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"

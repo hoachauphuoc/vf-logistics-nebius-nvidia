@@ -232,3 +232,86 @@ class TestApproval(Base):
         review = case["reviews"][-1]
         assert review["action"] == "release"
         assert review["approval_id"] is not None
+
+
+DOCS3 = ["certificate_of_origin", "producer_declaration", "input_purchase_invoices"]
+
+
+def _submit_per_type(links, extracted_by_type):
+    for dt, ext in extracted_by_type.items():
+        mock = {
+            "agent": "evidence_extraction", "model": "test", "result": ext,
+            "latency_ms": 10, "input_tokens": 10, "output_tokens": 10,
+            "parse_error": False, "at": "2026-10-12T08:00:00Z",
+        }
+        with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock)), \
+                patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})), \
+                patch("vf_logistics.model_armor.extract_pdf_text", return_value=("text", None)), \
+                patch("vf_logistics.document_store.archive", new=AsyncMock(return_value={"archived": True, "uri": "gs://t/d"})):
+            run(evidence.receive_evidence(links[dt], tiny_pdf(), f"{dt}.pdf", "application/pdf"))
+
+
+class TestN06NotStated(Base):
+    def _thin_evidence(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _submit_per_type(links, {
+            "certificate_of_origin": {"origin_country": "Vietnam"},
+            "producer_declaration": {"producer_name": "not stated"},
+            "input_purchase_invoices": {"supplier_name": "not stated"},
+        })
+        return run(evidence.reevaluate("CASE-1"))
+
+    def test_not_stated_documents_do_not_count_as_provided(self):
+        ev = self._thin_evidence()["evaluation"]
+        assert ev["status"] == "missing"
+        assert set(ev["unresolved"]) == {"producer_declaration", "input_purchase_invoices"}
+
+    def test_n04_release_of_that_case_is_an_exception_with_a_recorded_reason(self):
+        self._thin_evidence()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Confirmed by phone", actor_auth="password",
+        ))
+        exc = result["approval"]["exception"]
+        assert exc["reason"] == "Confirmed by phone"
+        assert set(exc["unresolved"]) == {"producer_declaration", "input_purchase_invoices"}
+        assert exc["approved_by"] == REVIEWER
+
+
+class TestN07LegacyDecide(Base):
+    def _decide(self, action, auth, **case):
+        from vf_logistics import orchestrator
+        self.put(**case)
+        return run(orchestrator.human_decide(
+            "CASE-1", action, REVIEWER, "reviewed", actor_auth=auth,
+        ))
+
+    def test_a_case_with_a_verification_record_cannot_be_released_through_decide(self):
+        # Version 0: a request exists but no evidence has arrived yet.
+        self.put()
+        run(evidence.request_evidence("CASE-1", REVIEWER, documents=["certificate_of_origin"]))
+        case = self.stored()
+        case["state"] = "HELD_FOR_REVIEW"
+        run(self.store.put_case(case))
+        assert case["verification"]["evidence_version"] == 0
+        from vf_logistics import orchestrator
+        result = run(orchestrator.human_decide(
+            "CASE-1", "release", REVIEWER, "reviewed", actor_auth="one_click",
+        ))
+        assert result["ok"] is False
+        assert "/approve" in result["error"]
+        result = run(orchestrator.human_decide(
+            "CASE-1", "release", REVIEWER, "reviewed", actor_auth="password",
+        ))
+        assert result["ok"] is False
+        assert "/approve" in result["error"]
+        assert self.stored()["state"] == "HELD_FOR_REVIEW"
+
+    def test_release_without_a_password_is_refused_on_a_plain_case(self):
+        result = self._decide("release", "one_click")
+        assert result["ok"] is False
+        assert "password" in result["error"].lower()

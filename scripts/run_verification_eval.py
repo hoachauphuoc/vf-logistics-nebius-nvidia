@@ -208,6 +208,11 @@ def main():
         "improper_executions": len(improper),
         "improper_details": [{"id": r["id"], "expected": r["expected"], "actual": r["final_state"]} for r in improper],
         "request_rounds_median": statistics.median([r["request_rounds"] for r in results]) if results else 0,
+        # Rev2 E01: what these numbers are. Extraction, Model Armor, the archive and
+        # Pub/Sub are mocked here, with fixed token counts and no network, so cost
+        # and latency below measure this harness, not the deployed system or a
+        # person's time. Do not quote them as production figures.
+        "measurement_basis": "mocked: fixed token counts, no model/network calls; cost and latency are harness figures, not production",
         "cost_usd_median": round(statistics.median(costs), 6) if costs else 0,
         "cost_usd_p95": round(sorted(costs)[int(len(costs) * 0.95)] if len(costs) > 1 else (costs[0] if costs else 0), 6),
         "latency_ms_median": round(statistics.median(latencies)) if latencies else 0,
@@ -220,8 +225,9 @@ def main():
     print(f"  Resolved: {summary['resolved']}")
     print(f"  Legitimate resolved: {summary['resolution_rate_legitimate']}")
     print(f"  Improper executions: {summary['improper_executions']} (target: 0)")
-    print(f"  Cost median: ${summary['cost_usd_median']}")
-    print(f"  Latency median: {summary['latency_ms_median']}ms")
+    print(f"  Cost median: ${summary['cost_usd_median']} (mocked token counts)")
+    print(f"  Latency median: {summary['latency_ms_median']}ms (mocked, in-process)")
+    print("  Note: cost and latency are harness figures, not production measurements.")
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     with open(args.output, "w") as f:

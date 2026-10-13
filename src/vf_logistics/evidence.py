@@ -55,6 +55,9 @@ REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_
 
 OPEN_STATUSES = ("OPEN", "SENT")
 LINK_TTL_S = 7 * 24 * 3600
+# How long an execution claim is exclusive to the executor who made it. After this a
+# different person may resume a claim whose process died between claim and confirm.
+CLAIM_LEASE_S = 300
 MAX_TOKEN_CHARS = 1024
 MAX_FIELD_CHARS = 200
 MAX_NOTE_CHARS = 1000
@@ -413,6 +416,8 @@ async def request_evidence(
         "request": public_request(request),
         "token": token,
         "path": link_path(token),
+        # One link per requested document; the token says which one it is for.
+        "links": links,
         "state": AWAITING_EVIDENCE,
     }
 
@@ -571,6 +576,28 @@ async def receive_evidence(
     record = verification_of(case)
     now = utcnow()
 
+    # N03: settle which document this upload is, and refuse a wrong or repeated one,
+    # before spending anything on screening, archiving or extraction.
+    received_docs = request.get("received_docs") or {}
+    requested_docs = list(request.get("documents") or [])
+    still_missing = [d for d in requested_docs if d not in received_docs]
+    token_doc_type = claims.get("d")
+    if token_doc_type:
+        if token_doc_type not in requested_docs:
+            raise EvidenceError("This link is for a document that was not requested", 400)
+        if token_doc_type in received_docs:
+            raise EvidenceError(
+                f"The {token_doc_type.replace('_', ' ')} was already received. "
+                + (f"Still needed: {', '.join(still_missing)}." if still_missing else ""),
+                409,
+            )
+        doc_type = token_doc_type
+    else:
+        # A request-level link (no document in the token): the first one not yet in.
+        doc_type = still_missing[0] if still_missing else (
+            requested_docs[0] if requested_docs else "unknown"
+        )
+
     # -- Model Armor screen (deterministic pre-screen + Google Model Armor) --
     from vf_logistics import model_armor
 
@@ -589,15 +616,6 @@ async def receive_evidence(
     )
 
     # -- Extract facts --
-    # N03: doc_type from the token (preferred), then first unreceived as fallback.
-    received_docs = request.get("received_docs") or {}
-    requested_docs = request.get("documents") or []
-    token_doc_type = claims.get("d")
-    if token_doc_type and token_doc_type in requested_docs:
-        doc_type = token_doc_type
-    else:
-        remaining = [d for d in requested_docs if d not in received_docs]
-        doc_type = remaining[0] if remaining else (requested_docs[0] if requested_docs else "unknown")
     extraction: dict[str, Any] | None = None
     extraction_cost = 0.0
     if not blocked:
@@ -670,6 +688,8 @@ async def receive_evidence(
         "blocked": blocked,
         "extracted": doc_record["extracted"] is not None,
         "superseded_approvals": len(superseded),
+        "doc_type": doc_type,
+        "still_missing": [d for d in requested_docs if d not in received_docs],
     }
 
 
@@ -848,14 +868,23 @@ async def approve(
             "A release approval needs a password sign-in, not a one-click session.", 403,
         )
 
+    exception: dict[str, Any] | None = None
     if action == "release" and latest_eval:
         unresolved = [str(u) for u in (latest_eval.get("unresolved") or [])]
-        if unresolved and not (note or "").strip():
-            raise EvidenceError(
-                f"Release with unresolved evidence ({', '.join(unresolved)}) "
-                "requires a note explaining the exception.",
-                400,
-            )
+        if unresolved:
+            if not (note or "").strip():
+                raise EvidenceError(
+                    f"Release with unresolved evidence ({', '.join(unresolved)}) "
+                    "requires a note explaining the exception.",
+                    400,
+                )
+            # An exception, not a normal release: recorded on the approval so the
+            # audit trail shows what was waived, by whom, and why.
+            exception = {
+                "unresolved": unresolved,
+                "reason": note.strip(),
+                "approved_by": approver,
+            }
 
     now = utcnow()
     approval: dict[str, Any] = {
@@ -869,6 +898,8 @@ async def approve(
         "note": note,
         "status": "VALID",
     }
+    if exception is not None:
+        approval["exception"] = exception
     record["approvals"].append(approval)
     case["state"] = APPROVED
     case["updated_at"] = now
@@ -999,8 +1030,17 @@ async def execute_approval(
     )
     if existing_exe is not None and case.get("state") == "EXECUTING":
         # Recovery: reuse the interrupted claim rather than opening a second one.
+        # Inside the lease only the claimant may resume; someone else would be racing
+        # a send that may still be in flight.
+        lease_ends = float(existing_exe.get("claim_expires_epoch") or 0)
+        if existing_exe.get("executor") != executor and time.time() < lease_ends:
+            raise EvidenceError(
+                "Another execution of this approval is in progress. "
+                "Try again after it finishes or its claim expires.", 409,
+            )
         execution_id = existing_exe["execution_id"]
         execution = existing_exe
+        execution["claim_expires_epoch"] = time.time() + CLAIM_LEASE_S
         execution.setdefault("resumed", []).append({"executor": executor, "at": now})
     else:
         execution_id = new_id("evexe")
@@ -1010,6 +1050,7 @@ async def execute_approval(
             "executor": executor,
             "at": now,
             "status": "claiming",
+            "claim_expires_epoch": time.time() + CLAIM_LEASE_S,
         }
         record.setdefault("executions", []).append(execution)
         approval["status"] = "CLAIMING"
