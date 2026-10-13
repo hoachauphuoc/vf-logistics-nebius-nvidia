@@ -488,3 +488,168 @@ async def cancel_request(
         "request_id": request_id, "reason": why, "state_after": case["state"],
     }, tenant_id)
     return {"request": public_request(request), "state": case["state"]}
+
+
+# --------------------------------------------------------------------------
+# Receiving evidence (step 3)
+# --------------------------------------------------------------------------
+
+MAX_EVIDENCE_MB = 20
+SUPPORTED_EVIDENCE_MIME = frozenset({
+    "application/pdf", "image/png", "image/jpeg", "image/webp",
+})
+
+
+def _supersede_approvals(record: dict[str, Any], new_version: int, now: str) -> list[str]:
+    """
+    Any VALID approval with an evidence_version lower than `new_version` is stale:
+    the person approved on facts that are no longer current. Returns the ids that
+    were superseded.
+    """
+    hit: list[str] = []
+    for approval in record.get("approvals") or []:
+        if isinstance(approval, dict) and approval.get("status") == "VALID":
+            if (approval.get("evidence_version") or 0) < new_version:
+                approval["status"] = "SUPERSEDED"
+                approval["superseded_at"] = now
+                approval["superseded_reason"] = f"evidence v{new_version} received"
+                hit.append(str(approval.get("approval_id") or ""))
+    return hit
+
+
+async def receive_evidence(
+    token: str,
+    file_bytes: bytes,
+    filename: str,
+    mime_type: str,
+    *,
+    client_ip: str | None = None,
+) -> dict[str, Any]:
+    """
+    Accept a document submitted through a signed link.
+
+    This is the one public route in the loop. It has no session and no API key:
+    the token IS the credential, and it is single-purpose (one case, one request,
+    one sequence). Everything else is checked before any work happens.
+    """
+    if not isinstance(file_bytes, (bytes, bytearray)) or not file_bytes:
+        raise EvidenceError("No file was submitted")
+    if len(file_bytes) > MAX_EVIDENCE_MB * 1024 * 1024:
+        raise EvidenceError(f"The file must be {MAX_EVIDENCE_MB} MB or smaller", 413)
+    if mime_type not in SUPPORTED_EVIDENCE_MIME:
+        raise EvidenceError(
+            f"Only {', '.join(sorted(SUPPORTED_EVIDENCE_MIME))} are accepted", 415,
+        )
+
+    claims = read_token(token)
+    if claims is None:
+        raise EvidenceError("The link is invalid, expired, or has been replaced", 403)
+
+    scope = claims["t"]
+    case_id = claims["c"]
+    request_id = claims["r"]
+    token_seq = claims["s"]
+
+    store = get_store()
+    stored = await store.get_case(case_id, tenant_id=scope)
+    if stored is None:
+        raise EvidenceError("The link is invalid, expired, or has been replaced", 403)
+    expected_version = stored.get("_version")
+    case = copy.deepcopy(stored)
+
+    request = find_request(case, request_id)
+    if request is None or request.get("status") not in OPEN_STATUSES:
+        raise EvidenceError("The link is invalid, expired, or has been replaced", 403)
+    if request.get("link_seq") != token_seq:
+        raise EvidenceError("The link is invalid, expired, or has been replaced", 403)
+
+    record = verification_of(case)
+    now = utcnow()
+
+    # -- Model Armor screen (deterministic pre-screen + Google Model Armor) --
+    from vf_logistics import model_armor
+
+    text_layer = ""
+    if mime_type == "application/pdf":
+        text_layer, _ = model_armor.extract_pdf_text(file_bytes)
+    armor_result = await model_armor.screen(text_layer or filename, stage="evidence_response")
+    blocked = armor_result.get("blocked", False)
+
+    # -- Archive the file --
+    from vf_logistics import document_store
+
+    archive = await document_store.archive(
+        file_bytes, filename, mime_type, case_id,
+        prefix=f"evidence/{request_id}",
+    )
+
+    # -- Extract facts --
+    doc_type = request["documents"][0] if request.get("documents") else "unknown"
+    extraction: dict[str, Any] | None = None
+    extraction_cost = 0.0
+    if not blocked:
+        from vf_logistics.agents import document_agent
+        from vf_logistics import lineage
+
+        extraction = await document_agent.extract_evidence(doc_type, file_bytes, filename, mime_type)
+        extraction_cost = lineage.cost_usd(
+            extraction.get("model"),
+            extraction.get("input_tokens", 0),
+            extraction.get("output_tokens", 0),
+        )
+
+    # -- Write the document record --
+    new_version = (record.get("evidence_version") or 0) + 1
+    record["evidence_version"] = new_version
+    doc_record: dict[str, Any] = {
+        "document_id": new_id("evdoc"),
+        "request_id": request_id,
+        "evidence_version": new_version,
+        "doc_type": doc_type,
+        "filename": filename,
+        "sha256": hashlib.sha256(file_bytes).hexdigest(),
+        "uri": archive.get("uri"),
+        "content_type": mime_type,
+        "received_at": now,
+        "blocked": blocked,
+        "extracted": extraction.get("result") if extraction and not extraction.get("parse_error") else None,
+        "extraction": {
+            "model": extraction.get("model") if extraction else None,
+            "cost_usd": extraction_cost,
+            "parse_error": extraction.get("parse_error") if extraction else None,
+        },
+    }
+    record["documents"].append(doc_record)
+
+    # -- Update the request --
+    request["status"] = "RECEIVED"
+    request["received_at"] = now
+
+    # -- Cost rollup --
+    case["_estimated_cost_usd"] = (case.get("_estimated_cost_usd") or 0.0) + extraction_cost
+    case["_sum_latency_ms"] = (case.get("_sum_latency_ms") or 0) + (extraction.get("latency_ms") or 0 if extraction else 0)
+
+    # -- Supersede approvals --
+    superseded = _supersede_approvals(record, new_version, now)
+
+    case["updated_at"] = now
+
+    await _write(case, expected_version, scope)
+    await _audit(case_id, "evidence_received", "shipper (via link)", None, {
+        "document_id": doc_record["document_id"],
+        "request_id": request_id,
+        "evidence_version": new_version,
+        "sha256": doc_record["sha256"],
+        "blocked": blocked,
+        "superseded_approvals": superseded,
+        "source_ip": client_ip,
+    }, scope)
+
+    return {
+        "received": True,
+        "document_id": doc_record["document_id"],
+        "evidence_version": new_version,
+        "blocked": blocked,
+        "extracted": doc_record["extracted"] is not None,
+        "superseded_approvals": len(superseded),
+    }

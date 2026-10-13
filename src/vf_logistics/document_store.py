@@ -42,7 +42,8 @@ def _get_client():
 
 
 async def archive(
-    document_bytes: bytes, filename: str, mime_type: str, case_id: str
+    document_bytes: bytes, filename: str, mime_type: str, case_id: str,
+    prefix: str = "shipping-documents",
 ) -> dict[str, Any]:
     """Upload the original document. Returns a receipt, never raises."""
     if not BUCKET:
@@ -57,7 +58,7 @@ async def archive(
 
     stamp = datetime.now(timezone.utc).strftime("%Y/%m/%d")
     safe_name = os.path.basename(filename or "document")
-    blob_name = f"shipping-documents/{stamp}/{case_id}/{safe_name}"
+    blob_name = f"{prefix}/{stamp}/{case_id}/{safe_name}"
 
     def _upload() -> None:
         bucket = client.bucket(BUCKET)

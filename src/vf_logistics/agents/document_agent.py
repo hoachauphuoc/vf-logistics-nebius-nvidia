@@ -255,6 +255,114 @@ def _to_image(document_bytes: bytes, mime: str) -> tuple[bytes, str, int]:
     return buf.getvalue(), "image/png", page_count
 
 
+# --------------------------------------------------------------------------
+# Evidence extraction -- a different prompt per document type (Plan 1 step 3)
+# --------------------------------------------------------------------------
+
+EVIDENCE_PROMPTS: dict[str, str] = {
+    "certificate_of_origin": """
+You are a document intake agent. Read this certificate of origin and return exactly this JSON:
+
+{
+  "producer_name": "the company name the certificate says manufactured or produced the goods",
+  "origin_country": "the country the certificate says the goods originate from"
+}
+
+If a field is genuinely absent, write "not stated". Do not guess.
+""",
+    "producer_declaration": """
+You are a document intake agent. Read this producer's declaration and return exactly this JSON:
+
+{
+  "producer_name": "the company named as the producer",
+  "input_origins": ["each country named as an origin of inputs or raw materials"]
+}
+
+If no input origins are named, return an empty list. If the producer is not named, write "not stated".
+""",
+    "input_purchase_invoices": """
+You are a document intake agent. Read this purchase invoice and return exactly this JSON:
+
+{
+  "supplier_name": "the company selling the goods on this invoice",
+  "supplier_country": "the country that company is in, if stated",
+  "goods_origin_country": "the country the invoice says the goods were made in, if stated",
+  "producer_name": "the company named as the manufacturer, if different from the supplier"
+}
+
+For any field genuinely absent, write "not stated". Do not guess.
+""",
+}
+
+
+async def extract_evidence(
+    doc_type: str, document_bytes: bytes, filename: str, mime_type: str | None = None,
+) -> dict[str, Any]:
+    """
+    Transcribe an evidence document into the fields the verifier reads.
+
+    Same pattern as extract_shipment -- convert to image, call vision, parse --
+    but with the prompt for the stated doc_type, so a certificate of origin is
+    read for producer_name and origin_country, not for hs_code and weight_kg.
+
+    A doc_type not in EVIDENCE_PROMPTS falls back to a generic "transcribe every
+    fact" prompt, which at least returns something a reviewer can read.
+    """
+    mime = mime_type or mime_for(filename) or "application/pdf"
+    prompt = EVIDENCE_PROMPTS.get(doc_type, (
+        "You are a document intake agent. Read this document and return a JSON "
+        "object with every fact you can find: names, countries, dates, amounts, "
+        'companies. For anything absent write "not stated".'
+    ))
+
+    try:
+        image_bytes, image_mime, page_count = _to_image(document_bytes, mime)
+    except DocumentConversionError as exc:
+        return envelope(
+            agent="evidence_extraction",
+            model=get_model_id(),
+            result=None,
+            error=str(exc),
+            raw="",
+            latency_ms=0,
+            legacy_key="extraction",
+            validate=False,
+            prompt=None,
+            source_filename=filename,
+            source_mime=mime,
+        )
+
+    with Timer() as timer:
+        text, input_tokens, output_tokens = await nebius_client.complete_vision_json(
+            model=get_model_id(),
+            system_prompt=prompt,
+            document_bytes=image_bytes,
+            mime_type=image_mime,
+            user_text=f"Transcribe this {doc_type.replace('_', ' ')} into the required JSON record.",
+            temperature=0.0,
+            max_tokens=MAX_OUTPUT_TOKENS,
+        )
+
+    parsed, error = parse_model_json(text)
+    return envelope(
+        agent="evidence_extraction",
+        model=get_model_id(),
+        result=parsed,
+        error=error,
+        raw=text,
+        latency_ms=timer.ms,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        legacy_key="extraction",
+        validate=False,
+        prompt=f"Extract {doc_type}: [{len(image_bytes)} bytes of {image_mime}]",
+        source_filename=filename,
+        source_mime=mime,
+        source_pages=page_count,
+        source_pages_read=min(page_count, PDF_PAGES_READ),
+    )
+
+
 def _note_unread_pages(parsed: dict[str, Any] | None, page_count: int) -> None:
     """
     Record on the transcription that pages went unread.

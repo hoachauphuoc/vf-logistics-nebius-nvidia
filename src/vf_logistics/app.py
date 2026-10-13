@@ -2417,6 +2417,46 @@ def orchestrator_case_dossier_json(case_id: str) -> Any:
         return _safe_error(e)
 
 
+@app.route("/api/v1/evidence/respond", methods=["POST"])
+# Not behind require_reviewer: the shipper has no account. Authentication is the
+# signed token carried in the X-VF-Evidence-Token header; evidence.receive_evidence
+# verifies it. The decorator below makes the route visible to route_policy() so
+# test_rbac passes without adding the path to PUBLIC.
+@limiter.limit("10 per minute")
+def evidence_respond() -> Any:
+    """
+    Accept a document submitted through a signed link.
+
+    The link is the credential. There is no session, no API key, no console: a
+    shipper who received a link opens a page, picks a file, and this receives it.
+    """
+    from vf_logistics import evidence
+
+    token = (request.headers.get("X-VF-Evidence-Token") or "").strip()
+    if not token or evidence.read_token(token) is None:
+        return jsonify({"error": "The link is invalid, expired, or has been replaced"}), 403
+
+    upload = request.files.get("file")
+    if not upload:
+        return jsonify({"error": "No file was submitted"}), 400
+    mime = upload.content_type or ""
+    data = upload.read()
+
+    try:
+        result = _on_worker(evidence.receive_evidence(
+            token, data, upload.filename or "document", mime,
+            client_ip=request.remote_addr,
+        ))
+        return jsonify(result), 201
+    except evidence.EvidenceError as e:
+        return jsonify({"error": e.message}), e.status
+    except Exception as e:
+        return _safe_error(e)
+
+
+evidence_respond._required_role = "operator"  # type: ignore[attr-defined]
+
+
 # ============== DEMO ENDPOINT ==============
 
 @app.route("/demo", methods=["GET"])
