@@ -583,6 +583,8 @@ export interface EvidenceApproval {
   status: string;
   at: string;
   note?: string | null;
+  /** Set when a release waived unresolved evidence: what, why, and by whom. */
+  exception?: { unresolved: string[]; reason: string; approved_by: string } | null;
 }
 
 export interface EvidenceExecution {

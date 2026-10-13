@@ -274,10 +274,14 @@ export function buildCaseTimeline(c: Case, audit: AuditRecord[] = []): TimelineE
       events.push({
         kind: "evidence_approval",
         at: apr.at ?? null,
-        title: `${apr.action === "release" ? "Release" : "Block"} approved (v${apr.evidence_version})`,
-        detail: apr.status === "SUPERSEDED" ? "Superseded by new evidence" : `Status: ${apr.status}`,
+        title: `${apr.action === "release" ? "Release" : "Block"} approved (v${apr.evidence_version})${apr.exception ? " as an exception" : ""}`,
+        detail: apr.status === "SUPERSEDED"
+          ? "Superseded by new evidence"
+          : apr.exception
+            ? `Waived: ${apr.exception.unresolved.map(humaniseCode).join(", ")}. Reason: ${apr.exception.reason}`
+            : `Status: ${apr.status}`,
         who: apr.approver ?? null,
-        tone: apr.status === "SUPERSEDED" ? "bad" : apr.action === "release" ? "good" : "neutral",
+        tone: apr.status === "SUPERSEDED" || apr.exception ? "bad" : apr.action === "release" ? "good" : "neutral",
       });
     }
     for (const exe of (v.executions ?? []) as EvidenceExecution[]) {

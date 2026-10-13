@@ -186,3 +186,40 @@ describe("every group the API can return has a label and a help entry", () => {
     expect(helpFor(id)).toBeDefined();
   });
 });
+
+describe("buildCaseTimeline approvals", () => {
+  // evidence.approve(): the shape of an approval that waived unresolved evidence.
+  const approval = (extra: Record<string, unknown> = {}) => ({
+    approval_id: "evapr-1", action: "release", approver: "r@x.example",
+    evidence_version: 1, status: "VALID", at: "2026-10-12T09:00:00Z", ...extra,
+  });
+
+  it("marks a release that waived unresolved evidence, with what and why", () => {
+    const c = aCase({
+      verification: {
+        evidence_version: 1, requests: [], documents: [], evaluations: [],
+        approvals: [approval({
+          note: "Confirmed by phone",
+          exception: { unresolved: ["producer_declaration"], reason: "Confirmed by phone", approved_by: "r@x.example" },
+        })],
+      },
+    } as Partial<Case>);
+    const e = buildCaseTimeline(c).find((x) => x.kind === "evidence_approval");
+    expect(e?.title).toMatch(/as an exception/);
+    expect(e?.detail).toMatch(/Confirmed by phone/);
+    expect(e?.detail).toMatch(/producer/i);
+    expect(e?.tone).toBe("bad");
+  });
+
+  it("leaves an ordinary approval unmarked", () => {
+    const c = aCase({
+      verification: {
+        evidence_version: 1, requests: [], documents: [], evaluations: [],
+        approvals: [approval()],
+      },
+    } as Partial<Case>);
+    const e = buildCaseTimeline(c).find((x) => x.kind === "evidence_approval");
+    expect(e?.title).not.toMatch(/exception/);
+    expect(e?.tone).toBe("good");
+  });
+});
