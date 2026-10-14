@@ -414,3 +414,36 @@ class TestTheRoutes(Base):
         done = self.client.post(f"/api/v1/review/CASE-1/evidence/{rid}/cancel",
                                 json={"reason": "Shipper reached by phone"}, headers=self.reviewer())
         assert done.status_code == 200 and done.get_json()["state"] == "HELD_FOR_REVIEW"
+
+
+class TestReevaluateRoute(Base):
+    """N05 at the HTTP boundary: the refusal is a status and a message, not a 500."""
+
+    def _post(self, case_id="CASE-1", headers=None):
+        return self.client.post(
+            f"/api/v1/review/{case_id}/reevaluate", json={},
+            headers=self.reviewer() if headers is None else headers,
+        )
+
+    def test_a_decided_case_is_a_409_with_its_state_in_the_message(self):
+        self.put(state="RELEASED_BY_HUMAN")
+        response = self._post()
+        assert response.status_code == 409
+        assert "RELEASED_BY_HUMAN" in response.get_json()["error"]
+        assert self.stored()["state"] == "RELEASED_BY_HUMAN"
+
+    def test_a_case_that_never_asked_for_documents_is_a_409_and_unchanged(self):
+        self.put()
+        response = self._post()
+        assert response.status_code == 409
+        assert "requested" in response.get_json()["error"].lower()
+        assert "verification" not in self.stored()
+
+    def test_an_unknown_case_is_a_404(self):
+        assert self._post("NOPE").status_code == 404
+
+    def test_a_viewer_and_an_anonymous_caller_are_refused(self):
+        self.put()
+        viewer = {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint("nobody@x.example", amr="password")}
+        for headers in ({}, viewer):
+            assert self._post(headers=headers).status_code in (401, 403)

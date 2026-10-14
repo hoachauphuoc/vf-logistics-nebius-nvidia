@@ -357,3 +357,70 @@ class TestN06EveryRequiredField(Base):
             declaration={"producer_name": "not stated"},
         )
         assert not any(c.get("kind") == "producer" for c in ev["contradictions"])
+
+
+class TestN05OnlyInsideTheVerificationLoop(Base):
+    """Re-evaluate is for a case that is in the verification loop, and only then."""
+
+    OUTSIDE = [
+        "AUTO_CLEARED", "RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN", "APPROVED",
+        "EXECUTING", "EXECUTION_FAILED", "INGESTED", "DEAD_LETTER",
+    ]
+    INSIDE = ["AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN"]
+
+    def _put_in_state(self, state):
+        """A case with a request and one earlier evaluation, parked in `state`."""
+        self.put()
+        run(evidence.request_evidence("CASE-1", REVIEWER, documents=["certificate_of_origin"]))
+        case = self.stored()
+        case["state"] = state
+        case["verification"]["evaluations"].append({
+            "evaluation_id": "eveval-seed", "evidence_version": 0, "status": "missing",
+            "risk_floor": 45, "findings": [], "clarified": [], "unresolved": [],
+            "contradictions": [],
+        })
+        run(self.store.put_case(case))
+        return self.stored()
+
+    @pytest.mark.parametrize("state", OUTSIDE)
+    def test_a_case_outside_the_loop_is_refused_and_left_untouched(self, state):
+        before = self._put_in_state(state)
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.reevaluate("CASE-1"))
+        assert raised.value.status == 409
+        assert state in str(raised.value)
+        after = self.stored()
+        assert after["state"] == state
+        assert after["_version"] == before["_version"]
+        assert len(after["verification"]["evaluations"]) == 1
+
+    @pytest.mark.parametrize("state", INSIDE)
+    def test_a_case_inside_the_loop_is_evaluated(self, state):
+        self._put_in_state(state)
+        result = run(evidence.reevaluate("CASE-1"))
+        assert result["state"] in ("HELD_FOR_REVIEW", "ESCALATED")
+        assert len(self.stored()["verification"]["evaluations"]) == 2
+
+    def test_a_case_that_never_asked_for_documents_is_refused_and_not_changed(self):
+        # N05: "never requested" is outside the loop too. Before this, the call went
+        # through, wrote an empty verification record and locked the legacy /decide.
+        self.put()
+        before = self.stored()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.reevaluate("CASE-1"))
+        assert raised.value.status == 409
+        assert "requested" in str(raised.value).lower()
+        after = self.stored()
+        assert "verification" not in after
+        assert after["state"] == "HELD_FOR_REVIEW"
+        assert after["_version"] == before["_version"]
+
+    def test_a_refused_reevaluate_leaves_the_plain_review_path_open(self):
+        from vf_logistics import orchestrator
+        self.put()
+        with pytest.raises(evidence.EvidenceError):
+            run(evidence.reevaluate("CASE-1"))
+        result = run(orchestrator.human_decide(
+            "CASE-1", "release", REVIEWER, "reviewed", actor_auth="password",
+        ))
+        assert result["ok"] is True

@@ -724,6 +724,12 @@ async def reevaluate(
             f"Cannot re-evaluate a case in state {case.get('state')}.",
             409,
         )
+    # N05: ... and only a case that actually asked for documents. A review case that
+    # never entered the loop used to pass the state gate above, get an empty
+    # verification record written onto it, and lose the legacy /decide path.
+    existing = case.get("verification")
+    if not isinstance(existing, dict) or not existing.get("requests"):
+        raise EvidenceError("No documents have been requested for this case.", 409)
 
     record = verification_of(case)
     shipment = case.get("shipment") or {}
