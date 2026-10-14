@@ -628,7 +628,7 @@ async def receive_evidence(
 
     archive = await document_store.archive(
         file_bytes, filename, mime_type, case_id,
-        prefix=f"evidence/{request_id}",
+        prefix=f"{document_store.EVIDENCE_PREFIX}{request_id}", tenant_id=scope,
     )
 
     # -- Extract facts --
