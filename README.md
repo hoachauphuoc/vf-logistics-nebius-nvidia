@@ -32,6 +32,37 @@ authority, or edit the screening rules; the password accounts are in the
 Devpost submission's testing-instructions field — a governance-admin account, and one
 that holds only the Reviewer role, so you can watch the access control refuse something.
 
+## At a glance
+
+- **What it is:** shipment screening for a forwarder's compliance desk. Deterministic
+  checks set a risk floor on every shipment; Nemotron agents on Nebius Token Factory score,
+  screen, investigate and debate above it. Clear cases are released inside limits a named
+  person publishes; the rest go to a reviewer with the evidence and a cited dossier.
+- **The one design rule:** a model may raise risk, never lower it below the floor, and
+  `validate()` checks that on every call. Ultra runs only in the debate, where its verdict
+  decides whether a disputed case is investigated; a person still decides every disputed case.
+- **Measured** (95% Wilson intervals in brackets; the pipeline corpus is synthetic):
+  - rules alone, 453 holdout cases: recall 93.5% [90–96], false-positive rate 38.4% [28–49];
+  - full system, 200 holdout cases: recall 100% [97–100], false-positive rate 54.5%
+    [37–71] — the models buy recall and, by design, cannot remove a false positive;
+  - 19 public enforcement cases: 14 frauds held (73.7% [51–89]), and 9 of the 19 honest
+    counterparts held with them;
+  - HS classifier on substitutions its reference never mentions: 11 of 12 caught, 0 of 12
+    honest cases flagged (95% upper bound about 24%).
+- **The weakness, in reviewer time:** at 0.2% fraud, the 2024 Vietnam customs rate, the
+  rules would hold about **206 shipments per real fraud case** (151–271 at the favourable
+  and unfavourable ends of the intervals), the full system about 273. Customs' own
+  targeting holds about 19. So the product's job is to make each hold quick and
+  defensible to decide; the screen is not precise, and no real customer traffic has been
+  measured.
+- **Cost:** under half a cent of model spend per case (`$0.068`–`$0.088` for a 20-case live
+  run, $1.01 per 1,000 in the 200-case benchmark). Tavily's search quota, not the models,
+  is the binding constraint.
+- **Verify:** the console's [Evaluation page](https://vf-app-350828852747.asia-southeast1.run.app/evaluation)
+  and `GET /api/v1/evaluation` serve every committed report with its intervals and the
+  operating curve; `python scripts/run_massive_benchmark.py --arm rules` reruns the rules
+  in seconds at no cost; [Reproducible testing](#reproducible-testing) has the rest.
+
 ## The problem
 
 Fraud in a forwarder's book is rare, and that is what makes it expensive to find. In 2024
@@ -229,9 +260,9 @@ for. Measured: `$0.0198` per Ultra debate against Super's `$0.0015`.
   holdout of substitutions absent from the reference material, and two few-shot
   examples made it **worse** on both, at 26.7% and 33.3%. Structured reasoning over a
   reference extract of the published heading contents — the production mode — took
-  it to **92.9%** recall at 100% precision on the pairs and **91.7%** with no false
-  alarms on the holdout. Examples did not help; reasoning against the published
-  headings did. Full table: *[HS classification, measured](#hs-classification-measured)*.
+  it to **92.9%** recall at 100% precision on the pairs and **91.7%** (11 of 12)
+  on the holdout with 0 of 12 honest cases flagged. Examples did not help; reasoning
+  against the published headings did. Full table: *[HS classification, measured](#hs-classification-measured)*.
 - **Zero-day screening.** Sanctions lists lag reality. This runs a live
   adverse-media search when a shipment trips a gate — a dual-use heading, or two or
   more distinct transhipment hubs.
@@ -315,7 +346,8 @@ a model-cost figure.
 in the synthetic corpus and held most of the clean traffic with it — on the holdout
 split, a false-positive rate of 76.7%.
 
-**Now:** 38.4%, with precision 84.1% → 91.2% and recall 95.1% → 93.5%, and
+**Now:** 38.4% (95% interval 28–49%, on 86 clean cases), with precision 84.1% →
+91.2% and recall 95.1% → 93.5%, and
 sanctions-alias and shell-company detection unchanged at 100%. Two signals that
 separated nothing became *observations* — shown to the reviewer as context, with no
 floor, not counted as findings — and the tuning was chosen on the dev split only.
@@ -330,9 +362,12 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **922 backend tests** at 81% line coverage, 146 frontend tests, and a
-mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
-the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
+**Now:** **1,462 backend tests** passing at 84.6% line coverage (11 more skip without
+a Firestore emulator), 328 frontend tests, and a mutation check —
+`scripts/check_test_sensitivity.py` breaks 112 lines of backend and console code on
+purpose and the suite catches all 112. The weak spot is `store.py` at 53%:
+`FirestoreStore`, the production backend, is exercised only by the emulator tests, and
+CI has no emulator job. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
 builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
 added here on 19 Sep (`a452fd6`) filtered on a branch named `main` while this
@@ -511,6 +546,16 @@ number would otherwise inherit that customer's clean history. A number that
 matches under a different name is reported as `identity_mismatch` and treated as
 worse than unknown.
 
+The human-feedback loop follows the same rule. Two human blocks of a shipper add 15 to
+its effective risk, and that may key on the free-text shipper name, because raising risk
+is always safe. Five human releases take 10 off, and that discount applies only to a
+shipper whose identity the registry verified, counting only human releases of that same
+verified counterparty: keyed on the name, a document could borrow any customer's clean
+history by typing it. In practice the discount is available only to counterparties in
+our book, and it never takes risk below the deterministic floor. The tallies are read
+fresh from the store on every scored case, because a cache dropped in one Cloud Run
+instance could miss a block recorded on another.
+
 The withheld fields are also reported to the fraud agent as *not available*
 rather than as a bare `N/A`, with an instruction that their absence says nothing
 about the shipment. The deterministic floor, not the model, remains the thing
@@ -531,6 +576,15 @@ person.
 With no active boundary the system is **SUSPENDED** and fails closed: it still
 analyses and proposes, but [`governance.py`](src/vf_logistics/governance.py)'s execution gate
 refuses every protected action.
+
+The release path fails closed on the shipment's side too. The orchestrator proposes an
+automated release only when compliance returned exactly `CLEARED` (an allowlist: an
+`UNKNOWN` or off-schema status used to clear, and now goes to review at HIGH priority)
+and `reconcile()` explicitly permitted it, which it never does without a stated risk
+floor. The gate then refuses a release when the deterministic finding count is missing,
+when the declared value is absent, unreadable, NaN or negative, or when the destination
+is blank while the boundary lists excluded destinations. Each of those used to read as
+zero or as nothing to check.
 
 ### The reviewer always has the paperwork
 
@@ -1185,6 +1239,11 @@ cases: 300 shell-company transhipment, 300 HS mismatch, 200 sanctions-alias evas
 clean). No real shipment data is involved: these numbers say how the system behaves on
 the attacks we could describe, not on the ones we could not.
 
+Ranges in brackets are 95% Wilson score intervals on the counts behind each rate, in
+whole percent rounded outward as the Evaluation screen shows them, and served with the
+reports by the same endpoint. Some of the counts are small, and the intervals
+are there so a reader can see which differences mean something.
+
 ### The detection benchmark
 
 `scripts/run_massive_benchmark.py` splits the corpus by `sha256(case_id)[0] % 2` into a
@@ -1195,28 +1254,30 @@ only, so holdout is the number to quote.
 
 | Holdout, 453 cases | Before tuning | After tuning |
 |---|---|---|
-| Precision | 84.1% | 91.2% |
-| Recall | 95.1% | 93.5% |
+| Precision | 84.1% [80–88] | 91.2% [87–94] |
+| Recall | 95.1% [92–97] | 93.5% [90–96] (343/367) |
 | F1 | 0.893 | 0.923 |
-| False-positive rate (86 clean) | 76.7% | **38.4%** |
+| False-positive rate (86 clean) | 76.7% [66–85] | **38.4%** [28–49] (33/86) |
 | Sanctions-alias evasion caught | 87 / 87 | 87 / 87 |
 | Shell-company transhipment caught | 156 / 156 | 156 / 156 |
 | HS mismatch caught | 106 / 124 | 100 / 124 |
 
 The price of the tuning is the last row: six HS substitutions the rules used to hold now
 pass the rules alone, which is what the model arm is for. On dev after tuning the figures
-are 91.0% precision, 93.5% recall and a 35.1% false-positive rate, so the holdout result
-is not an artefact of which half the thresholds saw.
+are 91.0% precision [87–94], 93.5% recall [90–96] and a 35.1% false-positive rate
+[26–45]. Each holdout point estimate falls inside dev's interval, which is consistent
+with the thresholds not having been fitted to the half they saw; that the two intervals
+merely overlap would not, on its own, show that.
 
 **Full arm** — rules, the HS classifier (Nano, `cot_strict`) and the zero-day radar
 through the real gate, on 200 holdout cases taken by stride:
 
 | 200 holdout cases | Rules alone | Full system |
 |---|---|---|
-| Precision | 90.9% | 90.3% |
-| Recall | 95.8% | **100%** |
+| Precision | 90.9% [85–95] | 90.3% [85–94] |
+| Recall | 95.8% [91–98] | **100%** [97–100] (167/167) |
 | F1 | 0.933 | 0.949 |
-| False-positive rate (33 clean) | 48.5% | 54.5% |
+| False-positive rate (33 clean) | 48.5% [32–65] | 54.5% [37–71] (18/33) |
 
 The model layer caught the 7 HS substitutions the tuned rules missed and added 2 false
 positives, both an HS mismatch claimed against a non-controlled heading (floor 40). The
@@ -1239,13 +1300,53 @@ What belongs next to those numbers:
   search) and how the model handles an empty result; 79 of those 97 verdicts came from the
   final turn that asks for a verdict once the search budget is spent.
 
+#### Operating curve
+
+One recall and one false-positive rate say how the threshold in use does, not what moving
+it would buy. `scripts/operating_curve.py` re-scores the rules arm's per-case floors at
+every threshold that changes the answer and writes `data/operating_curve/rules.json`,
+which ships in the image and is drawn on the Evaluation screen. Floors take a handful of
+values, so each row stands for a range of thresholds; the two rows that another row
+matches or beats on both counts (81–85, 91–100) are left out here and kept in the file.
+Rules arm, holdout:
+
+| Review threshold | Recall | False-positive rate | Held per real case at 0.2% |
+|---|---|---|---|
+| **40, in use** (any value 1–50 holds the same) | 93.5% | 38.4% | ~206 |
+| 51–65 | 67.0% | 25.6% | ~191 |
+| 66–75 | 67.0% | 9.3% | ~70 |
+| 76–80 | 66.5% | 7.0% | ~53 |
+| 86–90 | 25.9% | 0% | ~1 |
+
+Raising the threshold into the 66–80 range would cut the reviewer load per real case by
+roughly three to four times, and recall would fall from 93.5% to about 67%. That is a
+trade between reviewer hours and released fraud that belongs to the operator who carries
+the consequences, so we left the threshold where it was and show the curve instead.
+
+#### Where the false positives come from
+
+On the dev split only, every one of the rules' 40 false positives traces to four findings:
+`SHIPPER_NO_HISTORY` sets the floor on 17 of them (15 with nothing else scoring),
+`VALUE_DENSITY_HIGH` on 12, `FREIGHT_ANOMALY` on 5, and `DUAL_USE_HS_CODE` on 6, all HS
+8471 laptops. We measured five candidate changes on dev and rejected all five: four were
+indefensible in compliance terms or keyed on how the generator builds cases, and one lost
+recall. So the holdout was not consulted and the verifier is unchanged. This is a null
+result, and we report it as one.
+
+The largest lever is policy rather than tuning. Counting a first-time shipper only as
+corroboration of another finding, never on its own, would take the dev false-positive
+rate from 35.1% to 21.9% with no recall lost on this corpus, and would release the first
+shipments of new counterparties unreviewed. Whether a desk accepts that is the
+operator's decision, not one we made for them.
+
 ### HS classification, measured
 
 `scripts/eval_hs.py` grades the classifier's own verdict, not the case outcome, on two
 sets: 30 pairs (`data/hs_pairs.yaml`, 15 evasive and 15 honest) and a 24-case holdout
 (`data/hs_holdout.yaml`, 12 and 12) of substitutions absent from the reference material.
-Recall is evasions caught. A reply the model failed to give is counted as neither class,
-so the counts in brackets are the graded cases.
+Recall is evasions caught. A reply the model failed to give, or an `unknown` verdict, is
+counted as neither class, so every rate in the table is over graded cases only and the
+counts in brackets are those graded cases.
 
 | Arm | Model | Pairs recall | Pairs FPR | Holdout recall | Holdout FPR |
 |---|---|---|---|---|---|
@@ -1255,7 +1356,7 @@ so the counts in brackets are the graded cases.
 | `cot_zero`: ordered method, verdict last | Nano | 40.0% (6/15) | 28.6% | — | — |
 | `cot`: method plus reasoning exemplars | Nano | 53.8% (7/13) | 21.4% | — | — |
 | `cot_ref`: method plus reference with exclusion notes | Nano | 100% (15/15) | 0% | — | — |
-| **`cot_strict`: method plus published heading contents (production)** | Nano | **92.9%** (13/14) | **0%** | **91.7%** (11/12) | **0%** |
+| **`cot_strict`: method plus published heading contents (production)** | Nano | **92.9%** (13/14) [68–99] | **0%** (0/15) [0–21] | **91.7%** (11/12) [64–99] | **0%** (0/12) [0–25] |
 | Teacher, `base` prompt | Super | 100% (15/15) | 6.7% | — | — |
 
 What the table says:
@@ -1271,8 +1372,10 @@ What the table says:
   test pairs in view, so it cannot be told apart from having been handed the answers.
   `cot_strict` strips them and sees only published heading contents; it is what production
   runs (`orchestrator.py`) and the only figure we quote.
-- **The holdout is the test that matters:** 91.7% with no false alarms, on substitutions
-  the reference never mentions, on Nano rather than Super.
+- **The holdout is the test that matters:** 11 of 12 evasions caught and 0 of 12 honest
+  cases flagged, on substitutions the reference never mentions, on Nano rather than
+  Super. Twelve is a small number: the 95% interval on that recall runs from 64% to 99%,
+  and "no false alarms" means 0 of 12, whose upper bound is about 24%.
 
 ### Public enforcement cases
 
@@ -1285,8 +1388,8 @@ imitated, with the regulator's URL and a verbatim quote on every case
 
 | 19 pairs | Rules alone | Full system |
 |---|---|---|
-| Frauds held | 11 / 19 | 14 / 19 |
-| Honest counterparts held | 7 / 19 | 9 / 19 |
+| Frauds held | 11 / 19 (57.9% [36–77]) | 14 / 19 (73.7% [51–89]) |
+| Honest counterparts held | 7 / 19 (36.8% [19–59]) | 9 / 19 (47.4% [27–69]) |
 | Pairs separated (fraud held, honest cleared) | 4 | 3 |
 | Model cost | $0 | $0.034 |
 
@@ -1309,7 +1412,12 @@ normaliser now treats Russian, CIS and Gulf legal forms like `LLC` and `Ltd`.
 **Workload at real fraud rates.** A corpus is a fifth to four-fifths fraud by
 construction; a forwarder's book is not. Vietnam Customs found a violation in 29,849 of
 16.84 million declarations in 2024, **0.18%**. At 0.2%, the tuned rules hold about 385 of
-every 1,000 shipments to find about 2 real cases. The console's Evaluation screen shows
+every 1,000 shipments to find about 2 real cases: about **206 held per real fraud case**,
+a precision at that prevalence of about 0.49%. The full system holds about 273 per real
+case. Put recall and the false-positive rate at the favourable ends of their intervals
+and then the unfavourable ends, and the rules' figure runs from 151 to 271 and the full
+system's from 191 to 359; those are best and worst corners, not a 95% interval. Customs'
+own targeting holds about 19 per real violation. The console's Evaluation screen shows
 this for every report at 0.2%, 1% and 2%. The conclusion we draw is that the product's job
 is not to hold fewer shipments but to make each hold quick and defensible to decide —
 which is what the case trace, the Review screen and the dossier are for.
@@ -1362,15 +1470,16 @@ end to end, not what a real run costs or how long a person takes.
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 1183, at 83% line coverage. CI fails below 75%.
+# Unit + integration tests: 1462 pass and 11 skip (the Firestore emulator tests, unless
+# FIRESTORE_EMULATOR_HOST is set), at 84.6% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
-# The mutation check: breaks 36 lines on purpose, one at a time, and requires the
+# The mutation check: breaks 112 lines on purpose, one at a time, and requires the
 # suite to fail on every one. It edits source in place and restores it, so it
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: typecheck, lint, 146 unit tests, production build
+# Frontend: typecheck, lint, 328 unit tests in 26 files, production build
 cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build
 
 # Counterparty book, offline
@@ -1409,12 +1518,12 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Due-diligence dossier | 11 | Every finding code lands on a reference that exists, the most specific guidance wins, the PDF renders from an empty or non-Latin case, a model's arrow is spelled out rather than printed as `?`, and the route is a viewer read scoped to the tenant |
 | Pure logic | 69 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
 | Decision paths | 57 | Every route a shipment can take through the state machine, and the heading the HS classifier is told was declared |
-| Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
-| Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
+| Tenant isolation | 42 | Cross-tenant reads, writes, and aggregation |
+| Hardening | 48 | Kill switch, Red Team screen, policy dry run, auto-debate, per-hop I/O, and the learning loop: a discount only for a registry-verified shipper, tallies read fresh on every scored case |
 | Document upload | 33 | Accepted types, the PDF branch, injection screening |
-| Console session | 41 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
+| Console session | 50 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
 | Network defence | 34 | Rate limits, request size, header hygiene, CSP content, content-type allow-list |
-| Verifier | 34 | Risk reconciliation, prompt injection, whitelist, checks, and routing "to, from, or through" a restricted country |
+| Verifier | 36 | Risk reconciliation (no auto-clear without a stated floor), prompt injection, whitelist, checks, and routing "to, from, or through" a restricted country |
 | B2B contract | 28 | The published response shape callers depend on |
 | Routes | 27 | Security headers, CORS, auth, validation, pagination |
 | Schema enforcement | 37 | Untrusted document fields against the declared schema; that an investigation reply with no summary is a counted failure rather than a finished report; and that Super is asked without `json_object`, which measured 6/12 usable against 12/12, with one retry billed in full |
@@ -1431,7 +1540,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Observability | 16 | Logging, metrics, request context |
 | Security screen logic | 16 | Window arithmetic, and that an unreachable screen fails closed instead of reporting a clean document |
 | Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
-| RBAC | 25 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board, revoke the boundary or edit the prefilter rules |
+| RBAC | 28 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board, revoke the boundary or edit the prefilter rules |
 | Debate routing | 13 | A genuine, confident DISAGREE sends the case to investigation; a forced verdict does not; risk only moves up |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
 | False-positive tuning | 12 | Which signals are findings and which are context: observations carry no floor and are not counted |
@@ -1441,9 +1550,22 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
 | Audit integrity | 6 | The governance author is the authenticated identity, not a body field |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| Evaluation endpoint | 8 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; and the public-case pairs with their sources |
+| Evaluation endpoint | 19 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; the public-case pairs with their sources; Wilson intervals at the edges (0 of 12, 15 of 15) rounded outward; and the operating curve shipped in the image |
+| Operating curve | 5 | The threshold sweep on hand-built rows counted by eye, and `scripts/operating_curve.py` run once end to end |
+| Release fails closed | 15 | A missing reconciliation, a compliance status other than `CLEARED`, an unverified shipper's discount, a missing finding count, an absent or unusable declared value and a blank destination each withhold an automated release |
+| Document archive | 14 | The receipt written onto the case is one the reader can fetch back, and every storage failure is a receipt that says why, or an empty answer, never an exception |
+| Executor client | 18 | Every way the hop to the executor can fail — no executor, no identity token, a refusal, a crash, a transport error — comes back as something other than "done" |
+| Origin inputs | 150 | The watched-lane check behind the verification loop: a shipment on a watched lane cannot be cleared by the rules, and good papers never lower a floor |
+| Evidence request, response, re-evaluation, approval, execution | 174 | The signed link and who may use it, uploads through it, re-evaluation, approval bound to an evidence version, and atomic execution (`test_evidence_*.py`) |
+| Membership | 31 | Organisation membership resolved on the server, and the three ways a request authenticates |
+| Worklist | 26 | The Today and Outcomes read models and the arithmetic behind them |
+| Boundary history and schema | 32 | Versions never reused or overwritten; a permission written as the string `"false"` is refused rather than read as true |
+| Internal execute | 15 | `/internal/execute` acts only in the organisation it checked the role in |
+| Login throttle | 14 | One sign-in attempt ledger for every console instance |
+| Approval gate at the route | 14 | Who may release or approve through the real Flask routes, and what the legacy `/decide` refuses |
+| Firestore emulator | 13 | `FirestoreStore`'s transactions against the emulator; 11 of the 13 skip unless `FIRESTORE_EMULATOR_HOST` is set, and CI has no emulator job |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **922** | |
+| **Total** | **1,473** | 1,462 pass and 11 skip here (the emulator tests); 57 files |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1571,11 +1693,15 @@ direction that matters — the floor has already decided. Measured, putting thos
 Ultra would cost 13× per call, against a rate that is only 3.3×, for no change in any
 decision.
 
-The debate is the exception. It runs only when the floor and the model disagree by 15
-points or more (measured: 2 calls across 20 cases) and what it emits is not a score
-awaiting override — it is a reasoned CONFIRM or DISAGREE on whether that disagreement can
-be settled without a person. That judgement *is* the outcome, so reasoning capacity is
-load-bearing.
+The debate is the exception. It runs only when the floor exceeds the model's score by 15
+points or more (measured: 2 calls across 20 cases), so by the time it runs auto-clear is
+already impossible and a person will decide the case either way. What it emits is not a
+score awaiting override but a reasoned CONFIRM or DISAGREE on whether the junior analyst
+missed something. CONFIRM changes nothing; a genuine DISAGREE at confidence 0.7 or above
+sends the case to deep investigation on Super and may raise its risk. So Ultra's verdict
+decides whether a disputed case gets investigated — the one hop whose output is a verdict
+on the dispute rather than a score the floor overrides — and reasoning capacity is
+load-bearing there.
 
 **Measured cost, and it is higher than the rate suggests.** Three Ultra debates and two
 Super debates have now run on the live service:
@@ -1806,7 +1932,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        39 files, 922 tests
+├── tests/                        57 files, 1,473 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports

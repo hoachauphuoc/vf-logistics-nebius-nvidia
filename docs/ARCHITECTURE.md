@@ -333,8 +333,8 @@ stateDiagram-v2
     INGESTED --> ESCALATED: skip_ai and auto_reject_by_rules
     INGESTED --> SPECIALISTS_DONE: grey area
 
-    SPECIALISTS_DONE --> AUTO_CLEARED: risk below 40 and auto_clear_permitted
-    SPECIALISTS_DONE --> HELD_FOR_REVIEW: no investigation needed
+    SPECIALISTS_DONE --> AUTO_CLEARED: risk below 40, compliance CLEARED, auto_clear_permitted, no model failure
+    SPECIALISTS_DONE --> HELD_FOR_REVIEW: otherwise, no investigation needed
     SPECIALISTS_DONE --> INVESTIGATED: BLOCKED, REVIEW_REQUIRED, or risk 70 plus
 
     INVESTIGATED --> ESCALATED
@@ -352,6 +352,15 @@ stateDiagram-v2
 
 Any transition whose proposed action the boundary refuses lands in `PENDING_HUMAN`
 instead of its intended state.
+
+The edge to `AUTO_CLEARED` is an allowlist. All four conditions must hold: effective
+risk below 40, a compliance status of exactly `CLEARED`, `auto_clear_permitted` read as
+`is True` (a case with no reconciliation is not consent), and no agent whose output
+failed validation. Until 14 Oct the compliance test was "not `BLOCKED` and not
+`REVIEW_REQUIRED`", so an `UNKNOWN` or off-schema status that reached
+`SPECIALISTS_DONE` unflagged could auto-clear, and we measured that it did. Any status
+other than `CLEARED` now goes to `HELD_FOR_REVIEW` at HIGH priority, with a rationale
+naming the status rather than claiming the risk was above the threshold.
 
 ### Inside the INGESTED transition, the specialists run in parallel
 
@@ -390,7 +399,10 @@ model genuinely rendered, at or above `DEBATE_ESCALATE_CONFIDENCE` (0.7), sends 
 to investigation whatever the floor would have done. A CONFIRM, a low-confidence
 verdict, or a default the loop had to force when the auditor never rendered one
 (`forced: true`, with `forced_reason`) leaves routing to the floor. It can only move a
-case up: nothing the debate says can clear one. `case["debate_effect"]` is written
+case up: nothing the debate says can clear one. Nor could it need to: the debate runs
+only when the floor exceeds the model's score by 15 or more, so the floor is non-zero,
+`auto_clear_permitted` is already false, and a person decides the case either way. What
+the verdict decides is whether that person sees it after a deep investigation. `case["debate_effect"]` is written
 either way, so the case trace says whether the debate changed the route and why.
 
 ### Two naming traps in the state set
@@ -420,8 +432,10 @@ not worth the same, so the mechanism is not symmetric.
 
 Three things a reader should not have to infer:
 
-1. **`auto_clear_permitted` is `floor == 0`, not `floor <= threshold`.** A single
-   MEDIUM finding anywhere blocks auto-clear entirely, however low the model scored.
+1. **`auto_clear_permitted` is `floor == 0` and a stated floor, not `floor <= threshold`.**
+   A single MEDIUM finding anywhere blocks auto-clear entirely, however low the model
+   scored, and a validation that carries no risk floor at all is read as one that did
+   not run: `reconcile()` never permits auto-clear from it.
 2. **A missing model score floors at 50, not 0.** A model outage routes to a human and
    can never release.
 3. **The asymmetry is asserted at runtime, not merely documented.** `validate()`
@@ -453,6 +467,30 @@ demoted. The third is a classifier reply that contradicts itself, calling the go
 inconsistent with the declared heading while naming that same heading; it is shown so
 the reply stays visible and is not acted on.
 
+### The learning loop moves risk up on a name, down only on a verified identity
+
+`orchestrator.shipper_risk_adjustment()` adjusts a scored case's effective risk from how
+people have ruled on the shipper before, after `reconcile()` and clamped at the
+deterministic floor, so it can never take a case below what the rules found. The two
+directions rest on different evidence because they fail differently:
+
+- **+15 after two human blocks.** This may key on the free-text `shipper_name` (and also
+  fires on two blocks of a verified identity). Raising risk is always safe; a wrong name
+  match costs a review.
+- **−10 after five human releases**, only for a shipper whose identity
+  `shipper_registry` verified (tax ID and company name matching one entry in the
+  counterparty book), counting only human releases of that same verified counterparty.
+  Keyed on the name, as it was until 14 Oct, a document could borrow any shipper's
+  clean history by typing its name, and the discount can carry a borderline score under
+  the auto-clear threshold. In practice the discount is available only to
+  counterparties in the internal book.
+
+The tallies are read fresh from the store on every scored case. The cache in front of
+them is dropped by whichever process records a human decision, but only in that
+process, so another Cloud Run instance could miss a second block's +15 for up to the
+cache's 30 s TTL. A keying bug in that cache, where a loop variable rebound the tenant
+key so the tallies were filed under the last shipper scanned, was fixed at the same time.
+
 ---
 
 ## Delegated authority
@@ -471,6 +509,13 @@ draft_sar          notify_webhook  publish_decision
   denial rather than continuing. It has to: `publish_decision` runs last, and letting
   the loop continue once announced `outcome: AUTO_CLEARED` on the decisions topic for
   a shipment the boundary had just refused to release.
+- **The shipment's side of a release fails closed the way the grant's side does.**
+  `_check_release` refuses a release when the deterministic finding count is missing
+  (absent is not zero), when the declared value is absent, unreadable, NaN or
+  negative (it used to read as 0, which passes any value ceiling), or when the
+  destination is blank or a placeholder while the boundary lists excluded
+  destinations (a blank destination contains no excluded name, and the verifier does
+  not flag it).
 - **Two triggers no boundary can waive:** `injection_detected` and
   `forbidden_field_attempted`.
 - **`draft_sar` is `may_draft` and never `may_file`.** The tool sets
@@ -823,7 +868,8 @@ An architecture document that omits these is marketing.
   backend-independent and is tested end to end (`tests/test_membership.py`). The
   Firestore transactions behind boundary publish/revoke and the sign-in ledger are
   exercised against the emulator in `tests/test_firestore_emulator.py`, which is skipped
-  unless `FIRESTORE_EMULATOR_HOST` is set.
+  unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so `store.py`, which
+  holds the production backend, sits at 53% line coverage while the package is at 84.6%.
 - **Concurrent publishes in one tenant queue.** Publish and revoke are one Firestore
   transaction on the tenant's `boundary_counters` document, retried as a whole on
   contention. Against the emulator six simultaneous publishes all succeeded with distinct

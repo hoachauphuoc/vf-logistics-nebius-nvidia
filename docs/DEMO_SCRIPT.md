@@ -48,18 +48,23 @@ its cut.
 
 | Clip | Scene | Length | Screen |
 |---|---|---|---|
-| 1 | The problem: two identical shipments | 15s | Today `/today` showing two plywood cases held |
-| 2 | What is missing and why it matters | 10s | Case page `/cases/[id]` with ORIGIN_INPUTS_UNVERIFIED finding |
-| 3 | AI requests the right documents | 15s | Case page: click "Request evidence", show the HMAC link, name Nemotron |
-| 4 | Evidence received and reconciled | 15s | `/respond/[token]` upload page, then case timeline shows document received |
-| 5 | Re-evaluation: clarified vs contradicted | 15s | Case page: re-evaluate, timeline shows clarified/unresolved/contradictions |
-| 6 | Case A: approved and executed | 15s | Case A: approve release (password), execute, Pub/Sub message_id |
-| 7 | Case B: contradiction holds it for review | 15s | Case B: re-evaluate shows contradiction, floor raised, stays ESCALATED |
-| 8 | Stale approval blocked | 15s | Case A: submit new evidence, old approval SUPERSEDED, execute refused |
-| 9 | Results and measurement | 15s | Outcomes `/outcomes`: resolved, cost, rounds, 0 improper executions |
-| 10 | The stack: Nebius Token Factory and NVIDIA | 10s | Agents `/agents` page, name Nebius Token Factory and Nemotron aloud |
-| 11 | Close: what Floorline does for the operator | 10s | Today `/today` with cleared cases, closing statement |
+| 1 | The problem | 17s | Pipeline `/` |
+| 2 | A real document | 10s | DevOps `/devops` → *Upload a document* |
+| 3 | The design rule | 21s | Agent Console `/agents` |
+| 4 | The floor overrules the model | 19s | Pipeline → an escalated case → trace sheet, the three risk rows and the veto note |
+| 5 | Live evidence | 10s | Same sheet, scrolled to *Live evidence* |
+| 6 | The review queue | 12s | Review `/review` |
+| 7 | The dossier | 14s | Review → *Due-diligence dossier (PDF)* → the PDF in a new tab |
+| 8 | The delegation boundary | 24s | Governance `/governance` |
+| 9 | Prompt injection blocked | 14s | Review → the blocked case |
+| 10 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
+| 11 | Close | 16s | Evaluation `/evaluation` → *Public enforcement cases*, then Pipeline `/` |
 | | | **165s** | |
+
+This table follows `SCENES`. On 13 Oct it was replaced by an eleven-clip plan built around
+the verification loop (`git show 30469d9 -- docs/DEMO_SCRIPT.md`), whose lengths sum to
+150s and which neither `SCENES` nor the clip sections below carry yet, so the sync check
+failed on it. If that plan is adopted, `SCENES` comes first and this table follows it.
 
 ### What changed on 10/10, and why
 
@@ -367,10 +372,15 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 ## Clip 10 — Tests and CI (2:21 → 2:29, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on `922 passed`. Then the GitHub
-Actions run page for `master`, with five green jobs visible.
+tail of a real run — `python -m pytest tests/ -q` ending on its `passed` line. Then the
+GitHub Actions run page for `master`, with five green jobs visible.
 
 > 922 tests pass at 81 percent coverage, and CI runs them on every push.
+
+**The spoken count is stale.** As of 14 Oct the suite ends on `1462 passed, 11 skipped` at
+84.6% line coverage, so the line above would contradict the terminal it plays over. It is
+left as it is here because it is copied from `SCENES` in `scripts/build_narration.py`;
+change both together, and rerun the budget check, before the TTS run.
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight

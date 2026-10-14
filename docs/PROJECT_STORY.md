@@ -110,10 +110,15 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
   `MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE` in `config.py`, which refuses a runtime
   switch that would raise the rate past a multiple of the cheapest model.
 - **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — the auto-debate, and the
-  only place Ultra is used. It fires without anyone asking when the deterministic
-  floor and the model disagree by 15 points or more. Everywhere else a stronger
-  model cannot change the outcome, because the floor has already decided; here the
-  CONFIRM-or-DISAGREE *is* the outcome, so reasoning capacity is load-bearing.
+  only place Ultra is used. It fires without anyone asking, and only when the
+  deterministic floor exceeds the model's score by 15 points or more. Everywhere else a
+  stronger model cannot change the outcome, because the floor has already decided. By
+  the time the debate runs, auto-clear is already off the table and a person decides
+  the case either way; what Ultra's verdict decides is whether the dispute gets a deep
+  investigation on Super. CONFIRM changes
+  nothing, and a genuine DISAGREE at confidence 0.7 or above sends the case there. It is
+  the one hop whose output is a verdict on the dispute rather than a score the floor
+  overrides, so reasoning capacity is load-bearing.
 - **MiniCPM-V 4.5** — document intake. NVIDIA has no vision model on Token
   Factory, so this is the one non-NVIDIA model in the pipeline. Unlike the PDF
   path we started with, it needs a rasterisation stage in front of it:
@@ -184,8 +189,9 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 922 backend
-tests and 146 frontend tests.
+test file, and it drives a deployed service over HTTP. There are now 1,462 backend
+tests passing (11 more need a Firestore emulator and skip without one) and 328 frontend
+tests.
 
 ## Challenges we ran into
 
@@ -337,15 +343,30 @@ worked examples made it *worse* — 26.7% and 33.3% — because they taught it c
 rather than classification. Asking it to reason before answering changed little. What
 fixed it was neither prompting nor a bigger model: it was giving it the published
 contents of the real HS headings to check against, which took recall to **92.9%** on
-the pairs and **91.7%** with no false alarms on the holdout, whose substitutions the
-reference never mentions. The lesson we would keep is that a retrieval problem
-dressed as a reasoning problem does not respond to examples.
+the pairs and **91.7%** on the holdout, whose substitutions the reference never
+mentions, with no false alarms. Those are small numbers, and we should say how small:
+11 of 12 evasions caught, 0 of 12 honest cases flagged, so the 95% interval on that
+recall runs from 64% to 99% and the false-alarm rate could still be as high as about
+24%. The lesson we would keep is that a retrieval problem dressed as a reasoning
+problem does not respond to examples.
 
 The detection benchmark came later and was less flattering. On a held-out half of a
 1,000-case synthetic corpus, the deterministic rules held **76.7%** of clean shipments
 for a person. Two signals that separated nothing were demoted to context, chosen on
 the other half only, and that figure fell to **38.4%** with detection of the sanctions
-and shell-company attacks unchanged. It is still high, and we say so.
+and shell-company attacks unchanged. It is still high, and we say so: at 0.2% fraud,
+the 2024 Vietnam customs rate, that is about 206 shipments held per real fraud case,
+where customs' own targeting holds about 19.
+
+We then tried to bring it down further and could not do it honestly. On the dev half the
+remaining false positives trace to four findings, a first-time shipper the largest. Five
+candidate changes were measured there and all five rejected — four could not be defended
+in compliance terms or keyed on how our generator builds cases, one lost recall — so the
+holdout was never consulted and the verifier is unchanged. The biggest lever left,
+counting a first-time shipper only as corroboration, would take dev's false-positive rate
+from 35.1% to 21.9% with no recall lost on the corpus, and would release new
+counterparties' first shipments unreviewed. That is
+a policy choice for whoever runs the desk, not one for us to make in a threshold.
 
 And the failure modes are legible. When Model Armor was returning 403, the system
 told us so in the response body instead of pretending. We would rather ship
@@ -409,6 +430,7 @@ three-document request, reevaluate reopening concluded cases, empty extractions
 counted as evidence, the legacy API bypassing the new policy, and the UI not connected
 to the new endpoints -- were fixed in the same sprint.
 
-The result: 1,183 tests, 0 improper executions on a 7-case evaluation corpus, three
+The result: a suite that now stands at 1,462 backend tests, 0 improper executions on a
+7-case evaluation corpus, three
 operator screens, a public upload page for shippers, and a lineage record that carries
 the evidence version and approval through to the audit trail.
