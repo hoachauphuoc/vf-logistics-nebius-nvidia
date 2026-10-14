@@ -19,6 +19,7 @@ Class names use the `Test*` prefix: see test_console_session.py for why.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 import types
@@ -151,11 +152,20 @@ class TestArchiveRoundTrip(_ArchiveCase):
 
     def test_evidence_goes_under_its_own_prefix(self):
         """
-        Evidence responses are archived under evidence/<request>, outside the
-        intake archive the bucket sweep skips (orchestrator.ARCHIVE_PREFIX).
+        Evidence responses are archived under evidence/<request>, beside the
+        intake archive; both are system prefixes no sweep ingests.
         """
         receipt = self.archive(prefix="evidence/REQ-7")
         self.assertTrue(receipt["uri"].startswith(f"gs://{BUCKET}/evidence/REQ-7/"))
+
+    def test_single_tenant_layout_is_unchanged_when_the_tenant_is_named(self):
+        """The implicit tenant gets no segment: existing buckets keep their layout."""
+        with patch.dict(os.environ, {"MULTI_TENANT": "false"}):
+            receipt = self.archive(case_id="CASE-SHP-9", filename="invoice.pdf", tenant_id="default")
+        self.assertRegex(
+            receipt["uri"],
+            rf"^gs://{BUCKET}/shipping-documents/\d{{4}}/\d{{2}}/\d{{2}}/CASE-SHP-9/invoice\.pdf$",
+        )
 
     def test_a_filename_cannot_climb_out_of_its_case_folder(self):
         """
@@ -272,6 +282,142 @@ class TestUnconfiguredArchive(_ArchiveCase):
             document_store.status(),
             {"bucket": None, "configured": False, "client_error": None},
         )
+
+
+ACME = "acme-freight"
+GLOBEX = "globex-logistics"
+
+
+class _MultiTenantCase(_ArchiveCase):
+    def setUp(self):
+        super().setUp()
+        env = patch.dict(os.environ, {"MULTI_TENANT": "true"})
+        env.start()
+        self.addCleanup(env.stop)
+
+
+class TestTenantLayout(_MultiTenantCase):
+    """
+    One bucket serves every tenant, so under MULTI_TENANT every object name
+    carries its tenant. Without it, two tenants archiving the same shipment id
+    and filename on the same day write one object, and the first tenant's
+    reviewer is served the second tenant's paperwork.
+    """
+
+    def test_two_tenants_with_the_same_case_and_filename_write_two_objects(self):
+        acme = self.archive(data=b"acme bill", case_id="CASE-SHP-1", filename="BL.pdf", tenant_id=ACME)
+        globex = self.archive(data=b"globex bill", case_id="CASE-SHP-1", filename="BL.pdf", tenant_id=GLOBEX)
+
+        self.assertNotEqual(acme["uri"], globex["uri"])
+        self.assertEqual(_run(document_store.fetch(acme["uri"]))[0], b"acme bill")
+        self.assertEqual(_run(document_store.fetch(globex["uri"]))[0], b"globex bill")
+
+    def test_originals_and_evidence_are_filed_under_the_tenant(self):
+        original = self.archive(case_id="CASE-SHP-9", filename="invoice.pdf", tenant_id=ACME)
+        self.assertRegex(
+            original["uri"],
+            rf"^gs://{BUCKET}/tenants/{ACME}/shipping-documents/"
+            rf"\d{{4}}/\d{{2}}/\d{{2}}/CASE-SHP-9/invoice\.pdf$",
+        )
+        evidence = self.archive(prefix="evidence/evreq-1", tenant_id=ACME)
+        self.assertTrue(evidence["uri"].startswith(f"gs://{BUCKET}/tenants/{ACME}/evidence/evreq-1/"))
+
+    def test_no_tenant_or_a_malformed_one_writes_nothing(self):
+        """Fails closed: there is no shared root to fall back to."""
+        for bad in (None, "", "../" + GLOBEX, f"{ACME}/../{GLOBEX}", f"tenants/{GLOBEX}", "acme freight"):
+            with self.subTest(tenant_id=bad):
+                receipt = self.archive(tenant_id=bad)
+                self.assertFalse(receipt["archived"])
+                self.assertNotIn("uri", receipt)
+        self.assertEqual(self.gcs.objects, {})
+
+    def test_a_case_id_cannot_climb_out_of_its_segment(self):
+        """
+        The case id is derived from the shipment id a document states about itself,
+        so it is kept to one segment like the filename.
+        """
+        receipt = self.archive(case_id=f"CASE-x/../../../../{GLOBEX}/inbox", tenant_id=ACME)
+
+        object_name = receipt["uri"].split(f"gs://{BUCKET}/", 1)[1]
+        segments = object_name.split("/")
+        self.assertEqual(segments[:3], ["tenants", ACME, "shipping-documents"])
+        self.assertEqual(len(segments), 8, object_name)
+        self.assertNotIn("..", segments)
+
+    def test_a_uri_stored_before_the_tenant_segment_still_reads(self):
+        """Stored URIs are opaque: cases archived under the old layout stay reviewable."""
+        self.gcs.objects[(BUCKET, "shipping-documents/2026/01/02/CASE-OLD/BL.pdf")] = (b"old", "application/pdf")
+        uri = f"gs://{BUCKET}/shipping-documents/2026/01/02/CASE-OLD/BL.pdf"
+        self.assertEqual(_run(document_store.fetch(uri)), (b"old", "application/pdf"))
+
+
+class TestWhatAStagedObjectMayBeIngestedAs(_MultiTenantCase):
+    """
+    The bucket sweep and the storage-event route ingest an object into the
+    caller's board. Under MULTI_TENANT that is only right for an object in the
+    caller's own space, and never for the service's own output in anyone's.
+    """
+
+    def refusal(self, name, tenant_id=ACME, bucket=BUCKET):
+        return document_store.ingest_refusal(bucket, name, tenant_id)
+
+    def test_the_callers_own_staged_object_is_ingestible(self):
+        self.assertIsNone(self.refusal(f"tenants/{ACME}/inbox/a.pdf"))
+        self.assertIsNone(self.refusal(f"tenants/{ACME}/a.pdf"))
+
+    def test_objects_outside_the_callers_space_are_refused(self):
+        for name in (
+            f"tenants/{GLOBEX}/inbox/b.pdf",
+            f"tenants/{ACME}-x/inbox/b.pdf",       # a tenant id that extends the caller's
+            "inbox/legacy.pdf",                    # no tenant can be established
+            "evidence/evreq-2/2026/10/14/CASE-2/cert.pdf",
+            "shipping-documents/2026/10/14/CASE-3/BL.pdf",
+            f"tenants/{GLOBEX}/evidence/evreq-1/2026/10/14/CASE-1/cert.pdf",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNotNone(self.refusal(name))
+
+    def test_the_callers_own_system_output_is_refused(self):
+        for name in (
+            f"tenants/{ACME}/shipping-documents/2026/10/14/CASE-1/BL.pdf",
+            f"tenants/{ACME}/evidence/evreq-1/2026/10/14/CASE-1/cert.pdf",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNotNone(self.refusal(name))
+
+    def test_dot_segments_and_folders_are_refused(self):
+        """
+        GCS names are literal, but tools that show them as paths resolve "..",
+        so a name with one has no unambiguous owner.
+        """
+        for name in (
+            f"tenants/{ACME}/../{GLOBEX}/inbox/b.pdf",
+            f"tenants/{ACME}/inbox/../../{GLOBEX}/inbox/b.pdf",
+            f"tenants/{ACME}/./inbox/a.pdf",
+            f"tenants/{ACME}/inbox/",
+            "",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNotNone(self.refusal(name))
+
+    def test_another_bucket_or_no_tenant_is_refused(self):
+        self.assertIsNotNone(self.refusal(f"tenants/{ACME}/inbox/a.pdf", bucket="someone-elses-bucket"))
+        self.assertIsNotNone(self.refusal(f"tenants/{ACME}/inbox/a.pdf", tenant_id=None))
+        self.assertIsNotNone(self.refusal(f"tenants/{ACME}/inbox/a.pdf", tenant_id="../" + ACME))
+
+    def test_single_tenant_skips_only_the_services_own_output(self):
+        with patch.dict(os.environ, {"MULTI_TENANT": "false"}):
+            self.assertIsNone(self.refusal("inbox/a.pdf", tenant_id=None))
+            self.assertIsNone(self.refusal("a.pdf", tenant_id="default"))
+            for name in (
+                "shipping-documents/2026/10/14/CASE-1/BL.pdf",
+                # An evidence upload read as a new shipment would open a case
+                # nobody submitted.
+                "evidence/evreq-1/2026/10/14/CASE-1/cert.pdf",
+                f"tenants/{ACME}/evidence/evreq-1/2026/10/14/CASE-1/cert.pdf",
+            ):
+                with self.subTest(name=name):
+                    self.assertIsNotNone(self.refusal(name, tenant_id=None))
 
 
 if __name__ == "__main__":

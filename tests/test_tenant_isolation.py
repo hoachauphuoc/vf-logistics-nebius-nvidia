@@ -27,13 +27,18 @@ tests and crashed in production. The parity test makes that state unreachable.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
+import json
 import os
+import sys
 import unittest
 from unittest.mock import patch
 
 os.environ.setdefault("STORE_BACKEND", "memory")
 
+sys.path.insert(0, os.path.dirname(__file__))
+from test_document_store import FakeGcs  # noqa: E402
 from vf_logistics import store as store_mod  # noqa: E402
 from vf_logistics import tenant  # noqa: E402
 from vf_logistics.store import (  # noqa: E402
@@ -627,6 +632,166 @@ class ReviewActionIsolationTests(unittest.TestCase):
         result = _run(orchestrator.deep_review("CASE-A1", tenant_id=TENANT_B))
         self.assertFalse(result["ok"])
         self.assertEqual("case not found", result["error"])
+
+
+class SharedBucketIsolationTests(unittest.TestCase):
+    """
+    The document bucket is one bucket for every tenant, so isolation there is a
+    matter of object names, not of the store's tenant filter.
+
+    Written from the attacker's side like the rest of this file: tenant A stages,
+    sweeps or archives, and the assertion is that nothing of tenant B's reaches A
+    -- not B's paperwork through a colliding object name, and not B's staged files
+    or evidence through a sweep of a prefix A chose.
+    """
+
+    BUCKET = "shared-documents"
+
+    def setUp(self):
+        from vf_logistics import document_store, orchestrator
+
+        self.env = patch.dict(os.environ, {
+            "MULTI_TENANT": "true",
+            "STORE_BACKEND": "memory",
+            "IAP_ENABLED": "false",
+            # Only so app.py's import-time registry guard passes if this class is
+            # the first to import it; requests here authenticate via _auth_as.
+            "VF_TENANT_MEMBERS": json.dumps({"service": {TENANT_A: "operator"}}),
+        })
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+        self.store = MemoryStore()
+        for p in (
+            patch.object(store_mod, "_store", self.store),
+            patch.object(document_store, "BUCKET", self.BUCKET),
+            patch.object(document_store, "_client", FakeGcs()),
+            patch.object(document_store, "_client_error", None),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+        self.gcs = document_store._client
+
+        # Intake is the model call; what matters here is which objects reach it,
+        # and for which tenant.
+        self.ingested: list[tuple[bytes, str | None]] = []
+
+        async def fake_ingest_document(data, filename, mime_type=None, tenant_id=None):
+            self.ingested.append((data, tenant_id))
+            return {"accepted": True, "blocked": False, "case_id": f"CASE-DOC-{len(self.ingested)}"}
+
+        ingest = patch.object(orchestrator, "ingest_document", fake_ingest_document)
+        ingest.start()
+        self.addCleanup(ingest.stop)
+
+    def stage(self, *names: str) -> None:
+        for name in names:
+            self.gcs.objects[(self.BUCKET, name)] = (name.encode(), "application/pdf")
+
+    def test_the_same_shipment_in_two_tenants_cannot_replace_the_first_ones_document(self):
+        """
+        An object filed by case id and date alone is one object for every tenant
+        with that shipment id. The archive is written before the case, so B's
+        bill of lading replaced A's whether or not the store then accepted B's
+        case, and A's reviewer was served B's shipment.
+        """
+        from vf_logistics import document_store, orchestrator
+
+        def render(shipment, case_id, source):
+            return f"bill of lading for {shipment['shipper_company']}".encode()
+
+        with patch.object(orchestrator.document_render, "render_bill_of_lading", render):
+            _run(orchestrator.ingest_shipment(
+                {"shipment_id": "SHP-1", "shipper_company": "Acme"}, tenant_id=TENANT_A,
+            ))
+            # Case ids are not tenant-scoped, so this backend refuses B's case;
+            # what is asserted is what B's attempt left behind in the bucket.
+            with contextlib.suppress(tenant.TenantError):
+                _run(orchestrator.ingest_shipment(
+                    {"shipment_id": "SHP-1", "shipper_company": "Globex"}, tenant_id=TENANT_B,
+                ))
+
+        case = _run(self.store.get_case("CASE-SHP-1", tenant_id=TENANT_A))
+        data, _ = _run(document_store.fetch(case["provenance"]["uri"]))
+        self.assertEqual(data, b"bill of lading for Acme")
+        self.assertEqual(
+            {data for data, _ in self.gcs.objects.values()},
+            {b"bill of lading for Acme", b"bill of lading for Globex"},
+        )
+
+    def test_a_sweep_ingests_only_the_callers_own_staged_objects(self):
+        """
+        Finding (c): the sweep skipped only shipping-documents/, so a prefix of
+        the caller's choosing reached every tenant's staging and evidence.
+        """
+        from vf_logistics import orchestrator
+
+        own = f"tenants/{TENANT_A}/inbox/a.pdf"
+        self.stage(
+            own,
+            f"tenants/{TENANT_B}/inbox/b.pdf",
+            f"tenants/{TENANT_B}/evidence/evreq-1/2026/10/14/CASE-1/cert.pdf",
+            f"tenants/{TENANT_A}/evidence/evreq-2/2026/10/14/CASE-2/cert.pdf",
+            f"tenants/{TENANT_A}/shipping-documents/2026/10/14/CASE-3/BL.pdf",
+            "evidence/evreq-3/2026/10/14/CASE-4/cert.pdf",
+            "shipping-documents/2026/10/14/CASE-5/BL.pdf",
+            "inbox/legacy.pdf",
+        )
+
+        for prefix in (
+            "evidence/", "", "tenants/", f"tenants/{TENANT_B}/",
+            f"../{TENANT_B}/", f"tenants/{TENANT_A}/../{TENANT_B}/", "inbox/",
+        ):
+            _run(orchestrator.sweep_bucket(prefix, 25, tenant_id=TENANT_A))
+
+        self.assertEqual(self.ingested, [(own.encode(), TENANT_A)])
+
+    def test_the_storage_event_route_ingests_only_the_callers_own_objects(self):
+        from flask import g
+
+        from vf_logistics import app as app_mod
+        from vf_logistics import auth
+
+        ctx = _auth_as(TENANT_A)
+
+        def _authenticated() -> None:
+            g.auth_context = ctx
+            return None
+
+        authn = patch.object(auth, "authenticate_request", _authenticated)
+        authn.start()
+        self.addCleanup(authn.stop)
+        limiter_was = app_mod.limiter.enabled
+        app_mod.limiter.enabled = False
+        self.addCleanup(setattr, app_mod.limiter, "enabled", limiter_was)
+        client = app_mod.app.test_client()
+
+        def notify(name: str, bucket: str = self.BUCKET):
+            envelope = {"message": {"attributes": {"bucketId": bucket, "objectId": name}}}
+            response = client.post("/api/v1/events/storage", json=envelope)
+            self.assertEqual(response.status_code, 200)
+            return response.get_json()
+
+        own = f"tenants/{TENANT_A}/inbox/a.pdf"
+        foreign = (
+            (f"tenants/{TENANT_B}/inbox/b.pdf", self.BUCKET),
+            (f"tenants/{TENANT_B}/evidence/evreq-1/2026/10/14/CASE-1/cert.pdf", self.BUCKET),
+            ("evidence/evreq-3/2026/10/14/CASE-4/cert.pdf", self.BUCKET),
+            ("inbox/legacy.pdf", self.BUCKET),
+            (f"tenants/{TENANT_A}/../{TENANT_B}/inbox/b.pdf", self.BUCKET),
+            (f"tenants/{TENANT_A}/evidence/evreq-2/2026/10/14/CASE-2/cert.pdf", self.BUCKET),
+            (own, "someone-elses-bucket"),
+        )
+        self.stage(own, *(name for name, _ in foreign))
+        self.gcs.objects[("someone-elses-bucket", own)] = (b"not ours", "application/pdf")
+
+        for name, bucket in foreign:
+            with self.subTest(name=name, bucket=bucket):
+                self.assertTrue(notify(name, bucket).get("ignored"))
+        self.assertEqual(self.ingested, [])
+
+        notify(own)
+        self.assertEqual(self.ingested, [(own.encode(), TENANT_A)])
 
 
 class PrefilterRuleIsolationTests(unittest.TestCase):

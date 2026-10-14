@@ -95,10 +95,6 @@ from vf_logistics.store import (
 
 log = logging.getLogger(__name__)
 
-# Objects the service writes itself. Notifications for this prefix are ignored,
-# or the pipeline would process its own archived output in a loop.
-ARCHIVE_PREFIX = "shipping-documents/"
-
 # --- Decision thresholds. Env-overridable so the policy is not buried in code.
 FRAUD_CLEAR_BELOW = int(os.getenv("FRAUD_CLEAR_BELOW", "40"))
 INVESTIGATE_AT = int(os.getenv("INVESTIGATE_AT", "70"))
@@ -360,7 +356,7 @@ async def ingest_shipment(
         if rendered:
             filename = f"{shipment_id}-bill-of-lading.pdf"
             receipt = await document_store.archive(
-                rendered, filename, "application/pdf", case_id
+                rendered, filename, "application/pdf", case_id, tenant_id=tenant_id,
             )
             case["provenance"] = {
                 **case["provenance"],
@@ -450,7 +446,8 @@ async def ingest_document(
             tenant_id=tenant_id,
         )
         receipt = await document_store.archive(
-            document_bytes, filename, mime_type or "application/pdf", case["case_id"]
+            document_bytes, filename, mime_type or "application/pdf", case["case_id"],
+            tenant_id=tenant_id,
         )
         case["provenance"] = {"filename": filename, **receipt}
         case["input_security"] = {"model_armor": pre_screen, "model_invoked": False}
@@ -526,6 +523,7 @@ async def ingest_document(
         filename,
         response.get("source_mime", "application/pdf"),
         case_id,
+        tenant_id=tenant_id,
     )
 
     intake_step = {
@@ -1745,7 +1743,16 @@ async def sweep_bucket(
 
     Objects whose case already exists are skipped rather than reprocessed, which
     is what makes repeated sweeps safe to run.
+
+    Under MULTI_TENANT the prefix is read inside the caller's own space
+    (tenants/<tenant_id>/), so "inbox/" sweeps that tenant's inbox. The listing
+    is narrowed that way for efficiency only; each object is still checked by
+    ingest_refusal(), which is what keeps other tenants' objects and the
+    service's own output out of this board whatever prefix was asked for.
     """
+    root = document_store.tenant_root(tenant_id)
+    if not prefix.startswith(root):
+        prefix = root + prefix
     names = await document_store.list_objects(prefix, limit * 3)
     store = get_store()
 
@@ -1755,7 +1762,7 @@ async def sweep_bucket(
     for name in names:
         if len(processed) >= limit:
             break
-        if name.startswith(ARCHIVE_PREFIX) or name.endswith("/"):
+        if document_store.ingest_refusal(document_store.BUCKET, name, tenant_id):
             continue
 
         marker = await store.get_case(
@@ -1803,7 +1810,15 @@ async def ingest_from_storage(
     The marker is tenant-scoped along with everything else, which means two
     tenants staging the same object path each get their own marker rather than
     the second silently seeing the first's as a duplicate and processing nothing.
+
+    Refuses, before reading anything, an object that does not belong in this
+    tenant's board (see document_store.ingest_refusal). Both callers check
+    first; this is the check that cannot be skipped by a third.
     """
+    refusal = document_store.ingest_refusal(bucket, name, tenant_id)
+    if refusal:
+        return {"accepted": False, "ignored": True, "reason": refusal}
+
     store = get_store()
     marker_id = f"CASE-DOCOBJ-{_object_key(name)}"
 

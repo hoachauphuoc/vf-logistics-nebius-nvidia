@@ -9,6 +9,12 @@ paperwork it was based on.
 Degrades gracefully: if the bucket is missing or the service account cannot
 write, ingestion still proceeds and the case records why the archive failed.
 Losing the archive should not lose the shipment.
+
+One bucket serves every tenant. Under MULTI_TENANT every object the service
+writes, and every object it will ingest, lives under tenants/<tenant_id>/ --
+otherwise two tenants archiving the same shipment id and filename on the same
+day write one object, and a sweep has no way to tell whose file it is reading.
+With multi-tenancy off the layout has no tenant segment, as it always had.
 """
 
 from __future__ import annotations
@@ -18,9 +24,19 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from vf_logistics import tenant
 from vf_logistics.config import gcp_project
 
 BUCKET = os.getenv("DOCUMENT_BUCKET", "").strip()
+
+TENANTS_PREFIX = "tenants/"
+
+# What the service writes into its own space. Never ingested as new intake:
+# the archive would run back through the pipeline forever, and an evidence
+# upload read as a shipment opens a case nobody submitted.
+ARCHIVE_PREFIX = "shipping-documents/"
+EVIDENCE_PREFIX = "evidence/"
+SYSTEM_PREFIXES = (ARCHIVE_PREFIX, EVIDENCE_PREFIX)
 
 _client = None
 _client_error: str | None = None
@@ -41,9 +57,54 @@ def _get_client():
     return _client
 
 
+def tenant_root(tenant_id: str | None) -> str:
+    """
+    The object-name prefix a tenant's objects live under.
+
+    Empty with multi-tenancy off. With it on, tenant.resolve() raises rather than
+    returning a shared root when the tenant is absent or malformed, and a valid id
+    has no "/" or "." in it, so the segment cannot be escaped.
+    """
+    if not tenant.multi_tenant_enabled():
+        return ""
+    return f"{TENANTS_PREFIX}{tenant.resolve(tenant_id)}/"
+
+
+def ingest_refusal(bucket: str | None, name: str, tenant_id: str | None) -> str | None:
+    """
+    Why a staged object may not be ingested into this tenant's board, or None.
+
+    Fails closed: under MULTI_TENANT an object is ingested only when its name puts
+    it in the caller's own space in the document bucket. An object whose tenant
+    cannot be established -- another bucket, a name outside tenants/ -- is refused
+    rather than attributed to whoever asked.
+    """
+    if not name or name.endswith("/"):
+        return "not a document object"
+    # GCS names are literal, but tools that present them as paths resolve these,
+    # so a name containing one has no unambiguous location to judge it by.
+    if any(segment in (".", "..") for segment in name.split("/")):
+        return "dot segment in object name"
+    try:
+        root = tenant_root(tenant_id)
+    except tenant.TenantError:
+        return "no tenant to ingest into"
+    if root:
+        if not BUCKET or bucket != BUCKET:
+            return "not the document bucket"
+        if not name.startswith(root):
+            return "outside the caller's tenant"
+    rest = name
+    if rest.startswith(TENANTS_PREFIX):
+        rest = rest[len(TENANTS_PREFIX):].partition("/")[2]
+    if rest.startswith(SYSTEM_PREFIXES):
+        return "own archive output"
+    return None
+
+
 async def archive(
     document_bytes: bytes, filename: str, mime_type: str, case_id: str,
-    prefix: str = "shipping-documents",
+    prefix: str = ARCHIVE_PREFIX.rstrip("/"), tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Upload the original document. Returns a receipt, never raises."""
     if not BUCKET:
@@ -52,13 +113,21 @@ async def archive(
             "reason": "DOCUMENT_BUCKET not configured",
         }
 
+    try:
+        root = tenant_root(tenant_id)
+    except tenant.TenantError as exc:
+        return {"archived": False, "reason": f"TenantError: {exc}"}
+
     client = _get_client()
     if client is None:
         return {"archived": False, "reason": _client_error or "storage client unavailable"}
 
     stamp = datetime.now(timezone.utc).strftime("%Y/%m/%d")
     safe_name = os.path.basename(filename or "document")
-    blob_name = f"{prefix}/{stamp}/{case_id}/{safe_name}"
+    # The case id comes from the shipment id a document states about itself, so
+    # it is held to one segment like the filename.
+    safe_case = case_id.replace("/", "_")
+    blob_name = f"{root}{prefix}/{stamp}/{safe_case}/{safe_name}"
 
     def _upload() -> None:
         bucket = client.bucket(BUCKET)
