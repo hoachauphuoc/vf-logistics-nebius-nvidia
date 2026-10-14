@@ -22,6 +22,12 @@ no nudging on the timeline.
 The narration text in this file is copied from `SCENES` in that script. **If you change one,
 change both** — and the script is the authority, because it is what produces the audio.
 
+**Regenerate the audio before upload.** The clip 3 and clip 10 lines were corrected on
+14 Oct and have not been synthesised since: synthesis needs Google TTS credentials that were
+not available where the text was changed. Any `build/narration.wav` or `build/narration.srt`
+rendered before then speaks the old lines, so render both again from the current `SCENES`
+(see *Regenerating the narration*) and cut the video against the new track.
+
 That instruction used to be the only thing keeping the two in step, which is how the old
 version ended up with a clip heading that started at 0:49 while the clip before it also
 ended at 1:11. There is now a check:
@@ -90,10 +96,10 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 922 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
-  summarised — a judge scoring Technological Implementation had to read the repository to
-  find any of it. Clip 5 also carries the **Tavily bonus award**, which the old script
-  showed nowhere at all.
+  on camera.** 1,462 backend and 328 frontend tests, a measured HS recall of 91.7% on a
+  holdout, citations reproduced rather than summarised — a judge scoring Technological
+  Implementation had to read the repository to find any of it. Clip 5 also carries the
+  **Tavily bonus award**, which the old script showed nowhere at all.
 - **Clip 3 now states the design rule instead of the cost.** It used to justify Nano on
   price, which is the framing the README spends a thousand lines correcting: the floor is
   why Nano is *correct* on those hops, not why it is cheap. It also used to say spend was
@@ -237,12 +243,19 @@ calls while Nano has many calls and little cost.
 
 > Floorline runs on NVIDIA Nemotron 3, through Nebius Token Factory. Rules set a risk floor
 > an agent may raise, never lower. So fraud and compliance run on Nano: a stronger model
-> cannot change it. Ultra runs one hop, the debate, where its verdict is the answer.
+> cannot change it. Ultra runs only the debate, where its verdict can trigger an
+> investigation.
 
 This is the clip that earns *Quality of the Idea*, and the argument is the one thing in the
 submission a judge is unlikely to have seen before: **model capacity is spent only where it
-can change the answer.** The card is the evidence — cheap model on the high-volume hops,
-expensive model on the one hop whose output the floor does not override.
+can change what happens to a case.** The card is the evidence — cheap model on the
+high-volume hops, expensive model on the one hop whose output is a verdict on the dispute
+rather than a score the floor overrides.
+
+The last sentence says *can trigger* on purpose. The debate runs only when the floor exceeds
+the model's score by 15 or more, so auto-clear is already ruled out and a person decides the
+case either way. CONFIRM changes nothing; a genuine DISAGREE at confidence 0.7 or above
+sends the case to deep investigation and may raise its risk, never lower it.
 
 **Do not improvise a total.** Say what is on screen. A viewer can read the figures, and a
 number said loosely is a number they will check.
@@ -372,15 +385,24 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 ## Clip 10 — Tests and CI (2:21 → 2:29, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on its `passed` line. Then the
-GitHub Actions run page for `master`, with five green jobs visible.
+tail of a real run — `PYTHONPATH=src python -m pytest tests/ -q --cov=vf_logistics`, so
+the coverage table's `TOTAL` row sits just above the `1462 passed, 11 skipped` line. Then
+the GitHub Actions run page for `master`, with five green jobs visible.
 
-> 922 tests pass at 81 percent coverage, and CI runs them on every push.
+> Over fourteen hundred passing tests, nearly eighty-five percent coverage, and CI on every
+> push to master.
 
-**The spoken count is stale.** As of 14 Oct the suite ends on `1462 passed, 11 skipped` at
-84.6% line coverage, so the line above would contradict the terminal it plays over. It is
-left as it is here because it is copied from `SCENES` in `scripts/build_narration.py`;
-change both together, and rerun the budget check, before the TTS run.
+The spoken figures match the terminal: 1,462 backend tests pass (11 more skip without a
+Firestore emulator) at 84.6% line coverage. *Nearly* is deliberate: eight lines of
+`simulator.py` run only when an unseeded random draw picks the *bad* profile, so the `TOTAL`
+row prints 85% on most runs and 84% (84.48%) on some, and the line has to be true of either
+take. The 328 frontend tests are not in
+the count. If the suite falls below 1,400 or coverage below 84.4%, change `SCENES` before
+recording.
+
+"On every push to master" is the exact trigger: `.github/workflows/ci.yml` runs on pushes
+and pull requests to `master` (and `main`, which does not exist), not on pushes to other
+branches. Do not shorten it to "every push".
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight
@@ -464,6 +486,9 @@ credentials.
   five points.
 - Anything about the debate being cheap. It is measured at `$0.0198` per debate against
   Super's `$0.0015`.
+- "The debate decides" or "its verdict is the answer". A person decides every disputed
+  case; the most a verdict can do is send it to deep investigation and raise its risk,
+  never lower it.
 - **"Super runs the debate."** It runs Ultra. Several source comments and two user-visible
   event strings said Super on that hop for weeks, and the same error had already been copied
   into the README, the architecture diagram and the Devpost submission once.

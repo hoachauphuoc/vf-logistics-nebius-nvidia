@@ -44,9 +44,13 @@ MAX_OUTPUT_TOKENS = 1500
 # floor, so a stronger model cannot move the outcome in the direction that matters.
 #
 # The debate is the exception. It runs only when `score_disputed` is set -- measured at
-# 2 calls across 20 cases -- and what it produces is not a score that the floor will
-# override, it is a reasoned CONFIRM/DISAGREE on whether the floor and the model can be
-# reconciled without a person. That judgement is the outcome.
+# 2 calls across 20 cases -- by which point auto-clear is already ruled out and a person
+# decides the case either way. What it produces is not a score that the floor will
+# override, it is a reasoned CONFIRM/DISAGREE on whether the junior analyst missed
+# something. CONFIRM changes nothing; a genuine DISAGREE at or above the escalation
+# confidence sends the case to deep investigation and may raise its risk, never lower it
+# (orchestrator.debate_escalation). That judgement can decide whether a dispute is
+# investigated. It never decides how the case ends.
 #
 # THE COST MULTIPLE IS 13x, NOT THE 3.3x RATE MULTIPLE, and that gap is measured rather
 # than predicted. Three Ultra debates on the live service:
