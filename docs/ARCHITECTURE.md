@@ -645,8 +645,10 @@ cannot end up with two live rule sets.
 Every document carries `_tenant_id`. Three enforcement properties:
 
 - **Ownership is sticky.** An existing case keeps its stored owner; a write from
-  another tenant's context raises rather than re-homing the record, and on Firestore
-  the check runs *inside* the transaction.
+  another tenant's context raises rather than re-homing or replacing the record, with
+  or without `expected_version`, and on Firestore the check runs *inside* the
+  transaction that writes. (Until this was fixed, a Firestore write with no
+  `expected_version` was a blind `set()` that replaced another tenant's case.)
 - **A foreign read returns `None`, not 403.** A distinct response would confirm the id
   is real and permit enumeration.
 - **`_scoped()` keeps the filter in one place** so a new query cannot be written
@@ -654,7 +656,9 @@ Every document carries `_tenant_id`. Three enforcement properties:
 
 The case id namespace is global, not per-tenant, so two tenants cannot share a
 `case_id`. Integrator-supplied `client_reference`, the genuinely collision-prone key,
-*is* scoped per tenant.
+*is* scoped per tenant. Case ids are `CASE-<shipment_id>`, so a tenant ingesting a
+shipment id another tenant already used is refused with `TenantError`, which the
+ingest routes do not catch -- so it is a 500, and it tells that tenant the id is taken.
 
 ### Composite indexes are not optional
 
@@ -866,9 +870,11 @@ An architecture document that omits these is marketing.
 - **`MULTI_TENANT=true` has never run against Firestore.** The ingest sinks resolve no
   tenant and would raise under it, and every behavioural isolation test runs on
   `MemoryStore` -- `FirestoreStore` is covered only by signature parity, despite the two
-  backends filtering by different mechanisms. Membership resolution itself is
+  backends filtering by different mechanisms, apart from `put_case`'s ownership rule,
+  which `tests/test_tenant_isolation.py` also runs against a fake of the client calls
+  it makes. Membership resolution itself is
   backend-independent and is tested end to end (`tests/test_membership.py`). The
-  Firestore transactions behind boundary publish/revoke and the sign-in ledger are
+  Firestore transactions behind boundary publish/revoke, `put_case` and the sign-in ledger are
   exercised against the emulator in `tests/test_firestore_emulator.py`, which is skipped
   unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so `store.py`, which
   holds the production backend, sits at 53% line coverage while the package is at 84.6%.
