@@ -111,14 +111,31 @@ def test_wilson_reproduces_published_values():
     Newcombe (1998), "Two-sided confidence intervals for the single proportion",
     Statistics in Medicine 17:857-872, Table II, score method -- an independent
     source, so this checks the formula rather than restating it. 11 of 12 is the
-    HS classifier's holdout recall.
+    HS classifier's holdout recall. The table rounds to the nearest 4 dp and
+    wilson() rounds outward, so the two can differ by one in the last place.
     """
-    assert evaluation.wilson(81, 263) == (0.2553, 0.3662)
-    assert evaluation.wilson(15, 148) == (0.0624, 0.1605)
-    assert evaluation.wilson(0, 20) == (0.0, 0.1611)
-    assert evaluation.wilson(1, 29) == (0.0061, 0.1718)
-    assert evaluation.wilson(11, 12) == (0.6461, 0.9851)
+    published = {
+        (81, 263): (0.2553, 0.3662),
+        (15, 148): (0.0624, 0.1605),
+        (0, 20): (0.0, 0.1611),
+        (1, 29): (0.0061, 0.1718),
+        (11, 12): (0.6461, 0.9851),
+    }
+    for (k, n), (low, high) in published.items():
+        got = evaluation.wilson(k, n)
+        # Outward of the published bound, by at most one in the fourth place.
+        assert round(low - got[0], 4) in (0.0, 0.0001), (k, n, got)
+        assert round(got[1] - high, 4) in (0.0, 0.0001), (k, n, got)
     assert evaluation.wilson(0, 0) is None
+
+
+def test_the_bounds_are_rounded_outward():
+    """
+    4 of 6, the few-shot HS arm's precision on the pairs, has a low of 0.299993.
+    Rounded to the nearest it would be served as 0.3 and shown from 30%, a range
+    narrower than the interval.
+    """
+    assert evaluation.wilson(4, 6) == (0.2999, 0.9033)
 
 
 def test_a_perfect_score_on_a_small_sample_still_has_a_range():
@@ -129,8 +146,8 @@ def test_a_perfect_score_on_a_small_sample_still_has_a_range():
 
 def test_intervals_are_built_from_counts_and_never_guessed():
     iv = evaluation.intervals({"tp": 11, "fp": 0, "fn": 1, "tn": 12, "recall": 0.9167})
-    assert iv["recall"] == {"low": 0.6461, "high": 0.9851, "successes": 11, "n": 12}
-    assert iv["precision"] == {"low": 0.7412, "high": 1.0, "successes": 11, "n": 11}
+    assert iv["recall"] == {"low": 0.6461, "high": 0.9852, "successes": 11, "n": 12}
+    assert iv["precision"] == {"low": 0.7411, "high": 1.0, "successes": 11, "n": 11}
     assert iv["false_positive_rate"] == {"low": 0.0, "high": 0.2425, "successes": 0, "n": 12}
 
     # Rates without counts: there is no n to build an interval on, so none is invented.

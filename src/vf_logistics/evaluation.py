@@ -66,6 +66,10 @@ def wilson(successes: int, n: int, z: float = Z_95) -> tuple[float, float] | Non
     are small and often at the edge -- 11 of 12, 0 of 12, 15 of 15. The textbook
     interval collapses to a point at 0 or n, so 15 of 15 would read as 100% with
     no uncertainty at all, and near the edges it spills past 0 and 1.
+
+    The bounds are rounded outward to 4 dp, not to the nearest: the console rounds
+    them outward again to whole percent, and a low of 0.299993 rounded up to 0.3
+    would show as 30 where the interval reaches 29.
     """
     if n <= 0:
         return None
@@ -73,7 +77,9 @@ def wilson(successes: int, n: int, z: float = Z_95) -> tuple[float, float] | Non
     denom = 1 + z * z / n
     centre = (p + z * z / (2 * n)) / denom
     half = z / denom * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
-    return round(max(0.0, centre - half), 4), round(min(1.0, centre + half), 4)
+    low = math.floor(max(0.0, centre - half) * 10_000) / 10_000
+    high = math.ceil(min(1.0, centre + half) * 10_000) / 10_000
+    return low, high
 
 
 # Each rate as (the count it is the share of, the count that completes its

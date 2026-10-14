@@ -696,7 +696,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "evaluation.curve": {
     title: "Rules at every threshold",
     body:
-      "The same holdout cases re-scored at each review threshold that changes what is held. Each row down the table raises the threshold: fewer honest shipments held, and as many frauds missed or more. The held-per-real-case column is that trade in reviewer time at the measured fraud rate. Bracketed figures are 95% intervals.",
+      "The same holdout cases re-scored at each review threshold that changes what is held. Each row down the table raises the threshold: fewer honest shipments held, and as many frauds missed or more. The held-per-real-case column is that trade in reviewer time at the measured fraud rate. Bracketed rates are 95% intervals; the held-per-real-case range puts both rates at their interval ends at once, which is not itself a 95% interval.",
   },
   "evaluation.public": {
     title: "Public enforcement cases",

@@ -76,3 +76,21 @@ def test_the_script_runs_end_to_end(curve_script, tmp_path, monkeypatch, capsys)
     # Aggregates only: nothing in the file is a case.
     assert '"case_id":' not in out.read_text(encoding="utf-8")
     assert list(tmp_path.iterdir()) == [out]
+
+
+def test_it_refuses_to_write_when_flags_are_not_the_floor(curve_script, tmp_path, monkeypatch, capsys):
+    """
+    The sweep re-scores the floor alone. If the benchmark ever holds a case for
+    another reason, a curve over the floor would describe a different detector
+    from the one measured, so nothing is written.
+    """
+    rows = [
+        {"case_id": "a", "risk_floor": 50, "expected_flagged": True, "flagged": True},
+        {"case_id": "b", "risk_floor": 0, "expected_flagged": False, "flagged": True},
+    ]
+    monkeypatch.setattr(curve_script, "run_rules", lambda split, workdir: ({}, rows))
+    out = tmp_path / "rules.json"
+    monkeypatch.setattr(sys, "argv", ["operating_curve.py", "--out", str(out)])
+    assert curve_script.main() == 2
+    assert "REFUSING" in capsys.readouterr().out
+    assert not out.exists()
