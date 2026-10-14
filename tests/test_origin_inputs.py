@@ -387,11 +387,16 @@ class TestN06WhatCountsAsNothingStated:
             assert zero_day_agent.entities_to_check({"shipper_name": marker}) == [], marker
         assert compliance_agent._searchable_name("Saigon Plywood Co.") == "Saigon Plywood Co."
 
-    def test_a_declaration_that_names_the_producer_but_no_inputs_is_still_provided(self):
-        # N06-E, recorded and NOT changed here: whether a declaration without
-        # input_origins counts as proof is a product decision. This pins today's
-        # behaviour so a change has to be deliberate.
-        for origins in ([], "not stated", ["not stated"], None):
-            declaration = {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": origins}
-            out = check_origin_evidence(plywood(), docs(**{**GOOD, "producer_declaration": declaration}))
-            assert out["status"] == "provided", origins
+    @pytest.mark.parametrize("origins", [[], "not stated", ["not stated"], None, ["N/A", "-"]])
+    def test_a_declaration_that_names_the_producer_but_no_inputs_is_not_proof(self, origins):
+        # N06-E: the declaration is there to say where the inputs came from. One that
+        # names the producer and nothing else does not document the inputs' origin.
+        declaration = {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": origins}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "producer_declaration": declaration}))
+        assert out["status"] == "missing" and out["missing"] == ["producer_declaration"]
+
+    @pytest.mark.parametrize("origins", [["Vietnam"], ["Vietnam", "Indonesia"], "Vietnam", ["not stated", "Vietnam"]])
+    def test_a_declaration_with_a_stated_input_origin_is_proof(self, origins):
+        declaration = {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": origins}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "producer_declaration": declaration}))
+        assert out["status"] == "provided"

@@ -31,11 +31,16 @@ export default function RespondPage() {
       });
       const body = await res.json().catch(() => null);
       if (res.ok && body?.received) {
-        setState(body.blocked ? "blocked" : "success");
+        // A copy the safety screen blocked, or that could not be read, does not count:
+        // the link stays open for this document, so say so and invite another copy.
+        const unusable = body.blocked || body.usable === false;
+        setState(unusable ? "blocked" : "success");
         setMessage(
           body.blocked
-            ? "The file was received but flagged by our safety screen. A reviewer will follow up."
-            : `Document received (version ${body.evidence_version ?? "?"}).`,
+            ? "The file was received but flagged by our safety screen, so it does not count yet. You can upload a different copy with this same link."
+            : body.usable === false
+              ? "The file was received but could not be read, so it does not count yet. Please upload a clearer copy with this same link."
+              : `Document received (version ${body.evidence_version ?? "?"}).`,
         );
       } else {
         setState("error");

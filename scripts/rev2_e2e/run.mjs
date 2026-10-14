@@ -57,7 +57,7 @@ async function run(id, t, d) {
   const sh = await br.newContext({ viewport: { width: 900, height: 900 } }), sp = await sh.newPage(), order = Object.keys(links).reverse();
   const up = async (dt) => { await sp.goto(`${BASE}${links[dt]}`); await sp.setInputFiles('input[type="file"]', `docs/${t}-${dt}.pdf`); await sp.getByRole("button", { name: /^Upload/ }).click(); };
   for (const [i, dt] of order.entries()) {
-    await up(dt); await sp.getByText(/Document received|flagged|failed|invalid|already|not_authenticated/i).first().waitFor({ timeout: SLOW * 3 });
+    await up(dt); await sp.getByText(/Document received|could not be read|flagged|failed|invalid|already|not_authenticated/i).first().waitFor({ timeout: SLOW * 3 });
     const m = await sp.locator("body").innerText();
     ck(`${t}: shipper (no login) uploads ${dt}`, /Document received/.test(m), (m.match(/Document received[^\n]*|Upload failed[^\n]*|not_authenticated|[^\n]*invalid[^\n]*/) ?? [""])[0]);
     if (!i) await sp.screenshot({ path: `${OUT}/${t}-3-shipper.png` });

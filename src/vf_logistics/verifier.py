@@ -377,6 +377,13 @@ def _is_meaningful(value: Any) -> bool:
     return isinstance(value, str) and not is_placeholder_text(value)
 
 
+def _states_something(value: Any) -> bool:
+    """A meaningful value, or a list holding at least one (["not stated", "Vietnam"])."""
+    if isinstance(value, (list, tuple)):
+        return any(_is_meaningful(v) for v in value)
+    return _is_meaningful(value)
+
+
 def _is_missing(value: Any) -> bool:
     return is_placeholder_text(value)
 
@@ -1379,7 +1386,9 @@ def check_origin_evidence(
     # the other does not show where the inputs originate, so it is not evidence.
     _REQUIRED_FIELDS: dict[str, tuple[tuple[str, ...], ...]] = {
         "certificate_of_origin": (("origin_country",),),
-        "producer_declaration": (("producer_name",),),
+        # N06-E: the declaration exists to say where the inputs came from. A producer
+        # name with no stated input origin does not document that.
+        "producer_declaration": (("producer_name",), ("input_origins",)),
         "input_purchase_invoices": (
             ("supplier_name",),
             ("goods_origin_country", "supplier_country"),
@@ -1393,7 +1402,7 @@ def check_origin_evidence(
                 read_by_type.setdefault(dt, []).append(ext)
             required = _REQUIRED_FIELDS.get(dt, ())
             if required and not all(
-                any(_is_meaningful(ext.get(f)) for f in group) for group in required
+                any(_states_something(ext.get(f)) for f in group) for group in required
             ):
                 continue
             if not ext:

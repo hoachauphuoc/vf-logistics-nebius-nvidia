@@ -262,9 +262,22 @@ def _documents_each_finding_asks_for(case: dict[str, Any]) -> dict[str, list[str
     return out
 
 
+def usable_document(doc: Any) -> bool:
+    """A received paper that can count as evidence: not blocked by the screen, and read
+    by the model into at least one field. Anything else arrived but proves nothing."""
+    return (
+        isinstance(doc, dict)
+        and not doc.get("blocked")
+        and isinstance(doc.get("extracted"), dict)
+        and bool(doc["extracted"])
+    )
+
+
 def _received_types(case: dict[str, Any]) -> set[str]:
+    # N04: only papers that can count. A blocked or unreadable copy must not stop a
+    # later request from asking for that document again.
     return {
-        str(d.get("doc_type")) for d in verification_of(case)["documents"] if isinstance(d, dict)
+        str(d.get("doc_type")) for d in verification_of(case)["documents"] if usable_document(d)
     }
 
 
@@ -657,7 +670,14 @@ async def receive_evidence(
 
     # -- Update the request --
     # N03: track per-doc-type receipt; only close when all are in.
-    received_docs[doc_type] = doc_record["document_id"]
+    # N04: only a usable copy fills its slot. A blocked or unreadable one is kept on the
+    # record (and in the audit trail) but leaves the type open, so the same link takes a
+    # clearer copy; it used to close the request and make that type impossible to send.
+    usable = usable_document(doc_record)
+    if usable:
+        received_docs[doc_type] = doc_record["document_id"]
+    else:
+        request.setdefault("unusable_uploads", []).append(doc_record["document_id"])
     request["received_docs"] = received_docs
     if set(received_docs.keys()) >= set(requested_docs) and requested_docs:
         request["status"] = "RECEIVED"
@@ -680,6 +700,7 @@ async def receive_evidence(
         "evidence_version": new_version,
         "sha256": doc_record["sha256"],
         "blocked": blocked,
+        "usable": usable,
         "superseded_approvals": superseded,
         "source_ip": client_ip,
     }, scope)
@@ -690,6 +711,7 @@ async def receive_evidence(
         "evidence_version": new_version,
         "blocked": blocked,
         "extracted": doc_record["extracted"] is not None,
+        "usable": usable,
         "superseded_approvals": len(superseded),
         "doc_type": doc_type,
         "still_missing": [d for d in requested_docs if d not in received_docs],
@@ -709,7 +731,8 @@ async def reevaluate(
     Creates an evaluation record on the case: which findings were clarified, which
     remain, which contradict, what to ask next, and what evidence version all of that
     was computed at. Changes the floor if the evidence contradicts, but NEVER lowers
-    it. The case moves to HELD_FOR_REVIEW (or ESCALATED if floor >= 70).
+    it. The case moves to HELD_FOR_REVIEW (or ESCALATED if floor >= 70, or if it
+    was escalated before).
     """
     from vf_logistics import verifier
 
@@ -781,8 +804,11 @@ async def reevaluate(
         case["reconciliation"] = rec
         case["risk_score"] = rec["effective_risk"]
 
-    # State transition
-    new_state = "ESCALATED" if floor >= 70 else "HELD_FOR_REVIEW"
+    # State transition. An escalated case stays escalated: it waits for a signature,
+    # and a floor under 70 does not withdraw that. Before a request the case's own
+    # state says where it was; during one, resume_state does.
+    before = record.get("resume_state") if case.get("state") == AWAITING_EVIDENCE else case.get("state")
+    new_state = "ESCALATED" if floor >= 70 or before == "ESCALATED" else "HELD_FOR_REVIEW"
     case["state"] = new_state
     case["updated_at"] = now
     # N04: a request is closed by receive_evidence, the moment every document it asked

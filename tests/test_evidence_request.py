@@ -222,9 +222,19 @@ class TestRequestingDocuments(Base):
 
     def test_what_has_already_arrived_is_not_asked_for_again(self):
         self.put(verification={**evidence.empty_verification(), "documents": [
-            {"doc_type": "certificate_of_origin", "extracted": {}},
+            {"doc_type": "certificate_of_origin", "extracted": {"origin_country": "Vietnam"}},
         ]})
         assert self.ask()["request"]["documents"] == ["producer_declaration", "input_purchase_invoices"]
+
+    def test_a_copy_that_was_blocked_or_read_into_nothing_is_asked_for_again(self):
+        # N04: arrived is not the same as usable.
+        self.put(verification={**evidence.empty_verification(), "documents": [
+            {"doc_type": "certificate_of_origin", "extracted": {}},
+            {"doc_type": "producer_declaration", "extracted": {"producer_name": "X"}, "blocked": True},
+        ]})
+        assert self.ask()["request"]["documents"] == [
+            "certificate_of_origin", "producer_declaration", "input_purchase_invoices",
+        ]
 
     def test_a_reviewer_can_name_fewer_documents(self):
         self.put()

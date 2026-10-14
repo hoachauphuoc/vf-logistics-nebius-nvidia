@@ -324,7 +324,7 @@ class TestN06EveryRequiredField(Base):
         links = {link["doc_type"]: link["token"] for link in out["links"]}
         _submit_per_type(links, {
             "certificate_of_origin": {"origin_country": "Vietnam", "producer_name": "Saigon Plywood"},
-            "producer_declaration": declaration or {"producer_name": "Saigon Plywood"},
+            "producer_declaration": declaration or {"producer_name": "Saigon Plywood", "input_origins": ["Vietnam"]},
             "input_purchase_invoices": invoice,
         })
         return run(evidence.reevaluate("CASE-1"))["evaluation"]
@@ -564,3 +564,85 @@ class TestReleasingAgainstContradictingPapers(Base):
         result = run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
         assert result["state"] == "APPROVED"
         assert "exception" not in result["approval"]
+
+
+def _submit_raw(token, mock_result=None, *, blocked=False, parse_error=False):
+    """One upload through a link, with the screen and the extractor answering as told."""
+    mock = {
+        "agent": "evidence_extraction", "model": "test", "result": mock_result or {},
+        "latency_ms": 10, "input_tokens": 10, "output_tokens": 10,
+        "parse_error": parse_error, "at": "2026-10-14T08:00:00Z",
+    }
+    with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock)), \
+            patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": blocked})), \
+            patch("vf_logistics.model_armor.extract_pdf_text", return_value=("text", None)), \
+            patch("vf_logistics.document_store.archive", new=AsyncMock(return_value={"archived": True, "uri": "gs://t/d"})):
+        return run(evidence.receive_evidence(token, tiny_pdf(), "doc.pdf", "application/pdf"))
+
+
+class TestN04UnusableUploadsDoNotUseUpTheSlot(Base):
+    """A paper the screen blocked, or the model could not read, is not evidence. It used to
+    count as "received": the request closed, the link died, and that document type could
+    never be sent again, leaving only a release-with-reason or a block."""
+
+    def _ask(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        return {link["doc_type"]: link["token"] for link in out["links"]}
+
+    @pytest.mark.parametrize("kind", ["blocked", "unreadable", "empty"])
+    def test_an_unusable_upload_leaves_the_type_open_and_the_same_link_works_again(self, kind):
+        links = self._ask()
+        _submit_per_type(links, {"certificate_of_origin": PAPERS["certificate_of_origin"],
+                                 "producer_declaration": PAPERS["producer_declaration"]})
+        token = links["input_purchase_invoices"]
+        first = _submit_raw(token, {} if kind == "empty" else PAPERS["input_purchase_invoices"],
+                            blocked=kind == "blocked", parse_error=kind == "unreadable")
+        assert first["received"] is True and first["usable"] is False
+        assert first["still_missing"] == ["input_purchase_invoices"]
+        req = self.stored()["verification"]["requests"][0]
+        assert req["status"] == "SENT"
+        assert "input_purchase_invoices" not in (req.get("received_docs") or {})
+        # The same link takes a readable copy, and that one closes the request.
+        second = _submit_raw(token, PAPERS["input_purchase_invoices"])
+        assert second["usable"] is True and second["still_missing"] == []
+        assert self.stored()["verification"]["requests"][0]["status"] == "RECEIVED"
+        ev = run(evidence.reevaluate("CASE-1"))["evaluation"]
+        assert ev["status"] == "provided"
+
+    def test_a_usable_upload_is_still_refused_the_second_time(self):
+        links = self._ask()
+        _submit_raw(links["certificate_of_origin"], PAPERS["certificate_of_origin"])
+        with pytest.raises(evidence.EvidenceError) as raised:
+            _submit_raw(links["certificate_of_origin"], PAPERS["certificate_of_origin"])
+        assert raised.value.status == 409
+
+    def test_a_new_request_can_ask_again_for_a_type_whose_only_copy_was_unusable(self):
+        links = self._ask()
+        _submit_raw(links["certificate_of_origin"], {}, blocked=True)
+        run(evidence.cancel_request("CASE-1", self.stored()["verification"]["requests"][0]["request_id"],
+                                    REVIEWER, "start over", actor_auth="password"))
+        out = run(evidence.request_evidence("CASE-1", REVIEWER))
+        assert "certificate_of_origin" in out["request"]["documents"]
+
+
+class TestReevaluateKeepsAnEscalation(Base):
+    """An escalated case waits for a signature. A re-evaluate whose floor is under 70 used
+    to put it back to merely HELD_FOR_REVIEW, dropping the escalation."""
+
+    @pytest.mark.parametrize("start,expected", [("ESCALATED", "ESCALATED"), ("HELD_FOR_REVIEW", "HELD_FOR_REVIEW")])
+    def test_the_state_the_case_was_in_before_the_request_is_kept(self, start, expected):
+        self.put(state=start)
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        _submit_per_type({l["doc_type"]: l["token"] for l in out["links"]}, PAPERS)
+        result = run(evidence.reevaluate("CASE-1"))
+        assert result["floor"] < 70
+        assert result["state"] == expected
+        assert self.stored()["state"] == expected
+
+    def test_a_contradiction_still_escalates_a_held_case(self):
+        self.put(state="HELD_FOR_REVIEW")
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        _submit_per_type({l["doc_type"]: l["token"] for l in out["links"]},
+                         {**PAPERS, "certificate_of_origin": {"producer_name": "Saigon Plywood Co", "origin_country": "China"}})
+        assert run(evidence.reevaluate("CASE-1"))["state"] == "ESCALATED"

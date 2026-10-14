@@ -836,6 +836,34 @@ MUTATIONS = [
         '                {c.state === "AWAITING_EVIDENCE" && openRequest && (\n                  <Button',
         "frontend/src/components/review/ReviewPanel.test.tsx",
     ),
+    (
+        "N04: a blocked or unreadable upload fills its document's slot",
+        "src/vf_logistics/evidence.py",
+        "    usable = usable_document(doc_record)\n    if usable:",
+        "    usable = usable_document(doc_record)\n    if True:",
+        "tests/test_evidence_eval_approve.py::TestN04UnusableUploadsDoNotUseUpTheSlot",
+    ),
+    (
+        "Re-evaluate drops an escalation when the floor is under 70",
+        "src/vf_logistics/evidence.py",
+        '    new_state = "ESCALATED" if floor >= 70 or before == "ESCALATED" else "HELD_FOR_REVIEW"',
+        '    new_state = "ESCALATED" if floor >= 70 else "HELD_FOR_REVIEW"',
+        "tests/test_evidence_eval_approve.py::TestReevaluateKeepsAnEscalation",
+    ),
+    (
+        "N06: a declaration with no stated input origin counts as proof",
+        "src/vf_logistics/verifier.py",
+        '        "producer_declaration": (("producer_name",), ("input_origins",)),',
+        '        "producer_declaration": (("producer_name",),),',
+        "tests/test_origin_inputs.py::TestN06WhatCountsAsNothingStated",
+    ),
+    (
+        "N04: the upload page calls an unreadable copy received",
+        "frontend/src/app/respond/[token]/page.tsx",
+        "            : body.usable === false\n",
+        "            : false\n",
+        "frontend/src/app/respond/[token]/page.test.tsx",
+    ),
 ]
 
 

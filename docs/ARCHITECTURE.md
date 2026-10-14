@@ -551,10 +551,15 @@ per-document links keep working. `reevaluate` runs on whatever has arrived: with
 it reports `missing` with the absent types as `unresolved`, the case leaves `AWAITING_EVIDENCE`
 for a state that waits on a person (`HELD_FOR_REVIEW`, or `ESCALATED` at floor 70 or more), and
 the request stays open. `approve` then answers 409 until the request is closed or cancelled
-(with a reason); the console says so and keeps Cancel request available. Known and not changed:
-a document blocked by Model Armor or unreadable by the model still counts as "arrived" for the
-request and its type cannot be uploaded again (the only exits are a release with a reason or a
-block).
+(with a reason); the console says so and keeps Cancel request available. Only a usable copy
+fills a document's slot (`evidence.usable_document`: not blocked by Model Armor, and read by the
+model into at least one field). A blocked or unreadable copy stays on the record and in the audit
+trail, the upload page tells the shipper it does not count, and the same per-document link takes
+a clearer copy; a later request may ask for that type again.
+
+**State after a re-evaluate:** `ESCALATED` at floor 70 or more, and also when the case was
+`ESCALATED` before the request (its `resume_state`): an escalation waits for a signature, and a
+low floor does not withdraw it. Otherwise `HELD_FOR_REVIEW`.
 
 **Re-evaluating (N05):** only from `evidence.REEVALUABLE` (`AWAITING_EVIDENCE`,
 `HELD_FOR_REVIEW`, `ESCALATED`, `PENDING_HUMAN`), and only for a case that has asked for
@@ -565,8 +570,8 @@ documents; anything else is a 409 and the case is untouched. The console mirrors
 (whole-value match after normalising whitespace, quotes and trailing punctuation:
 "Not stated.", "N/A", "n/a.", "not specified", a dash, one-element lists). It is used for
 completeness AND for every contradiction read, so a paper that states nothing contradicts
-nothing. Recorded, not changed: a producer declaration with a producer but no `input_origins`
-still counts as provided (a product decision).
+nothing. A producer declaration counts only when it names the producer AND states at least one
+input origin: the declaration exists to say where the inputs came from.
 
 **Releasing against contradicting papers:** when the latest evaluation is `contradicted`,
 `approve(release)` needs a note, and the approval's `exception` records the contradictions that
