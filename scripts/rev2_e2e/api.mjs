@@ -1,5 +1,8 @@
 const E = process.env, BASE = E.BASE ?? "https://vf-app-350828852747.asia-southeast1.run.app";
-const [cmd, ...ids] = process.argv.slice(2);
+const [cmd, ...rest] = process.argv.slice(2);
+// Cases are named CASE-<shipment id>; `seed` takes shipment ids, `show` takes either.
+const caseId = (s) => (s.startsWith("CASE-") ? s : `CASE-${s}`);
+const ids = cmd === "show" ? rest.map(caseId) : rest.map((s) => s.replace(/^CASE-/, ""));
 const login = async (email, pw) => {
   const r = await fetch(`${BASE}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: pw }) });
   if (!r.ok) { console.log(`login ${email}: HTTP ${r.status}`); process.exitCode = 1; return null; }
@@ -11,7 +14,7 @@ if (cmd === "seed") {
   if (ck) for (const id of ids) {
     const r = await fetch(`${BASE}/api/proxy/events/shipment`, { method: "POST", headers: { "content-type": "application/json", cookie: ck }, body: JSON.stringify(SHIP(id)) });
     const b = await r.json().catch(() => ({}));
-    console.log(`seed ${id}: HTTP ${r.status} state=${b.state} risk=${b.risk_score}`);
+    console.log(`seed ${id}: HTTP ${r.status} case=${b.case_id ?? caseId(id)} state=${b.state}`);
   }
 } else if (cmd === "show") {
   const ck = await login(E.REVIEWER_EMAIL ?? "reviewer@vf-logistics.demo", E.E2E_REVIEWER_PASSWORD);

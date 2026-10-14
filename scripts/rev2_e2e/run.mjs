@@ -2,7 +2,12 @@ import { chromium } from "playwright-core";
 import fs from "node:fs";
 const E = process.env, BASE = E.BASE ?? "https://vf-app-350828852747.asia-southeast1.run.app";
 const RUN = E.RUN_TAG ?? String(Date.now()).slice(-6), OUT = E.OUT ?? "results", SLOW = +(E.SLOW_MS ?? 60000);
-const IDS = (E.CASE_IDS ?? `REV2-E2E-A-${RUN},REV2-E2E-B-${RUN}`).split(","), SKIP = E.SKIP_SEED === "1";
+// A shipment id is what the API is given; the case it creates is CASE-<shipment id> and
+// that is what every lookup and the /cases/<id> page need. CASE_IDS may carry either
+// (with SKIP_SEED=1 it names cases that already exist), so both are derived here. Using the
+// shipment id for a lookup is a 404 "case not found": the run stopped at its first check.
+const IDS = (E.CASE_IDS ?? `REV2-E2E-A-${RUN},REV2-E2E-B-${RUN}`).split(",").map((s) => s.trim().replace(/^CASE-/, "")), SKIP = E.SKIP_SEED === "1";
+const CASES = IDS.map((s) => `CASE-${s}`);
 if (!E.E2E_REVIEWER_PASSWORD || (!SKIP && !E.E2E_JUDGE_PASSWORD)) { console.error("Set E2E_REVIEWER_PASSWORD and E2E_JUDGE_PASSWORD"); process.exit(2); }
 fs.mkdirSync(OUT, { recursive: true });
 const res = [], finds = [];
@@ -18,9 +23,10 @@ const login = async (email, pw) => {
 };
 if (!SKIP) {
   const { ctx, p } = await login(E.JUDGE_EMAIL ?? "judge@vf-logistics.demo", E.E2E_JUDGE_PASSWORD);
-  for (const id of IDS) {
+  for (const [i, id] of IDS.entries()) {
     const r = await p.request.post(`${BASE}/api/proxy/events/shipment`, { data: SHIP(id), timeout: 300000 }), b = await r.json().catch(() => ({}));
-    ck(`seed ${id}`, r.ok(), `HTTP ${r.status()} state=${b.state} risk=${b.risk_score}`);
+    if (b.case_id) CASES[i] = b.case_id; // the server's own name for the case, when it says
+    ck(`seed ${id}`, r.ok(), `HTTP ${r.status()} case=${b.case_id ?? CASES[i]} state=${b.state}`);
   }
   await ctx.close();
 }
@@ -56,8 +62,12 @@ async function run(id, t, d) {
     ck(`${t}: shipper (no login) uploads ${dt}`, /Document received/.test(m), (m.match(/Document received[^\n]*|Upload failed[^\n]*|not_authenticated|[^\n]*invalid[^\n]*/) ?? [""])[0]);
     if (!i) await sp.screenshot({ path: `${OUT}/${t}-3-shipper.png` });
   }
-  await up(order[0]); await sp.waitForTimeout(5000);
-  ck(`${t}: reused link refused`, !/Document received/.test(await sp.locator("body").innerText())); await sh.close();
+  // The reused link must be answered with a client error. "The page does not say
+  // Document received" is also true of a 500, a rate limit (10 uploads a minute) or a dead
+  // network, none of which is the link being refused.
+  const reuse = sp.waitForResponse((r) => r.url().includes("/api/proxy/evidence/respond") && r.request().method() === "POST", { timeout: 60000 }).catch(() => null);
+  await up(order[0]); const rr = await reuse, rbody = rr ? (await rr.text()).slice(0, 140) : "no response";
+  ck(`${t}: reused link refused`, !!rr && rr.status() >= 400 && rr.status() < 500 && rr.status() !== 429 && !/Document received|"received":\s*true/.test(rbody), `${rr?.status()} ${rbody}`); await sh.close();
   let c = await caseOf(id); const docs = c.verification?.documents ?? [];
   console.log("  MODEL EXTRACTED: " + JSON.stringify(docs.map((x) => ({ type: x.doc_type, extracted: x.extracted, model: x.extraction?.model, cost_usd: x.extraction?.cost_usd }))));
   ck(`${t}: 3 documents stored by type`, docs.map((x) => x.doc_type).sort().join() === "certificate_of_origin,input_purchase_invoices,producer_declaration");
@@ -82,9 +92,9 @@ async function run(id, t, d) {
   await page.reload(); await page.waitForTimeout(5000); await shot(`${t}-6-final`);
   console.log(`  cost=${c._estimated_cost_usd} latency_ms=${c._sum_latency_ms}`);
 }
-await run(IDS[0], "A", { button: "Release", note: "Papers agree: Vietnam origin throughout", end: "RELEASED_BY_HUMAN", status: "provided" });
-await run(IDS[1], "B", { button: "Block", note: "Invoice shows China-origin veneer", end: "BLOCKED_BY_HUMAN", status: "contradicted" });
+await run(CASES[0], "A", { button: "Release", note: "Papers agree: Vietnam origin throughout", end: "RELEASED_BY_HUMAN", status: "provided" });
+await run(CASES[1], "B", { button: "Block", note: "Invoice shows China-origin veneer", end: "BLOCKED_BY_HUMAN", status: "contradicted" });
 const bad = res.filter((r) => !r.ok);
-fs.writeFileSync(`${OUT}/summary.json`, JSON.stringify({ base: BASE, run: RUN, cases: IDS, total: res.length, failed: bad.length, findings: finds, results: res }, null, 2));
+fs.writeFileSync(`${OUT}/summary.json`, JSON.stringify({ base: BASE, run: RUN, cases: CASES, total: res.length, failed: bad.length, findings: finds, results: res }, null, 2));
 console.log(`\n${res.length - bad.length}/${res.length} passed. Findings: ${finds.length ? "\n  - " + finds.join("\n  - ") : "none"}\nSaved ./${OUT}/summary.json`);
 await br.close(); process.exitCode = bad.length ? 1 : 0;

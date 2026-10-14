@@ -518,15 +518,61 @@ domain-separated from the session key (`HMAC(secret, b"evidence-response\x00")`)
 token is never stored on the case; only a 12-character fingerprint is kept for audit.
 
 **Claim-before-send (N01):** `execute_approval` writes an execution record with status
-`claiming` via optimistic lock before calling tools or Pub/Sub. A concurrent caller gets
-a 409 from the store, never a duplicate publish.
+`claiming` via optimistic lock before calling tools or Pub/Sub. Two callers that read the
+same case version cannot both write the claim, so the loser gets a 409 from the store and
+never a duplicate publish. While a claim's lease (`CLAIM_LEASE_S`, 300 s) is running
+**nobody may resume it, the claimant included**: what is stored is a name and a deadline,
+which cannot tell a crashed process from a slow one, and a same-person second call while
+the first was still sending used to be treated as a resume and published again. After a
+real crash the same person therefore waits out the lease before retrying. The publish
+carries a fixed `idempotency_key` (`exec-<approval_id>`); it only deduplicates if the
+consumer of the decisions topic acts on it, and nothing in this repository does.
 
-**Publish failure (N02):** a missing `message_id` records `send_failed` and moves the
-case to `EXECUTION_FAILED`. The approval reverts to `VALID` for retry.
+**Publish failure (N02):** a publish that raises, or whose receipt carries no `message_id`,
+records `send_failed` and moves the case to `EXECUTION_FAILED`. The approval reverts to
+`VALID` for retry, the retry's review entry records the state it really started from, and
+`release_shipment` is re-run (and re-audited) on every attempt: it is not idempotent. With
+`EXECUTOR_URL` set the publish is delegated and the id is read from `detail.executor.message_id`
+(`evidence.published_message_id` reads both shapes). The deployed service publishes directly.
+There is no switch to force a publish failure on a running deployment.
 
-**Policy gate (N07):** `human_decide` (the legacy `/decide` API) refuses any case with
-`evidence_version > 0`. Cases that entered the verification loop must go through
-`approve` + `execute`, which enforce password authentication and evidence-version binding.
+**Policy gate (N07):** `human_decide` (the legacy `/decide` API) refuses any case that has a
+verification record, at any evidence version. Cases that entered the verification loop must
+go through `approve` + `execute`, which enforce password authentication and evidence-version
+binding. `/decide` also refuses a release without a password sign-in on any case; a block is
+allowed to a one-click session on a case with no verification record (intended: a block holds
+cargo, a release sends it on). The console proxy applies the same password rule to `approve`
+and `execute` by policy key (`proxy-policy.ts` `policyKey`); Flask's own check is the one that
+holds if the proxy is bypassed.
+
+**Closing a request (N04):** a request for N documents is closed (`RECEIVED`) by
+`receive_evidence` when the last one arrives, and stays `SENT` before that so the remaining
+per-document links keep working. `reevaluate` runs on whatever has arrived: with part of the set
+it reports `missing` with the absent types as `unresolved`, the case leaves `AWAITING_EVIDENCE`
+for a state that waits on a person (`HELD_FOR_REVIEW`, or `ESCALATED` at floor 70 or more), and
+the request stays open. `approve` then answers 409 until the request is closed or cancelled
+(with a reason); the console says so and keeps Cancel request available. Known and not changed:
+a document blocked by Model Armor or unreadable by the model still counts as "arrived" for the
+request and its type cannot be uploaded again (the only exits are a release with a reason or a
+block).
+
+**Re-evaluating (N05):** only from `evidence.REEVALUABLE` (`AWAITING_EVIDENCE`,
+`HELD_FOR_REVIEW`, `ESCALATED`, `PENDING_HUMAN`), and only for a case that has asked for
+documents; anything else is a 409 and the case is untouched. The console mirrors the list
+(`REEVALUABLE_STATES`), and a test compares the two.
+
+**What counts as "not stated" (N06):** `verifier.is_placeholder_text` is the one definition
+(whole-value match after normalising whitespace, quotes and trailing punctuation:
+"Not stated.", "N/A", "n/a.", "not specified", a dash, one-element lists). It is used for
+completeness AND for every contradiction read, so a paper that states nothing contradicts
+nothing. Recorded, not changed: a producer declaration with a producer but no `input_origins`
+still counts as provided (a product decision).
+
+**Releasing against contradicting papers:** when the latest evaluation is `contradicted`,
+`approve(release)` needs a note, and the approval's `exception` records the contradictions that
+were waived next to the reason and the approver, as a release with unresolved evidence does.
+Block is unaffected. The console shows the contradictions (evidence check block, timeline) and
+asks for the reason before it opens the confirmation.
 
 ---
 
