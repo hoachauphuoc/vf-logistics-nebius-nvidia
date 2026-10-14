@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import inspect
 import json
 import os
@@ -340,6 +341,241 @@ class CrossTenantWriteTests(unittest.TestCase):
         would look like data loss rather than like the bug it is."""
         case = _run(self.store.get_case("CASE-A1", tenant_id=TENANT_A))
         self.assertEqual(case[TENANT_FIELD], TENANT_A)
+
+
+# --------------------------------------------------------------------------
+# The same refusal on Firestore
+# --------------------------------------------------------------------------
+#
+# Every store test above runs on MemoryStore, and FirestoreStore.put_case did
+# not keep the contract they check: without an expected_version it was a blind
+# ref.set(). MemoryStore refused tenant B's write over tenant A's case; Firestore
+# replaced it. Case ids come from the shipment id a document states
+# (CASE-<shipment_id>), so tenant B ingesting a shipment that reused A's id
+# overwrote A's case in production while every test here passed.
+#
+# The emulator cannot run everywhere, so FirestoreStore is also run here against
+# a fake of exactly the surface put_case, get_case and add_event touch:
+# collection().document(), DocumentReference.get/set, Client.transaction(),
+# Transaction.set and the @transactional decorator. Like Firestore, the fake
+# commits a transaction's writes only when the wrapped function returns. It does
+# not model locking, contention or retries -- that is what
+# TestCaseOwnershipOnFirestore in test_firestore_emulator.py is for.
+
+
+class _FakeSnapshot:
+    def __init__(self, data: dict | None):
+        self._data = data
+
+    @property
+    def exists(self) -> bool:
+        return self._data is not None
+
+    def to_dict(self) -> dict | None:
+        return copy.deepcopy(self._data)
+
+
+class _FakeDocument:
+    def __init__(self, db: _FakeFirestore, path: tuple[str, str]):
+        self._db = db
+        self.path = path
+
+    def get(self, transaction=None) -> _FakeSnapshot:
+        self._db.log.append(("get", self.path, transaction is not None))
+        return _FakeSnapshot(copy.deepcopy(self._db.docs.get(self.path)))
+
+    def set(self, data: dict) -> None:
+        # Outside any transaction: nothing is read first, so nothing is checked.
+        self._db.log.append(("set", self.path, False))
+        self._db.docs[self.path] = copy.deepcopy(data)
+
+
+class _FakeCollection:
+    def __init__(self, db: _FakeFirestore, name: str):
+        self._db = db
+        self._name = name
+
+    def document(self, doc_id: str) -> _FakeDocument:
+        return _FakeDocument(self._db, (self._name, doc_id))
+
+
+class _FakeTransaction:
+    def __init__(self) -> None:
+        self.pending: list[tuple[tuple[str, str], dict]] = []
+
+    def set(self, ref: _FakeDocument, data: dict) -> None:
+        self.pending.append((ref.path, copy.deepcopy(data)))
+
+
+class _FakeAborted(Exception):
+    """What FirestoreStore treats as contention. Never raised by this fake."""
+
+
+class _FakeFirestore:
+    """Stands in for both the client (store._db) and the module (store._fs)."""
+
+    def __init__(self) -> None:
+        self.docs: dict[tuple[str, str], dict] = {}
+        self.log: list[tuple[str, tuple[str, str], bool]] = []
+
+    def collection(self, name: str) -> _FakeCollection:
+        return _FakeCollection(self, name)
+
+    def transaction(self, **_options) -> _FakeTransaction:
+        return _FakeTransaction()
+
+    def transactional(self, fn):
+        def run(transaction: _FakeTransaction, *args, **kwargs):
+            result = fn(transaction, *args, **kwargs)  # raising discards the writes
+            for path, data in transaction.pending:
+                self.log.append(("commit", path, True))
+                self.docs[path] = data
+            return result
+
+        return run
+
+    def writes_to(self, case_id: str) -> list[tuple[str, tuple[str, str], bool]]:
+        return [
+            entry for entry in self.log
+            if entry[0] in ("set", "commit") and entry[1] == ("cases", case_id)
+        ]
+
+
+def _firestore_on_fake() -> tuple[FirestoreStore, _FakeFirestore]:
+    fake = _FakeFirestore()
+    store = FirestoreStore.__new__(FirestoreStore)  # skips the real client
+    store._fs = fake
+    store._db = fake
+    store._aborted = _FakeAborted
+    store._cases = fake.collection("cases")
+    store._events = fake.collection("events")
+    return store, fake
+
+
+def _backends():
+    """MemoryStore and FirestoreStore-on-the-fake, each with a way to plant a raw
+    document the way an older release would have left it."""
+    memory = MemoryStore()
+
+    def plant_in_memory(doc: dict) -> None:
+        memory._cases[doc["case_id"]] = doc
+
+    firestore, fake = _firestore_on_fake()
+
+    def plant_in_firestore(doc: dict) -> None:
+        fake.docs[("cases", doc["case_id"])] = copy.deepcopy(doc)
+
+    return [("memory", memory, plant_in_memory), ("firestore", firestore, plant_in_firestore)]
+
+
+class CrossTenantOverwriteParityTests(unittest.TestCase):
+    """put_case's ownership rule, held to one contract on both backends."""
+
+    def test_neither_backend_lets_another_tenant_replace_a_case(self):
+        for label, version in (("unversioned", None), ("versioned", 1)):
+            for name, store, _ in _backends():
+                _run(store.put_case(_case("CASE-SHP-1", shipper="Acme"), tenant_id=TENANT_A))
+                with self.subTest(backend=name, write=label):
+                    with self.assertRaises(tenant.TenantError):
+                        _run(store.put_case(
+                            _case("CASE-SHP-1", shipper="Globex"),
+                            expected_version=version, tenant_id=TENANT_B,
+                        ))
+                    kept = _run(store.get_case("CASE-SHP-1", tenant_id=TENANT_A))
+                    self.assertIsNotNone(kept, "tenant A's case must still be A's")
+                    self.assertEqual(kept["shipper"], "Acme")
+                    self.assertEqual(kept[TENANT_FIELD], TENANT_A)
+                    self.assertIsNone(_run(store.get_case("CASE-SHP-1", tenant_id=TENANT_B)))
+
+    def test_the_owner_can_still_rewrite_its_own_case_unversioned(self):
+        """
+        Not every unversioned write is a create: ingest_document writes the case
+        ingest_shipment has just opened (or returned as already existing) again,
+        with no version. Refusing those would break document intake.
+        """
+        for name, store, _ in _backends():
+            with self.subTest(backend=name):
+                _run(store.put_case(_case("CASE-SHP-1", shipper="Acme"), tenant_id=TENANT_A))
+                _run(store.put_case(
+                    _case("CASE-SHP-1", shipper="Acme Ltd"), tenant_id=TENANT_A,
+                ))
+                case = _run(store.get_case("CASE-SHP-1", tenant_id=TENANT_A))
+                self.assertEqual(case["shipper"], "Acme Ltd")
+                self.assertEqual(case[TENANT_FIELD], TENANT_A)
+
+    def test_a_new_case_is_stamped_with_the_requested_tenant(self):
+        for name, store, _ in _backends():
+            with self.subTest(backend=name):
+                _run(store.put_case(_case("CASE-B1"), tenant_id=TENANT_B))
+                case = _run(store.get_case("CASE-B1", tenant_id=TENANT_B))
+                self.assertEqual(case[TENANT_FIELD], TENANT_B)
+
+    def test_a_write_naming_no_tenant_keeps_the_stored_owner(self):
+        """The case keeps the owner on the stored document rather than being
+        re-homed into whichever tenant the write resolves to."""
+        with patch.dict(os.environ, {"MULTI_TENANT": "false"}):
+            for name, store, _ in _backends():
+                with self.subTest(backend=name):
+                    _run(store.put_case(_case("CASE-A1"), tenant_id=TENANT_A))
+                    _run(store.put_case(_case("CASE-A1", note="rewritten")))
+                    case = _run(store.get_case("CASE-A1", tenant_id=TENANT_A))
+                    self.assertIsNotNone(case, "the case was moved out of tenant A")
+                    self.assertEqual(case["note"], "rewritten")
+
+    def test_a_case_written_before_stamping_is_stamped_on_rewrite(self):
+        """An unowned document has no owner to protect; refusing to rewrite it
+        would strand every pre-upgrade case."""
+        with patch.dict(os.environ, {"MULTI_TENANT": "false"}):
+            for name, store, plant in _backends():
+                with self.subTest(backend=name):
+                    plant(_case("CASE-LEGACY"))
+                    _run(store.put_case(_case("CASE-LEGACY", note="rewritten")))
+                    case = _run(store.get_case(
+                        "CASE-LEGACY", tenant_id=tenant.SINGLE_TENANT_ID,
+                    ))
+                    self.assertEqual(case["note"], "rewritten")
+                    self.assertEqual(case[TENANT_FIELD], tenant.SINGLE_TENANT_ID)
+
+    def test_firestore_reads_the_owner_inside_the_transaction_and_writes_nothing_on_refusal(self):
+        """
+        The check must be made on a read inside the same transaction as the
+        write: a read before it would let a case created between the two be
+        replaced. And a refused write must not reach the document at all.
+        """
+        store, fake = _firestore_on_fake()
+        _run(store.put_case(_case("CASE-SHP-1"), tenant_id=TENANT_A))
+        fake.log.clear()
+
+        with self.assertRaises(tenant.TenantError):
+            _run(store.put_case(_case("CASE-SHP-1"), tenant_id=TENANT_B))
+
+        self.assertEqual(fake.writes_to("CASE-SHP-1"), [])
+        self.assertIn(("get", ("cases", "CASE-SHP-1"), True), fake.log)
+
+    def test_ingesting_another_tenants_shipment_id_leaves_their_case(self):
+        """
+        The reported path, end to end: B's scoped get_case cannot see A's case,
+        so ingest_shipment goes on to write CASE-<shipment_id> for B.
+        """
+        from vf_logistics import orchestrator
+
+        with patch.dict(os.environ, {"MULTI_TENANT": "true"}), patch.object(
+            orchestrator.document_render, "render_bill_of_lading", lambda *a: None,
+        ):
+            for name, store, _ in _backends():
+                with self.subTest(backend=name), patch.object(store_mod, "_store", store):
+                    _run(orchestrator.ingest_shipment(
+                        {"shipment_id": "SHP-1", "shipper_company": "Acme"},
+                        tenant_id=TENANT_A,
+                    ))
+                    with self.assertRaises(tenant.TenantError):
+                        _run(orchestrator.ingest_shipment(
+                            {"shipment_id": "SHP-1", "shipper_company": "Globex"},
+                            tenant_id=TENANT_B,
+                        ))
+                    case = _run(store.get_case("CASE-SHP-1", tenant_id=TENANT_A))
+                    self.assertIsNotNone(case)
+                    self.assertEqual(case["shipment"]["shipper_company"], "Acme")
 
 
 class BillingAttributionTests(unittest.TestCase):

@@ -5,7 +5,8 @@ WHY THIS FILE EXISTS
 
 Findings A02, T01 and A04 were fixed with Firestore transactions (publish and
 revoke allot versions and create() rather than set(); the sign-in ledger counts
-under a transaction). Every other test runs on MemoryStore, and the two backends
+under a transaction), and put_case reads a case's owner in the transaction that
+writes it. Every other test runs on MemoryStore, and the two backends
 are held together only by signature parity -- which is exactly the gap the
 review called out for MULTI_TENANT. These tests run the real FirestoreStore code
 against the emulator.
@@ -37,6 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from vf_logistics import governance  # noqa: E402
 from vf_logistics import store as store_mod  # noqa: E402
+from vf_logistics import tenant  # noqa: E402
 
 EMULATOR = os.getenv("FIRESTORE_EMULATOR_HOST", "")
 PROJECT = "vf-emulator-test"
@@ -198,6 +200,100 @@ class TestSignInLedgerUnderMultiTenancy(_EmulatorCase):
         docs = list(self.store._throttle.stream())
         self.assertEqual(len(docs), 1)
         self.assertEqual(docs[0].to_dict()[store_mod.TENANT_FIELD], scope)
+
+
+class TestCaseOwnershipOnFirestore(_EmulatorCase):
+    """
+    put_case without an expected_version was a blind set(): a tenant writing a
+    case id another tenant already held replaced that tenant's case, where
+    MemoryStore refused the write. Case ids derive from the shipment id a
+    document states (CASE-<shipment_id>), so one colliding shipment id was
+    enough. The owner is now read inside the write's transaction.
+
+    test_tenant_isolation.CrossTenantOverwriteParityTests checks the same rule
+    without the emulator, on a fake that cannot model concurrency.
+    """
+
+    MULTI_TENANT = "true"
+    CASE_ID = "CASE-SHP-1"
+
+    def put(self, shipper: str, tenant_id: str, expected_version: int | None = None) -> None:
+        _run(self.store.put_case({
+            "case_id": self.CASE_ID,
+            "shipment_id": "SHP-1",
+            "shipper": shipper,
+            "state": "INGESTED",
+            "created_at": store_mod.utcnow(),
+        }, expected_version=expected_version, tenant_id=tenant_id))
+
+    def stored(self) -> dict:
+        return self.store._cases.document(self.CASE_ID).get().to_dict()
+
+    def test_an_unversioned_write_cannot_replace_another_tenants_case(self):
+        self.put("Acme", "acme")
+        with self.assertRaises(tenant.TenantError):
+            self.put("Globex", "beta-shipping")
+        stored = self.stored()
+        self.assertEqual(stored["shipper"], "Acme")
+        self.assertEqual(stored[store_mod.TENANT_FIELD], "acme")
+        self.assertIsNone(_run(self.store.get_case(self.CASE_ID, tenant_id="beta-shipping")))
+
+    def test_a_versioned_write_from_another_tenant_is_refused_too(self):
+        self.put("Acme", "acme")
+        with self.assertRaises(tenant.TenantError):
+            self.put("Globex", "beta-shipping", expected_version=1)
+        self.assertEqual(self.stored()["shipper"], "Acme")
+
+    def test_the_owner_can_still_rewrite_its_own_case_unversioned(self):
+        """ingest_document rewrites the case ingest_shipment opened, with no version."""
+        self.put("Acme", "acme")
+        self.put("Acme Ltd", "acme")
+        stored = self.stored()
+        self.assertEqual(stored["shipper"], "Acme Ltd")
+        self.assertEqual(stored[store_mod.TENANT_FIELD], "acme")
+
+    def test_concurrent_creates_by_two_tenants_leave_one_owner(self):
+        """
+        Every writer can read "no such case" before any commits. The transaction
+        is what stops a second tenant's write landing on top of the first:
+        Firestore makes it retry, and the retry reads the case and is refused. So
+        every write that succeeded was the final owner's.
+        """
+        def put(attempt: tuple[str, str]) -> str | None:
+            shipper, tenant_id = attempt
+            try:
+                self.put(shipper, tenant_id)
+            except tenant.TenantError:
+                return None
+            return tenant_id
+
+        attempts = [("Acme", "acme"), ("Globex", "beta-shipping")] * 3
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            succeeded = {t for t in pool.map(put, attempts) if t}
+
+        stored = self.stored()
+        owner = stored[store_mod.TENANT_FIELD]
+        self.assertEqual(succeeded, {owner})
+        self.assertEqual(stored["shipper"], {"acme": "Acme", "beta-shipping": "Globex"}[owner])
+
+    def test_ingesting_another_tenants_shipment_id_leaves_their_case(self):
+        """The reported path: B's scoped lookup cannot see A's case, so
+        ingest_shipment goes on to write CASE-<shipment_id> as B."""
+        from vf_logistics import orchestrator
+
+        with patch.object(
+            orchestrator.document_render, "render_bill_of_lading", lambda *a: None,
+        ):
+            _run(orchestrator.ingest_shipment(
+                {"shipment_id": "SHP-1", "shipper_company": "Acme"}, tenant_id="acme",
+            ))
+            with self.assertRaises(tenant.TenantError):
+                _run(orchestrator.ingest_shipment(
+                    {"shipment_id": "SHP-1", "shipper_company": "Globex"},
+                    tenant_id="beta-shipping",
+                ))
+        case = _run(self.store.get_case(self.CASE_ID, tenant_id="acme"))
+        self.assertEqual(case["shipment"]["shipper_company"], "Acme")
 
 
 class TestOnlyContentionIsRetried(unittest.TestCase):
