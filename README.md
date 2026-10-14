@@ -36,23 +36,26 @@ that holds only the Reviewer role, so you can watch the access control refuse so
 
 - **What it is:** shipment screening for a forwarder's compliance desk. Deterministic
   checks set a risk floor on every shipment; Nemotron agents on Nebius Token Factory score,
-  screen, investigate and debate above it. Clear cases are released inside limits a named
+  screen, investigate and debate above it, with live Tavily web search. Clear cases are released inside limits a named
   person publishes; the rest go to a reviewer with the evidence and a cited dossier.
 - **The one design rule:** a model may raise risk, never lower it below the floor, and
   `validate()` checks that on every call. Ultra runs only in the debate, where its verdict
   decides whether a disputed case is investigated; a person still decides every disputed case.
 - **Measured** (95% Wilson intervals in brackets; the pipeline corpus is synthetic):
   - rules alone, 453 holdout cases: recall 93.5% [90–96], false-positive rate 38.4% [28–49];
-  - full system, 200 holdout cases: recall 100% [97–100], false-positive rate 54.5%
-    [37–71] — the models buy recall and, by design, cannot remove a false positive;
+  - rules vs full system on the same 200 holdout cases: recall 95.8% [91–98] → 100%
+    [97–100], false-positive rate 48.5% [32–65] → 54.5% [37–71]. The models caught the 7
+    frauds the rules missed and added 2 false positives; by design they cannot remove one;
   - 19 public enforcement cases: 14 frauds held (73.7% [51–89]), and 9 of the 19 honest
-    counterparts held with them;
+    counterparts held with them (pairs cleanly separated: 4 rules-only, 3 full system);
   - HS classifier on substitutions its reference never mentions: 11 of 12 caught, 0 of 12
-    honest cases flagged (95% upper bound about 24%).
+    honest cases flagged (95% upper bound 24.3%).
 - **The weakness, in reviewer time:** at 0.2% fraud, the 2024 Vietnam customs rate, the
-  rules would hold about **206 shipments per real fraud case** (151–271 at the favourable
-  and unfavourable ends of the intervals), the full system about 273. Customs' own
-  targeting holds about 19. So the product's job is to make each hold quick and
+  rules would hold about **206 shipments per real fraud case** (151–271 if recall and
+  false-positive rate both land at the best or worst end of their intervals; not a 95%
+  interval), and on the 200-case subset the full system holds about 273 against the
+  rules' 254. Customs' own targeting makes roughly 19 red-channel inspections per
+  violation found. So the product's job is to make each hold quick and
   defensible to decide; the screen is not precise, and no real customer traffic has been
   measured.
 - **Cost:** under half a cent of model spend per case (`$0.068`–`$0.088` for a 20-case live
@@ -107,8 +110,7 @@ list it was screened against and that list's date, live sources, the document, a
 people who must screen every shipment before it moves and answer for each release to a
 customs authority afterwards. Floorline closes the clear cases inside limits that desk
 publishes, sends the rest to a person with the evidence attached, and keeps an
-append-only record naming who or what allowed each action. Model spend is under half a
-cent per case (`$0.068`–`$0.088` for a 20-case run); the measured detection figures, on
+append-only record naming who or what allowed each action. The measured detection figures, on
 held-out synthetic data and on 19 public enforcement cases, are in
 [Measured results](#measured-results).
 
@@ -122,8 +124,8 @@ End to end, for one case:
 
 > scanned document → Model Armor → document intake (MiniCPM-V) → deterministic risk
 > floor and pre-filter → fraud + compliance (NVIDIA Nemotron 3 Nano, live Tavily search)
-> → investigation (Nemotron 3 Super, Tavily) → auto-debate when floor and model disagree
-> (Nemotron 3 Ultra, calling tools) → delegation gate → release / hold / assign analyst /
+> → investigation (Nemotron 3 Super, Tavily) → auto-debate when the floor exceeds the
+> model's score by 15+ (Nemotron 3 Ultra, calling tools) → delegation gate → release / hold / assign analyst /
 > draft SAR / webhook / Pub/Sub → audit trail
 
 The case trace opens on this chain for the case in front of you, with the model that ran
@@ -158,7 +160,8 @@ the floor has already decided. Measured, putting those two on Ultra would cost 1
 call, against a rate that is only 3.3×, for no change in any decision.
 
 **And the debate is the one exception, which is why Ultra runs there and nowhere else.**
-It fires when the floor and the model disagree by 15 points or more, and what it emits is
+It fires when the floor exceeds the model's score by 15 points or more, so auto-clear is
+already ruled out, and what it emits is
 not another score for the floor to override — it is a reasoned CONFIRM or DISAGREE on
 whether the junior analyst missed something, and that verdict changes routing. In one
 direction only: a genuine DISAGREE at confidence 0.7 or above
@@ -266,8 +269,8 @@ for. Measured: `$0.0198` per Ultra debate against Super's `$0.0015`.
 - **Zero-day screening.** Sanctions lists lag reality. This runs a live
   adverse-media search when a shipment trips a gate — a dual-use heading, or two or
   more distinct transhipment hubs.
-- **Auto-debate.** Fires with no human involved when the floor and the model
-  disagree by 15 points or more. Its verdict used to be recorded and read by nothing;
+- **Auto-debate.** Fires with no human involved when the floor exceeds the model's
+  score by 15 points or more. Its verdict used to be recorded and read by nothing;
   a genuine, confident DISAGREE now sends the case to deep investigation — upward
   only.
 
@@ -480,7 +483,7 @@ and the rounds — with the raw record one click away, so the analyst sees exact
 Ultra did.
 
 **When it runs.** The debate fires **automatically**, with no human involved, when
-the deterministic floor and the model disagree by 15 points or more — measured at 2
+the deterministic floor exceeds the model's score by 15 points or more — measured at 2
 calls across 20 cases. A reviewer can also trigger it manually as "Deep Review"
 when:
 - The risk score seems too low for the red flags present
@@ -581,9 +584,10 @@ The release path fails closed on the shipment's side too. The orchestrator propo
 automated release only when compliance returned exactly `CLEARED` (an allowlist: an
 `UNKNOWN` or off-schema status used to clear, and now goes to review at HIGH priority)
 and `reconcile()` explicitly permitted it, which it never does without a stated risk
-floor. The gate then refuses a release when the deterministic finding count is missing,
-when the declared value is absent, unreadable, NaN or negative, or when the destination
-is blank while the boundary lists excluded destinations. Each of those used to read as
+floor. The gate then refuses a release when the deterministic finding count is missing
+(while the boundary keeps its default zero-findings rule), when the declared value is
+absent, unreadable, NaN or negative, or when the destination is blank while the boundary
+lists excluded destinations. Each of those used to read as
 zero or as nothing to check.
 
 ### The reviewer always has the paperwork
@@ -815,8 +819,8 @@ is a thin wrapper, not a bespoke SDK. Three consequences that shaped the build:
   — cost nothing in plumbing. It took Nano from 40.0% to 92.9% recall on the pairs set
   and from 50.0% to 91.7% on the holdout.
 - **No GPU provisioning, so a 550B model was affordable to reach for once.** Ultra runs only
-  on the debate path, which fires when the deterministic floor and the model disagree by 15
-  points or more. Standing up 550B of capacity for an occasional call would not have been
+  on the debate path, which fires when the deterministic floor exceeds the model's score by
+  15 points or more. Standing up 550B of capacity for an occasional call would not have been
   worth it; per-token access made a rarely-used heavyweight practical.
 - **The port from the predecessor was a client change, not a rewrite.** The JSON contract
   each agent returns was preserved, so swapping Vertex AI Gemini for Token Factory changed
@@ -1375,7 +1379,8 @@ What the table says:
 - **The holdout is the test that matters:** 11 of 12 evasions caught and 0 of 12 honest
   cases flagged, on substitutions the reference never mentions, on Nano rather than
   Super. Twelve is a small number: the 95% interval on that recall runs from 64% to 99%,
-  and "no false alarms" means 0 of 12, whose upper bound is about 24%.
+  and "no false alarms" means 0 of 12, whose upper bound is 24.3% (the table rounds it
+  outward to 25).
 
 ### Public enforcement cases
 
@@ -1413,11 +1418,11 @@ normaliser now treats Russian, CIS and Gulf legal forms like `LLC` and `Ltd`.
 construction; a forwarder's book is not. Vietnam Customs found a violation in 29,849 of
 16.84 million declarations in 2024, **0.18%**. At 0.2%, the tuned rules hold about 385 of
 every 1,000 shipments to find about 2 real cases: about **206 held per real fraud case**,
-a precision at that prevalence of about 0.49%. The full system holds about 273 per real
-case. Put recall and the false-positive rate at the favourable ends of their intervals
+a precision at that prevalence of about 0.49%. On the 200-case subset the full arm ran,
+the full system holds about 273 per real case against the rules' 254 on the same cases. Put recall and the false-positive rate at the favourable ends of their intervals
 and then the unfavourable ends, and the rules' figure runs from 151 to 271 and the full
 system's from 191 to 359; those are best and worst corners, not a 95% interval. Customs'
-own targeting holds about 19 per real violation. The console's Evaluation screen shows
+own targeting makes roughly 19 red-channel inspections per violation found. The console's Evaluation screen shows
 this for every report at 0.2%, 1% and 2%. The conclusion we draw is that the product's job
 is not to hold fewer shipments but to make each hold quick and defensible to decide —
 which is what the case trace, the Review screen and the dossier are for.

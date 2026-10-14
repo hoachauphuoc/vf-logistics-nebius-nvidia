@@ -358,8 +358,9 @@ risk below 40, a compliance status of exactly `CLEARED`, `auto_clear_permitted` 
 `is True` (a case with no reconciliation is not consent), and no agent whose output
 failed validation. Until 14 Oct the compliance test was "not `BLOCKED` and not
 `REVIEW_REQUIRED`", so an `UNKNOWN` or off-schema status that reached
-`SPECIALISTS_DONE` unflagged could auto-clear, and we measured that it did. Any status
-other than `CLEARED` now goes to `HELD_FOR_REVIEW` at HIGH priority, with a rationale
+`SPECIALISTS_DONE` unflagged could auto-clear, and we measured that it did. Any other
+status that does not already send the case to investigation now goes to
+`HELD_FOR_REVIEW` at HIGH priority, with a rationale
 naming the status rather than claiming the risk was above the threshold.
 
 ### Inside the INGESTED transition, the specialists run in parallel
@@ -511,7 +512,8 @@ draft_sar          notify_webhook  publish_decision
   a shipment the boundary had just refused to release.
 - **The shipment's side of a release fails closed the way the grant's side does.**
   `_check_release` refuses a release when the deterministic finding count is missing
-  (absent is not zero), when the declared value is absent, unreadable, NaN or
+  (absent is not zero; this applies while `require_zero_deterministic_findings` is not
+  `false`, which is the default), when the declared value is absent, unreadable, NaN or
   negative (it used to read as 0, which passes any value ceiling), or when the
   destination is blank or a placeholder while the boundary lists excluded
   destinations (a blank destination contains no excluded name, and the verifier does

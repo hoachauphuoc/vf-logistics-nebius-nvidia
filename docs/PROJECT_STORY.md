@@ -53,7 +53,7 @@ terminal state with no further input:
    Sanctions lists lag reality; this is the hop that does not.
 5. **Investigation** synthesises the findings into a report and drafts a
    suspicious activity report when warranted.
-6. **Auto-debate** fires when the deterministic floor and the model disagree by 15
+6. **Auto-debate** fires when the deterministic floor exceeds the model's score by 15
    points or more, and argues the disagreement to a CONFIRM or a DISAGREE.
 
 The case ends in `AUTO_CLEARED`, `HELD_FOR_REVIEW`, `PENDING_HUMAN`, `ESCALATED`,
@@ -346,8 +346,8 @@ contents of the real HS headings to check against, which took recall to **92.9%*
 the pairs and **91.7%** on the holdout, whose substitutions the reference never
 mentions, with no false alarms. Those are small numbers, and we should say how small:
 11 of 12 evasions caught, 0 of 12 honest cases flagged, so the 95% interval on that
-recall runs from 64% to 99% and the false-alarm rate could still be as high as about
-24%. The lesson we would keep is that a retrieval problem dressed as a reasoning
+recall runs from 64% to 99% and the false-alarm rate could still be as high as
+24.3%. The lesson we would keep is that a retrieval problem dressed as a reasoning
 problem does not respond to examples.
 
 The detection benchmark came later and was less flattering. On a held-out half of a
@@ -356,7 +356,7 @@ for a person. Two signals that separated nothing were demoted to context, chosen
 the other half only, and that figure fell to **38.4%** with detection of the sanctions
 and shell-company attacks unchanged. It is still high, and we say so: at 0.2% fraud,
 the 2024 Vietnam customs rate, that is about 206 shipments held per real fraud case,
-where customs' own targeting holds about 19.
+where customs makes roughly 19 red-channel inspections per violation found.
 
 We then tried to bring it down further and could not do it honestly. On the dev half the
 remaining false positives trace to four findings, a first-time shipper the largest. Five

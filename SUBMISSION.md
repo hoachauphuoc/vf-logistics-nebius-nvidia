@@ -140,18 +140,18 @@ had published or would have:
   extract of the published HS headings — 92.9% at 100% precision on the 30-case pairs
   set, and **11 of 12 caught with 0 of 12 honest cases flagged** on a 24-case holdout of
   substitutions the reference never mentions (rates over graded cases; with twelve of
-  each, the 95% interval on recall is 64–99% and the upper bound on false alarms about
-  24%). A retrieval problem dressed as a reasoning problem does not respond to examples.
+  each, the 95% interval on recall is 64–99% and the upper bound on false alarms
+  24.3%). A retrieval problem dressed as a reasoning problem does not respond to examples.
 - **The deterministic layer held 76.7% of clean shipments.** Measured on a held-out split
   of a 1,000-case synthetic corpus, then tuned on the other half only: **38.4%** [28–49]
   on the holdout, precision 84.1% → 91.2%, recall 95.1% → 93.5% [90–96], sanctions-alias
   and shell-company detection unchanged at 100%. Still high: at 0.2% fraud that is about
-  206 shipments held per real case, against about 19 for customs' own targeting. We
-  traced the remaining false positives to four findings on dev, measured five candidate
-  fixes and rejected all five, so the verifier is unchanged; the largest lever left,
-  counting a first-time shipper only as corroboration (dev false-positive rate 35.1% →
-  21.9%, no recall lost on the corpus), would
-  release new counterparties' first shipments unreviewed, and is the operator's call. The
+  206 shipments held per real case, against roughly 19 red-channel inspections per
+  violation found by customs. We traced the remaining false positives to four findings on
+  dev, measured five candidate fixes and rejected all five, so the verifier is unchanged.
+  The largest lever left, counting a first-time shipper only as corroboration (dev
+  false-positive rate 35.1% → 21.9%, no recall lost on the corpus), would release new
+  counterparties' first shipments unreviewed, and is the operator's call. The
   operating curve for the review threshold is on the Evaluation page; the threshold was
   left where it is.
 - **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
@@ -282,7 +282,7 @@ agent that can afford a larger model.
 **Multi-Agent Debate (Senior Auditor)** — **NVIDIA Nemotron 3 Ultra** reviews the
 fraud agent's assessment through native function calling, with three tools it may
 choose to invoke: request re-evaluation, search Tavily, render verdict. It fires
-**automatically** when the deterministic floor and the model disagree by 15 points
+**automatically** when the deterministic floor exceeds the model's score by 15 points
 or more, and a reviewer can also trigger it manually via *Deep Review*. Its verdict
 is decisive in one direction only: a DISAGREE the model genuinely rendered, at
 confidence 0.7 or above, sends the case to deep investigation, while a CONFIRM, a
@@ -450,7 +450,7 @@ the live service once destroyed the seeded demo board.
   only source of authority for protected actions
 - **Fail-closed execution gate** — no boundary, no execution; and no automated release
   unless compliance returned exactly `CLEARED`, with a stated risk floor, a deterministic
-  finding count, a usable declared value and, where destinations are excluded, a stated
+  finding count (under the default zero-findings rule), a usable declared value and, where destinations are excluded, a stated
   destination
 - **Deterministic risk floor** — arithmetic and code-resident lists constrain
   what the agent can claim
