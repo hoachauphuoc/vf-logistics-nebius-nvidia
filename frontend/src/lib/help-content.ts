@@ -693,6 +693,11 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
     body:
       "A test corpus is a fifth to four-fifths fraud by construction, so its precision does not describe a real queue. This reapplies each report's recall and false-alarm rate at 0.2%, 1% and 2% fraud. At the measured 0.2%, hundreds of honest shipments are held for each real one, which is why the product's job is to make each hold quick to decide.",
   },
+  "evaluation.curve": {
+    title: "Rules at every threshold",
+    body:
+      "The same holdout cases re-scored at each review threshold that changes what is held. Each row down the table raises the threshold: fewer honest shipments held, and as many frauds missed or more. The held-per-real-case column is that trade in reviewer time at the measured fraud rate. Bracketed rates are 95% intervals; the held-per-real-case range puts both rates at their interval ends at once, which is not itself a 95% interval.",
+  },
   "evaluation.public": {
     title: "Public enforcement cases",
     body:

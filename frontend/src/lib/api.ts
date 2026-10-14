@@ -782,6 +782,21 @@ export interface Detection {
   tn: number;
 }
 
+/** A 95% Wilson score interval and the counts it was built from (evaluation.intervals). */
+export interface Interval {
+  low: number;
+  high: number;
+  successes: number;
+  n: number;
+}
+
+/** Null where a report has no counts for that rate, or nothing in its denominator. */
+export interface Intervals {
+  precision: Interval | null;
+  recall: Interval | null;
+  false_positive_rate: Interval | null;
+}
+
 /** One committed report from data/benchmark_results/ (evaluation.py). */
 export interface PipelineResult {
   id: string;
@@ -792,6 +807,8 @@ export interface PipelineResult {
   cases_run: number;
   verifier: string;
   detection: Detection;
+  /** For `detection`'s precision, recall and false-positive rate. */
+  intervals?: Intervals;
   rules_only_baseline?: Detection;
   by_attack_type?: Record<string, { cases: number; detected: number; detection_rate: number }>;
   false_positives?: {
@@ -815,6 +832,21 @@ export interface Workload {
   held_per_1000: number;
   true_per_1000: number;
   missed_per_1000: number;
+  precision_at_prevalence: number;
+  held_per_true_case: number | null;
+  /** Recall at the top of its interval and false alarms at the bottom; null without counts. */
+  best_case?: WorkloadEnd | null;
+  /** Recall at the bottom of its interval and false alarms at the top. */
+  worst_case?: WorkloadEnd | null;
+}
+
+/**
+ * The workload redone at one end of the recall and false-alarm intervals. No
+ * held_per_1000: it rises with both rates, so these ends do not bound it.
+ */
+export interface WorkloadEnd {
+  recall: number;
+  false_positive_rate: number;
   precision_at_prevalence: number;
   held_per_true_case: number | null;
 }
@@ -848,11 +880,45 @@ export interface HsResult {
   total_cost_usd: number;
   avg_latency_ms: number;
   measured_at?: string | null;
+  intervals?: Intervals;
+}
+
+/** One review threshold on the rules arm's curve (scripts/operating_curve.py). */
+export interface CurvePoint {
+  /** Held when the risk floor is at or above this. */
+  threshold: number;
+  /** Every threshold that holds the same shipments, inclusive. */
+  thresholds: [number, number];
+  /** The review threshold in use falls in this point's range. */
+  current: boolean;
+  tp: number;
+  fp: number;
+  fn: number;
+  tn: number;
+  precision: number | null;
+  recall: number | null;
+  false_positive_rate: number | null;
+  /** At the curve's prevalence. */
+  held_per_1000: number;
+  held_per_true_case: number | null;
+  intervals?: Intervals;
+  best_case?: WorkloadEnd | null;
+  worst_case?: WorkloadEnd | null;
+}
+
+export interface OperatingCurve {
+  arm: string;
+  generated_at?: string;
+  review_threshold: number;
+  prevalence: number;
+  splits: Record<string, { cases_run: number; attacks: number; clean: number; points: CurvePoint[] }>;
 }
 
 export interface EvaluationSummary {
   pipeline: PipelineResult[];
   hs_classifier: { pairs: HsResult[]; holdout: HsResult[] };
+  /** Threshold sweeps by arm, from data/operating_curve/. Absent from an older backend. */
+  operating_curve?: Record<string, OperatingCurve>;
   caveats: string[];
 }
 

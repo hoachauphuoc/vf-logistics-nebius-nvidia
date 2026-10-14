@@ -47,6 +47,24 @@ export function formatLatency(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
+/**
+ * A rate's interval as whole percentages: { low: 0.9045, high: 0.9557 } -> "90–96".
+ *
+ * Rounded outward, low down and high up, so the range shown is never narrower than
+ * the one computed: a figure about uncertainty should not understate it to save a
+ * digit. The epsilon keeps 0.29 * 100 = 29.000000000000004 from rounding up to 30.
+ */
+export function formatInterval(
+  interval: { low: number; high: number } | null | undefined,
+): string {
+  if (!interval || !Number.isFinite(interval.low) || !Number.isFinite(interval.high)) {
+    return NO_VALUE;
+  }
+  const low = Math.floor(interval.low * 100 + 1e-9);
+  const high = Math.ceil(interval.high * 100 - 1e-9);
+  return `${low}–${high}`;
+}
+
 export function formatRelative(iso: string | null | undefined): string {
   if (!iso) return NO_VALUE;
   const then = new Date(iso).getTime();

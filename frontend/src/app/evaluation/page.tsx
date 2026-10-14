@@ -12,10 +12,14 @@ import {
   type Detection,
   type EvaluationSummary,
   type HsResult,
+  type Interval,
+  type Intervals,
+  type OperatingCurve,
   type PipelineResult,
+  type WorkloadEnd,
   fetchEvaluation,
 } from "@/lib/api";
-import { formatUsd, humaniseCode } from "@/lib/format";
+import { formatInterval, formatUsd, humaniseCode } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,6 +34,51 @@ import { cn } from "@/lib/utils";
 
 const pct = (v: number | undefined | null) =>
   v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+
+const whole = (v: number | undefined | null) => (v == null ? "—" : v.toFixed(0));
+
+/** F1 has no interval of its own; the three rates with counts behind them do. */
+function intervalOf(intervals: Intervals | undefined, key: string): Interval | null {
+  return intervals && key in intervals ? intervals[key as keyof Intervals] : null;
+}
+
+/**
+ * A rate with its 95% interval beside it, "93.5% (90–96)".
+ *
+ * The bracket is omitted rather than shown empty when a report has no counts:
+ * an interval that cannot be computed is not one of zero width.
+ */
+function Rate({
+  value,
+  interval,
+  rangeClassName,
+}: {
+  value: number | undefined | null;
+  interval?: Interval | null;
+  rangeClassName?: string;
+}) {
+  return (
+    <>
+      {pct(value)}
+      {interval ? (
+        <span className={cn("text-faint", rangeClassName)}> ({formatInterval(interval)})</span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Held per real case at the two ends of the recall and false-alarm intervals.
+ *
+ * A worst case with no real case held at all (recall's interval reaching 0) has
+ * no ratio, and is shown as unbounded rather than dropped: it is the widest
+ * uncertainty there is, not the absence of one.
+ */
+function heldRange(best?: WorkloadEnd | null, worst?: WorkloadEnd | null): string | null {
+  if (!best || !worst) return null;
+  const top = worst.held_per_true_case == null ? "∞" : whole(worst.held_per_true_case);
+  return `${whole(best.held_per_true_case)}–${top}`;
+}
 
 export default function EvaluationPage() {
   const query = useQuery({
@@ -61,6 +110,7 @@ function Report({ data }: { data: EvaluationSummary }) {
   const publicRules = byId.get("public_rules_all");
   const publicFull = byId.get("public_full_all");
   const hsHoldout = data.hs_classifier.holdout;
+  const rulesCurve = data.operating_curve?.rules;
 
   return (
     <div className="space-y-4">
@@ -76,6 +126,7 @@ function Report({ data }: { data: EvaluationSummary }) {
       {before && after && <TuningComparison before={before} after={after} />}
       {full && <FullArm result={full} />}
       {after && <WorkloadCard results={[after, full, publicRules, publicFull]} />}
+      {rulesCurve && <OperatingCurveCard curve={rulesCurve} />}
       {publicRules && publicFull && <PublicCases rules={publicRules} full={publicFull} />}
       {hsHoldout.length > 0 && <HsTable rows={hsHoldout} />}
       <Sources results={data.pipeline} />
@@ -111,7 +162,7 @@ function TuningComparison({ before, after }: { before: PipelineResult; after: Pi
         figure, and a trading record of 2–9 shipments.
       </p>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[28rem] text-left">
+        <table className="w-full min-w-[34rem] text-left">
           <thead>
             <tr className="text-[10.5px] uppercase tracking-wide text-faint">
               <th className="py-1.5 pr-3 font-medium">Holdout</th>
@@ -129,8 +180,12 @@ function TuningComparison({ before, after }: { before: PipelineResult; after: Pi
               return (
                 <tr key={key} className="border-t border-white/[0.05]">
                   <td className="py-1.5 pr-3 text-[12px] text-white/85">{label}</td>
-                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">{pct(b)}</td>
-                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">{pct(a)}</td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                    <Rate value={b} interval={intervalOf(before.intervals, key)} />
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                    <Rate value={a} interval={intervalOf(after.intervals, key)} />
+                  </td>
                   <td
                     className={cn(
                       "py-1.5 text-right font-mono text-[12px] tabular-nums",
@@ -170,7 +225,9 @@ function FullArm({ result }: { result: PipelineResult }) {
         {ROWS.map(([key, label]) => (
           <div key={key} className="rounded-lg border border-white/[0.07] bg-black/25 px-3 py-2">
             <dt className="text-[10.5px] uppercase tracking-wide text-faint">{label}</dt>
-            <dd className="mt-0.5 font-mono text-[18px] tabular-nums text-white">{pct(d[key])}</dd>
+            <dd className="mt-0.5 font-mono text-[18px] tabular-nums text-white">
+              <Rate value={d[key]} interval={intervalOf(result.intervals, key)} rangeClassName="text-[11px]" />
+            </dd>
             {r && (
               <dd className="text-[10.5px] text-faint">rules alone {pct(r[key])}</dd>
             )}
@@ -230,7 +287,9 @@ function WorkloadCard({ results }: { results: Array<PipelineResult | undefined> 
         Shipments held per 1,000, and how many of those are real, if fraud were as rare
         as it is in practice. 0.2% is Vietnam Customs&rsquo; 2024 rate: a violation found
         in 29,849 of 16.84 million declarations. Computed from each report&rsquo;s recall and
-        false-alarm rate, so it carries their small-sample limits.
+        false-alarm rate, so it carries their small-sample limits: the range under each
+        figure is shipments held per real case with both rates at the favourable, then the
+        unfavourable, end of their 95% intervals.
       </p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[34rem] text-left">
@@ -248,12 +307,20 @@ function WorkloadCard({ results }: { results: Array<PipelineResult | undefined> 
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-white/[0.05]">
                 <td className="py-1.5 pr-3 text-[12px] text-white/85">{WORKLOAD_LABEL[r.id] ?? r.id}</td>
-                {r.workload!.map((w) => (
-                  <td key={w.prevalence} className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums">
-                    <span className="text-white">{w.held_per_1000.toFixed(0)}</span>
-                    <span className="text-faint"> held, {w.true_per_1000.toFixed(1)} real</span>
-                  </td>
-                ))}
+                {r.workload!.map((w) => {
+                  const range = heldRange(w.best_case, w.worst_case);
+                  return (
+                    <td key={w.prevalence} className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums">
+                      <span className="text-white">{w.held_per_1000.toFixed(0)}</span>
+                      <span className="text-faint"> held, {w.true_per_1000.toFixed(1)} real</span>
+                      {w.held_per_true_case != null && (
+                        <span className="block text-[10.5px] text-faint">
+                          {whole(w.held_per_true_case)} per real case{range ? ` (${range})` : ""}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -263,6 +330,85 @@ function WorkloadCard({ results }: { results: Array<PipelineResult | undefined> 
         A screen that holds hundreds of honest shipments per real one is not saved by
         holding fewer: the cost is in deciding each one. That is what the case trace and
         the due-diligence dossier are for.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The rules arm at every review threshold, not only at the one in use.
+ *
+ * One recall and one false-alarm rate say how the current threshold does; the
+ * neighbouring rows say what moving it would buy, in the unit the decision is
+ * made in -- shipments held per real case at the measured fraud rate. The
+ * threshold was set on dev, so dev sits beside holdout: a row that only looks
+ * good on dev is a row that was fitted.
+ */
+function OperatingCurveCard({ curve }: { curve: OperatingCurve }) {
+  const holdout = curve.splits.holdout;
+  if (!holdout?.points.length) return null;
+  const devAt = new Map((curve.splits.dev?.points ?? []).map((p) => [p.threshold, p]));
+  return (
+    <div className="bento-card p-4">
+      <CardTitle help="evaluation.curve">Rules at every review threshold</CardTitle>
+      <p className="mt-1.5 max-w-3xl text-[12px] leading-relaxed text-dim">
+        What the deterministic layer would hold on the {holdout.cases_run} holdout cases if a
+        shipment were held once its risk floor reached the threshold. Floors take a few fixed
+        values, so each row stands for every threshold in its range; the one in use is{" "}
+        {curve.review_threshold}. Held per real case is at {(curve.prevalence * 100).toFixed(1)}%
+        fraud.
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[46rem] text-left">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-wide text-faint">
+              <th className="py-1.5 pr-3 font-medium">Threshold</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Recall</th>
+              <th className="py-1.5 pr-3 text-right font-medium">False alarms</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Precision</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Held per real case</th>
+              <th className="py-1.5 text-right font-medium">Dev recall / false alarms</th>
+            </tr>
+          </thead>
+          <tbody>
+            {holdout.points.map((p) => {
+              const dev = devAt.get(p.threshold);
+              const range = heldRange(p.best_case, p.worst_case);
+              return (
+                <tr
+                  key={p.threshold}
+                  className={cn("border-t border-white/[0.05]", p.current && "bg-brand/[0.06]")}
+                >
+                  <td className="py-1.5 pr-3 font-mono text-[12px] tabular-nums text-white/85">
+                    {p.thresholds[0]}&ndash;{p.thresholds[1]}
+                    {p.current && <span className="font-sans text-[10.5px] text-brand"> in use</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                    <Rate value={p.recall} interval={p.intervals?.recall} />
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                    <Rate value={p.false_positive_rate} interval={p.intervals?.false_positive_rate} />
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                    <Rate value={p.precision} interval={p.intervals?.precision} />
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                    {whole(p.held_per_true_case)}
+                    {range && <span className="text-faint"> ({range})</span>}
+                  </td>
+                  <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-dim">
+                    {pct(dev?.recall)} / {pct(dev?.false_positive_rate)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
+        A false-alarm rate of 0% is {holdout.clean} clean cases with none held, not a screen
+        that never holds an honest shipment; its range, and the held-per-real-case range that
+        follows from it, is what a sample that size cannot rule out.
       </p>
     </div>
   );
@@ -378,7 +524,7 @@ function HsTable({ rows }: { rows: HsResult[] }) {
         is the evader&rsquo;s choice.
       </p>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[34rem] text-left">
+        <table className="w-full min-w-[42rem] text-left">
           <thead>
             <tr className="text-[10.5px] uppercase tracking-wide text-faint">
               <th className="py-1.5 pr-3 font-medium">Arm</th>
@@ -398,9 +544,15 @@ function HsTable({ rows }: { rows: HsResult[] }) {
                 )}
               >
                 <td className="py-1.5 pr-3 text-[12px] text-white/85">{ARM_LABEL[row.arm] ?? row.arm}</td>
-                <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">{pct(row.recall)}</td>
-                <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">{row.arm === "rules" ? "—" : pct(row.precision)}</td>
-                <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">{pct(row.false_positive_rate)}</td>
+                <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                  <Rate value={row.recall} interval={row.intervals?.recall} />
+                </td>
+                <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                  {row.arm === "rules" ? "—" : <Rate value={row.precision} interval={row.intervals?.precision} />}
+                </td>
+                <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                  <Rate value={row.false_positive_rate} interval={row.intervals?.false_positive_rate} />
+                </td>
                 <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-dim">{formatUsd(row.total_cost_usd)}</td>
               </tr>
             ))}
@@ -429,7 +581,9 @@ function Sources({ results }: { results: PipelineResult[] }) {
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         Rerun with <span className="font-mono">scripts/run_massive_benchmark.py --split holdout</span>{" "}
         (the rules arm is free) and publish with{" "}
-        <span className="font-mono">scripts/publish_benchmark.py</span>.
+        <span className="font-mono">scripts/publish_benchmark.py</span>. The threshold sweep is{" "}
+        <span className="font-mono">scripts/operating_curve.py</span>, which writes{" "}
+        <span className="font-mono">data/operating_curve/rules.json</span>.
       </p>
     </div>
   );
