@@ -13,7 +13,7 @@
 // S3  a forged, tampered or missing evidence link -> 403, nothing stored.            (no model spend)
 // S4  a one-click guest session at approve and execute -> 403 required_auth=password. (no model spend;
 //     skipped, and said so, when the one-click door is closed on the target.)
-// S1  RUN_S1=1: seeds a case, requests 3 documents, uploads ONE (one model extraction), re-evaluates:
+// S1  RUN_S1=1: seeds a case, shows re-evaluate before any request is a 409 (N05), requests 3 documents, uploads ONE (one model extraction), re-evaluates:
 //     the request stays SENT, the evaluation is "missing" with the other two unresolved, approve is a
 //     409 "open request"; cancel the request, then a release with no note is a 400. Nothing is executed,
 //     so no Pub/Sub message. It leaves one case held for review on the target.
@@ -91,6 +91,11 @@ else {
   const seed = await api("POST", "proxy/events/shipment", { cookie: judge, body: shipment });
   const id = seed.json?.case_id ?? `CASE-${shipment.shipment_id}`;
   ck(`S1: seed ${id}`, seed.status === 202, `${seed.status} state=${seed.json?.state}`);
+  // N05: a case that never asked for documents is outside the loop. Before the fix this call
+  // was accepted, wrote an empty verification record onto the case and locked /decide.
+  const early = await api("POST", `proxy/review/${id}/reevaluate`, { cookie: reviewer, body: {} });
+  const untouched = await getCase(reviewer, id);
+  ck("S1: re-evaluate before any request is a 409 and the case gets no verification record", early.status === 409 && /requested/i.test(early.json?.error ?? "") && !untouched.verification, `${early.status} ${early.text} verification=${JSON.stringify(untouched.verification ?? null)}`);
   const ask = await api("POST", `proxy/review/${id}/request-evidence`, { cookie: reviewer, body: {} });
   const links = Object.fromEntries((ask.json?.links ?? []).map((l) => [l.doc_type, String(l.path ?? "").split("/").pop()]));
   const rid = ask.json?.request?.request_id;
