@@ -2024,7 +2024,9 @@ async def human_decide(
 # truth for "what did a human decide", so the history is read from there.
 #
 # The cache is a read-through TTL cache only. Losing it costs one query, not
-# correctness.
+# correctness. Every writer of a human decision (human_decide,
+# evidence.execute_approval) drops it, but only in its own process: another
+# instance sees the decision once its own entry is older than the TTL.
 
 _FEEDBACK_OUTCOMES = {"RELEASED_BY_HUMAN": "released", "BLOCKED_BY_HUMAN": "blocked"}
 _FEEDBACK_STATES = tuple(_FEEDBACK_OUTCOMES)
