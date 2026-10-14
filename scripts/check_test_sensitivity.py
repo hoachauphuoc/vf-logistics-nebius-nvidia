@@ -738,6 +738,27 @@ MUTATIONS = [
         "                    for v in (inv.get(\"goods_origin_country\"), inv.get(\"supplier_country\"))\n                    if v",
         "tests/test_origin_inputs.py::TestN06WhatCountsAsNothingStated",
     ),
+    (
+        "N02: a message published through the executor identity is recorded as a failed send",
+        "src/vf_logistics/evidence.py",
+        '    message_id = detail.get("message_id") or (\n        delegated.get("message_id") if isinstance(delegated, dict) else None\n    )',
+        '    message_id = detail.get("message_id")',
+        "tests/test_evidence_execution.py::TestN02bSplitIdentityReceipt",
+    ),
+    (
+        "N02: a failed receipt that still carries a message id counts as sent",
+        "src/vf_logistics/evidence.py",
+        '    if not isinstance(receipt, dict) or receipt.get("status") == "failed":',
+        '    if not isinstance(receipt, dict):',
+        "tests/test_evidence_execution.py::TestN02bSplitIdentityReceipt",
+    ),
+    (
+        "N02: the retry review entry claims it started from APPROVED",
+        "src/vf_logistics/evidence.py",
+        '        "state_before": state_before,\n        "state_after": final_state,',
+        '        "state_before": APPROVED,\n        "state_after": final_state,',
+        "tests/test_evidence_execution.py::TestN02APublishThatFails",
+    ),
 ]
 
 

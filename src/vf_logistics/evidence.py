@@ -972,6 +972,25 @@ def approval_is_executable(
     return approval, None
 
 
+def published_message_id(receipt: Any) -> str | None:
+    """The Pub/Sub message id a publish receipt proves, or None if nothing went out.
+
+    Two shapes reach here. A direct publish carries it at `detail.message_id`. With
+    EXECUTOR_URL set the publish is delegated, and the executor's answer is nested one
+    level down at `detail.executor.message_id`; reading only the top level recorded a
+    message that WAS published as a failed send (N02). A receipt marked failed proves
+    nothing whatever else it carries.
+    """
+    if not isinstance(receipt, dict) or receipt.get("status") == "failed":
+        return None
+    detail = receipt.get("detail") or {}
+    delegated = detail.get("executor")
+    message_id = detail.get("message_id") or (
+        delegated.get("message_id") if isinstance(delegated, dict) else None
+    )
+    return str(message_id) if message_id else None
+
+
 async def execute_approval(
     case_id: str,
     approval_id: str,
@@ -1004,6 +1023,9 @@ async def execute_approval(
         raise EvidenceError("case not found", 404)
     expected_version = stored.get("_version")
     case = copy.deepcopy(stored)
+    # Where this attempt starts: APPROVED the first time, EXECUTION_FAILED on a retry,
+    # EXECUTING when resuming an expired claim. The review entry records it.
+    state_before = case.get("state")
 
     approval, reason = approval_is_executable(case, approval_id)
     if approval is None:
@@ -1070,6 +1092,11 @@ async def execute_approval(
 
     # -- Phase 2: SEND --
     shipment_id = case.get("shipment_id") or case_id
+    # Set before the try so that a publish that raises does not discard the receipt of
+    # the release/hold that already happened: it is a row in the audit trail, and the
+    # case's own actions should say so too.
+    tool_receipt = None
+    pub_receipt = None
     try:
         if action == "release":
             tool_receipt = await tools.release_shipment(
@@ -1102,11 +1129,9 @@ async def execute_approval(
             },
             tenant_id=tenant_id,
         )
-        message_id = (pub_receipt.get("detail") or {}).get("message_id")
+        message_id = published_message_id(pub_receipt)
         pub_failed = message_id is None
     except Exception:
-        tool_receipt = None
-        pub_receipt = None
         message_id = None
         pub_failed = True
         new_state = action  # placeholder, overridden below
@@ -1153,7 +1178,7 @@ async def execute_approval(
         "reviewer": executor,
         "note": f"Executed approval {approval_id}" if not pub_failed else f"Execution failed for {approval_id}",
         "at": now,
-        "state_before": APPROVED,
+        "state_before": state_before,
         "state_after": final_state,
     })
     if tool_receipt:

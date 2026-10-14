@@ -7,11 +7,13 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from unittest.mock import AsyncMock, patch
+import types
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
+from test_console_session import TEST_KEY  # noqa: E402
 from test_evidence_eval_approve import Base, tiny_pdf  # noqa: E402
 from vf_logistics import evidence  # noqa: E402
 
@@ -309,3 +311,176 @@ class TestN01TwoExecutesAtOnce(Base):
         with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=OK_RECEIPT)):
             result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
         assert result["state"] == "RELEASED_BY_HUMAN"
+
+
+def _fake_pubsub(results):
+    """A pubsub_v1 whose publish() answers `results` in turn: an Exception raised from
+    .result(), anything else returned as the message id. Returns (module, published)."""
+    published: list[dict] = []
+
+    def publish(topic, data):
+        published.append({"topic": topic, "body": __import__("json").loads(data)})
+        outcome = results.pop(0)
+        future = MagicMock()
+        if isinstance(outcome, Exception):
+            future.result.side_effect = outcome
+        else:
+            future.result.return_value = outcome
+        return future
+
+    client = MagicMock()
+    client.topic_path.side_effect = lambda project, topic: f"projects/{project}/topics/{topic}"
+    client.publish.side_effect = publish
+    module = MagicMock()
+    module.PublisherClient.return_value = client
+    return module, published
+
+
+def _with_pubsub(module):
+    """The real tools.publish_decision_direct, with only the Google client replaced."""
+    cloud = types.ModuleType("google.cloud")
+    cloud.pubsub_v1 = module
+    return patch.dict(sys.modules, {"google.cloud": cloud, "google.cloud.pubsub_v1": module})
+
+
+class TestN02APublishThatFails(Base):
+    def _approved(self, action="release"):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        return run(evidence.approve(
+            "CASE-1", action, REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+
+    def _audit_rows(self, action):
+        rows = run(self.store.list_audit(limit=500))
+        return sorted((r for r in rows if r.get("action") == action and r.get("case_id") == "CASE-1"),
+                      key=lambda r: r["at"])
+
+    def test_a_publish_that_raises_is_a_failed_send_not_a_crash(self):
+        approval_id = self._approved()
+        boom = AsyncMock(side_effect=RuntimeError("topic not found"))
+        with patch("vf_logistics.tools.publish_decision", new=boom):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "EXECUTION_FAILED" and result["message_id"] is None
+        case = self.stored()
+        assert case["state"] == "EXECUTION_FAILED"
+        assert case["verification"]["executions"][-1]["status"] == "send_failed"
+        assert case["verification"]["approvals"][0]["status"] == "VALID"
+        # The release had already been recorded before the publish raised; it must
+        # stay attached to the case rather than vanish from its actions.
+        assert [a["action"] for a in case["actions"]] == ["release_shipment"]
+
+    def test_a_real_publish_failure_then_a_retry_leaves_a_complete_record(self):
+        approval_id = self._approved()
+        pubsub, published = _fake_pubsub([TimeoutError("deadline exceeded"), "msg-real"])
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub):
+            first = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+            assert first["state"] == "EXECUTION_FAILED"
+            assert self.stored()["state"] == "EXECUTION_FAILED"
+            second = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert second["state"] == "RELEASED_BY_HUMAN" and second["message_id"] == "msg-real"
+
+        case = self.stored()
+        record = case["verification"]
+        assert [e["status"] for e in record["executions"]] == ["send_failed", "sent"]
+        assert len({e["execution_id"] for e in record["executions"]}) == 2
+        assert record["approvals"][0]["status"] == "EXECUTED"
+        assert case["state"] == "RELEASED_BY_HUMAN"
+        # The two attempts carry one idempotency key, so a consumer can drop the repeat.
+        assert [p["body"]["idempotency_key"] for p in published] == [f"exec-{approval_id}"] * 2
+        # The review trail says where each attempt started from.
+        starts = [(r["state_before"], r["state_after"]) for r in case["reviews"][-2:]]
+        assert starts == [("APPROVED", "EXECUTION_FAILED"), ("EXECUTION_FAILED", "RELEASED_BY_HUMAN")]
+        # The audit trail: the failed publish is recorded as failed, the retry as done.
+        assert [r["status"] for r in self._audit_rows("publish_decision")] == ["failed", "done"]
+        assert [r["detail"]["pub_failed"] for r in self._audit_rows("evidence_executed_release")] == [True, False]
+        # release_shipment is re-run on every attempt, so there are two rows. That is
+        # today's behaviour (it is not idempotent), pinned so a change is deliberate.
+        assert len(self._audit_rows("release_shipment")) == 2
+
+    def test_a_block_that_fails_to_publish_can_be_retried_the_same_way(self):
+        approval_id = self._approved("block")
+        pubsub, _ = _fake_pubsub([ConnectionError("unreachable"), "msg-block"])
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub):
+            assert run(evidence.execute_approval(
+                "CASE-1", approval_id, REVIEWER, actor_auth="password"))["state"] == "EXECUTION_FAILED"
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "BLOCKED_BY_HUMAN"
+
+
+class TestN02bSplitIdentityReceipt(Base):
+    """With EXECUTOR_URL set, the publish is delegated and the message id comes back
+    nested one level down. It used to be read from the top, so a message that WAS
+    published was recorded as a failed send and the approval stayed retryable."""
+
+    def _approved(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        return run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+
+    def test_a_delegated_publish_that_succeeded_is_recorded_as_sent(self):
+        approval_id = self._approved()
+        delegated = AsyncMock(return_value={
+            "delegated": True, "status": "done", "executed": True, "message_id": "msg-split",
+        })
+        with patch("vf_logistics.executor_client.configured", return_value=True), \
+                patch("vf_logistics.executor_client.request_protected_action", new=delegated):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN" and result["message_id"] == "msg-split"
+        assert self.stored()["verification"]["executions"][-1]["status"] == "sent"
+
+    @pytest.mark.parametrize("outcome", [
+        {"delegated": True, "status": "failed", "reason": "executor refused the call"},
+        {"delegated": True, "status": "failed", "executed": False, "error": "boom"},
+        {"delegated": True, "status": "done", "executed": True},  # claims done, sent nothing
+        {"delegated": True, "status": "failed", "message_id": "m-stale"},  # failed outranks an id
+    ])
+    def test_a_delegated_publish_that_did_not_happen_is_a_failed_send(self, outcome):
+        approval_id = self._approved()
+        with patch("vf_logistics.executor_client.configured", return_value=True), \
+                patch("vf_logistics.executor_client.request_protected_action", new=AsyncMock(return_value=outcome)):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "EXECUTION_FAILED"
+        assert self.stored()["verification"]["approvals"][0]["status"] == "VALID"
+
+
+class TestN02Route(Base):
+    """The same failure at the HTTP boundary: a 200 that says EXECUTION_FAILED, then a
+    200 that says RELEASED_BY_HUMAN on retry."""
+
+    def setup_method(self):
+        super().setup_method()
+        from vf_logistics import app as app_mod
+
+        self.app_mod = app_mod
+        self.was = app_mod.limiter.enabled
+        app_mod.limiter.enabled = False
+        self.client = app_mod.app.test_client()
+
+    def teardown_method(self):
+        self.app_mod.limiter.enabled = self.was
+        super().teardown_method()
+
+    def test_execute_twice_over_http(self):
+        from test_console_session import mint
+
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        headers = {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(REVIEWER, amr="password")}
+        pubsub, _ = _fake_pubsub([TimeoutError("deadline exceeded"), "msg-http"])
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub):
+            first = self.client.post("/api/v1/review/CASE-1/execute",
+                                     json={"approval_id": approval_id}, headers=headers)
+            second = self.client.post("/api/v1/review/CASE-1/execute",
+                                      json={"approval_id": approval_id}, headers=headers)
+        assert first.status_code == 200 and first.get_json()["state"] == "EXECUTION_FAILED"
+        assert second.status_code == 200 and second.get_json()["state"] == "RELEASED_BY_HUMAN"
+        assert second.get_json()["message_id"] == "msg-http"
