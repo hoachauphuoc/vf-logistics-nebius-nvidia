@@ -1035,11 +1035,14 @@ async def execute_approval(
         None,
     )
     if existing_exe is not None and case.get("state") == "EXECUTING":
-        # Recovery: reuse the interrupted claim rather than opening a second one.
-        # Inside the lease only the claimant may resume; someone else would be racing
-        # a send that may still be in flight.
+        # Recovery: reuse the interrupted claim rather than opening a second one, but
+        # only once the lease has run out. Inside it NOBODY may resume, the claimant
+        # included (N01): what is stored is a name and a deadline, which cannot tell
+        # a crashed process from a slow one, and a same-person second call while the
+        # first is still mid-send was being treated as a resume and sent a second
+        # message. The price is a wait of up to CLAIM_LEASE_S after a real crash.
         lease_ends = float(existing_exe.get("claim_expires_epoch") or 0)
-        if existing_exe.get("executor") != executor and time.time() < lease_ends:
+        if time.time() < lease_ends:
             raise EvidenceError(
                 "Another execution of this approval is in progress. "
                 "Try again after it finishes or its claim expires.", 409,

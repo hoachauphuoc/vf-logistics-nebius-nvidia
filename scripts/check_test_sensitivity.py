@@ -670,8 +670,8 @@ MUTATIONS = [
     (
         "P1.2: documents can be requested on a case that is already decided",
         "src/vf_logistics/evidence.py",
-        'REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE)',
-        'REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE, "AUTO_CLEARED", "RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN", "INGESTED", "DEAD_LETTER")',
+        'REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE, "APPROVED")',
+        'REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE, "APPROVED", "AUTO_CLEARED", "RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN", "INGESTED", "DEAD_LETTER")',
         "tests/test_evidence_request.py::TestRequestingDocuments",
     ),
     (
@@ -694,6 +694,49 @@ MUTATIONS = [
         "    if context is not None and context.acts_for_a_person:\n        return context.email, context.actor_auth",
         "    if False:\n        return context.email, context.actor_auth",
         "tests/test_evidence_request.py::TestTheRoutes",
+    ),
+    # Rev2 backlog: the guards that were read as correct but never tested.
+    (
+        "N01: the claim is written without the version it read, so two callers can both win",
+        "src/vf_logistics/evidence.py",
+        '    case["updated_at"] = now\n    await _write(case, expected_version, tenant_id)\n    # If another caller claimed first',
+        '    case["updated_at"] = now\n    await _write(case, None, tenant_id)\n    # If another caller claimed first',
+        "tests/test_evidence_execution.py::TestN01TwoExecutesAtOnce",
+    ),
+    (
+        "N01: the claimant may resume its own claim while the first send is still in flight",
+        "src/vf_logistics/evidence.py",
+        "        if time.time() < lease_ends:\n            raise EvidenceError(\n                \"Another execution of this approval is in progress. \"",
+        "        if existing_exe.get(\"executor\") != executor and time.time() < lease_ends:\n            raise EvidenceError(\n                \"Another execution of this approval is in progress. \"",
+        "tests/test_evidence_execution.py::TestN01TwoExecutesAtOnce",
+    ),
+    (
+        "N05: a case that never asked for documents can be re-evaluated",
+        "src/vf_logistics/evidence.py",
+        "    if not isinstance(existing, dict) or not existing.get(\"requests\"):",
+        "    if False:",
+        "tests/test_evidence_eval_approve.py::TestN05OnlyInsideTheVerificationLoop",
+    ),
+    (
+        "N05: a released case can be re-evaluated",
+        "src/vf_logistics/evidence.py",
+        '    REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")',
+        '    REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN", "RELEASED_BY_HUMAN")',
+        "tests/test_evidence_eval_approve.py::TestN05OnlyInsideTheVerificationLoop",
+    ),
+    (
+        "N06: a certificate that states no country contradicts the declared origin",
+        "src/vf_logistics/verifier.py",
+        "        if not _is_meaningful(raw_origin):\n            continue\n        stated = _canon_country(raw_origin)",
+        "        stated = _canon_country(raw_origin)",
+        "tests/test_origin_inputs.py::TestN06WhatCountsAsNothingStated",
+    ),
+    (
+        "N06: a placeholder goods origin shadows a stated supplier country",
+        "src/vf_logistics/verifier.py",
+        "                    for v in (inv.get(\"goods_origin_country\"), inv.get(\"supplier_country\"))\n                    if _is_meaningful(v)",
+        "                    for v in (inv.get(\"goods_origin_country\"), inv.get(\"supplier_country\"))\n                    if v",
+        "tests/test_origin_inputs.py::TestN06WhatCountsAsNothingStated",
     ),
 ]
 
