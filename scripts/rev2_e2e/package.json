@@ -1,0 +1,7 @@
+{
+  "name": "rev2-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser re-test of the Rev2 verification loop against a deployed console",
+  "dependencies": { "playwright-core": "1.56.1" }
+}
