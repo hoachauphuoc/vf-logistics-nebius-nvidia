@@ -1822,7 +1822,11 @@ def reconcile(model_risk: Any, validation: dict[str, Any]) -> dict[str, Any]:
     Returns the effective risk plus enough detail for a human to see that the
     two disagreed, rather than a single laundered number.
     """
-    floor = int(validation.get("risk_floor", 0))
+    # A validation without a floor is one that did not run, not one that found
+    # nothing. It is scored at 0 so the arithmetic still works, but it never
+    # permits an auto-clear (below).
+    stated_floor = _num(validation.get("risk_floor"))
+    floor = int(stated_floor) if stated_floor is not None else 0
     stated = _num(model_risk)
     model_score = int(stated) if stated is not None else None
 
@@ -1851,7 +1855,7 @@ def reconcile(model_risk: Any, validation: dict[str, Any]) -> dict[str, Any]:
         "score_disputed": disputed,
         # Auto-clear needs both to agree. This is the line an agent cannot cross
         # on its own, whether it is mistaken, overconfident, or manipulated.
-        "auto_clear_permitted": floor == 0,
+        "auto_clear_permitted": floor == 0 and stated_floor is not None,
         "veto_reasons": (
             [f["detail"] for f in validation.get("findings", [])] if vetoed else []
         ),

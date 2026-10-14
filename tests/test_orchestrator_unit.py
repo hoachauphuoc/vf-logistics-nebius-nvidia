@@ -50,8 +50,12 @@ def _agent_response(risk=25, status="completed", findings=None):
     }
 
 
-def _compliance_response(status_val="CLEAR"):
-    """Build a mock compliance agent response."""
+def _compliance_response(status_val="CLEARED"):
+    """Build a mock compliance agent response.
+
+    The default is the schema's CLEARED, the only value the orchestrator will
+    release on. An off-schema stand-in would fail validation in production.
+    """
     r = _agent_response(risk=10)
     r["result"]["compliance_status"] = status_val
     r["result"]["status"] = status_val

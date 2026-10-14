@@ -41,7 +41,7 @@ from typing import Any, TypeGuard
 
 from vf_logistics import tools
 from vf_logistics.store import get_store, new_id, utcnow
-from vf_logistics.verifier import DUAL_USE_HS_PREFIXES
+from vf_logistics.verifier import DUAL_USE_HS_PREFIXES, is_placeholder_text
 
 # Actions that change the world and therefore require delegated authority.
 PROTECTED_ACTIONS = {
@@ -683,17 +683,28 @@ def _check_release(
         return deny(f"effective risk {risk} exceeds delegated ceiling {ceiling}")
 
     if rules.get("require_zero_deterministic_findings", True) is not False:
-        count = validation.get("finding_count", 0)
+        # A missing count is not a count of zero: it means no record that the
+        # deterministic checks ran, and that cannot satisfy a zero-findings rule.
+        count = validation.get("finding_count")
+        if not _is_number(count):
+            return deny("no deterministic finding count on the case")
         if count:
             return deny(f"{count} deterministic finding(s) present")
 
     if reconciliation.get("auto_clear_permitted") is not True:
         return deny("deterministic validation vetoed auto-clear")
 
+    # The shipment's side of each limit fails closed the way the grant's side
+    # does above. An absent or unreadable value must not read as 0, which passes
+    # any ceiling: the verifier raises no finding for it, so this check is the
+    # only thing between such a shipment and an automated release.
+    declared: Any = shipment.get("declared_value")
     try:
-        value = float(shipment.get("declared_value") or 0)
+        value = float(declared)
     except (TypeError, ValueError):
-        value = 0.0
+        return deny("declared value is not stated, so the value ceiling cannot be checked")
+    if not math.isfinite(value) or value < 0:
+        return deny(f"declared value {value!r} is not a usable amount")
     if value > value_ceiling:
         return deny(f"declared value {value:,.0f} USD exceeds delegated {value_ceiling:,.0f} USD")
 
@@ -701,8 +712,14 @@ def _check_release(
     if hs and hs in set(rules.get("forbidden_hs_prefixes", [])):
         return deny(f"HS prefix {hs} is excluded from auto-release")
 
+    forbidden_destinations = rules.get("forbidden_destinations", [])
+    # A blank destination contains no excluded name, so it would pass the loop
+    # below unread. The verifier does not flag a blank destination either: a
+    # receiver in Iran with the destination left empty validates clean.
+    if forbidden_destinations and is_placeholder_text(shipment.get("destination")):
+        return deny("destination is not stated, so excluded destinations cannot be checked")
     dest = str(shipment.get("destination") or "").lower()
-    for blocked in rules.get("forbidden_destinations", []):
+    for blocked in forbidden_destinations:
         if blocked in dest:
             return deny(f"destination '{blocked}' is excluded from auto-release")
 

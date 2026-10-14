@@ -165,6 +165,20 @@ class TestRiskReconciliation:
         assert result["model_risk"] is None
         assert result["auto_clear_permitted"] is False
 
+    def test_a_stated_zero_floor_permits_auto_clear(self):
+        """Control for the test below: the same score with a floor of 0 does."""
+        result = reconcile(model_risk=10, validation={"risk_floor": 0, "findings": []})
+
+        assert result["auto_clear_permitted"] is True
+
+    def test_a_validation_without_a_floor_never_permits_auto_clear(self):
+        """A missing floor means the checks did not run, not that they found nothing."""
+        for validation in ({"findings": []}, {"risk_floor": None}, {"risk_floor": "n/a"}):
+            result = reconcile(model_risk=10, validation=validation)
+
+            assert result["auto_clear_permitted"] is False
+            assert result["effective_risk"] == 10
+
 
 class TestPromptInjectionScreening:
     """Tests for prompt injection screening via untrusted module."""
