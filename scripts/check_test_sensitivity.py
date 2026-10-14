@@ -780,6 +780,13 @@ MUTATIONS = [
         '@require_reviewer\n@limiter.limit("10 per minute")\ndef review_approve(',
         "tests/test_n07_policy_gate.py::TestApproveAndExecuteNeedAPassword",
     ),
+    (
+        "N04: a partial set of documents closes the request, so the remaining links stop working",
+        "src/vf_logistics/evidence.py",
+        "    if set(received_docs.keys()) >= set(requested_docs) and requested_docs:",
+        "    if True:",
+        "tests/test_evidence_eval_approve.py::TestN04WhenARequestIsClosed",
+    ),
 ]
 
 

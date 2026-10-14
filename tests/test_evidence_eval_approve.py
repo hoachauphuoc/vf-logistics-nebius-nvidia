@@ -107,8 +107,8 @@ class TestReevaluation(Base):
         assert (case["reconciliation"] or {}).get("risk_floor", 0) >= 80
         assert any(c.get("kind") == "certificate_country" for c in result["evaluation"]["contradictions"])
 
-    def test_open_requests_are_closed_after_evaluation_when_all_docs_received(self):
-        """N04: reevaluate closes requests only when all documents are in."""
+    def test_a_request_with_documents_still_missing_stays_open_after_evaluation(self):
+        """N04: only a full set closes a request (see TestN04WhenARequestIsClosed)."""
         self.put()
         # Request 3 doc types but only submit 1 -- request stays open.
         self.request_and_submit(documents=["certificate_of_origin", "producer_declaration", "input_purchase_invoices"])
@@ -424,3 +424,78 @@ class TestN05OnlyInsideTheVerificationLoop(Base):
             "CASE-1", "release", REVIEWER, "reviewed", actor_auth="password",
         ))
         assert result["ok"] is True
+
+
+PAPERS = {
+    "certificate_of_origin": {"producer_name": "Saigon Plywood Co", "origin_country": "Vietnam"},
+    "producer_declaration": {"producer_name": "Saigon Plywood Co", "input_origins": ["Vietnam"]},
+    "input_purchase_invoices": {
+        "supplier_name": "Mekong Veneer", "supplier_country": "Vietnam",
+        "goods_origin_country": "Vietnam", "producer_name": "Saigon Plywood Co",
+    },
+}
+
+
+class TestN04WhenARequestIsClosed(Base):
+    """A request for three documents closes when all three are in, and not before."""
+
+    def _ask_and_submit(self, k):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        self.links = {link["doc_type"]: link["token"] for link in out["links"]}
+        self.request_id = out["request"]["request_id"]
+        _submit_per_type(self.links, {dt: PAPERS[dt] for dt in DOCS3[:k]})
+
+    def _request(self):
+        return self.stored()["verification"]["requests"][0]
+
+    @pytest.mark.parametrize("k", [0, 1, 2, 3])
+    def test_re_evaluating_k_of_3_documents(self, k):
+        self._ask_and_submit(k)
+        ev = run(evidence.reevaluate("CASE-1"))["evaluation"]
+        req = self._request()
+        assert sorted(req.get("received_docs") or {}) == sorted(DOCS3[:k])
+        assert ev["unresolved"] == DOCS3[k:]
+        assert ev["status"] == ("provided" if k == 3 else "missing")
+        # Only a full set closes the request; a partial one stays open so the shipper's
+        # remaining per-document links keep working.
+        assert req["status"] == ("RECEIVED" if k == 3 else "SENT")
+        assert "reconciled_at" not in req  # the closed state is RECEIVED; there is no later one
+
+    def test_a_partial_re_evaluate_does_not_unlock_a_decision_until_the_request_is_closed(self):
+        self._ask_and_submit(2)
+        result = run(evidence.reevaluate("CASE-1"))
+        assert result["state"] in ("HELD_FOR_REVIEW", "ESCALATED")
+        assert self._request()["status"] == "SENT"
+        for action in ("release", "block"):
+            with pytest.raises(evidence.EvidenceError) as raised:
+                run(evidence.approve("CASE-1", action, REVIEWER, note="ok", actor_auth="password"))
+            assert raised.value.status == 409
+            # The message has to say what to do, not only what is wrong.
+            assert "cancel" in raised.value.message.lower()
+            assert "documents" in raised.value.message.lower()
+        assert self.stored()["state"] == result["state"]
+
+    def test_cancelling_the_request_is_the_way_out_and_a_release_then_needs_a_reason(self):
+        self._ask_and_submit(2)
+        run(evidence.reevaluate("CASE-1"))
+        run(evidence.cancel_request("CASE-1", self.request_id, REVIEWER,
+                                    "Shipper cannot find the invoice", actor_auth="password"))
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400  # the missing invoice is an exception that needs a note
+        result = run(evidence.approve("CASE-1", "release", REVIEWER,
+                                      note="Invoice seen on site", actor_auth="password"))
+        assert result["approval"]["exception"]["unresolved"] == ["input_purchase_invoices"]
+
+    def test_the_last_document_after_a_partial_re_evaluate_needs_a_fresh_one(self):
+        self._ask_and_submit(2)
+        run(evidence.reevaluate("CASE-1"))
+        _submit_per_type(self.links, {"input_purchase_invoices": PAPERS["input_purchase_invoices"]})
+        assert self._request()["status"] == "RECEIVED"
+        # All three are in, but the evaluation on file predates the third.
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "block", REVIEWER, actor_auth="password"))
+        assert raised.value.status == 409
+        run(evidence.reevaluate("CASE-1"))
+        assert run(evidence.approve("CASE-1", "block", REVIEWER, actor_auth="password"))["state"] == "APPROVED"

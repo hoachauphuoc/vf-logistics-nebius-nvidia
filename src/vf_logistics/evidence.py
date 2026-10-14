@@ -378,7 +378,6 @@ async def request_evidence(
         "created_at": now,
         "sent_at": None,
         "received_at": None,
-        "reconciled_at": None,
         "closed_at": None,
     }
     # N03: mint one link per doc_type so the token carries which document to expect.
@@ -783,14 +782,11 @@ async def reevaluate(
     new_state = "ESCALATED" if floor >= 70 else "HELD_FOR_REVIEW"
     case["state"] = new_state
     case["updated_at"] = now
-    # N04: only close requests that have received their documents.
-    for req in record["requests"]:
-        if isinstance(req, dict) and req.get("status") in OPEN_STATUSES:
-            received = set((req.get("received_docs") or {}).keys())
-            requested = set(req.get("documents") or [])
-            if received >= requested and requested:
-                req["status"] = "RECONCILED"
-                req["reconciled_at"] = now
+    # N04: a request is closed by receive_evidence, the moment every document it asked
+    # for is in (status RECEIVED), and by nothing here. A partial set leaves it SENT
+    # so the shipper's remaining per-document links keep working. This used to loop
+    # over the open requests promoting full ones to RECONCILED, but a full request is
+    # never open by the time it gets here, so the loop could not fire.
 
     await _write(case, expected_version, tenant_id)
     await _audit(case_id, "evidence_reconciled", "system", None, {
@@ -855,7 +851,8 @@ async def approve(
         raise EvidenceError(f"The case is {state}, which is not awaiting approval.", 409)
     if open_requests(case):
         raise EvidenceError(
-            "There is still an open request for documents. Close or cancel it before approving.", 409,
+            "There is still an open request for documents. Wait for the remaining documents "
+            "and re-evaluate, or cancel the request (with a reason), before approving.", 409,
         )
 
     ev_version = record.get("evidence_version") or 0
