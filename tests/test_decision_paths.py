@@ -17,7 +17,10 @@ What is deliberately NOT covered, and why
                                     cannot be faked.
   model_armor._sanitize_once        one HTTP POST and a response parse. Mock the
   and _access_token                 client and you assert the mock came back.
-  document_store.py                 same reason, for GCS.
+  document_store.py                 same reason, for GCS -- except what is not
+                                    about GCS: that a receipt's URI reads back, that
+                                    failures are receipts, that only gs:// is
+                                    fetched. tests/test_document_store.py has those.
   a scripted successful debate      stubbing a completion and asserting the stub
   and investigation_agent           came back proves nothing about the model. Both
                                     are covered at the interpret/parse boundary,
