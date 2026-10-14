@@ -10,6 +10,7 @@ carry the corpus labels) are never served.
 from __future__ import annotations
 
 import json
+import pathlib
 
 from vf_logistics import evaluation
 from vf_logistics.app import app
@@ -238,3 +239,30 @@ def test_the_curve_carries_no_case_rows(tmp_path):
     curves = evaluation.operating_curves(tmp_path)
     assert set(curves) == {"rules"}
     assert curves["rules"]["splits"]["dev"]["points"][0]["intervals"]["recall"]["n"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Deployment: a directory the endpoint reads has to reach the image.
+# ---------------------------------------------------------------------------
+
+
+def test_every_directory_the_endpoint_reads_is_shipped():
+    """
+    The root Dockerfile copies data/ one directory at a time, and .gcloudignore
+    drops the rest of data/ from the Cloud Build upload. A directory missing from
+    either fails nothing: the endpoint finds no directory, serves it as empty, and
+    the console quietly drops its card. Nothing else notices -- these tests run
+    from the checkout, and the container smoke test never asks for the results.
+    """
+    root = pathlib.Path(__file__).resolve().parent.parent
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8").splitlines()
+    gcloudignore = (root / ".gcloudignore").read_text(encoding="utf-8").splitlines()
+    # Every data directory evaluation.py names, so the next one is checked too.
+    served = sorted(
+        value.name for value in vars(evaluation).values()
+        if isinstance(value, pathlib.Path) and value.parent == evaluation.DATA_DIR
+    )
+    assert served == ["benchmark_results", "eval_results", "operating_curve"]
+    for name in served:
+        assert f"COPY data/{name}/ data/{name}/" in dockerfile, f"Dockerfile does not copy data/{name}/"
+        assert f"!/data/{name}/" in gcloudignore, f".gcloudignore leaves data/{name}/ out of the upload"

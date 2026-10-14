@@ -76,9 +76,12 @@ COPY src/ src/
 COPY data/hs_reference.yaml data/hs_reference.yaml
 # The committed evaluation reports GET /api/v1/evaluation serves (evaluation.py).
 # Aggregates only -- a few tens of KB -- so the console can show what was measured
-# without a second deployment of anything.
+# without a second deployment of anything. A directory missing here does not fail
+# the build or the boot: the endpoint serves it as empty and the console drops the
+# card, so tests/test_evaluation_endpoint.py checks each one evaluation.py reads.
 COPY data/benchmark_results/ data/benchmark_results/
 COPY data/eval_results/ data/eval_results/
+COPY data/operating_curve/ data/operating_curve/
 
 # Next.js standalone output
 COPY --from=node-builder /app/.next/standalone ./console/

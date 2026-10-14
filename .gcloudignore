@@ -46,7 +46,8 @@ venv/
 !README.md
 
 # Everything under the top-level data/ except what the runtime reads: the HS
-# reference, and the committed evaluation reports GET /api/v1/evaluation serves.
+# reference, and the committed evaluation reports and operating curve
+# GET /api/v1/evaluation serves (one directory each, as evaluation.py names them).
 #
 # The leading slash is load-bearing. gcloud's ignore matcher does not anchor
 # `data/*` to this directory the way git does -- it matched src/vf_logistics/data/
@@ -58,3 +59,4 @@ venv/
 !/data/hs_reference.yaml
 !/data/benchmark_results/
 !/data/eval_results/
+!/data/operating_curve/
