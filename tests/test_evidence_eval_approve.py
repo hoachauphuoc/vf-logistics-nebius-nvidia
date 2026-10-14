@@ -634,7 +634,7 @@ class TestReevaluateKeepsAnEscalation(Base):
     def test_the_state_the_case_was_in_before_the_request_is_kept(self, start, expected):
         self.put(state=start)
         out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
-        _submit_per_type({l["doc_type"]: l["token"] for l in out["links"]}, PAPERS)
+        _submit_per_type({link["doc_type"]: link["token"] for link in out["links"]}, PAPERS)
         result = run(evidence.reevaluate("CASE-1"))
         assert result["floor"] < 70
         assert result["state"] == expected
@@ -643,6 +643,6 @@ class TestReevaluateKeepsAnEscalation(Base):
     def test_a_contradiction_still_escalates_a_held_case(self):
         self.put(state="HELD_FOR_REVIEW")
         out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
-        _submit_per_type({l["doc_type"]: l["token"] for l in out["links"]},
+        _submit_per_type({link["doc_type"]: link["token"] for link in out["links"]},
                          {**PAPERS, "certificate_of_origin": {"producer_name": "Saigon Plywood Co", "origin_country": "China"}})
         assert run(evidence.reevaluate("CASE-1"))["state"] == "ESCALATED"
