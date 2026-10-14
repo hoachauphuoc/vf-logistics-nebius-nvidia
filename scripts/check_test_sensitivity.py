@@ -759,6 +759,27 @@ MUTATIONS = [
         '        "state_before": APPROVED,\n        "state_after": final_state,',
         "tests/test_evidence_execution.py::TestN02APublishThatFails",
     ),
+    (
+        "N07: the legacy /decide route accepts a case that has been through the verification loop",
+        "src/vf_logistics/orchestrator.py",
+        '    if case.get("verification") is not None:\n        return {',
+        '    if False:\n        return {',
+        "tests/test_n07_policy_gate.py::TestLegacyDecideAfterTheLoop",
+    ),
+    (
+        "N07: the legacy /decide route releases without a password sign-in",
+        "src/vf_logistics/orchestrator.py",
+        '    if action == "release" and actor_auth != "password":\n        return {\n            "ok": False,\n            "error": "Releasing a shipment needs a password sign-in.",',
+        '    if False:\n        return {\n            "ok": False,\n            "error": "Releasing a shipment needs a password sign-in.",',
+        "tests/test_n07_policy_gate.py::TestLegacyDecideReleaseNeedsAPassword",
+    ),
+    (
+        "N07: approve no longer needs a password session",
+        "src/vf_logistics/app.py",
+        '@require_reviewer\n@require_password_session\n@limiter.limit("10 per minute")\ndef review_approve(',
+        '@require_reviewer\n@limiter.limit("10 per minute")\ndef review_approve(',
+        "tests/test_n07_policy_gate.py::TestApproveAndExecuteNeedAPassword",
+    ),
 ]
 
 
