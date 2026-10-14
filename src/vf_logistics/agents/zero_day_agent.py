@@ -263,8 +263,10 @@ def entities_to_check(shipment: dict[str, Any]) -> list[str]:
         "shipper_company", "shipper_name",
         "receiver_company", "receiver_name", "consignee_name",
     ):
+        from vf_logistics.verifier import is_placeholder_text
+
         value = str(shipment.get(field) or "").strip()
-        if value and value.lower() not in ("n/a", "not stated", "none"):
+        if value and not is_placeholder_text(value):
             if value not in out:
                 out.append(value)
     return out[:4]

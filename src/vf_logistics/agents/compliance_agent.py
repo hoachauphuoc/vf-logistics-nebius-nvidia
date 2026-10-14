@@ -92,15 +92,17 @@ sanctions or fraud hit found there should raise sanctions_hits/risk_factors.
 # be, and those strings are truthy. Searching for '"N/A" sanctions' spends a credit to
 # learn nothing, on every such record. zero_day_agent.entities_to_check() already
 # filtered these; this call site did not.
-_PLACEHOLDER_NAMES = {
-    "", "n/a", "na", "none", "not stated", "not provided", "unknown", "-",
-}
-
-
 def _searchable_name(value: Any) -> str:
-    """The name if it is one, otherwise the empty string."""
+    """The name if it is one, otherwise the empty string.
+
+    What counts as "not a name" is verifier.is_placeholder_text, the one definition
+    shared with the origin-evidence check, so a spelling is never a name in one place
+    and a placeholder in another.
+    """
+    from vf_logistics.verifier import is_placeholder_text
+
     text = str(value or "").strip()
-    return "" if text.lower() in _PLACEHOLDER_NAMES else text
+    return "" if is_placeholder_text(text) else text
 
 
 # THERE IS NO CACHE BYPASS, AND THE ONE THAT WAS HERE WAS REMOVED ON MEASUREMENT.

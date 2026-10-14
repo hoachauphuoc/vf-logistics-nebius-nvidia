@@ -339,11 +339,46 @@ def distinct_hubs(text: str, exclude: str = "") -> set[str]:
 
 MISSING_MARKERS = {"", "not stated", "n/a", "na", "none", "not provided", "unknown", "-"}
 
+# What a transcribed document, or a model reading one, writes where the paper states
+# nothing. The prompt asks for "not stated" but replies vary ("Not stated.", "N/A",
+# "n/a.", "not specified", a dash), and every one of them is a truthy string. There
+# used to be three hand-copied lists of these that had drifted apart; this is the one.
+_PLACEHOLDER_RE = re.compile(
+    r"^(?:not\s+(?:stated|specified|available|provided|applicable|shown|mentioned|given)"
+    r"|n\s*/\s*a|n\.\s*a|na|nil|null|none|unknown|unspecified|[-\u2013\u2014]+|\?+)$"
+)
 
-def _is_missing(value: Any) -> bool:
+
+def is_placeholder_text(value: Any) -> bool:
+    """True for a value that says nothing: absent, blank, or a "not stated" spelling.
+
+    Whole-value match only, so a real name that merely starts like one ("Nilsen
+    Timber", "Nagoya") is untouched. A list is a placeholder when all of it is.
+    """
     if value is None:
         return True
-    return str(value).strip().lower() in MISSING_MARKERS
+    if isinstance(value, (list, tuple)):
+        return all(is_placeholder_text(v) for v in value)
+    text = " ".join(str(value).split()).strip(" \t\"'()[]{}.,;:").lower()
+    return text == "" or bool(_PLACEHOLDER_RE.match(text))
+
+
+def _scalar(value: Any) -> Any:
+    """A one-element list as its element; models sometimes wrap a single answer."""
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        return value[0]
+    return value
+
+
+def _is_meaningful(value: Any) -> bool:
+    """A string that states something. Anything else (None, numbers, lists of
+    several) is not a stated value for the fields that use this."""
+    value = _scalar(value)
+    return isinstance(value, str) and not is_placeholder_text(value)
+
+
+def _is_missing(value: Any) -> bool:
+    return is_placeholder_text(value)
 
 
 def _num(value: Any) -> float | None:
@@ -1329,19 +1364,9 @@ def check_origin_evidence(
     (empty unless something contradicts).
     """
     rule = watched_lane(shipment)
-    # N06: values that mean "not verified" even though they are truthy strings.
-    _NOT_MEANINGFUL = frozenset({
-        "not stated", "n/a", "unknown", "unspecified", "none", "not available",
-        "not provided", "not applicable", "",
-    })
-
-    def _is_meaningful(value: Any) -> bool:
-        if value is None:
-            return False
-        if not isinstance(value, str):
-            return False
-        return value.strip().lower() not in _NOT_MEANINGFUL
-
+    # N06: values that mean "not verified" even though they are truthy strings are
+    # filtered by the module-level _is_meaningful, in the completeness test AND in
+    # every contradiction read below. A paper that states nothing contradicts nothing.
     # `by_type` holds the documents complete enough to count as provided. `read_by_type`
     # holds every document that yielded anything: a contradiction is read from the
     # latter, because an invoice that names China-origin goods but omits the supplier
@@ -1384,7 +1409,10 @@ def check_origin_evidence(
     contradictions: list[dict[str, Any]] = []
 
     for cert in read_by_type.get("certificate_of_origin", []):
-        stated = _canon_country(cert.get("origin_country"))
+        raw_origin = _scalar(cert.get("origin_country"))
+        if not _is_meaningful(raw_origin):
+            continue
+        stated = _canon_country(raw_origin)
         if stated and declared and stated != declared:
             contradictions.append({
                 "kind": "certificate_country",
@@ -1400,12 +1428,22 @@ def check_origin_evidence(
                     "detail": f"The producer's declaration lists {hit[0].title()}-origin inputs, the origin the authority found.",
                 })
         for inv in read_by_type.get("input_purchase_invoices", []):
-            goods_origin = _canon_country(inv.get("goods_origin_country") or inv.get("supplier_country"))
+            # The first value that states something: a "not stated" goods origin must
+            # not shadow a supplier country that is stated.
+            goods_origin = next(
+                (
+                    _canon_country(_scalar(v))
+                    for v in (inv.get("goods_origin_country"), inv.get("supplier_country"))
+                    if _is_meaningful(v)
+                ),
+                "",
+            )
             if goods_origin == watched:
+                supplier = _scalar(inv.get("supplier_name"))
                 contradictions.append({
                     "kind": "input_origin",
                     "detail": f"An input purchase invoice is for {watched.title()}-origin goods"
-                              + (f" from {inv.get('supplier_name')}" if inv.get("supplier_name") else "")
+                              + (f" from {supplier}" if _is_meaningful(supplier) else "")
                               + ".",
                 })
 

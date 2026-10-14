@@ -304,3 +304,94 @@ class TestTheCatalogue:
         refs, precedent, action = guidance_for(code)
         assert precedent == "origin"
         assert action != "Review the finding detail."
+
+
+# N06: what a model writes where a paper states nothing. The prompt asks for "not
+# stated", but replies vary, and none of these is a country, a company or a claim.
+NOT_STATED = [
+    "not stated", "Not stated.", "NOT STATED", "not  stated", "N/A", "n/a.", "N.A.",
+    "na", "-", "--", "—", "?", "unknown", "Unspecified", "not specified",
+    "Not available", "not provided", "Not applicable", "not shown", "not mentioned",
+    "nil", "null", "none", "", "   ", None, ["not stated"], [],
+]
+
+
+class TestN06WhatCountsAsNothingStated:
+    @pytest.mark.parametrize("value", NOT_STATED)
+    def test_a_certificate_that_states_no_country_is_missing_not_contradicting(self, value):
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": value}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["contradictions"] == []
+        assert out["findings"] == []
+        assert out["status"] == "missing"
+        assert out["missing"] == ["certificate_of_origin"]
+
+    @pytest.mark.parametrize("value", NOT_STATED)
+    def test_a_placeholder_producer_is_not_a_producer_to_mismatch_against(self, value):
+        no_producer_on_invoice = {k: v for k, v in GOOD["input_purchase_invoices"].items() if k != "producer_name"}
+        out = check_origin_evidence(plywood(), docs(
+            certificate_of_origin=GOOD["certificate_of_origin"],
+            producer_declaration={"producer_name": value, "input_origins": ["Vietnam"]},
+            input_purchase_invoices=no_producer_on_invoice,
+        ))
+        assert "ORIGIN_PRODUCER_MISMATCH" not in [f["code"] for f in out["findings"]]
+
+    @pytest.mark.parametrize("value", NOT_STATED)
+    def test_a_placeholder_goods_origin_does_not_hide_a_real_supplier_country(self, value):
+        # supplier_country says China; goods_origin_country says "not stated". The
+        # truthy placeholder used to win the `or`, so this read as "provided".
+        invoice = {
+            "supplier_name": "Guangxi Veneer Ltd", "supplier_country": "China",
+            "goods_origin_country": value, "producer_name": "Saigon Plywood Co",
+        }
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "contradicted"
+        assert any(c["kind"] == "input_origin" for c in out["contradictions"])
+
+    @pytest.mark.parametrize("value", [v for v in NOT_STATED if v not in (None, [], "", "   ")])
+    def test_a_placeholder_supplier_name_never_reaches_the_reviewer_text(self, value):
+        invoice = {
+            "supplier_name": value, "goods_origin_country": "China",
+            "producer_name": "Saigon Plywood Co",
+        }
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "contradicted"
+        text = " ".join(c["detail"] for c in out["contradictions"]).lower()
+        assert "not stated" not in text and "n/a" not in text and " from " not in text
+
+    def test_goods_origin_wins_over_supplier_country_when_both_are_stated(self):
+        # Pin the precedence: a Vietnamese goods origin from a China-based trader is
+        # not a contradiction (the goods are what the watch is about).
+        invoice = {
+            "supplier_name": "HK Trader", "supplier_country": "China",
+            "goods_origin_country": "Vietnam", "producer_name": "Saigon Plywood Co",
+        }
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "provided" and out["contradictions"] == []
+
+    def test_real_values_are_not_swallowed_by_the_filter(self):
+        from vf_logistics.verifier import is_placeholder_text
+        for real in ("Vietnam", "China", "Saigon Plywood Co., Ltd.", "Nilsen Timber", "Nathan Ltd", "Nagoya"):
+            assert not is_placeholder_text(real), real
+
+    def test_every_list_of_placeholders_in_the_code_agrees(self):
+        # They used to be three hand-copied sets that had drifted apart. Anything
+        # any of them treats as nothing, the evidence check must too.
+        from vf_logistics.agents import compliance_agent, zero_day_agent
+        from vf_logistics.verifier import MISSING_MARKERS, is_placeholder_text
+        for marker in MISSING_MARKERS:
+            assert is_placeholder_text(marker), marker
+        for marker in ("", "n/a", "na", "none", "not stated", "not provided", "unknown", "-"):
+            assert compliance_agent._searchable_name(marker) == "", marker
+        for marker in ("n/a", "not stated", "none", "Not stated.", "NA"):
+            assert zero_day_agent.entities_to_check({"shipper_name": marker}) == [], marker
+        assert compliance_agent._searchable_name("Saigon Plywood Co.") == "Saigon Plywood Co."
+
+    def test_a_declaration_that_names_the_producer_but_no_inputs_is_still_provided(self):
+        # N06-E, recorded and NOT changed here: whether a declaration without
+        # input_origins counts as proof is a product decision. This pins today's
+        # behaviour so a change has to be deliberate.
+        for origins in ([], "not stated", ["not stated"], None):
+            declaration = {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": origins}
+            out = check_origin_evidence(plywood(), docs(**{**GOOD, "producer_declaration": declaration}))
+            assert out["status"] == "provided", origins
