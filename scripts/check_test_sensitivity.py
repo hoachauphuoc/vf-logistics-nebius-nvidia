@@ -720,8 +720,8 @@ MUTATIONS = [
     (
         "N05: a released case can be re-evaluated",
         "src/vf_logistics/evidence.py",
-        '    REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")',
-        '    REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN", "RELEASED_BY_HUMAN")',
+        'REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")',
+        'REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN", "RELEASED_BY_HUMAN")',
         "tests/test_evidence_eval_approve.py::TestN05OnlyInsideTheVerificationLoop",
     ),
     (
@@ -786,6 +786,13 @@ MUTATIONS = [
         "    if set(received_docs.keys()) >= set(requested_docs) and requested_docs:",
         "    if True:",
         "tests/test_evidence_eval_approve.py::TestN04WhenARequestIsClosed",
+    ),
+    (
+        "C3: releasing against contradicting papers needs no reason",
+        "src/vf_logistics/evidence.py",
+        "            if not (note or \"\").strip():\n                raise EvidenceError(\n                    f\"Release with {' and '.join(what)} requires a note explaining the exception.\",",
+        "            if False:\n                raise EvidenceError(\n                    f\"Release with {' and '.join(what)} requires a note explaining the exception.\",",
+        "tests/test_evidence_eval_approve.py::TestReleasingAgainstContradictingPapers",
     ),
 ]
 

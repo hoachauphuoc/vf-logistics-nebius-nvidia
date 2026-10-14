@@ -53,6 +53,10 @@ AWAITING_EVIDENCE = "AWAITING_EVIDENCE"
 # AWAITING_EVIDENCE itself so a second request can be added to an open one.
 REQUESTABLE_STATES = ("PENDING_HUMAN", "HELD_FOR_REVIEW", "ESCALATED", AWAITING_EVIDENCE, "APPROVED")
 
+# N05: the states a case can be re-evaluated from. The console mirrors this list
+# (frontend/src/lib/types.ts REEVALUABLE_STATES); a test reads both so they cannot drift.
+REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")
+
 OPEN_STATUSES = ("OPEN", "SENT")
 LINK_TTL_S = 7 * 24 * 3600
 # How long an execution claim is exclusive to the executor who made it. After this a
@@ -717,7 +721,6 @@ async def reevaluate(
     case = copy.deepcopy(stored)
 
     # N05: only reevaluate cases that are still in the verification loop.
-    REEVALUABLE = ("AWAITING_EVIDENCE", "HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")
     if case.get("state") not in REEVALUABLE:
         raise EvidenceError(
             f"Cannot re-evaluate a case in state {case.get('state')}.",
@@ -874,20 +877,33 @@ async def approve(
     exception: dict[str, Any] | None = None
     if action == "release" and latest_eval:
         unresolved = [str(u) for u in (latest_eval.get("unresolved") or [])]
-        if unresolved:
+        contradictions = [
+            {"kind": c.get("kind"), "detail": c.get("detail")}
+            for c in (latest_eval.get("contradictions") or []) if isinstance(c, dict)
+        ]
+        contradicted = latest_eval.get("status") == "contradicted" or bool(contradictions)
+        if unresolved or contradicted:
+            # The decision stays possible: the extractor is a model, and a reviewer who
+            # has seen the original must be able to dismiss its false alarm. It is not
+            # silent, though: it needs a reason, and the approval carries what was
+            # waived so the audit trail shows it, by whom, and why.
+            what = []
+            if unresolved:
+                what.append(f"unresolved evidence ({', '.join(unresolved)})")
+            if contradicted:
+                what.append("papers that contradict the declared origin")
             if not (note or "").strip():
                 raise EvidenceError(
-                    f"Release with unresolved evidence ({', '.join(unresolved)}) "
-                    "requires a note explaining the exception.",
+                    f"Release with {' and '.join(what)} requires a note explaining the exception.",
                     400,
                 )
-            # An exception, not a normal release: recorded on the approval so the
-            # audit trail shows what was waived, by whom, and why.
             exception = {
                 "unresolved": unresolved,
                 "reason": note.strip(),
                 "approved_by": approver,
             }
+            if contradicted:
+                exception["contradictions"] = contradictions
 
     now = utcnow()
     approval: dict[str, Any] = {

@@ -499,3 +499,68 @@ class TestN04WhenARequestIsClosed(Base):
         assert raised.value.status == 409
         run(evidence.reevaluate("CASE-1"))
         assert run(evidence.approve("CASE-1", "block", REVIEWER, actor_auth="password"))["state"] == "APPROVED"
+
+
+class TestReleasingAgainstContradictingPapers(Base):
+    """A release is the one decision that can send cargo on after the papers disagree
+    with the declaration. It stays possible (the extractor is a model whose false alarm
+    a reviewer must be able to dismiss) but never silently: it needs a reason, and the
+    approval records what was contradicted."""
+
+    def _full_set(self, **override):
+        """All three papers in, with `override` replacing individual documents."""
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _submit_per_type(links, {**PAPERS, **override})
+        return run(evidence.reevaluate("CASE-1"))
+
+    def _contradicted(self):
+        result = self._full_set(certificate_of_origin={"producer_name": "Saigon Plywood Co", "origin_country": "China"})
+        assert result["evaluation"]["status"] == "contradicted"
+        assert result["evaluation"]["unresolved"] == []
+        return result
+
+    def test_a_release_needs_a_note(self):
+        self._contradicted()
+        for empty in ("", "   "):
+            with pytest.raises(evidence.EvidenceError) as raised:
+                run(evidence.approve("CASE-1", "release", REVIEWER, note=empty, actor_auth="password"))
+            assert raised.value.status == 400
+            assert "contradict" in raised.value.message.lower()
+        assert self.stored()["state"] == "ESCALATED"
+
+    def test_a_release_with_a_note_is_recorded_as_an_exception_naming_the_contradiction(self):
+        self._contradicted()
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Certificate misread; checked the original", actor_auth="password",
+        ))
+        exc = result["approval"]["exception"]
+        assert exc["reason"] == "Certificate misread; checked the original"
+        assert exc["approved_by"] == REVIEWER
+        assert [c["kind"] for c in exc["contradictions"]] == ["certificate_country"]
+        assert "China" in exc["contradictions"][0]["detail"]
+
+    def test_a_block_needs_no_note(self):
+        self._contradicted()
+        result = run(evidence.approve("CASE-1", "block", REVIEWER, note="", actor_auth="password"))
+        assert result["state"] == "APPROVED"
+        assert "exception" not in result["approval"]
+
+    def test_a_note_is_also_needed_when_unresolved_and_contradicted_together(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _submit_per_type(links, {"certificate_of_origin": {"producer_name": "Saigon Plywood", "origin_country": "China"}})
+        run(evidence.cancel_request("CASE-1", out["request"]["request_id"], REVIEWER, "no answer", actor_auth="password"))
+        run(evidence.reevaluate("CASE-1"))
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        message = raised.value.message.lower()
+        assert raised.value.status == 400 and "unresolved" in message and "contradict" in message
+
+    def test_good_papers_still_release_without_a_note(self):
+        assert self._full_set()["evaluation"]["status"] == "provided"
+        result = run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert result["state"] == "APPROVED"
+        assert "exception" not in result["approval"]
