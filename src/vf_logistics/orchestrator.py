@@ -2025,8 +2025,10 @@ async def human_decide(
 #
 # The cache is a read-through TTL cache only. Losing it costs one query, not
 # correctness. Every writer of a human decision (human_decide,
-# evidence.execute_approval) drops it, but only in its own process: another
-# instance sees the decision once its own entry is older than the TTL.
+# evidence.execute_approval) drops it, but only in its own process, so on its
+# own it would let another instance miss a decision for up to the TTL.
+# shipper_risk_adjustment() therefore refreshes it before every decision; the
+# cache serves only the reads that follow in the same scoring step.
 
 _FEEDBACK_OUTCOMES = {"RELEASED_BY_HUMAN": "released", "BLOCKED_BY_HUMAN": "blocked"}
 _FEEDBACK_STATES = tuple(_FEEDBACK_OUTCOMES)
@@ -2175,6 +2177,13 @@ async def shipper_risk_adjustment(
     refuse; shipper_name is not even a field the registry checks. A caller that
     passes no shipment gets the penalty and never the discount.
     """
+    # Read fresh. This is the one reader whose answer moves a release decision,
+    # and a cached tally can only be missing decisions recorded since it was
+    # built -- on another Cloud Run instance, whose invalidation never reaches
+    # this one. A missed second block is a missed +15, which can let a
+    # borderline shipment clear. The rescan is one bounded query per scored
+    # case; the reads below, and the learning note, then hit what it cached.
+    await _load_shipper_feedback(force=True, tenant_id=tenant_id)
     named = await get_shipper_feedback(shipper_name, tenant_id=tenant_id) or {}
     verified = await get_verified_shipper_feedback(shipment, tenant_id=tenant_id) or {}
     if named.get("blocked", 0) >= 2 or verified.get("blocked", 0) >= 2:

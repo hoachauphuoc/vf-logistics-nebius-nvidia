@@ -532,6 +532,23 @@ class TestLearningLoop(unittest.TestCase):
         orchestrator._feedback_cache = {}
         self.assertEqual(self._adjust(self.VERIFIED), first)
 
+    def test_a_decision_recorded_elsewhere_counts_at_once(self):
+        """
+        Another instance records a block and drops only its own cache. The
+        adjustment here must still see it: a missed second block is a missed +15.
+        """
+        _run(self._seed(blocked=1))
+        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), 0)
+        # Written straight to the store, as another process would, with no
+        # invalidation of this process's cache.
+        _run(store_mod.get_store().put_case({
+            "case_id": "B-elsewhere", "shipment_id": "BX",
+            "state": "BLOCKED_BY_HUMAN",
+            "created_at": "2026-09-19T12:00:00.000000+00:00",
+            "shipment": {"shipper_name": "Acme Corp"}, "steps": [], "actions": [],
+        }))
+        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), 15)
+
     def test_tallies_are_cached_under_the_tenant(self):
         """Not under the last shipper scanned, where another tenant could read them."""
         _run(self._seed(released=1, shipper="Acme Corp", tenant_id="tenant-a"))
