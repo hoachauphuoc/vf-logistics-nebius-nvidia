@@ -199,6 +199,31 @@ export function matchWrite(joined: string, allowed: Set<string>): boolean {
 }
 
 /**
+ * The policy key for a path that matchWrite already accepted: the id-carrying forms
+ * mapped to the template the policy sets are written in, everything else unchanged.
+ *
+ * ALLOWED_POST and PASSWORD_ONLY_POST name `review/approve`, but a request arrives as
+ * `review/CASE-1/approve`. Looking the raw path up in PASSWORD_ONLY_POST never matched,
+ * so the password gate for approve and execute was dead code and only Flask's own check
+ * stood between a one-click session and a release (N07). Anything that asks "which
+ * rule applies to this write" must go through here.
+ */
+export function policyKey(joined: string): string {
+  const parts = joined.split("/");
+  if (parts.length === 3 && parts[0] === "review" && CASE_ID.test(parts[1])) {
+    return `review/${parts[2]}`;
+  }
+  if (parts.length === 5 && parts[0] === "review" && CASE_ID.test(parts[1])
+      && parts[2] === "evidence" && CASE_ID.test(parts[3])) {
+    return `review/evidence/${parts[4]}`;
+  }
+  if (parts.length === 3 && parts[0] === "cases" && CASE_ID.test(parts[1])) {
+    return `cases/${parts[2]}`;
+  }
+  return joined;
+}
+
+/**
  * Whether a path is an allowed read, including the id-carrying ones.
  *
  * A passing shape check is not an authorisation check and is not pretending to

@@ -323,3 +323,66 @@ describe("Evidence upload is authenticated by its token, not a session", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+describe("Approving and executing a decision need a password sign-in at the BFF too (N07)", () => {
+  let spy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv("VF_API_KEY", "console-secret-key");
+    vi.stubEnv("VF_SESSION_SECRET", SECRET);
+    vi.stubEnv("FLASK_API_BASE", "http://127.0.0.1:9090");
+    vi.stubEnv("VF_ONE_CLICK_JUDGE", "true");
+    vi.stubEnv("VF_ONE_CLICK_EMAIL", "guest-judge@vf-logistics.demo");
+    spy = vi.fn(async () => Response.json({ state: "APPROVED" }));
+    globalThis.fetch = spy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const post = (path: string, token: string | null) =>
+    POST(
+      new Request(`https://vf.example/api/proxy/${path}`, {
+        method: "POST",
+        headers: token ? { cookie: `vf_session=${token}` } : {},
+        body: "{}",
+      }),
+      params(path),
+    );
+
+  // The gate used to be keyed by the TEMPLATE ("review/approve") and looked up with
+  // the raw path ("review/CASE-1/approve"), so it never matched and only Flask's own
+  // check was left standing.
+  it.each(["review/CASE-1/approve", "review/CASE-1/execute"])(
+    "turns a one-click session away from %s without calling the API",
+    async (path) => {
+      const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
+      const response = await post(path, token);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: "password_session_required",
+        required_auth: "password",
+      });
+      expect(spy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["review/CASE-1/approve", "review/CASE-1/execute"])(
+    "forwards %s for a password session, key attached",
+    async (path) => {
+      const token = await signSession("reviewer@forwarder.example", "password");
+      expect((await post(path, token)).status).toBe(200);
+      expect(sentHeaders(spy).get("x-vf-api-key")).toBe("console-secret-key");
+    },
+  );
+
+  it("leaves the other review writes to a one-click session (a block is not a release)", async () => {
+    const token = await signSession("guest-judge@vf-logistics.demo", "one_click");
+    for (const path of ["review/CASE-1/decide", "review/CASE-1/request-evidence", "review/CASE-1/reevaluate"]) {
+      expect((await post(path, token)).status).toBe(200);
+    }
+    expect(spy).toHaveBeenCalledTimes(3);
+  });
+});

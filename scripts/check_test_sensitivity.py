@@ -794,6 +794,13 @@ MUTATIONS = [
         "            if False:\n                raise EvidenceError(\n                    f\"Release with {' and '.join(what)} requires a note explaining the exception.\",",
         "tests/test_evidence_eval_approve.py::TestReleasingAgainstContradictingPapers",
     ),
+    (
+        "N07: the BFF password gate for approve and execute looks up the raw path and never matches",
+        "frontend/src/app/api/proxy/[...path]/route.ts",
+        "PASSWORD_ONLY_POST.has(policyKey(joined))",
+        "PASSWORD_ONLY_POST.has(joined)",
+        "frontend/src/app/api/proxy/[...path]/route.test.ts",
+    ),
 ]
 
 

@@ -9,6 +9,7 @@ import {
   matchWrite,
   PASSWORD_ONLY_POST,
   PASSWORD_ONLY_PUT,
+  policyKey,
 } from "@/lib/proxy-policy";
 import {
   isPasswordSession,
@@ -272,7 +273,9 @@ export async function POST(
   // Clearing the board wants a password sign-in on top of the role. A caller
   // with no session at all only gets here in development without a secret, and
   // then reaches Flask without the key, as a viewer, and is refused there.
-  if (PASSWORD_ONLY_POST.has(joined) && caller && !isPasswordSession(caller.session)) {
+  // By policy key, not the raw path: `review/CASE-1/approve` is the rule for
+  // `review/approve` (see policyKey).
+  if (PASSWORD_ONLY_POST.has(policyKey(joined)) && caller && !isPasswordSession(caller.session)) {
     return passwordRequired(caller.session);
   }
 

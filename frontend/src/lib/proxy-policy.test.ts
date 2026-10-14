@@ -11,6 +11,7 @@ import {
   ALLOWED_PUT,
   PASSWORD_ONLY_POST,
   PASSWORD_ONLY_PUT,
+  policyKey,
 } from "./proxy-policy";
 
 describe("matchRead", () => {
@@ -129,5 +130,24 @@ describe("the lists the Access Control screen shows", () => {
     expect(shown).toContain("PUT governance/prefilter-rules");
     expect(shown).not.toContain("POST review/decide");
     expect(shown).not.toContain("POST cases/activity");
+  });
+});
+
+describe("policyKey", () => {
+  it("maps the id-carrying forms to the template the policy sets use", () => {
+    expect(policyKey("review/CASE-1/approve")).toBe("review/approve");
+    expect(policyKey("review/CASE-1/execute")).toBe("review/execute");
+    expect(policyKey("review/CASE-1/evidence/evreq-9/cancel")).toBe("review/evidence/cancel");
+    expect(policyKey("cases/CASE-1/activity")).toBe("cases/activity");
+    expect(policyKey("orchestrator/reset")).toBe("orchestrator/reset");
+    expect(policyKey("evidence/respond")).toBe("evidence/respond");
+    // Every policy set is written in templates, so a mapped path must land in them.
+    expect(PASSWORD_ONLY_POST.has(policyKey("review/CASE-1/approve"))).toBe(true);
+    expect(ALLOWED_POST.has(policyKey("review/CASE-1/request-evidence"))).toBe(true);
+  });
+
+  it("leaves a path that is not an id-carrying form alone", () => {
+    expect(policyKey("review/../orchestrator/reset")).toBe("review/../orchestrator/reset");
+    expect(policyKey("review/approve")).toBe("review/approve");
   });
 });
