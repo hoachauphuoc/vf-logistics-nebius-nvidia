@@ -170,6 +170,10 @@ describe("shortModelName", () => {
     expect(shortModelName("nvidia/nemotron-3-super-120b-a12b")).toBe("Nemotron 3 Super");
   });
 
+  it("names the vision model that reads uploaded papers", () => {
+    expect(shortModelName("openbmb/MiniCPM-V-4_5")).toBe("MiniCPM-V 4.5");
+  });
+
   it("returns the tail of an unrecognised id rather than throwing", () => {
     expect(shortModelName("some-vendor/some-model")).toBe("some-model");
   });

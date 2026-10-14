@@ -67,12 +67,15 @@ export function formatClock(iso: string | null | undefined): string {
   return d.toISOString().replace("T", " ").slice(0, 19) + "Z";
 }
 
-/** "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B" -> "Nemotron 3 Nano" */
+/** "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B" -> "Nemotron 3 Nano"; "openbmb/MiniCPM-V-4_5" -> "MiniCPM-V 4.5" */
 export function shortModelName(modelId: string | null | undefined): string {
   if (!modelId) return NO_VALUE;
   const tail = modelId.split("/").pop() ?? modelId;
   const match = tail.match(/Nemotron-3-(Nano|Super|Ultra)/i);
   if (match) return `Nemotron 3 ${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}`;
+  // The vision model that reads uploaded papers: "openbmb/MiniCPM-V-4_5" -> "MiniCPM-V 4.5".
+  const vision = tail.match(/^MiniCPM-V-(\d+)_(\d+)/i);
+  if (vision) return `MiniCPM-V ${vision[1]}.${vision[2]}`;
   return tail;
 }
 

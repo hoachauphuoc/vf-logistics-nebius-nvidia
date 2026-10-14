@@ -10,7 +10,10 @@ import {
   dueStatus,
   formatSpan,
   informationRounds,
+  isContradicted,
+  latestEvaluation,
   ownerLabel,
+  riskLabel,
 } from "@/lib/operations";
 import { WORK_BUCKETS, type AuditRecord, type Case } from "@/lib/types";
 
@@ -221,5 +224,140 @@ describe("buildCaseTimeline approvals", () => {
     const e = buildCaseTimeline(c).find((x) => x.kind === "evidence_approval");
     expect(e?.title).not.toMatch(/exception/);
     expect(e?.tone).toBe("good");
+  });
+});
+
+
+describe("what the papers said, on the case", () => {
+  // evidence.reevaluate(): an evaluation record, verbatim keys. The contradiction
+  // sentences are the verifier's own (verifier.check_origin_evidence).
+  const evaluation = (extra: Record<string, unknown> = {}) => ({
+    evaluation_id: "eveval-1", evidence_version: 3, at: "2026-10-14T04:16:54Z",
+    risk_floor: 80, findings: ["ORIGIN_EVIDENCE_CONTRADICTION"], clarified: ["certificate_of_origin", "producer_declaration", "input_purchase_invoices"],
+    unresolved: [], status: "contradicted",
+    contradictions: [{ kind: "input_origin", detail: "An input purchase invoice is for China-origin goods from Linyi Veneer Co., Ltd." }],
+    ...extra,
+  });
+  const withEvaluations = (evaluations: unknown[], evidence_version = 3) => aCase({
+    verification: { evidence_version, requests: [], documents: [], evaluations, approvals: [] },
+  } as Partial<Case>);
+
+  it("says which paper contradicts, not only that something does", () => {
+    const e = buildCaseTimeline(withEvaluations([evaluation()])).find((x) => x.kind === "evidence_eval");
+    expect(e?.title).toBe("Re-evaluated (v3): 3 clarified, 0 unresolved, 1 contradiction");
+    expect(e?.detail).toContain("Floor: 80 | Status: contradicted");
+    expect(e?.detail).toContain("- An input purchase invoice is for China-origin goods from Linyi Veneer Co., Ltd.");
+    expect(e?.tone).toBe("bad");
+  });
+
+  it("pluralises, and keeps a clean evaluation to its one line", () => {
+    const two = evaluation({ contradictions: [{ kind: "producer", detail: "a" }, { kind: "input_origin", detail: "b" }] });
+    expect(buildCaseTimeline(withEvaluations([two])).find((x) => x.kind === "evidence_eval")?.title).toMatch(/2 contradictions$/);
+    const clean = evaluation({ status: "provided", contradictions: [], risk_floor: 45 });
+    const e = buildCaseTimeline(withEvaluations([clean])).find((x) => x.kind === "evidence_eval");
+    expect(e?.detail).toBe("Floor: 45 | Status: provided");
+    expect(e?.tone).toBe("good");
+  });
+
+  it("names the model that read each document", () => {
+    const c = aCase({
+      verification: {
+        evidence_version: 1, requests: [], evaluations: [], approvals: [],
+        documents: [
+          { document_id: "d1", doc_type: "input_purchase_invoices", sha256: "45c39ec7bc2bdeadbeef", received_at: "2026-10-14T04:16:00Z", blocked: false,
+            extraction: { model: "openbmb/MiniCPM-V-4_5", cost_usd: 0.00057 } },
+          { document_id: "d2", doc_type: "producer_declaration", sha256: "ed2b80e04d31cafe", received_at: "2026-10-14T04:16:05Z", blocked: false },
+        ],
+      },
+    } as unknown as Partial<Case>);
+    const received = buildCaseTimeline(c).filter((x) => x.kind === "evidence_received");
+    expect(received[0].detail).toBe("sha256: 45c39ec7bc2b... · Read by MiniCPM-V 4.5");
+    expect(received[1].detail).toBe("sha256: ed2b80e04d31...");
+  });
+
+  it("describes a release that waived a contradiction", () => {
+    const c = aCase({
+      verification: {
+        evidence_version: 1, requests: [], documents: [], evaluations: [],
+        approvals: [{
+          approval_id: "evapr-1", action: "release", approver: "r@x.example", evidence_version: 1,
+          status: "VALID", at: "2026-10-14T09:00:00Z",
+          exception: {
+            unresolved: [], reason: "Certificate misread; checked the original", approved_by: "r@x.example",
+            contradictions: [{ kind: "certificate_country", detail: "The certificate of origin states China." }],
+          },
+        }],
+      },
+    } as unknown as Partial<Case>);
+    const e = buildCaseTimeline(c).find((x) => x.kind === "evidence_approval");
+    expect(e?.title).toMatch(/as an exception/);
+    expect(e?.detail).toBe("Waived: papers that contradict the declared origin. Reason: Certificate misread; checked the original");
+  });
+
+  it("latestEvaluation is the latest at the CURRENT version, and nothing once new papers arrive", () => {
+    const old = evaluation({ evaluation_id: "old", evidence_version: 2, status: "missing", contradictions: [] });
+    const now = evaluation({ evaluation_id: "now" });
+    expect(latestEvaluation(withEvaluations([old, now]))?.evaluation_id).toBe("now");
+    expect(latestEvaluation(withEvaluations([old, now], 4))).toBeNull(); // v4 arrived, not yet evaluated
+    expect(latestEvaluation(withEvaluations([]))).toBeNull();
+    expect(latestEvaluation(aCase())).toBeNull();
+  });
+
+  it("isContradicted reads the status or any contradiction, and tolerates absence", () => {
+    expect(isContradicted(evaluation() as never)).toBe(true);
+    expect(isContradicted(evaluation({ status: "provided", contradictions: [] }) as never)).toBe(false);
+    expect(isContradicted(evaluation({ status: "provided" }) as never)).toBe(true); // a contradiction is a contradiction
+    expect(isContradicted(null)).toBe(false);
+    expect(isContradicted(undefined)).toBe(false);
+  });
+});
+
+
+describe("a finding the papers have answered", () => {
+  const finding = {
+    code: "ORIGIN_INPUTS_UNVERIFIED", severity: "MEDIUM", floor: 45, detail: "A booking does not show where the inputs came from.",
+    source_entity_ids: [],
+    measured: { documents_needed: ["certificate_of_origin", "producer_declaration", "input_purchase_invoices"] },
+  };
+  const caseWith = (evaluation: Record<string, unknown> | null, evidence_version = 3) => aCase({
+    validation: { findings: [finding] },
+    verification: {
+      evidence_version, requests: [], documents: [], approvals: [],
+      evaluations: evaluation ? [{
+        evaluation_id: "e1", evidence_version: 3, at: "2026-10-14T04:16:19Z", risk_floor: 45, status: "provided",
+        clarified: finding.measured.documents_needed, unresolved: [], contradictions: [], ...evaluation,
+      }] : [],
+    },
+  } as unknown as Partial<Case>);
+  const findingEvent = (c: Case) => buildCaseTimeline(c).find((x) => x.kind === "finding");
+
+  it("is no longer drawn as an open problem, but keeps its floor on the line", () => {
+    const e = findingEvent(caseWith({}));
+    expect(e?.title).toBe("Origin inputs unverified — floor 45 — evidence received");
+    expect(e?.tone).toBe("neutral");
+  });
+
+  it("stays a problem while papers are missing, contradicting, or newer than the evaluation", () => {
+    expect(findingEvent(caseWith({ clarified: ["certificate_of_origin"], status: "missing" }))?.tone).toBe("bad");
+    expect(findingEvent(caseWith({ status: "contradicted", contradictions: [{ kind: "input_origin", detail: "x" }] }))?.tone).toBe("bad");
+    expect(findingEvent(caseWith({}, 4))?.tone).toBe("bad");
+    expect(findingEvent(caseWith(null))?.title).toBe("Origin inputs unverified — floor 45");
+  });
+});
+
+describe("riskLabel", () => {
+  it("adds the floor when it is not the score, so a number that did not move says why", () => {
+    expect(riskLabel({ risk_score: 55, reconciliation: { risk_floor: 45 } } as never)).toBe("risk 55 (floor 45)");
+  });
+
+  it("leaves the score alone when the floor is the score, or there is no floor", () => {
+    expect(riskLabel({ risk_score: 80, reconciliation: { risk_floor: 80 } } as never)).toBe("risk 80");
+    expect(riskLabel({ risk_score: 80 } as never)).toBe("risk 80");
+    expect(riskLabel({ risk_score: 0, reconciliation: { risk_floor: 0 } } as never)).toBe("risk 0");
+  });
+
+  it("is null for a case with no score", () => {
+    expect(riskLabel({ risk_score: null } as never)).toBeNull();
+    expect(riskLabel({} as never)).toBeNull();
   });
 });

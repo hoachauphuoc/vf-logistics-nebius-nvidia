@@ -17,7 +17,7 @@ import { fetchAuditTrail, fetchCase, queryKeys } from "@/lib/api";
 import { caseHref } from "@/lib/case-links";
 import { caseStateLabel, formatUsd } from "@/lib/format";
 import { holds, useIdentity } from "@/lib/identity";
-import { buildCaseTimeline, informationRounds } from "@/lib/operations";
+import { buildCaseTimeline, informationRounds, riskLabel } from "@/lib/operations";
 import { useTenant } from "@/lib/tenant-context";
 import { AWAITING_HUMAN, type CaseState, VERIFICATION_LOOP_STATES } from "@/lib/types";
 
@@ -120,7 +120,7 @@ export default function CasePage() {
       {back}
       <PageHeading title={c.shipment_id || c.case_id}>
         {caseStateLabel(c.state)}
-        {c.risk_score != null && ` · risk ${c.risk_score}`}
+        {riskLabel(c) && ` · ${riskLabel(c)}`}
         {rounds > 0 && ` · ${rounds} ${rounds === 1 ? "request" : "requests"} for information`}
         {c._estimated_cost_usd != null && ` · ${formatUsd(c._estimated_cost_usd)} model spend`}
       </PageHeading>

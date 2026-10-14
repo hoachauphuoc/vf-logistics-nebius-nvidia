@@ -33,7 +33,15 @@ import {
 } from "@/lib/format";
 import { helpFor } from "@/lib/help-content";
 import { type Identity, lockReason, roleLabel, useIdentity } from "@/lib/identity";
-import { AWAITING_HUMAN, HUMAN_ACTION_RESULT, type Case, type CaseState, type HumanAction } from "@/lib/types";
+import { CONTRADICTION_KIND_LABEL, isContradicted, latestEvaluation } from "@/lib/operations";
+import {
+  AWAITING_HUMAN,
+  HUMAN_ACTION_RESULT,
+  REEVALUABLE_STATES,
+  type Case,
+  type CaseState,
+  type HumanAction,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -323,6 +331,12 @@ export function ReviewPanel({
   // decision; in the loop's other states the backend would refuse them.
   const awaitingDecision = AWAITING_HUMAN.includes(c.state as CaseState);
 
+  // What the papers on file say. Re-evaluate writes this to the evaluation record, not
+  // to the case's findings, so without reading it here a reviewer saw a count in the
+  // timeline and an unchanged findings list, and the same Release button as on a clean case.
+  const evaluation = latestEvaluation(c);
+  const contradicted = isContradicted(evaluation);
+
   // N08: For cases in the verification loop, route decisions through the new API.
   const verificationApprove = useMutation({
     mutationFn: async (action: "release" | "block") => {
@@ -442,6 +456,15 @@ export function ReviewPanel({
       );
       return;
     }
+    // A release is still possible against contradicting papers (the reader is a model,
+    // and a reviewer who has seen the original must be able to dismiss its false alarm),
+    // but it is an exception, and an exception carries its reason. The API enforces the same.
+    if (action === "release" && contradicted && !note.trim()) {
+      setFormError(
+        "A reason is required to release a case whose papers contradict the declared origin. Say what you checked that the model did not.",
+      );
+      return;
+    }
     setFormError(null);
     // Only opens the confirmation. Nothing is sent until Confirm, which routes it.
     setPending(action);
@@ -521,6 +544,53 @@ export function ReviewPanel({
                   </li>
                 ))}
               </ul>
+            )}
+
+            {evaluation && (
+              <div
+                data-testid="evidence-check"
+                className={cn(
+                  "mt-3 rounded-md border px-2.5 py-2",
+                  contradicted
+                    ? "border-risk-critical/30 bg-risk-critical/[0.07]"
+                    : "border-white/[0.07] bg-black/25",
+                )}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11.5px] font-medium text-white/90">
+                    Evidence check &middot; v{evaluation.evidence_version} &middot;{" "}
+                    {evaluation.status}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-faint">
+                    floor {evaluation.risk_floor}
+                  </span>
+                </div>
+                {contradicted && (
+                  <ul className="mt-1.5 space-y-1">
+                    {(evaluation.contradictions ?? []).map((x, i) => (
+                      <li key={`${x.kind}-${i}`} className="text-[11.5px] leading-relaxed">
+                        <span className="text-risk-critical">
+                          {CONTRADICTION_KIND_LABEL[x.kind] ?? humaniseCode(x.kind)}:
+                        </span>{" "}
+                        <span className="text-dim">{x.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {!contradicted && evaluation.status === "provided" && (
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
+                    The papers the shipper sent are consistent with the declared origin. The
+                    floor stays at {evaluation.risk_floor}: documents never lower it. A
+                    reviewer&rsquo;s decision does.
+                  </p>
+                )}
+                {(evaluation.unresolved ?? []).length > 0 && (
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
+                    Still missing or unreadable:{" "}
+                    {(evaluation.unresolved ?? []).map(humaniseCode).join(", ")}.
+                  </p>
+                )}
+              </div>
             )}
 
             {observations.length > 0 && (
@@ -607,7 +677,8 @@ export function ReviewPanel({
             <Label htmlFor="note" className="text-[11.5px] text-dim">
               Reason{" "}
               <span className="text-faint">
-                (required for block and request info)
+                (required for block and request info
+                {contradicted ? ", and to release against contradicting papers" : ""})
               </span>
             </Label>
             <Textarea
@@ -658,8 +729,19 @@ export function ReviewPanel({
             </p>
           )}
 
-          {hasVerification &&
-            (c.state === "AWAITING_EVIDENCE" || c.state === "HELD_FOR_REVIEW") && (
+          {hasVerification && openRequest && c.state !== "AWAITING_EVIDENCE" && (
+            // Re-evaluating with only part of the set leaves the case waiting on a
+            // person while its request is still open, and the API refuses to approve
+            // until the request is closed. Say so here instead of on the 409.
+            <p className="text-[11.5px] leading-relaxed text-dim" data-testid="open-request-hint">
+              A request for documents is still open (
+              {Object.keys(openRequest.received_docs ?? {}).length} of{" "}
+              {(openRequest.documents ?? []).length} received). Release and Block are refused
+              until it is closed: wait for the rest and re-evaluate, or cancel the request
+              with a reason.
+            </p>
+          )}
+          {hasVerification && REEVALUABLE_STATES.includes(String(c.state)) && (
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
@@ -673,7 +755,7 @@ export function ReviewPanel({
                   )}
                   Re-evaluate
                 </Button>
-                {c.state === "AWAITING_EVIDENCE" && openRequest && (
+                {openRequest && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -701,6 +783,20 @@ export function ReviewPanel({
                 {c.state === "EXECUTION_FAILED" ? "Retry" : "Execute"}
               </Button>
             )}
+
+          {awaitingDecision && contradicted && (
+            <div
+              role="note"
+              data-testid="contradiction-warning"
+              className="flex items-start gap-2 rounded-md border border-risk-critical/30 bg-risk-critical/[0.07] px-2.5 py-2"
+            >
+              <AlertTriangle className="mt-[1px] size-3.5 shrink-0 text-risk-critical" aria-hidden />
+              <p className="text-[11.5px] leading-relaxed text-risk-critical">
+                The papers contradict the declared origin. Blocking is the expected action;
+                releasing is recorded as an exception and needs a reason.
+              </p>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             {awaitingDecision && (["release", "block", "request_info"] as HumanAction[]).map((action) => (
@@ -788,6 +884,15 @@ export function ReviewPanel({
               </span>{" "}
               against the case under your name, writes two audit records, and
               cannot be undone from this console.
+              {pending === "release" && contradicted && (
+                <>
+                  {" "}
+                  <span className="text-risk-critical" data-testid="contradiction-confirm">
+                    The papers on file contradict the declared origin, so this release is
+                    recorded as an exception with your reason.
+                  </span>
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

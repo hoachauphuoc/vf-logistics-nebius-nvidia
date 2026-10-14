@@ -163,6 +163,18 @@ export const VERIFICATION_LOOP_STATES: readonly string[] = [
   "EXECUTION_FAILED",
 ];
 
+/**
+ * States a reviewer can re-evaluate a verification case from. Mirrors
+ * evidence.REEVALUABLE on the backend, which is the authority (it answers 409 for
+ * anything else); tests/test_evidence_reevaluable_mirror.py compares the two.
+ */
+export const REEVALUABLE_STATES: readonly string[] = [
+  "AWAITING_EVIDENCE",
+  "HELD_FOR_REVIEW",
+  "ESCALATED",
+  "PENDING_HUMAN",
+];
+
 export const AWAITING_HUMAN: readonly CaseState[] = [
   "PENDING_HUMAN",
   "HELD_FOR_REVIEW",
@@ -571,6 +583,19 @@ export interface EvidenceDocument {
   received_at: string;
   blocked: boolean;
   extracted?: Record<string, unknown> | null;
+  /** Which model read the paper, and what it cost. Recorded per document. */
+  extraction?: {
+    model?: string | null;
+    cost_usd?: number | null;
+    parse_error?: unknown;
+  } | null;
+}
+
+/** What the papers say that disagrees with the declaration. `detail` names the paper. */
+export interface EvidenceContradiction {
+  /** certificate_country, input_origin or producer. */
+  kind: string;
+  detail: string;
 }
 
 export interface EvidenceEvaluation {
@@ -581,7 +606,9 @@ export interface EvidenceEvaluation {
   status: string;
   clarified: string[];
   unresolved: string[];
-  contradictions: Array<Record<string, unknown>>;
+  contradictions: EvidenceContradiction[];
+  /** Finding codes the evaluation computed (not merged into the case's own findings). */
+  findings?: string[];
 }
 
 export interface EvidenceApproval {
@@ -592,8 +619,13 @@ export interface EvidenceApproval {
   status: string;
   at: string;
   note?: string | null;
-  /** Set when a release waived unresolved evidence: what, why, and by whom. */
-  exception?: { unresolved: string[]; reason: string; approved_by: string } | null;
+  /** Set when a release waived missing or contradicting evidence: what, why, and by whom. */
+  exception?: {
+    unresolved: string[];
+    reason: string;
+    approved_by: string;
+    contradictions?: EvidenceContradiction[];
+  } | null;
 }
 
 export interface EvidenceExecution {

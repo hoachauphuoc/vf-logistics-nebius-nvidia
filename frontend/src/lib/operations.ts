@@ -8,7 +8,7 @@
  * throws on absent input.
  */
 
-import { actionLabel, caseStateLabel, formatUsd, humaniseAgent, humaniseCode, NO_VALUE } from "./format";
+import { actionLabel, caseStateLabel, formatUsd, humaniseAgent, humaniseCode, NO_VALUE, shortModelName } from "./format";
 import { formatDuration } from "./pipeline";
 import type {
   ActionReceipt,
@@ -25,6 +25,57 @@ import type {
   WorkItem,
   WorkOwner,
 } from "./types";
+
+/**
+ * The evaluation that describes the evidence the case holds NOW: the latest one at the
+ * current evidence version. An older evaluation, or none, means new papers have arrived
+ * since (or nothing has been evaluated yet) and nothing it says should be shown as the
+ * state of the case. Null then.
+ */
+export function latestEvaluation(c: Pick<Case, "verification">): EvidenceEvaluation | null {
+  const v = c.verification;
+  if (!v) return null;
+  const evaluations = (v.evaluations ?? []) as EvidenceEvaluation[];
+  for (let i = evaluations.length - 1; i >= 0; i--) {
+    if (evaluations[i]?.evidence_version === v.evidence_version) return evaluations[i];
+  }
+  return null;
+}
+
+/**
+ * "risk 55 (floor 45)": the score, and the floor when it is not the score. The score
+ * is the higher of the model's and the floor, and good papers never lower the floor,
+ * so after a clean re-evaluate the case still shows the same number and nothing said why.
+ */
+export function riskLabel(c: Pick<Case, "risk_score" | "reconciliation">): string | null {
+  if (c.risk_score == null) return null;
+  const floor = c.reconciliation?.risk_floor;
+  return floor != null && floor !== c.risk_score
+    ? `risk ${c.risk_score} (floor ${floor})`
+    : `risk ${c.risk_score}`;
+}
+
+/** Whether the evidence on file contradicts the declaration. */
+export function isContradicted(evaluation: EvidenceEvaluation | null | undefined): boolean {
+  if (!evaluation) return false;
+  return evaluation.status === "contradicted" || (evaluation.contradictions ?? []).length > 0;
+}
+
+/** What each kind of contradiction is about, for a label next to its sentence. */
+export const CONTRADICTION_KIND_LABEL: Record<string, string> = {
+  certificate_country: "Certificate of origin",
+  input_origin: "Origin of the inputs",
+  producer: "Producer",
+};
+
+/** "Origin inputs unverified, Certificate of origin": what a release exception waived. */
+function waivedItems(exception: NonNullable<EvidenceApproval["exception"]>): string {
+  const missing = (exception.unresolved ?? []).map(humaniseCode);
+  const contradicted = (exception.contradictions ?? []).length > 0
+    ? ["papers that contradict the declared origin"]
+    : [];
+  return [...missing, ...contradicted].join(", ") || "nothing recorded";
+}
 
 export const BUCKET_LABEL: Record<WorkBucket, { title: string; blurb: string }> = {
   awaiting_documents: {
@@ -187,13 +238,24 @@ export function buildCaseTimeline(c: Case, audit: AuditRecord[] = []): TimelineE
   const findings = c.validation?.findings ?? [];
   if (findings.length > 0) {
     const first = (c.steps ?? []).find((s) => s.at)?.at ?? c.created_at ?? null;
+    const evaluation = latestEvaluation(c);
     for (const f of findings) {
+      // A finding that asked for papers, once those papers are in and agree, is
+      // answered. It still holds its floor (documents never lower one), so it stays
+      // on the line, but it should not read as an open problem next to a case whose
+      // evidence has been received and checked.
+      const needed = f.measured?.documents_needed ?? [];
+      const answered =
+        evaluation != null &&
+        !isContradicted(evaluation) &&
+        needed.length > 0 &&
+        needed.every((d) => (evaluation.clarified ?? []).includes(d));
       events.push({
         kind: "finding",
         at: first,
-        title: `${humaniseCode(f.code)} — floor ${f.floor}`,
+        title: `${humaniseCode(f.code)} — floor ${f.floor}${answered ? " — evidence received" : ""}`,
         detail: f.detail,
-        tone: "bad",
+        tone: answered ? "neutral" : "bad",
       });
     }
   }
@@ -254,19 +316,31 @@ export function buildCaseTimeline(c: Case, audit: AuditRecord[] = []): TimelineE
         kind: "evidence_received",
         at: doc.received_at ?? null,
         title: `Received ${humaniseCode(doc.doc_type)}`,
-        detail: doc.blocked ? "Blocked by Model Armor" : `sha256: ${(doc.sha256 ?? "").slice(0, 12)}...`,
+        detail: doc.blocked
+          ? "Blocked by Model Armor"
+          : [
+              `sha256: ${(doc.sha256 ?? "").slice(0, 12)}...`,
+              doc.extraction?.model ? `Read by ${shortModelName(doc.extraction.model)}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
         tone: doc.blocked ? "bad" : "good",
       });
     }
     for (const ev of (v.evaluations ?? []) as EvidenceEvaluation[]) {
       const cl = (ev.clarified ?? []).length;
       const un = (ev.unresolved ?? []).length;
-      const co = (ev.contradictions ?? []).length;
+      const contradictions = ev.contradictions ?? [];
+      const co = contradictions.length;
       events.push({
         kind: "evidence_eval",
         at: ev.at ?? null,
-        title: `Re-evaluated (v${ev.evidence_version}): ${cl} clarified, ${un} unresolved${co ? `, ${co} contradictions` : ""}`,
-        detail: `Floor: ${ev.risk_floor} | Status: ${ev.status}`,
+        title: `Re-evaluated (v${ev.evidence_version}): ${cl} clarified, ${un} unresolved${co ? `, ${co} ${co === 1 ? "contradiction" : "contradictions"}` : ""}`,
+        // Which paper disagrees is the thing a reviewer needs; a count is not enough.
+        detail: [
+          `Floor: ${ev.risk_floor} | Status: ${ev.status}`,
+          ...contradictions.map((x) => `- ${x.detail}`),
+        ].join("\n"),
         tone: co > 0 ? "bad" : un > 0 ? "neutral" : "good",
       });
     }
@@ -278,7 +352,7 @@ export function buildCaseTimeline(c: Case, audit: AuditRecord[] = []): TimelineE
         detail: apr.status === "SUPERSEDED"
           ? "Superseded by new evidence"
           : apr.exception
-            ? `Waived: ${apr.exception.unresolved.map(humaniseCode).join(", ")}. Reason: ${apr.exception.reason}`
+            ? `Waived: ${waivedItems(apr.exception)}. Reason: ${apr.exception.reason}`
             : `Status: ${apr.status}`,
         who: apr.approver ?? null,
         tone: apr.status === "SUPERSEDED" || apr.exception ? "bad" : apr.action === "release" ? "good" : "neutral",

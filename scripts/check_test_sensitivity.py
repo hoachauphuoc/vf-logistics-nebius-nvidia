@@ -801,6 +801,41 @@ MUTATIONS = [
         "PASSWORD_ONLY_POST.has(joined)",
         "frontend/src/app/api/proxy/[...path]/route.test.ts",
     ),
+    (
+        "N05: the console offers Re-evaluate in a state the API refuses it in",
+        "frontend/src/lib/types.ts",
+        '  "HELD_FOR_REVIEW",\n  "ESCALATED",\n  "PENDING_HUMAN",\n];',
+        '  "HELD_FOR_REVIEW",\n  "ESCALATED",\n  "PENDING_HUMAN",\n  "RELEASED_BY_HUMAN",\n];',
+        "tests/test_evidence_reevaluable_mirror.py",
+    ),
+    (
+        "C3: the panel lets a release against contradicting papers go with no reason",
+        "frontend/src/components/review/ReviewPanel.tsx",
+        '    if (action === "release" && contradicted && !note.trim()) {',
+        '    if (false) {',
+        "frontend/src/components/review/ReviewPanel.test.tsx",
+    ),
+    (
+        "C1: the evidence check no longer lists what contradicts",
+        "frontend/src/components/review/ReviewPanel.tsx",
+        '                {contradicted && (\n                  <ul className="mt-1.5 space-y-1">',
+        '                {false && (\n                  <ul className="mt-1.5 space-y-1">',
+        "frontend/src/components/review/ReviewPanel.test.tsx",
+    ),
+    (
+        "C1: the timeline says only how many papers contradict, not which",
+        "frontend/src/lib/operations.ts",
+        '          ...contradictions.map((x) => `- ${x.detail}`),',
+        '',
+        "frontend/src/lib/operations.test.ts",
+    ),
+    (
+        "N04: Cancel request is hidden once the case has left AWAITING_EVIDENCE",
+        "frontend/src/components/review/ReviewPanel.tsx",
+        '                {openRequest && (\n                  <Button',
+        '                {c.state === "AWAITING_EVIDENCE" && openRequest && (\n                  <Button',
+        "frontend/src/components/review/ReviewPanel.test.tsx",
+    ),
 ]
 
 
