@@ -981,7 +981,7 @@ since: see *[Signing in](#signing-in)*.
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Web dashboard (HTML) |
+| `/` | GET | Flask's own root. In the container Next.js serves the console here; Flask run on its own redirects to `CONSOLE_URL` if set, or serves the retired static dashboard (also at `/legacy`) |
 | `/health` | GET | Health check, store backend, worker status |
 | `/api/v1/agents` | GET | The four request/response agents (intake, fraud, compliance, investigation) with their capabilities and the model each runs on; the HS classifier, zero-day radar and debate show theirs on every hop of the case trace |
 | `/demo` | GET | Runs the fraud agent on a built-in sample shipment |
@@ -999,11 +999,12 @@ caller is likely to want. The most useful omissions:
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/v1/review/<case_id>/deep-review` | POST | Triggers the Ultra debate manually; the same agent the orchestrator fires automatically |
+| `/api/v1/review/<case_id>/deep-review` | POST | Runs the Ultra debate by hand on a case awaiting review, the same agent the orchestrator fires automatically; here the verdict is recorded on the case and changes no route (reviewer) |
 | `/api/v1/review/<case_id>/request-evidence` | POST | Verification loop: ask the shipper for named documents through a signed link (reviewer) |
 | `/api/v1/review/<case_id>/evidence/<request_id>/link`, `.../cancel` | POST | Reissue a request's link, or cancel the request with a reason (reviewer) |
-| `/api/v1/review/<case_id>/reevaluate` | POST | Re-run the deterministic checks against the documents received (reviewer) |
+| `/api/v1/review/<case_id>/reevaluate` | POST | Re-run the deterministic origin checks against the evidence received so far (reviewer) |
 | `/api/v1/review/<case_id>/approve`, `.../execute` | POST | Approve a release or block bound to an evidence version, then execute it (reviewer, **password sign-in only**) |
+| `/api/v1/evidence/respond` | POST | The shipper's upload through a signed link. The shipper has no account; the link's token, in `X-VF-Evidence-Token`, is the only credential |
 | `/api/v1/billing/usage` | GET | Windowed spend, including `tavily_searches` / `tavily_cached` / `tavily_billable` |
 | `/api/v1/cases` | GET | Case list, slim shape, filterable by state |
 | `/api/v1/audit` | GET | The audit trail, filterable by case, action or status |
@@ -1096,9 +1097,11 @@ On PowerShell:
 $env:PYTHONPATH = "src"; python -m vf_logistics.app
 ```
 
-`.env.example` sets `STORE_BACKEND=firestore` with a placeholder project. Without a
-Google Cloud project the service falls back to memory and says so on `/health`; set
-`STORE_BACKEND=memory` in `.env` to ask for that directly.
+`.env.example` sets `STORE_BACKEND=firestore` with a placeholder `PROJECT_ID`, so for a
+local run set `STORE_BACKEND=memory` in `.env`. Left as it is, the service falls back to
+memory only when no Firestore client can be built (no Google Cloud credentials on the
+machine), and `/health` reports which backend it got and why; with credentials present it
+would aim at the placeholder project instead.
 
 Port 8080 on its own serves only the retired static page at `/`. The console is the
 Next.js app in `frontend/`; start it in a second shell (details in
@@ -1222,13 +1225,16 @@ list, and `GET /api/v1/auth/policy` returns the table from the running service:
 
 | Role | Routes | What it adds |
 |---|---|---|
-| none | 6 | Health, the OpenAPI document and the agent roster |
+| none | 6 | Health, the OpenAPI document, the agent roster (at `/agents` and `/api/v1/agents`), and Flask's own pages at `/` and `/legacy` |
 | `viewer` | 25 | Every read: cases, review queue, audit, governance, metrics, evaluation, and the policy dry run |
 | `reviewer` | 10 | Decide a case, request a deep review, open the archived original document, record time spent on a case, and the verification loop: request, reissue or cancel evidence, re-evaluate, approve and execute (the last two with a password sign-in) |
 | `operator` | 24 | Anything that spends or ingests: shipments, documents, simulations, drains, resets, `/demo`, and the spend figures (`billing/usage`) |
 | `governance_admin` | 5 | Publish or revoke the delegation boundary, change the prefilter rules, run the news scan, and the console's shared sign-in ledger (`/internal/login-throttle`) |
 
-Roles are cumulative: a reviewer is also a viewer, and so on up.
+Roles are cumulative: a reviewer is also a viewer, and so on up. One of the 24 operator
+rows is not what it looks like: `POST /api/v1/evidence/respond`, the shipper's upload
+through a signed link, is labelled operator in the listing, but the route checks only the
+link's token, because the shipper has no account.
 
 **How a caller gets a role.** The API key alone is `governance_admin`; it is a service
 credential, and the scripts in `scripts/` use it. A signed-in person holds the role their
@@ -1344,9 +1350,10 @@ and in production a missing one takes the console **offline** rather than leavin
 
 ## Measured results
 
-Every figure here comes from a script in `scripts/`, is committed as a JSON report under
-`data/`, and is served read-only by `GET /api/v1/evaluation` to the console's Evaluation
-screen (`/evaluation`), so a number can be traced to the run that produced it. The
+Every figure here comes from a script in `scripts/` and is committed as a JSON report under
+`data/`, so a number can be traced to the run that produced it. All but the
+verification-loop run are also served read-only by `GET /api/v1/evaluation` to the
+console's Evaluation screen (`/evaluation`). The
 corpus is **synthetic** (`scripts/generate_synthetic_cases.py`, seed 20260920, 1,000
 cases: 300 shell-company transhipment, 300 HS mismatch, 200 sanctions-alias evasion, 200
 clean). No real shipment data is involved: these numbers say how the system behaves on
@@ -1354,8 +1361,9 @@ the attacks we could describe, not on the ones we could not.
 
 Ranges in brackets are 95% Wilson score intervals on the counts behind each rate, in
 whole percent rounded outward as the Evaluation screen shows them, and served with the
-reports by the same endpoint (in a build from `0468f98`, 14 Oct 2026, or later; an older
-deployment serves the point figures only). Some of the counts are small, and the
+reports by the same endpoint. They arrived with the 14 Oct 2026 evaluation merge,
+`896bbae` (the endpoint change is `0468f98`, the screen `be8a31f`); a deployment built
+before it serves the point figures only. Some of the counts are small, and the
 intervals are there so a reader can see which differences mean something.
 
 ### The detection benchmark
@@ -1422,15 +1430,15 @@ What belongs next to those numbers:
 One recall and one false-positive rate say how the threshold in use does, not what moving
 it would buy. `scripts/operating_curve.py` re-scores the rules arm's per-case floors at
 every threshold that changes the answer and writes `data/operating_curve/rules.json`,
-which ships in the image and is drawn on the Evaluation screen of a build from `0468f98`
-or later. Floors take a handful of
-values, so each row stands for a range of thresholds; the two rows that another row
-matches or beats on both counts (81–85, 91–100) are left out here and kept in the file.
+which ships in the image and is drawn on the Evaluation screen of a build that includes
+`896bbae`. Floors take a handful of values, so each row stands for a range of thresholds;
+the two rows that another row matches or beats on both counts (81–85, 91–100) are left
+out here and kept in the file.
 Rules arm, holdout:
 
 | Review threshold | Recall | False-positive rate | Held per real case at 0.2% |
 |---|---|---|---|
-| **40, in use** (any value 1–50 holds the same) | 93.5% | 38.4% | ~206 |
+| **40, the benchmark's** (any value 1–50 holds the same) | 93.5% | 38.4% | ~206 |
 | 51–65 | 67.0% | 25.6% | ~191 |
 | 66–75 | 67.0% | 9.3% | ~70 |
 | 76–80 | 66.5% | 7.0% | ~53 |
@@ -1497,7 +1505,7 @@ What the table says:
 - **The holdout is the test that matters:** 11 of 12 evasions caught and 0 of 12 honest
   cases flagged, on substitutions the reference never mentions, on Nano rather than
   Super. Twelve is a small number: the 95% interval on that recall runs from 64% to 99%,
-  and "no false alarms" means 0 of 12, whose upper bound is 24.3% (the table rounds it
+  and "no false alarms" means 0 of 12, whose upper bound is 24.2% (the table rounds it
   outward to 25).
 
 ### Public enforcement cases
@@ -1516,9 +1524,9 @@ imitated, with the regulator's URL and a verbatim quote on every case
 | Pairs separated (fraud held, honest cleared) | 4 | 3 |
 | Model cost | $0 | $0.034 |
 
-Read it as pairs. **Dual-use pairs are held on both sides**, correctly: controlled goods
-need a licence check whether or not this consignee is honest. **Four origin-fraud pairs
-are identical at booking** — Vietnamese-declared plywood made from Chinese veneer looks
+Read it as pairs. **Five of the seven dual-use pairs are held on both sides**, correctly:
+controlled goods need a licence check whether or not this consignee is honest. **Four
+origin-fraud pairs are identical at booking** — Vietnamese-declared plywood made from Chinese veneer looks
 exactly like plywood made from Vietnamese veneer — so no booking-time screen separates
 them, and the report says so rather than tuning a rule until it appears to. Two identical
 pairs received different verdicts from the model; that is counted as variance, not
@@ -1533,7 +1541,8 @@ writes `LLC TESTKOMPLEKT` where a Russian invoice says `OOO Testkomplekt`; the n
 normaliser now treats Russian, CIS and Gulf legal forms like `LLC` and `Ltd`.
 
 **Workload at real fraud rates.** The test corpora are half fraud (the public pairs) to
-about five-sixths (the synthetic holdout) by construction; a forwarder's book is not. Vietnam Customs found a violation in 29,849 of
+about four-fifths (the synthetic holdout, 367 of 453) by construction; a forwarder's book
+is not. Vietnam Customs found a violation in 29,849 of
 16.84 million declarations in 2024, **0.18%**. At 0.2%, the tuned rules hold about 385 of
 every 1,000 shipments to find about 2 real cases: about **206 held per real fraud case**,
 a precision at that prevalence of about 0.49%. On the 200-case subset the full arm ran,
@@ -1542,8 +1551,8 @@ the rules plus the HS and zero-day checks hold about 273 per real case against t
 their intervals and then the unfavourable ends, and the rules' figure runs from 151 to 271
 and the combined arm's from 191 to 359; those are best and worst corners, not a 95% interval. Customs'
 own targeting makes roughly 19 red-channel inspections per violation found. The console's Evaluation screen shows
-this for every report at 0.2%, 1% and 2% (the best and worst corners in a build from
-`0468f98` or later). The conclusion we draw is that the product's job
+this for every report at 0.2%, 1% and 2% (the best and worst corners in a build that
+includes `896bbae`). The conclusion we draw is that the product's job
 is not to hold fewer shipments but to make each hold quick and defensible to decide —
 which is what the case trace, the Review screen and the dossier are for.
 
@@ -1575,7 +1584,8 @@ collecting and evaluating the missing evidence.
    A publish failure records `EXECUTION_FAILED` (not `RELEASED`); the approval reverts to
    VALID for retry.
 
-**Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`):
+**Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`, report in
+`data/eval_results/verification_eval.json`):
 3/3 legitimate cases resolved correctly, 2/2 fraudulent blocked, 2 needs-evidence cases
 correctly held. **0 improper executions** (wrong authority, stale approval, or missing
 evidence). Median cost $0.000108/case, median latency 40ms -- **both from the mocked
@@ -1648,7 +1658,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Pure logic | 70 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
 | Decision paths | 57 | Every route a shipment can take through the state machine, and the heading the HS classifier is told was declared |
 | Tenant isolation | 52 | Cross-tenant reads, writes, and aggregation; one shared document bucket split by tenant; and `put_case` refusing a write over another tenant's case on both backends, the Firestore one against a fake of its client calls |
-| Hardening | 48 | Kill switch, Red Team screen, policy dry run, auto-debate, per-hop I/O, and the learning loop: a discount only for a registry-verified shipper, tallies read fresh on every scored case |
+| Hardening | 48 | Kill switch, the injection probe (`security/screen`), policy dry run, auto-debate, per-hop I/O, and the learning loop: a discount only for a registry-verified shipper, tallies read fresh on every scored case |
 | Document upload | 33 | Accepted types, the PDF branch, injection screening |
 | Console session | 50 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
 | Network defence | 34 | Rate limits, request size, header hygiene, CSP content, content-type allow-list |
@@ -1669,7 +1679,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Observability | 16 | Logging, metrics, request context |
 | Security screen logic | 16 | Window arithmetic, and that an unreachable screen fails closed instead of reporting a clean document |
 | Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
-| RBAC | 28 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board, revoke the boundary or edit the prefilter rules |
+| RBAC | 28 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that exactly six routes need a password sign-in: clearing the board, publishing or revoking the boundary, editing the prefilter rules, and the verification loop's approve and execute |
 | Debate routing | 13 | A genuine, confident DISAGREE sends the case to investigation; a forced verdict does not; risk only moves up |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
 | False-positive tuning | 12 | Which signals are findings and which are context: observations carry no floor and are not counted |
@@ -1763,6 +1773,7 @@ collection.
 | `VISION_MODEL` | Model for document intake | `openbmb/MiniCPM-V-4_5` |
 | `INVESTIGATION_MODEL` | Model for investigation, pinned separately | `nvidia/nemotron-3-super-120b-a12b` |
 | `DEBATE_MODEL` | Model for the debate agent — **the one place Nemotron Ultra is used by default**. See the note below the table. | `nvidia/Nemotron-3-Ultra-550b-a55b` |
+| `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` | Pin the HS classifier or the zero-day radar to its own model. Unset, each uses whatever model fraud and compliance are on, including after a `POST /api/v1/config/model` switch. | unset |
 | `MODEL_SWITCH_MAX_RATE_MULTIPLE` | How much dearer a model `POST /api/v1/config/model` may select without `confirm_higher_cost`, against the cheapest priced model. Super is 4.0× Nano and permitted; Ultra is 13.3× and answered 409. | `5.0` |
 | `TAVILY_ROUTE_CACHE_TTL_SECONDS` | TTL for the shipping-lane disruption search, whose query carries only a country pair. Measured: 20 searches across 6 distinct lanes. `0` disables. | `21600` (6h) |
 | `TAVILY_ENTITY_CACHE_TTL_SECONDS` | TTL for the shipper/receiver adverse-media searches. Shorter because these carry a counterparty — though Tavily is *not* the sanctions control. `0` disables. | `3600` (1h) |
@@ -1792,6 +1803,8 @@ collection.
 | `ADMIN_EMAILS` / `OPERATOR_EMAILS` / `REVIEWER_EMAILS` | Comma-separated addresses holding `governance_admin`, `operator` and `reviewer`. Trimmed and lowercased. A signed-in address in none of them is a viewer. Setting one with gcloud needs the alternate delimiter: `--update-env-vars "^\|^REVIEWER_EMAILS=a@x.com,b@x.com"`. | unset |
 | `VF_API_KEY` | Operator API key. Alone it grants `governance_admin`; forwarded by the console only alongside a verified session, which narrows it to that person's role. | set in production via Secret Manager |
 | `VF_TENANT_SPEND_CEILING_USD` | Per-tenant soft spend ceiling. Unset, garbage or `<= 0` all mean no ceiling. | unset |
+| `MULTI_TENANT` | `true` makes every request resolve its tenant and role from `VF_TENANT_MEMBERS`, and files and ingests documents in the shared `DOCUMENT_BUCKET` only under `tenants/<id>/`. Off, there is one tenant and roles come from the `*_EMAILS` lists. | `false` |
+| `VF_TENANT_MEMBERS` | Multi-tenant only: JSON `{principal: {tenant: role}}`, where a principal is a console email, `iap:<subject>`, or `service` for the API key. Each request's tenant and role come from here, and a person in several organisations picks one (sent as `X-VF-Tenant`). Unlisted principals are refused. With `MULTI_TENANT=true` the service will not boot if this is empty or malformed. Keep it in Secret Manager. | unset (ignored when `MULTI_TENANT` is off) |
 
 ### Console (the Next.js half of the `vf-app` container)
 
@@ -1799,7 +1812,6 @@ collection.
 |---|---|---|
 | `FLASK_API_BASE` | Backend base URL, read server-side per request. `entrypoint.sh` sets it to `http://127.0.0.1:9090` in the container; set it yourself only when running the console against a separate API. | set by `entrypoint.sh` |
 | `VF_SESSION_SECRET` | HMAC key for session cookies. Must be at least 32 characters; a shorter one is treated as absent. | unset — **required in production**, where a missing value takes the console offline rather than opening it |
-| `VF_TENANT_MEMBERS` | Multi-tenant only: JSON `{principal: {tenant: role}}`, where a principal is a console email, `iap:<subject>`, or `service` for the API key. Each request's tenant and role come from here, and a person in several organisations picks one (sent as `X-VF-Tenant`). Unlisted principals are refused. With `MULTI_TENANT=true` the service will not boot if this is empty or malformed. Keep it in Secret Manager. | unset (ignored when `MULTI_TENANT` is off) |
 | `VF_OPERATORS` | Semicolon-separated `email:iterations:salt:hash` records, PBKDF2-SHA256. Generate with `node frontend/scripts/make-operator.mjs <email> --out <dir>`, which writes the password to a file rather than printing it. | unset |
 | `VF_PUBLIC_READS` | `true` lets anonymous visitors read the console. Writes are never covered by it — the split is on the HTTP method, not a path list. Defaults to false so a deployment that forgets it is locked, not open. | `false` |
 | `VF_ONE_CLICK_JUDGE` | `true` offers the one-click guest-judge sign-in. Off unless set, like `VF_PUBLIC_READS`. | unset |
@@ -1824,16 +1836,19 @@ a model can only add holds above it. Ultra's per-token rate is 13.3× Nano's, bl
 (`config.rate_multiple`), on the two highest-volume calls; whether it would catch
 anything Nano misses there has not been measured.
 
-The debate is the exception. It runs only when the floor exceeds the model's score by 15
-points or more (measured: 2 calls across 20 cases), so by the time it runs auto-clear is
-already impossible and a person will decide the case either way. What it emits is not a
+The debate is the exception. The orchestrator runs it only when the floor exceeds the
+model's score by 15 points or more (measured: 2 calls across 20 cases), and a reviewer can
+run it by hand with Deep Review on any case awaiting review. Either way auto-clear is
+already impossible and a person will decide the case. What it emits is not a
 score awaiting override but a reasoned CONFIRM or DISAGREE on whether the junior analyst
-missed something. CONFIRM changes nothing; a genuine DISAGREE at confidence 0.7 or above
-sends the case to deep investigation on Super and may raise its risk. So Ultra's verdict
-can send a disputed case to a deep investigation it would otherwise skip (effective risk
-under the 70 investigation bar, compliance not already `BLOCKED` or `REVIEW_REQUIRED`),
-and can never clear one — the one hop whose output is a verdict on the dispute rather
-than a score the floor overrides — and reasoning capacity is load-bearing there.
+missed something. CONFIRM changes nothing; on the automatic path a genuine DISAGREE at
+confidence 0.7 or above sends the case to deep investigation on Super and may raise its
+risk (by hand, the verdict is recorded for the reviewer and changes no route). So Ultra's
+verdict can send a disputed case to a deep investigation it would otherwise skip
+(effective risk under the 70 investigation bar, compliance not already `BLOCKED` or
+`REVIEW_REQUIRED`), and can never clear one — the one hop whose output is a verdict on the
+dispute rather than a score the floor overrides — and reasoning capacity is load-bearing
+there.
 
 **Measured cost, and it is higher than the rate suggests.** Three Ultra debates and two
 Super debates have now run on the live service:
@@ -1864,7 +1879,7 @@ to `nvidia/nemotron-3-super-120b-a12b` reverses the decision without a deploy.
 Measured on a 20-case run: **90–106 Tavily searches** (4.5–5.3 per case) against
 `$0.067994` of Nemotron. At the free tier's 1,000 credits a month that is **188–222
 cases**, while the model bill for those cases is under a dollar — so the external
-search, not inference, is what limits throughput. The board reseeded on 10/10 after the
+search, not inference, is what limits throughput. The board reseeded on 10 Oct 2026 after the
 investigation fix measured `$0.087906` for the same 20 cases: in the earlier run half the
 investigation replies were near-empty fragments, so a working investigation costs more
 than a broken one did. Searches were not re-counted on that run. `estimated_cost_usd` counts Nebius
@@ -2005,8 +2020,9 @@ lists (18,525 records, refreshed by `scripts/refresh_sanctions.py` into GCS). Wh
 remains stubbed is historical data: the agents receive route-cost baselines as
 request fields rather than pulling them from a warehouse. Next steps: a real
 historical-baseline store, the EU and UK consolidated lists alongside OFAC and UN,
-a scheduled refresh instead of a hand-run one, and replacing the scripted simulator
-with a production Pub/Sub subscription from the shipment system.
+a scheduled refresh instead of a hand-run one, a CI job with the Firestore emulator so
+the 16 `FirestoreStore` tests that skip today run on every push, and replacing the
+scripted simulator with a production Pub/Sub subscription from the shipment system.
 
 Longer term, closing the loop on the humans this system currently escalates
 to: build a **Toloka**-backed human-in-the-loop review layer where real customs
@@ -2031,10 +2047,12 @@ collection effort.
 │   ├── orchestrator.py           Autonomous state machine + background worker
 │   ├── config.py                 Model registry, per-token pricing, runtime switch
 │   ├── governance.py             Delegation Boundary + fail-closed execution gate
+│   ├── evidence.py               Verification loop: evidence requests, the signed link, approval, execution
 │   ├── verifier.py               Deterministic risk floor (no model consulted)
 │   ├── untrusted.py              Schema whitelist for document-sourced fields
 │   ├── shipper_registry.py       Counterparty book: verifies a claimed shipper identity
 │   ├── sanctions.py              Sanctions index, loaded from Cloud Storage
+│   ├── sanctions_sources.py      Parsers for the OFAC SDN and UN consolidated lists
 │   ├── hs_reference.py           Published HS heading contents; took recall 40.0% → 92.9%
 │   ├── model_armor.py            Windowed prompt-injection screening
 │   ├── nebius_client.py          Nebius Token Factory client (OpenAI-compatible)
@@ -2043,13 +2061,16 @@ collection effort.
 │   ├── auth.py                   Roles, API keys, operator records
 │   ├── budget.py                 Per-tenant soft spend ceiling
 │   ├── tenant.py                 Tenant resolution and scoping
+│   ├── membership.py             Which tenant a principal may act in, and with what role (MULTI_TENANT)
 │   ├── lineage.py                Per-step cost attribution
 │   ├── evaluation.py             Serves the committed benchmark and HS reports, never per-case rows
+│   ├── worklist.py               Read models behind the Today and Outcomes screens
 │   ├── observability.py          Structured logging, metrics, request context
 │   ├── schemas.py                Request/response validation, and AGENT_OUTPUT_SCHEMAS for six agents' replies
 │   ├── openapi.py                Generates the OpenAPI document
 │   ├── b2b.py                    The published contract surface
 │   ├── document_render.py        Renders event-sourced shipments as a bill of lading
+│   ├── dossier.py                The case as a due-diligence dossier (PDF), built from the stored case
 │   ├── document_store.py         Cloud Storage document archive
 │   ├── executor_client.py        Calls the split-identity executor service
 │   ├── tools.py                  Actions taken on the operator's behalf
@@ -2072,7 +2093,8 @@ collection effort.
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
 ├── frontend/                     Next.js 16 console, built into the same image as the API
 │   ├── src/app/                  App Router pages: board, radar, review, audit, governance,
-│   │                             devops, agents, evaluation, admin, legal, login
+│   │                             devops, agents, evaluation, admin, legal, login, today,
+│   │                             outcomes, cases/[id], and the shipper's respond/[token]
 │   ├── src/components/           UI, incl. the case trace sheet and layout shell
 │   ├── src/lib/session.ts        HMAC session signing, via Web Crypto so it runs on Edge
 │   ├── src/lib/proxy-policy.ts   The BFF allow-list; the only place the console's key is attached
@@ -2086,6 +2108,7 @@ collection effort.
 │   └── terraform/                Cloud Armor policy (written, not applied)
 ├── docs/
 │   ├── ARCHITECTURE.md           The source of truth for how it fits together (includes mermaid diagrams)
+│   ├── architecture.html         The architecture diagram as a standalone page
 │   ├── DEMO_SCRIPT.md            Eleven scenes, timed to the narration track
 │   ├── PROJECT_STORY.md          What was built and what it cost to learn
 │   ├── swagger.json              Generated by scripts/build_docs.py — do not hand-edit
