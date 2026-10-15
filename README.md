@@ -6,13 +6,14 @@ below. (VF Logistics is the freight operator in the demo; the repository, the Cl
 service `vf-app` and the API keep that name.)
 
 **Built on:** **Nebius Token Factory** for every model call, running **NVIDIA Nemotron 3
-Nano** (fraud, compliance, HS classification — whether the declared customs tariff code
-fits the goods — and the zero-day radar, an adverse-media search for parties no
-sanctions list has caught up with), **NVIDIA Nemotron 3 Super** (investigation) and
-**NVIDIA Nemotron 3 Ultra** (the Senior Auditor debate), plus MiniCPM-V-4.5 for reading
-scanned documents. **Tavily** live web search is called at runtime by compliance
-screening, route validation, investigation, the zero-day radar and the debate; in the
-last two, Nemotron calls the search as a tool and chooses the query.
+Nano** (fraud, compliance, HS (Harmonized System) classification — whether the declared
+customs tariff code fits the goods — and the zero-day radar, an adverse-media search for
+parties no sanctions list has caught up with), **NVIDIA Nemotron 3 Super**
+(investigation) and **NVIDIA Nemotron 3 Ultra** (the Senior Auditor debate), plus
+MiniCPM-V-4.5 for reading scanned documents. **Tavily** live web search is called at
+runtime by compliance screening, route validation, investigation, the zero-day radar,
+the debate and the Governance page's sanctions scan; in the zero-day radar and the
+debate, Nemotron calls the search as a tool and chooses the query.
 
 - **Hackathon:** Nebius x NVIDIA Global AI Hackathon
 - **Track:** Best Apps and Agents
@@ -26,11 +27,11 @@ last two, Nemotron calls the search as a tool and chooses the query.
 **Judges:** everything is readable without signing in — the board, every case trace, the
 review queue and the audit trail; only the spend figures and the archived original
 documents need a role. **Continue as guest judge** on the login page signs you in with
-one click to inject shipments, block a case or ask for information, and simulate a
-policy. Anything that releases cargo or would carry over to the next judge — releasing a
-shipment, clearing the board, publishing or revoking the agent's authority, editing the
-screening rules — needs a password sign-in, because the audit trail names the person who
-released a shipment. Two password accounts are in the Devpost testing-instructions
+one click to inject shipments or upload a document, block a case or ask for information,
+and simulate a policy. Anything that releases cargo or would carry over to the next
+judge — releasing a shipment, clearing the board, publishing or revoking the agent's
+authority, editing the screening rules — needs a password sign-in, because the audit
+trail names the person who released a shipment. Two password accounts are in the Devpost testing-instructions
 field, one of them Reviewer-only so you can watch the access control refuse something.
 Details: [One click for judges](#one-click-for-judges).
 
@@ -38,14 +39,15 @@ Details: [One click for judges](#one-click-for-judges).
 
 - **What it is:** shipment screening for a forwarder's compliance desk. Deterministic
   checks set a risk floor on every shipment; Nemotron agents on Nebius Token Factory score,
-  screen, investigate and debate above it, with live Tavily web search. Clear cases are released inside limits a named
-  person publishes; the rest go to a reviewer with the evidence and a cited dossier.
+  screen, investigate and debate above it, with live Tavily web search. Clear cases are
+  released inside limits a named person publishes; the rest go to a reviewer with the
+  evidence and a cited dossier.
 - **The one design rule:** a model may raise risk, never lower it below the floor:
   `reconcile()` takes the higher of the model's score and the floor, and `validate()`
   raises if the HS or zero-day model findings ever lowered it. Ultra runs only in the
   debate, where its verdict can send a disputed case to a deep investigation it would
   otherwise skip and can never clear one; a person still decides every disputed case.
-- **Measured** (95% Wilson intervals in brackets; the pipeline corpus is synthetic):
+- **Measured** (95% Wilson intervals in brackets; the holdout corpus is synthetic):
   - rules alone, 453 holdout cases: recall 93.5% [90–96], false-positive rate 38.4% [28–49];
   - adding the two model checks benchmarked so far, the HS classifier and the zero-day
     radar, on the same 200 holdout cases: recall 95.8% [91–98] → 100% [97–100], because
@@ -62,24 +64,23 @@ Details: [One click for judges](#one-click-for-judges).
   rules would hold about **206 shipments per real fraud case** (151–271 if recall and
   false-positive rate both land at the best or worst end of their intervals; not a 95%
   interval), and on the 200-case subset the rules plus those two checks hold about 273
-  against the rules' 254. Customs' own targeting makes roughly 19 red-channel inspections per
-  violation found. So the product's job is to make each hold quick and
-  defensible to decide; the screen is not precise, and no real customer traffic has been
-  measured.
+  against the rules' 254. Customs' own targeting makes roughly 19 red-channel inspections
+  per violation found. So the product's job is to make each hold quick and defensible to
+  decide; the screen is not precise, and no real customer traffic has been measured.
 - **Cost:** under half a cent of model spend per case (`$0.068`–`$0.088` for a 20-case live
   run; $1.01 per 1,000 for the HS and zero-day checks in the 200-case benchmark).
   Tavily's search quota, not the models, is the binding constraint.
-- **Try it in a few minutes:** in DevOps, upload `sample_docs/injected_bol.pdf` and watch
-  Model Armor block it before any model reads it; open a held case for its findings,
-  sources and dossier; simulate a policy against the board on Governance; sign in as the
-  Reviewer account and watch the console refuse to publish policy, naming the role it
-  needs.
+- **Try it in a few minutes:** signed in as guest judge, upload
+  `sample_docs/injected_bol.pdf` in DevOps and watch Model Armor block it before any
+  model reads it; open a held case for its findings, sources and dossier; simulate a
+  policy against the board on Governance; sign in as the Reviewer account and watch the
+  console refuse to publish policy, naming the role it needs.
 - **Verify:** the console's Evaluation page (`/evaluation`) and `GET /api/v1/evaluation`
-  serve every committed report with its intervals and the operating curve (a build of
-  this commit does; one built before `0468f98`, 14 Oct 2026, serves the point figures
-  only);
-  `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds at no
-  cost; [Reproducible testing](#reproducible-testing) has the rest.
+  serve every committed report. The 95% intervals and the operating curve arrived in
+  `0468f98` (14 Oct 2026): a build of this repository serves them, and a deployment
+  built before that commit, which the live demo may still be, shows the point figures
+  only. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
+  at no cost; [Reproducible testing](#reproducible-testing) has the rest.
 
 ## The problem
 
@@ -99,9 +100,10 @@ new customer, not a shell. Read together they are the pattern, but a rules engin
 them one at a time and an analyst has no time to read them together for every booking.
 
 So the job is two jobs. **Hold the right shipments** — and on the public enforcement cases
-in [Measured results](#public-enforcement-cases), the rules plus the HS and zero-day checks
-held 14 of 19 real frauds (rules alone: 11). And **make every hold quick and defensible to decide**, because at 0.2% fraud
-even a good screen holds hundreds of honest shipments per real one. That second job is
+in [Measured results](#public-enforcement-cases), the rules plus the HS and zero-day
+checks held 14 of 19 real frauds (rules alone: 11). And **make every hold quick and
+defensible to decide**, because at 0.2% fraud even a good screen holds hundreds of honest
+shipments per real one. That second job is
 where Floorline earns its place: each held case arrives with the findings, the sanctions
 list it was screened against and that list's date, live sources, the document, and a
 **due-diligence dossier** that cites the regulation each finding rests on.
@@ -176,9 +178,9 @@ spending ten minutes on a clean shipment.
 proves best.** A weak model there can fail to add a hold, but it can never release a
 shipment the rules stopped: auto-clear needs a floor of zero (`reconcile()` in
 `verifier.py`). Where the floor is zero the model is the only check, and a larger model
-might catch more there; that has not been measured. Ultra's per-token rate is 13.3×
-Nano's (16.7× on input, 12.5× on output; `config.PRICING`), on the two highest-volume
-calls in the pipeline.
+might catch more there; that has not been measured. What is known is the price: Ultra
+there would pay 13.3× Nano's per-token rate (16.7× on input, 12.5× on output;
+`config.PRICING`) on the two highest-volume calls in the pipeline.
 
 **And the debate is the one exception, which is why Ultra runs there and nowhere else.**
 It fires when the floor exceeds the model's score by 15 points or more, so auto-clear is
@@ -309,8 +311,9 @@ debate against Super's `$0.0015`.
   is not in the counterparty book).
 - **Auto-debate.** Fires with no human involved when the floor exceeds the model's
   score by 15 points or more. Its verdict used to be recorded and read by nothing;
-  a genuine, confident DISAGREE now sends the case to deep investigation — upward
-  only.
+  a genuine, confident DISAGREE now sends the case to the deep investigation it would
+  otherwise skip and may raise its risk, never lower it. A person still decides the
+  case.
 
 ### The console
 
@@ -422,9 +425,12 @@ repository uses `master`, so it never executed until `9d683f6` fixed the trigger
 **Before:** a flat repository root — `main.py`, `orchestrator.py`, `agents/` and
 fifteen other modules at top level.
 
-**Now:** a `src/vf_logistics/` package with ten modules that did not exist at all:
-`auth.py`, `budget.py`, `tenant.py`, `b2b.py`, `openapi.py`, `sanctions.py`,
-`hs_reference.py`, `lineage.py`, `observability.py`, `schemas.py`.
+**Now:** a `src/vf_logistics/` package with sixteen modules that did not exist at all:
+`auth.py`, `b2b.py`, `budget.py`, `dossier.py`, `evaluation.py`, `evidence.py`,
+`hs_reference.py`, `lineage.py`, `membership.py`, `observability.py`, `openapi.py`,
+`sanctions.py`, `sanctions_sources.py`, `schemas.py`, `tenant.py`, `worklist.py`. That
+excludes `nebius_client.py` and `tavily_client.py`, which came with the first port step,
+and the new agents above.
 
 ## What the system does
 
@@ -643,8 +649,9 @@ or low-value domestic shipment with no model call at all: compliance is recorded
 `COMPLIANT`, lesser findings are set aside, and the fast path is withdrawn by any HIGH or
 CRITICAL finding or any finding that blocks auto-clear (a watched-lane origin finding is
 one). That release still passes the same gate: risk at most 39, zero counted findings,
-declared value at most 25,000 USD, no excluded HS prefix or destination. Every automatic
-release on the live board is of this kind.
+declared value at most 25,000 USD, no excluded HS prefix or destination. At the time of
+writing, both automatic releases on the live board are of this kind; no case there has
+been released automatically on a model's score.
 
 ### The reviewer always has the paperwork
 
