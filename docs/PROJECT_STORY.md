@@ -26,7 +26,7 @@ That single rule decided the model layer, which is why our tiering is not the us
 "big model for hard things". Fraud and compliance sit under the floor, so a stronger
 model there cannot change the outcome in the direction that matters — Nemotron 3
 Nano is the *correct* choice on those hops, not the affordable one. Nemotron 3 Ultra
-runs in exactly one place, the auto-debate, because that is the only hop whose
+runs in exactly one place, the Senior Auditor debate, because that is the only hop whose
 output is a verdict the floor does not override rather than a score it does.
 
 That rule is also the name. **Floorline** is the line the agents may climb above and
@@ -52,10 +52,14 @@ terminal state with no further input:
    a code gate — a dual-use heading, a high-risk destination, a route through two or
    more transhipment hubs, or a shipper with at most one prior shipment on record.
    Sanctions lists lag reality; this is the hop that does not.
-5. **Investigation** synthesises the findings into a report and drafts a
-   suspicious activity report when warranted.
-6. **Auto-debate** fires when the deterministic floor exceeds the model's score by 15
-   points or more, and argues the disagreement to a CONFIRM or a DISAGREE.
+5. **Auto-debate** fires when the deterministic floor exceeds the model's score by 15
+   points or more, and argues the disagreement to a CONFIRM or a DISAGREE. A confident
+   DISAGREE can send the case to an investigation it would otherwise skip; a person
+   decides every disputed case.
+6. **Investigation** runs when compliance refuses or flags the shipment, risk reaches
+   70, or the auditor confidently disagreed, and synthesises the findings into a
+   report. The escalation that follows drafts a suspicious activity report for a
+   person to sign, when the delegation boundary lets the agent act.
 
 The case ends in `AUTO_CLEARED`, `HELD_FOR_REVIEW`, `PENDING_HUMAN`, `ESCALATED`,
 or — after a person has ruled on it — `RELEASED_BY_HUMAN` or `BLOCKED_BY_HUMAN`.
@@ -83,7 +87,7 @@ text layer to pre-screen, so transcription happens first and the result is
 screened before it reaches any downstream agent. **These are not the same
 assurance,** and the case records which of the two it got rather than reporting
 both as "screened". A third gate, an independent pattern screen in
-[`untrusted.py`](../src/vf_logistics/untrusted.py), runs on the transcription for
+[`untrusted.py`](https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia/blob/master/src/vf_logistics/untrusted.py), runs on the transcription for
 documents that were not already blocked.
 
 That last one is the demo we would show first. `sample_docs/injected_bol.pdf` is a
@@ -111,14 +115,17 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
   It is now the expensive multi-hop one, and the guard that matters is
   `MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE` in `config.py`, which refuses a runtime
   switch that would raise the rate past a multiple of the cheapest model.
-- **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — the auto-debate, and the
-  only place Ultra is used. It fires without anyone asking, and only when the
-  deterministic floor exceeds the model's score by 15 points or more. Everywhere else a
+- **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — the Senior Auditor debate, and
+  the only place Ultra is used. It fires on its own only when the deterministic floor
+  exceeds the model's score by 15 points or more; a reviewer can also run it by hand
+  (Deep Review) on any case awaiting a person, where it records a verdict and changes
+  no route. Everywhere else a
   stronger model cannot change the outcome, because the floor has already decided. By
   the time the debate runs, auto-clear is already off the table and a person decides
   the case either way; what Ultra's verdict can do is send the dispute to a deep
   investigation on Super that it would otherwise skip. CONFIRM changes
-  nothing, and a genuine DISAGREE at confidence 0.7 or above sends the case there. It is
+  nothing, and a genuine DISAGREE at confidence 0.7 or above sends the case there and
+  may raise its risk. It is
   the one hop whose output is a verdict on the dispute rather than a score the floor
   overrides, so reasoning capacity is load-bearing.
 - **MiniCPM-V 4.5** — document intake. NVIDIA has no vision model on Token
@@ -164,7 +171,8 @@ boundary, the shipper identity check. None of it calls a model, so the port did 
 require changing it — and that is the argument the whole project rests on. If the
 governance had needed rewriting to swap the model underneath, it would not have been
 governance. It has grown since (`verifier.py` from 487 lines to 2,023), and the rule it
-enforces, that a model may raise the floor and never lower it, has not changed.
+enforces, that a model may raise risk above the floor and never take it below, has not
+changed.
 
 **What we rebuilt, and why it was not optional:**
 
@@ -353,14 +361,15 @@ the pairs and **91.7%** on the holdout, whose substitutions the reference never
 mentions, with no false alarms. Those are small numbers, and we should say how small:
 11 of 12 evasions caught, 0 of 12 honest cases flagged, so the 95% interval on that
 recall runs from 64% to 99% and the false-alarm rate could still be as high as
-24.3%. The lesson we would keep is that a retrieval problem dressed as a reasoning
+24.2%. The lesson we would keep is that a retrieval problem dressed as a reasoning
 problem does not respond to examples.
 
 The detection benchmark came later and was less flattering. On a held-out half of a
 1,000-case synthetic corpus, the deterministic rules held **76.7%** of clean shipments
 for a person. Two signals that separated nothing were demoted to context, chosen on
-the other half only, and that figure fell to **38.4%** with detection of the sanctions
-and shell-company attacks unchanged. It is still high, and we say so: at 0.2% fraud,
+the other half only, and that figure fell to **38.4%** (95% interval 28–49%) with
+detection of the sanctions and shell-company attacks unchanged; overall recall fell from
+95.1% to 93.5%, six frauds fewer out of 367. It is still high, and we say so: at 0.2% fraud,
 the 2024 Vietnam customs rate, that is about 206 shipments held per real fraud case,
 where customs makes roughly 19 red-channel inspections per violation found.
 
@@ -382,7 +391,8 @@ something that degrades out loud than something that looks confident.
 
 **Model choice is a per-agent decision, not a project-wide one.** We started with
 one model constant. Splitting it by task is both cheaper and easier to justify:
-the four hops that run on every case get Nano, investigation gets Super, and Ultra
+the four high-volume hops get Nano (fraud and compliance on every case that reaches the
+models, HS and zero-day when their inputs or gate apply), investigation gets Super, and Ultra
 is reserved for the one call whose reasoning the deterministic floor does not
 override.
 
@@ -437,6 +447,6 @@ counted as evidence, the legacy API bypassing the new policy, and the UI not con
 to the new endpoints -- were fixed in the same sprint.
 
 The result: a suite that now stands at 1,486 passing backend tests, 0 improper executions on a
-7-case evaluation corpus, three
+7-case evaluation corpus (a mocked harness, with no model or network calls), three
 operator screens, a public upload page for shippers, and a lineage record that carries
 the evidence version and approval through to the audit trail.

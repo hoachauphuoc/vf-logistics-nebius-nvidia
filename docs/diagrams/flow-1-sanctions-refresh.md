@@ -121,7 +121,7 @@ flowchart TD
     M -->|"no"| C["status CLEAN<br/>no finding<br/>snapshot still recorded"]
     M -->|"yes"| T{"worst topic"}
 
-    T -->|"sanction"| CR["CRITICAL<br/>floor 100<br/>auto_reject_by_rules"]
+    T -->|"sanction"| CR["CRITICAL<br/>floor 100<br/>models still run,<br/>a person decides"]
     T -->|"export.control<br/>debarment"| H["HIGH<br/>floor 85<br/>human decides"]
     T -->|"sanction.linked"| MD["HIGH<br/>floor 85"]
 

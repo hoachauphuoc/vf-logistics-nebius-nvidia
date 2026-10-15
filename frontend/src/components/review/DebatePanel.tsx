@@ -22,8 +22,10 @@ import { cn } from "@/lib/utils";
  *
  * `effect` is what the verdict CHANGED (orchestrator._apply_debate_verdict), and
  * it is shown first because it is the new part: a confident, genuine DISAGREE
- * sends the case to deep investigation, and nothing else the debate says can move
- * a case at all.
+ * sends the case to deep investigation if it was not already going there, and
+ * nothing else the debate says can move a case at all. `escalated` is true on any
+ * such DISAGREE, including one on a case its scores had already sent to
+ * investigation, so the text below does not claim the route changed.
  */
 
 interface Verdict {
@@ -167,11 +169,11 @@ export function DebatePanel({
           <p className="text-[11.5px] leading-relaxed text-dim">
             {effect.escalated ? (
               <>
-                <span className="font-medium text-risk-critical">Escalated this case</span> to
-                deep investigation
+                <span className="font-medium text-risk-critical">Escalated this case</span>: it
+                goes to deep investigation if it was not already headed there
                 {effect.risk_after > effect.risk_before &&
-                  `, and raised its risk ${effect.risk_before} → ${effect.risk_after}`}
-                . {effect.reason}.
+                  `, and its risk was raised ${effect.risk_before} → ${effect.risk_after}`}
+                . {effect.reason}. A person still decides it.
               </>
             ) : (
               <>

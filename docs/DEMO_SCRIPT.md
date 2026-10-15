@@ -143,15 +143,25 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
       header shows a *One-click* chip; that is fine on camera and true. Do not press
       **Clear board** on DevOps: it is locked for this session anyway, and it would wipe
       the seeded board.
-- [ ] **Confirm the live service runs the current code.** The Evaluation screen's
-      intervals and operating curve (clip 11) exist only in a build from this branch's
-      final commit. Before recording,
+- [ ] **Know which Evaluation screen the live service has.** The bracketed 95% intervals
+      and the *Operating curve* table exist only in a build that includes the 14 Oct merge
+      `896bbae`, and on 15 Oct the live service predated it: the check below printed 0.
+      Clip 11 frames only the public-case table, which the live build already serves with
+      the same 14 and 11 of 19, so it does not depend on them. Do not frame the intervals
+      or the curve unless
       `curl -s https://vf-app-350828852747.asia-southeast1.run.app/api/v1/evaluation | grep -c operating_curve`
-      must print 1 or more, and `/evaluation` must show bracketed intervals and the
-      *Operating curve* table; if not, redeploy first. The header chip
+      prints 1 or more.
+- [ ] **Check the header chip.** The header chip
       *NVIDIA Nemotron 3 · Nebius Token Factory*, the *Start here* strip and the *End to
       end* chain at the top of every case trace are what make the required tools visible
       in every frame; if the chip is missing you are looking at a cached or older page.
+- [ ] **Clip 10 needs a green CI run on `master`.** CI runs only on pushes and pull
+      requests to `master`. As of 15 Oct the latest run there (`38526000085`, 14 Oct)
+      failed at lint, with the other four jobs green; the fix is on this branch, which is
+      not yet merged.
+      `gh run list --workflow CI --branch master --limit 1` must show `success` on the
+      commit you film. If it does not, merge first and wait for the run, or leave the
+      Actions shot out.
 
 ### Check these three screens before rolling clips 3, 4 and 5
 
@@ -217,8 +227,10 @@ It is said as a ratio on purpose: a judge remembers "one in five hundred", not "
 
 Worth letting the six columns be visible. The counts change with every reseed and with
 any test traffic left on the live board, so read them off the board when you record
-rather than from this file. Preparation adds one more awaiting a person (the blocked
-injection document) and clip 2 adds one more escalated. The spread is the point — this
+rather than from this file. *Awaiting a person* holds three states (held for review,
+escalated with a red edge, and awaiting a person), and *Cleared* includes shipments a
+reviewer released. Preparation adds one more to *Awaiting a person* (the blocked
+injection document) and clip 2 adds the uploaded document's case. The spread is the point — this
 is not a demo where everything is suspicious.
 
 ---
@@ -266,8 +278,9 @@ number said loosely is a number they will check.
 
 ## Clip 4 — The floor overrules the model (0:48 → 1:07, 19s)
 
-**Action:** Back to `/`. In the **Escalated** column open **`FULL-12-DUALUSE`** (industrial
-frequency converters under a dual-use heading). On the seeded board it reads *Model alone*
+**Action:** Back to `/`. In the **Awaiting a person** column open the red-edged
+**`FULL-12-DUALUSE`** card, state *Escalated* (industrial frequency converters under a
+dual-use heading). On the seeded board it reads *Model alone*
 78, *Rules floor* 85, *Effective risk* 85. The sheet opens on the **End to end** chain —
 every hop with the NVIDIA model that ran it, then the delegation gate and the actions — so
 hold on it for a beat, then scroll so the three risk rows and the amber veto paragraph are
@@ -276,7 +289,7 @@ model may raise risk but never lower it, so this score is arithmetic rather than
 judgement."*
 
 Fallback if that case is not vetoed after a reseed: **`FULL-16-FREIGHTANOMALY`** (in
-*Released by a reviewer*; 70 against a floor of 90 on this board). Any case works whose
+*Cleared*, released by a reviewer; 70 against a floor of 90 on this board). Any case works whose
 *Model alone* is below its *Rules floor* and which shows the veto paragraph; the two
 blacklist and sanctions cases also qualify but open on a denial banner that crowds the
 frame.
@@ -428,8 +441,11 @@ seconds). Then cut back to `/` and let the board fill the frame, header chip inc
 > set, and stop when they should.
 
 "Says what it cannot see" is the *Missed* rows: origin fraud, which no booking shows. The
-table states it; the voice only points at it. **Fourteen is the full-pipeline figure**
-(`data/benchmark_results/public_full_all.json`); rules alone held eleven. If that file is
+table states it; the voice only points at it. **Fourteen is the figure in the column the
+console labels *Full pipeline*** (`data/benchmark_results/public_full_all.json`); rules
+alone held eleven. That arm is the rules plus the HS classifier and the zero-day radar:
+the fraud and compliance agents, investigation and the debate were not run on these
+cases, so do not describe it as the whole system. If that file is
 regenerated, re-read the number before recording. End on the board, not on a slide.
 
 ---

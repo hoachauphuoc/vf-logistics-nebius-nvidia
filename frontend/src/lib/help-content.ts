@@ -129,17 +129,21 @@ export const STATE_HELP: Record<string, HelpEntry> = {
   HELD_FOR_REVIEW: {
     title: "Held for review",
     body:
-      "Below the investigation bar but not cleared: risk 40 to 69, a deterministic finding that blocks auto-clear, a compliance status other than CLEARED, or an agent whose output failed validation (the last two at HIGH priority). An analyst is assigned, but this is a queue rather than an alarm.",
+      "Below the investigation bar but not cleared: risk 40 to 69, a deterministic finding that blocks auto-clear, a compliance status that is missing or unreadable, or an agent whose output failed validation (the last two at HIGH priority). An analyst is assigned, but this is a queue rather than an alarm.",
   },
   ESCALATED: {
     title: "Escalated",
     body:
-      "Compliance returned BLOCKED or REVIEW_REQUIRED, risk reached 70, the Senior Auditor confidently disagreed, or a pre-filter blacklist rule matched. The shipment is held and an analyst assigned -- after an investigation a SAR is also drafted for signature -- and a person must decide.",
+      "Investigated and held. Compliance returned REVIEW_REQUIRED or the effective risk reached 70, the investigation agent wrote its report, and the delegation boundary let the agent act: the shipment is held, a SAR drafted for signature and an analyst assigned. A person must decide.",
+    note:
+      "Compliance BLOCKED, a pre-filter blacklist match and every case the auto-debate ran on end in Awaiting a person instead: the default boundary does not let the agent act on them at all.",
   },
   PENDING_HUMAN: {
     title: "Awaiting a person",
     body:
       "Nothing leaves this state without a named reviewer making a decision. The agent has finished its work and stopped.",
+    note:
+      "A case lands here when the delegation boundary refused the outcome the agent proposed: compliance BLOCKED (which every pre-filter blacklist match is), a disputed score (every case the auto-debate ran on), an investigation exposure figure the shipment does not support, or a document that tried to inject instructions or set a decision field. A document blocked at intake, and a reviewer's request for more information, land here too.",
   },
   RELEASED_BY_HUMAN: {
     title: "Released by a reviewer",
@@ -447,7 +451,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "agents.cost-by-agent": {
     title: "Cost by agent",
     body:
-      "One row per agent, ordered by spend. The dollar figure is summed from each call's own rate rather than from these token totals, because the rate depends on which model ran the step: Nano on fraud and compliance, Super on investigation, Ultra on the debate. Calls is how many times that agent was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
+      "One row per agent, ordered by spend. The dollar figure is summed from each call's own rate rather than from these token totals, because the rate depends on which model ran the step: Nano on fraud, compliance, HS and zero-day, Super on investigation, Ultra on the debate. Calls is how many times that agent was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
     note:
       "Ordered by money rather than by tokens on purpose — Ultra's per-token rate is 12-17x Nano's, and a debate makes several tool-call rounds, so the most expensive agent is usually not the one that produced the most tokens. The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
   },
@@ -679,7 +683,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
       "The deterministic checks alone, on holdout cases that played no part in choosing the change. The false-alarm rate is the number the tuning was for; the recall it cost is shown beside it.",
   },
   "evaluation.full": {
-    title: "Full pipeline",
+    title: "Full pipeline (rules + HS + zero-day)",
     body:
       "Rules plus the HS classifier and the zero-day radar, behind the radar's real search gate. The fraud and compliance agents, investigation and the debate are not in this arm, and most zero-day searches in it were stubbed empty. The difference from the rules-alone figures is what those two checks contribute -- in both directions.",
   },
@@ -691,7 +695,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "evaluation.workload": {
     title: "Workload at real fraud rates",
     body:
-      "A test corpus is a fifth to four-fifths fraud by construction, so its precision does not describe a real queue. This reapplies each report's recall and false-alarm rate at 0.2%, 1% and 2% fraud. At the measured 0.2%, hundreds of honest shipments are held for each real one, which is why the product's job is to make each hold quick to decide.",
+      "The test corpora are half (the public pairs) to over four-fifths (the synthetic holdouts) fraud by construction, so their precision does not describe a real queue. This reapplies each report's recall and false-alarm rate at 0.2%, 1% and 2% fraud. At 0.2%, close to the 0.18% Vietnam customs reported for 2024, the tuned rules hold about two hundred honest shipments for each real one, which is why the product's job is to make each hold quick to decide.",
   },
   "evaluation.curve": {
     title: "Rules at every threshold",

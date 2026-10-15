@@ -41,10 +41,11 @@ npm run build
 
 | Path | What it is |
 |---|---|
-| `src/app/` | App Router pages: board, radar, review, audit, governance, devops, agents, evaluation, admin, today, outcomes, cases, respond, legal, login |
+| `src/app/` | App Router pages (the board at `/`, then radar, review, audit, governance, devops, agents, evaluation, admin, today, outcomes, cases, respond, legal, login) and the route handlers under `api/`, plus `health`, `metrics` and `demo` |
 | `src/components/` | UI, including the case trace sheet and the layout shell |
-| `src/lib/proxy-policy.ts` | The BFF allow-list; the only place the console's API key is attached |
-| `src/lib/upstream.ts` | The public API pass-through, with the caller's own credential |
+| `src/app/api/proxy/[...path]/route.ts` | The console's BFF, and the only place the console's own API key is attached |
+| `src/lib/proxy-policy.ts` | The allow-list that BFF enforces, including the routes a one-click session may not call |
+| `src/lib/upstream.ts` | Transport to Flask, shared by the BFF and the public pass-through (`/api/v1/*`, `/health`, `/metrics`, `/demo`), which forwards only the caller's own credential |
 | `src/lib/help-content.ts` | The help text behind every `?` on the screens |
 | `src/proxy.ts` | The login door (Next 16 renamed `middleware` to `proxy`) |
 | `scripts/make-operator.mjs` | Creates a PBKDF2 operator record; writes the password to a file |

@@ -250,21 +250,25 @@ Seven agents call a model. All live in `src/vf_logistics/agents/`.
 | `auto_debate` | `debate_agent.py` | Ultra | CONFIRM or DISAGREE with Nano, with an adjusted score |
 | `investigation` | `investigation_agent.py` | Super | fraud pattern, exposure estimate, escalation narrative |
 
-Three further identifiers appear in the same "Cost by agent" panel and are **not**
+Two further identifiers appear in the same "Cost by agent" panel and are **not**
 model calls:
 
 - `sql_prefilter` -- deterministic, recorded with `model: None` and zero tokens *by
   construction*. A reader of that panel would otherwise assume every row cost money.
 - `model_armor` -- the blocked-document path.
-- `debate` -- manual Deep Review. Same module and model as `auto_debate`, under a
-  second name, so one agent occupies two rows.
+
+A third, `debate`, is the manual Deep Review: the same Ultra call as `auto_debate`
+(`conduct_debate`), billed into the case rollups under a second name, so one agent
+occupies two rows. A reviewer runs it on a case awaiting a person; it records a verdict
+and changes no route.
 
 The panel is data-driven, not a hardcoded list: it reads `tokens_by_agent`, which the
 orchestrator builds by keying on `step["agent"]`.
 
 ### Tool use
 
-Four agents reach outside, all via Tavily. `compliance` searches on every shipment.
+Four agents reach outside, all via Tavily. `compliance` searches on every shipment it
+screens, reusing a search for the same name made in the last hour.
 `investigation` searches conditionally. `zero_day` and `auto_debate` use model-driven
 function calling.
 
@@ -335,14 +339,15 @@ stateDiagram-v2
     [*] --> INGESTED
 
     INGESTED --> AUTO_CLEARED: skip_ai and auto_clear_by_rules
-    INGESTED --> ESCALATED: skip_ai and auto_reject_by_rules
+    INGESTED --> PENDING_HUMAN: skip_ai and auto_reject_by_rules (proposed ESCALATED, refused)
     INGESTED --> SPECIALISTS_DONE: grey area
 
     SPECIALISTS_DONE --> AUTO_CLEARED: risk below 40, compliance CLEARED, auto_clear_permitted, no model failure
     SPECIALISTS_DONE --> HELD_FOR_REVIEW: otherwise, no investigation needed
     SPECIALISTS_DONE --> INVESTIGATED: BLOCKED, REVIEW_REQUIRED, risk 70 plus, or confident DISAGREE
 
-    INVESTIGATED --> ESCALATED
+    INVESTIGATED --> ESCALATED: boundary lets the agent act
+    INVESTIGATED --> PENDING_HUMAN: proposed ESCALATED, refused
 
     AUTO_CLEARED --> [*]
     HELD_FOR_REVIEW --> RELEASED_BY_HUMAN: reviewer releases
@@ -361,8 +366,14 @@ stateDiagram-v2
 
 Any transition whose proposed action the boundary refuses lands in `PENDING_HUMAN`
 instead of its intended state, and so does a document Model Armor blocks at intake.
-Opening a case changes nothing: a reviewer decides directly from any of the three
-states that wait on a person.
+Under the default boundary that covers every case compliance returned `BLOCKED`, every
+pre-filter blacklist match (the pre-filter sets compliance to `BLOCKED`) and every case
+the auto-debate ran on (its score is disputed by construction): `compliance_blocked` and
+`score_disputed` are in the boundary's `require_human_when`, so the agent's hold is
+refused and the case waits as a proposal. `ESCALATED` is therefore the outcome for an
+investigated case the agent was allowed to act on, with the hold, the SAR draft and the
+analyst assignment executed. Opening a case changes nothing: a reviewer decides directly
+from any of the three states that wait on a person.
 
 The edge to `AUTO_CLEARED` is an allowlist. All four conditions must hold: effective
 risk below 40, a compliance status of exactly `CLEARED`, `auto_clear_permitted` read as
@@ -412,7 +423,10 @@ only when the floor exceeds the model's score by 15 or more, so the floor is non
 the verdict can change is whether that person sees it after a deep investigation, and only
 where effective risk is under 70 and compliance did not already return `BLOCKED` or
 `REVIEW_REQUIRED`: those cases are investigated whatever the auditor says. `case["debate_effect"]` is written
-either way, so the case trace says whether the debate changed the route and why.
+either way and records whether a confident DISAGREE was acted on, and why. It is set on
+any such DISAGREE, including one on a case already headed for investigation, so whether
+the route actually changed is in the investigation's opening event, which names the
+auditor only when the scores alone would not have sent the case there.
 
 ### Two naming traps in the state set
 
@@ -497,7 +511,8 @@ directions rest on different evidence because they fail differently:
 
 The tallies are read fresh from the store before every risk adjustment
 (`_load_shipper_feedback(force=True)`); the 30 s cache serves only the reads that follow
-within the same scoring step, so no instance can miss a block another instance recorded.
+within the same scoring step, so a block recorded on any instance counts from the next
+case scored anywhere.
 Before that, the cache was dropped only in the process that recorded the decision, so
 another Cloud Run instance could miss a second block's +15 for up to the TTL. A keying
 bug in that cache, where a loop variable rebound the tenant
@@ -648,10 +663,11 @@ cases   events   audit_log   delegation_boundaries   prefilter_rules
 boundary_counters   login_throttle   operator_activity
 ```
 
-The docstring at the top of `store.py` lists only the first three. `boundary_counters`
-holds each tenant's boundary version counter for publish and revoke, `login_throttle`
-the console's shared sign-in ledger, and `operator_activity` the time a reviewer had a
-case open.
+The docstring at the top of `store.py` lists six of them; `login_throttle` and
+`operator_activity` are missing from it. `boundary_counters` holds each tenant's
+boundary version counter for publish and revoke, `login_throttle` the console's shared
+sign-in ledger, and `operator_activity` one running total per case and person of the
+time the case was in front of them.
 `prefilter_rules` is keyed *by tenant id as the document id*, deliberately, so a tenant
 cannot end up with two live rule sets.
 
