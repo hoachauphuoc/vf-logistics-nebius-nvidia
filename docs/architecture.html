@@ -179,15 +179,15 @@
 
     <text x="980" y="357" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Nano 30B</text>
     <text x="1166" y="357" fill="#93a1c1" font-size="11">$0.06 / $0.24</text>
-    <text x="1262" y="357" fill="#8496b5" font-size="10.5">fraud, compliance, HS</text>
+    <text x="1262" y="357" fill="#8496b5" font-size="10.5">fraud, compliance, HS, zero-day</text>
 
     <text x="980" y="380" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Super 120B</text>
     <text x="1166" y="380" fill="#93a1c1" font-size="11">$0.30 / $0.90</text>
-    <text x="1262" y="380" fill="#8496b5" font-size="10.5">investigation, debate</text>
+    <text x="1262" y="380" fill="#8496b5" font-size="10.5">investigation</text>
 
-    <text x="980" y="403" fill="#8f9dbd" font-size="11.5" font-weight="600">Nemotron 3 Ultra 550B</text>
+    <text x="980" y="403" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Ultra 550B</text>
     <text x="1166" y="403" fill="#93a1c1" font-size="11">$1.00 / $3.00</text>
-    <text x="1262" y="403" fill="#8496b5" font-size="10.5">registered, opt-in only</text>
+    <text x="1262" y="403" fill="#8496b5" font-size="10.5">debate, auto + Deep Review</text>
 
     <text x="980" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">MiniCPM-V 4.5 vision</text>
     <text x="1166" y="426" fill="#93a1c1" font-size="11">$0.658 / $1.11</text>
@@ -249,10 +249,10 @@
 
     <rect x="940" y="534" width="504" height="170" rx="14"
           fill="url(#gExec)" stroke="#34a853" stroke-width="1.8"/>
-    <text x="962" y="561" fill="#7fd6a0" font-size="11" letter-spacing="1.3">CLOUD RUN &middot; EXECUTION IDENTITY</text>
-    <text x="962" y="584" fill="#e8edf9" font-size="15" font-weight="700">vf-executor</text>
-    <text x="1064" y="584" fill="#8f9dbd" font-size="11.5">reachable only through the execution gate</text>
-    <text x="962" y="603" fill="#ea6a5e" font-size="11.5">this identity can act, and never sees a model</text>
+    <text x="962" y="561" fill="#7fd6a0" font-size="11" letter-spacing="1.3">EXECUTION &middot; ONLY THROUGH THE GATE</text>
+    <text x="962" y="584" fill="#e8edf9" font-size="15" font-weight="700">vf-app publishes directly</text>
+    <text x="1158" y="584" fill="#8f9dbd" font-size="11.5">reachable only through the execution gate</text>
+    <text x="962" y="603" fill="#ea6a5e" font-size="11.5">a split-identity executor (EXECUTOR_URL) is optional and not deployed</text>
 
     <rect x="962" y="614" width="460" height="76" rx="9" fill="#101f19" stroke="#2a4b39" stroke-width="1.1"/>
     <text x="982" y="634" fill="#a8d8bd" font-size="11" letter-spacing="1">PROTECTED ACTIONS &middot; tools.py</text>
@@ -267,7 +267,7 @@
     <text x="38" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">FIRESTORE &middot; native mode</text>
     <text x="38" y="772" fill="#c3ccdf" font-size="12">cases &middot; events &middot; audit_log &middot; delegation_boundaries &middot; prefilter_rules</text>
     <text x="38" y="791" fill="#8f9dbd" font-size="11.5">_tenant_id on every write &middot; a foreign read returns nothing, not 403</text>
-    <text x="38" y="808" fill="#8f9dbd" font-size="11">21 composite indexes, each leading with _tenant_id</text>
+    <text x="38" y="808" fill="#8f9dbd" font-size="11">27 composite indexes, each leading with _tenant_id</text>
     <text x="38" y="822" fill="#6f7d9c" font-size="11">PITR 7 days &middot; daily + weekly backups &middot; delete protection on</text>
 
     <rect x="504" y="724" width="468" height="102" rx="12"
@@ -284,7 +284,7 @@
     <text x="1014" y="772" fill="#c3ccdf" font-size="12">case-decisions &rarr; ERP / WMS / billing</text>
     <text x="1014" y="791" fill="#8f9dbd" font-size="11.5">only terminal decisions fan out downstream</text>
     <text x="1014" y="808" fill="#8f9dbd" font-size="11">published last, so a refused action cannot be announced first</text>
-    <text x="1014" y="822" fill="#6f7d9c" font-size="11">published by the executor, never by the reasoning service</text>
+    <text x="1014" y="822" fill="#6f7d9c" font-size="11">published by vf-app itself; a split executor is optional</text>
 
     <path d="M200,704 L200,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
     <path d="M700,704 L700,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
@@ -307,9 +307,7 @@
   </svg>
 
   <div class="hint">
-    Drawn from the code, not from the module docstrings &mdash; <b>orchestrator.py</b> still
-    describes a sequential <b>FRAUD_SCORED &rarr; COMPLIANCE_SCREENED</b> pair that exists nowhere
-    else; fraud and compliance in fact run concurrently into <b>SPECIALISTS_DONE</b>.
+    Drawn from the code &mdash; fraud and compliance run concurrently into <b>SPECIALISTS_DONE</b>.
     <b>The load-bearing idea:</b> the agent decides what is true, the verifier decides what is
     proven, and a published boundary decides what may be done about it.
   </div>

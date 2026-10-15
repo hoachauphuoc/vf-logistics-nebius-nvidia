@@ -49,7 +49,8 @@ terminal state with no further input:
    goods actually described. A mismatch is one of the strongest fraud signals
    available and one of the easiest to miss by eye.
 4. **Zero-day screening** runs a live adverse-media search when the shipment trips
-   a gate — a dual-use heading, or a route through two or more transhipment hubs.
+   a code gate — a dual-use heading, a high-risk destination, a route through two or
+   more transhipment hubs, or a shipper with at most one prior shipment on record.
    Sanctions lists lag reality; this is the hop that does not.
 5. **Investigation** synthesises the findings into a report and drafts a
    suspicious activity report when warranted.
@@ -100,7 +101,8 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
 
 - **Nemotron 3 Nano** (`NVIDIA-Nemotron-3-Nano-30B-A3B`) — fraud detection,
   compliance screening, HS classification and zero-day adverse-media screening.
-  These four run on every case, so the per-token rate matters more here than
+  Fraud and compliance run on every case that reaches the models, and the other two
+  whenever their inputs or gate apply, so the per-token rate matters more here than
   anywhere else, and all four resolve their model at call time so the cost of
   switching is observable rather than theoretical.
 - **Nemotron 3 Super** (`nemotron-3-super-120b-a12b`) — investigation. Pinned in
@@ -114,8 +116,8 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
   deterministic floor exceeds the model's score by 15 points or more. Everywhere else a
   stronger model cannot change the outcome, because the floor has already decided. By
   the time the debate runs, auto-clear is already off the table and a person decides
-  the case either way; what Ultra's verdict decides is whether the dispute gets a deep
-  investigation on Super. CONFIRM changes
+  the case either way; what Ultra's verdict can do is send the dispute to a deep
+  investigation on Super that it would otherwise skip. CONFIRM changes
   nothing, and a genuine DISAGREE at confidence 0.7 or above sends the case there. It is
   the one hop whose output is a verdict on the dispute rather than a score the floor
   overrides, so reasoning capacity is load-bearing.
@@ -124,8 +126,9 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
   path we started with, it needs a rasterisation stage in front of it:
   `pypdfium2` renders page one to PNG before the call.
 
-**Tavily** provides live web evidence at five integration points — counterparty
-screening, route validation, adverse-media search. It turned out to be the
+**Tavily** provides live web evidence at six integration points — counterparty
+screening, route validation, investigation, zero-day adverse-media search, the debate's
+search tool and the governance scan. It turned out to be the
 binding cost constraint on the whole system, which we had not expected: a 20-case
 run spends `$0.068`–`$0.088` on models and 90 to 106 Tavily searches, so on the free
 tier the search quota runs out roughly 200 cases in while the model spend is still
@@ -155,16 +158,19 @@ This started as a Google Cloud submission for a different hackathon, on Vertex A
 Gemini. It is worth being precise about what carried over, because "we ported the
 SDK" would undersell it and "we rebuilt everything" would overstate it.
 
-**What we deliberately did not touch** is the deterministic governance layer: the
-risk floor, the untrusted-input boundary, the delegation boundary, the shipper
-identity check. None of it calls a model, so none of it needed to change — and that
-is the argument the whole project rests on. If the governance had needed rewriting
-to swap the model underneath, it would not have been governance.
+**What we deliberately carried over rather than rebuilt** is the deterministic
+governance layer: the risk floor, the untrusted-input boundary, the delegation
+boundary, the shipper identity check. None of it calls a model, so the port did not
+require changing it — and that is the argument the whole project rests on. If the
+governance had needed rewriting to swap the model underneath, it would not have been
+governance. It has grown since (`verifier.py` from 487 lines to 2,023), and the rule it
+enforces, that a model may raise the floor and never lower it, has not changed.
 
 **What we rebuilt, and why it was not optional:**
 
-The console was one static HTML page. It became a Next.js service on its own Cloud
-Run instance, and the reason was not appearance: a static page cannot carry a
+The console was one static HTML page. It became a Next.js console, first on its own
+Cloud Run service and now in the same container as the API, and the reason was not
+appearance: a static page cannot carry a
 session, and we had discovered that the `reviewer` name on a decision was being read
 from the **request body as free text**. Anyone could record a decision under
 anyone's name. An audit trail that cannot say who decided is decoration. Fixing that
@@ -189,8 +195,8 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 1,462 backend
-tests passing (11 more need a Firestore emulator and skip without one) and 328 frontend
+test file, and it drives a deployed service over HTTP. There are now 1,486 backend
+tests passing (16 more need a Firestore emulator and skip without one) and 328 frontend
 tests.
 
 ## Challenges we ran into
@@ -413,7 +419,7 @@ forwarder can grant a narrower delegation than their customs broker.
 
 ## The restructure (October 2026)
 
-The benchmark's six identical origin-fraud pairs proved that booking-time data alone
+The benchmark's four identical origin-fraud pairs proved that booking-time data alone
 cannot tell a fraudulent plywood shipment from a legitimate one. The question became:
 what does the system need to collect to reach a defensible decision?
 
@@ -425,12 +431,12 @@ turned this into code.
 An independent review on 13 October found eight issues in the first implementation,
 two of them critical: concurrent execution could send twice (N01), and a failed publish
 was recorded as done (N02). Both were fixed with a claim-before-send pattern and
-honest failure recording. The six remaining issues -- a single file closing a
+honest failure recording. The remaining issues -- a single file closing a
 three-document request, reevaluate reopening concluded cases, empty extractions
 counted as evidence, the legacy API bypassing the new policy, and the UI not connected
 to the new endpoints -- were fixed in the same sprint.
 
-The result: a suite that now stands at 1,462 backend tests, 0 improper executions on a
+The result: a suite that now stands at 1,486 passing backend tests, 0 improper executions on a
 7-case evaluation corpus, three
 operator screens, a public upload page for shippers, and a lineage record that carries
 the evidence version and approval through to the audit trail.

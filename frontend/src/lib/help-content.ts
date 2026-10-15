@@ -57,7 +57,7 @@ export const NAV_HELP: Record<string, HelpEntry> = {
   "/review": {
     title: "Review queue",
     body:
-      "Only the cases waiting on a human decision. Each one shows the findings, the paperwork the decision was made from, and the outcome the agent proposed but did not execute.",
+      "Only the cases waiting on a human decision. Each one shows the findings, the paperwork the decision was made from, and what the agent did or proposed.",
     note:
       "A decision here is recorded against your name and writes two audit entries. It cannot be undone from this console.",
   },
@@ -129,12 +129,12 @@ export const STATE_HELP: Record<string, HelpEntry> = {
   HELD_FOR_REVIEW: {
     title: "Held for review",
     body:
-      "Middling risk with nothing disqualifying. An analyst is assigned, but this is a queue rather than an alarm.",
+      "Below the investigation bar but not cleared: risk 40 to 69, a deterministic finding that blocks auto-clear, a compliance status other than CLEARED, or an agent whose output failed validation (the last two at HIGH priority). An analyst is assigned, but this is a queue rather than an alarm.",
   },
   ESCALATED: {
     title: "Escalated",
     body:
-      "Either compliance refused it or the risk score cleared the investigation bar. The proposed outcome was not executed and the case is waiting on a person.",
+      "Compliance returned BLOCKED or REVIEW_REQUIRED, risk reached 70, the Senior Auditor confidently disagreed, or a pre-filter blacklist rule matched. The shipment is held and an analyst assigned -- after an investigation a SAR is also drafted for signature -- and a person must decide.",
   },
   PENDING_HUMAN: {
     title: "Awaiting a person",
@@ -171,12 +171,12 @@ export const SEVERITY_HELP: Record<string, HelpEntry> = {
   HIGH: {
     title: "High",
     body:
-      "Pushes the case past the investigation bar on its own, so it will not clear automatically.",
+      "A serious finding. It blocks auto-clear, most HIGH findings reach the investigation bar on their own, and two of them raise the floor to 80.",
   },
   MEDIUM: {
     title: "Medium",
     body:
-      "Raises the floor into the review band. One of these queues the case for a person; several together escalate it.",
+      "Raises the floor into the review band and blocks auto-clear, so one of these queues the case for a person. It does not count toward corroboration, which only HIGH and critical findings do.",
   },
   LOW: {
     title: "Low",
@@ -449,7 +449,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
     body:
       "One row per agent, ordered by spend. The dollar figure is summed from each call's own rate rather than from these token totals, because the rate depends on which model ran the step: Nano on fraud and compliance, Super on investigation, Ultra on the debate. Calls is how many times that agent was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
     note:
-      "Ordered by money rather than by tokens on purpose — Ultra costs roughly 13x Nano per call, so the most expensive agent is usually not the one that produced the most tokens. The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
+      "Ordered by money rather than by tokens on purpose — Ultra's per-token rate is 12-17x Nano's, and a debate makes several tool-call rounds, so the most expensive agent is usually not the one that produced the most tokens. The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
   },
   "agents.injection-probe": {
     title: "Prompt-injection screen",
@@ -681,7 +681,7 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "evaluation.full": {
     title: "Full pipeline",
     body:
-      "Rules plus the HS classifier and the zero-day radar, through the real gate. The difference from the rules-alone figures is what the model layer contributes -- in both directions.",
+      "Rules plus the HS classifier and the zero-day radar, behind the radar's real search gate. The fraud and compliance agents, investigation and the debate are not in this arm, and most zero-day searches in it were stubbed empty. The difference from the rules-alone figures is what those two checks contribute -- in both directions.",
   },
   "evaluation.hs": {
     title: "HS classifier",

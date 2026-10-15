@@ -96,7 +96,7 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 1,462 backend and 328 frontend tests, a measured HS recall of 91.7% on a
+  on camera.** 1,486 backend and 328 frontend tests, a measured HS recall of 91.7% on a
   holdout, citations reproduced rather than summarised — a judge scoring Technological
   Implementation had to read the repository to find any of it. Clip 5 also carries the
   **Tavily bonus award**, which the old script showed nowhere at all.
@@ -143,12 +143,15 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
       header shows a *One-click* chip; that is fine on camera and true. Do not press
       **Clear board** on DevOps: it is locked for this session anyway, and it would wipe
       the seeded board.
-- [ ] **Confirm the live revision has the latest console.** The header chip
+- [ ] **Confirm the live service runs the current code.** The Evaluation screen's
+      intervals and operating curve (clip 11) exist only in a build from this branch's
+      final commit. Before recording,
+      `curl -s https://vf-app-350828852747.asia-southeast1.run.app/api/v1/evaluation | grep -c operating_curve`
+      must print 1 or more, and `/evaluation` must show bracketed intervals and the
+      *Operating curve* table; if not, redeploy first. The header chip
       *NVIDIA Nemotron 3 · Nebius Token Factory*, the *Start here* strip and the *End to
       end* chain at the top of every case trace are what make the required tools visible
-      in every frame. They are deployed (revision `vf-app-00011` and later — the dossier
-  button and the public-case table need it); if the
-      chip is missing you are looking at a cached or older page.
+      in every frame; if the chip is missing you are looking at a cached or older page.
 
 ### Check these three screens before rolling clips 3, 4 and 5
 
@@ -166,7 +169,7 @@ stale tab, a wrong case, or a board that has not settled.
       shipped, the *Rules floor* row rendered on no case at all.
 - [ ] **Clip 4: the investigation step reads as a report.** In the same sheet the
       investigation hop should carry a summary, not a model-failure note. Before
-      `78d6db0`, half of Super's investigation replies were empty fragments that still
+      `afc6c3a`, half of Super's investigation replies were empty fragments that still
       parsed; the board was reseeded after the fix, so this should hold for every case,
       but look before you roll.
 - [ ] **Clip 5 only works against the live service.** `external_search_results` does not
@@ -212,12 +215,11 @@ recording if it crowds the board.
 The figure is 29,849 of 16.84 million (0.18%), from Vietnam Customs' own year-end release.
 It is said as a ratio on purpose: a judge remembers "one in five hundred", not "0.18".
 
-Worth letting the six columns be visible. On the board seeded for this take: eleven
-escalated, one held, two awaiting a person, two blocked by a person, two released by a
-person, two cleared automatically. Preparation adds one more awaiting a person (the
-blocked injection document) and clip 2 adds one more escalated. The spread is the point —
-this is not a demo where everything is suspicious. If you reseed, read the column counts
-off the seed script's summary rather than from this paragraph.
+Worth letting the six columns be visible. The counts change with every reseed and with
+any test traffic left on the live board, so read them off the board when you record
+rather than from this file. Preparation adds one more awaiting a person (the blocked
+injection document) and clip 2 adds one more escalated. The spread is the point — this
+is not a demo where everything is suspicious.
 
 ---
 
@@ -274,7 +276,7 @@ model may raise risk but never lower it, so this score is arithmetic rather than
 judgement."*
 
 Fallback if that case is not vetoed after a reseed: **`FULL-16-FREIGHTANOMALY`** (in
-*Released by a reviewer*; 78 against a floor of 90 on this board). Any case works whose
+*Released by a reviewer*; 70 against a floor of 90 on this board). Any case works whose
 *Model alone* is below its *Rules floor* and which shows the veto paragraph; the two
 blacklist and sanctions cases also qualify but open on a denial banner that crowds the
 frame.
@@ -325,10 +327,12 @@ visible, then open one case and scroll so the document sits beside the findings.
 
 If you land on a case where the model and the floor disagreed by fifteen points or more, the
 disputed banner and the **Senior auditor debate** card with its CONFIRM/DISAGREE badge are
-both worth having in frame. On the seeded board two cases carry one, and only
-**`FULL-07-BLACKTAX`** is in the queue (model 68 against a floor of 100); the other,
-`FULL-05-SANCTIONS`, has already been blocked by a reviewer. Do not lengthen the clip for
-it — if you want it as its own beat, re-record at 18–20s, change that scene's seconds in
+both worth having in frame. On the seeded board two cases carry one,
+`FULL-16-FREIGHTANOMALY` (released by a reviewer) and `FULL-05-SANCTIONS` (blocked), and
+neither is in the queue, so this clip will not show a debate card unless you reseed.
+(`FULL-07-BLACKTAX` is in the queue, but the pre-filter settled it on a blacklisted tax
+id: no model ran, so there was nothing to debate.) Do not lengthen the clip for it — if
+you want it as its own beat, re-record at 18–20s, change that scene's seconds in
 `SCENES`, re-run `check_narration_budget.py`, and regenerate.
 
 ---
@@ -386,19 +390,17 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
 tail of a real run — `PYTHONPATH=src python -m pytest tests/ -q --cov=vf_logistics`, so
-the coverage table's `TOTAL` row sits just above the `1462 passed, 11 skipped` line. Then
+the coverage table's `TOTAL` row sits just above the `1486 passed, 16 skipped` line. Then
 the GitHub Actions run page for `master`, with five green jobs visible.
 
-> Over fourteen hundred passing tests, nearly eighty-five percent coverage, and CI on every
+> Over fourteen hundred passing tests, over eighty-five percent coverage, and CI on every
 > push to master.
 
-The spoken figures match the terminal: 1,462 backend tests pass (11 more skip without a
-Firestore emulator) at 84.6% line coverage. *Nearly* is deliberate: eight lines of
-`simulator.py` run only when an unseeded random draw picks the *bad* profile, so the `TOTAL`
-row prints 85% on most runs and 84% (84.48%) on some, and the line has to be true of either
-take. The 328 frontend tests are not in
-the count. If the suite falls below 1,400 or coverage below 84.4%, change `SCENES` before
-recording.
+The spoken figures match the terminal: 1,486 backend tests pass (16 more skip without a
+Firestore emulator) at 85.8% line coverage, which the `TOTAL` row prints as 86%. Coverage
+is the same on every run since a test pins the simulator's profile roll, so the line no
+longer has to hedge. The 328 frontend tests are not in the count. If the suite falls below
+1,400 or coverage to 85% or under, change `SCENES` before recording.
 
 "On every push to master" is the exact trigger: `.github/workflows/ci.yml` runs on pushes
 and pull requests to `master` (and `main`, which does not exist), not on pushes to other

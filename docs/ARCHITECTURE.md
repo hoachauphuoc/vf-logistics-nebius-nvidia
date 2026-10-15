@@ -54,7 +54,7 @@ flowchart LR
     Nebius["Nebius Token Factory"]
     Tavily["Tavily search"]
     Armor["Model Armor, us-central1"]
-    FS["Firestore native, 5 collections"]
+    FS["Firestore native, 8 collections"]
     GCS["Cloud Storage document archive"]
     PS["Pub/Sub case-decisions"]
 
@@ -136,8 +136,8 @@ narrow what the key grants. `auth._api_key_context` resolves four cases:
 | the key and a session that fails to verify | **401**, never a fallback to admin |
 
 Each route declares its role by decorator, and `GET /api/v1/auth/policy` reads the table
-back from the running routes: 6 public, 21 viewer, 3 reviewer, 23 operator, 4
-governance admin. `GET /api/v1/auth/whoami` says what the caller resolved to, and the
+back from the running routes: 6 public, 25 viewer, 10 reviewer, 24 operator, 5
+governance admin (70 routes). `GET /api/v1/auth/whoami` says what the caller resolved to, and the
 console renders every role-dependent control from that answer. Measured on the live
 service after the change:
 
@@ -163,7 +163,7 @@ asked, so an anonymous `POST /api/proxy/governance/simulate` is 401 even though 
 route itself is `viewer`: the dry run reads nothing a viewer cannot, but a write-shaped
 request from nobody is refused at the first door.
 
-### One-click sign-in, and the three things it cannot do
+### One-click sign-in, and what it cannot do
 
 The console can offer judges a **one-click** sign-in (`POST /api/auth/judge`, off unless
 `VF_ONE_CLICK_JUDGE=true`, closed after `VF_ONE_CLICK_UNTIL`). It mints an ordinary
@@ -173,13 +173,17 @@ the console asserts an email, never a role.
 What differs is a signed `amr` claim in the session body: `password` from the login
 form, `one_click` from the button. Because the button is public and its account is an
 admin, role alone cannot protect the actions a stranger could take that the next
-visitor would find undone. Three routes therefore also ask how the session was signed
-in: `POST /orchestrator/reset` (Clear board), `POST /governance/revoke` (which suspends
-the agent until someone re-publishes) and `PUT /governance/prefilter-rules` (which
-decides what clears with no model at all). Publishing and simulating a boundary stay
-open to the judge:
+visitor would find undone. Six routes therefore also ask how the session was signed
+in: `POST /orchestrator/reset` (Clear board), `POST /governance/publish` (which replaces
+the shared boundary, and suspends the agent if it permits nothing),
+`POST /governance/revoke` (which suspends the agent until someone re-publishes),
+`PUT /governance/prefilter-rules` (which decides what clears with no model at all), and
+the verification loop's `POST /review/<id>/approve` and `POST /review/<id>/execute`
+(which release or block cargo). Simulating a boundary stays open to the judge. Separately,
+`human_decide` behind `/decide` refuses a release from any caller whose sign-in is not a
+password (see *Policy gate (N07)* below); a block is allowed.
 
-| Caller | Clear board, revoke, prefilter edit |
+| Caller | The six routes |
 | --- | --- |
 | password session with the route's role | allowed |
 | one-click session, any role | **403**, `required_auth: "password"` |
@@ -190,7 +194,7 @@ It is checked in the BFF (`PASSWORD_ONLY_POST` and `PASSWORD_ONLY_PUT`, so the r
 costs no upstream call) and again in Flask (`auth.require_password_session`, stacked
 under the role decorator and published as `requires_password_session` in
 `/auth/policy`). The route counts above are unchanged: it is a flag on a route, not a
-sixth role, because "admin minus three routes" is not nested inside anything and the
+sixth role, because "admin minus six routes" is not nested inside anything and the
 hierarchy relies on roles being nested.
 
 A reset clears cases and events and keeps the audit trail, and writes a `board_reset`
@@ -319,7 +323,8 @@ but `NEMOTRON_MODEL` is read from the environment with no such check.
 
 `set_model()` moves less than its name implies. It rebinds only the text model, so
 `POST /api/v1/config/model` cannot move investigation, debate, or document intake --
-those are pinned at import or have no setter.
+those are pinned at import or have no setter. The HS classifier and the zero-day radar
+do follow it, unless `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` pin them.
 
 ---
 
@@ -335,13 +340,17 @@ stateDiagram-v2
 
     SPECIALISTS_DONE --> AUTO_CLEARED: risk below 40, compliance CLEARED, auto_clear_permitted, no model failure
     SPECIALISTS_DONE --> HELD_FOR_REVIEW: otherwise, no investigation needed
-    SPECIALISTS_DONE --> INVESTIGATED: BLOCKED, REVIEW_REQUIRED, or risk 70 plus
+    SPECIALISTS_DONE --> INVESTIGATED: BLOCKED, REVIEW_REQUIRED, risk 70 plus, or confident DISAGREE
 
     INVESTIGATED --> ESCALATED
 
     AUTO_CLEARED --> [*]
-    HELD_FOR_REVIEW --> PENDING_HUMAN: reviewer opens it
-    ESCALATED --> PENDING_HUMAN: reviewer opens it
+    HELD_FOR_REVIEW --> RELEASED_BY_HUMAN: reviewer releases
+    HELD_FOR_REVIEW --> BLOCKED_BY_HUMAN: reviewer blocks
+    ESCALATED --> RELEASED_BY_HUMAN: reviewer releases
+    ESCALATED --> BLOCKED_BY_HUMAN: reviewer blocks
+    HELD_FOR_REVIEW --> PENDING_HUMAN: request_info
+    ESCALATED --> PENDING_HUMAN: request_info
     PENDING_HUMAN --> RELEASED_BY_HUMAN
     PENDING_HUMAN --> BLOCKED_BY_HUMAN
 
@@ -351,7 +360,9 @@ stateDiagram-v2
 ```
 
 Any transition whose proposed action the boundary refuses lands in `PENDING_HUMAN`
-instead of its intended state.
+instead of its intended state, and so does a document Model Armor blocks at intake.
+Opening a case changes nothing: a reviewer decides directly from any of the three
+states that wait on a person.
 
 The edge to `AUTO_CLEARED` is an allowlist. All four conditions must hold: effective
 risk below 40, a compliance status of exactly `CLEARED`, `auto_clear_permitted` read as
@@ -386,11 +397,6 @@ flowchart TD
     AD --> SD
 ```
 
-**The module docstring of `orchestrator.py` contradicts this.** It draws
-`FRAUD_SCORED` and `COMPLIANCE_SCREENED` as sequential states. Neither string exists
-anywhere else in the codebase. Any diagram drawn from that docstring inherits the
-error; the previous `architecture.html` did.
-
 ### What the debate's verdict does
 
 For a long time, nothing: the verdict was recorded on the case and routing read the
@@ -403,13 +409,16 @@ verdict, or a default the loop had to force when the auditor never rendered one
 case up: nothing the debate says can clear one. Nor could it need to: the debate runs
 only when the floor exceeds the model's score by 15 or more, so the floor is non-zero,
 `auto_clear_permitted` is already false, and a person decides the case either way. What
-the verdict decides is whether that person sees it after a deep investigation. `case["debate_effect"]` is written
+the verdict can change is whether that person sees it after a deep investigation, and only
+where effective risk is under 70 and compliance did not already return `BLOCKED` or
+`REVIEW_REQUIRED`: those cases are investigated whatever the auditor says. `case["debate_effect"]` is written
 either way, so the case trace says whether the debate changed the route and why.
 
 ### Two naming traps in the state set
 
-`TERMINAL` has seven members but is a misnomer its own comment admits: three of them
-(`HELD_FOR_REVIEW`, `ESCALATED`, `PENDING_HUMAN`) are queued on a human, not closed.
+`TERMINAL` has eleven members but is a misnomer its own comment admits: three of them
+(`HELD_FOR_REVIEW`, `ESCALATED`, `PENDING_HUMAN`) are queued on a human, not closed, and
+four belong to the verification loop (below).
 "The agent is done" and "the case is closed" are different facts.
 
 `OBJECT_PROCESSED` is a storage dedupe marker that appears in neither `ACTIONABLE` nor
@@ -486,10 +495,12 @@ directions rest on different evidence because they fail differently:
   the auto-clear threshold. In practice the discount is available only to
   counterparties in the internal book.
 
-The tallies are read fresh from the store on every scored case. The cache in front of
-them is dropped by whichever process records a human decision, but only in that
-process, so another Cloud Run instance could miss a second block's +15 for up to the
-cache's 30 s TTL. A keying bug in that cache, where a loop variable rebound the tenant
+The tallies are read fresh from the store before every risk adjustment
+(`_load_shipper_feedback(force=True)`); the 30 s cache serves only the reads that follow
+within the same scoring step, so no instance can miss a block another instance recorded.
+Before that, the cache was dropped only in the process that recorded the decision, so
+another Cloud Run instance could miss a second block's +15 for up to the TTL. A keying
+bug in that cache, where a loop variable rebound the tenant
 key so the tallies were filed under the last shipper scanned, was fixed at the same time.
 
 ---
@@ -553,7 +564,7 @@ stateDiagram-v2
 ```
 
 When booking data alone cannot distinguish a legitimate shipment from a fraudulent one
-(the six identical origin-fraud pairs in the benchmark), the system organises the work
+(the four identical origin-fraud pairs in the benchmark), the system organises the work
 of collecting and evaluating the missing evidence.
 
 **States:** `AWAITING_EVIDENCE` (request is open), `APPROVED` (reviewer signed off),
@@ -630,13 +641,17 @@ asks for the reason before it opens the confirmation.
 
 ## Persistence
 
-Five Firestore collections:
+Eight Firestore collections:
 
 ```
 cases   events   audit_log   delegation_boundaries   prefilter_rules
+boundary_counters   login_throttle   operator_activity
 ```
 
-The docstring at the top of `store.py` lists only the first three.
+The docstring at the top of `store.py` lists only the first three. `boundary_counters`
+holds each tenant's boundary version counter for publish and revoke, `login_throttle`
+the console's shared sign-in ledger, and `operator_activity` the time a reviewer had a
+case open.
 `prefilter_rules` is keyed *by tenant id as the document id*, deliberately, so a tenant
 cannot end up with two live rule sets.
 
@@ -687,7 +702,9 @@ retention. PITR protects forward from when it was enabled, not retroactively.
 ### The document archive
 
 Bucket `vf-fraud-detection-phuochoa-documents`, path
-`shipping-documents/YYYY/MM/DD/{case_id}/{filename}`. `DOCUMENT_BUCKET` has **no
+`[tenants/<tenant_id>/]shipping-documents/YYYY/MM/DD/{case_id}/{filename}`; the tenant
+segment exists only under `MULTI_TENANT`. Evidence uploads from the verification loop go
+under `[tenants/<tenant_id>/]evidence/`. `DOCUMENT_BUCKET` has **no
 default**: unset means archiving is silently skipped and ingestion still proceeds,
 because losing the archive should not lose the shipment.
 
@@ -696,8 +713,12 @@ bills of lading for cases that arrived as JSON -- every case must be reviewable 
 paperwork, so a rendered PDF is archived alongside, flagged `"generated": True` so a
 reviewer is never shown a reconstruction as an original.
 
-The `shipping-documents/` prefix is also the loop-breaker: both the storage sweep and
-the Pub/Sub storage handler skip it, or the pipeline would process its own output.
+The `shipping-documents/` and `evidence/` prefixes are also the loop-breaker: both the
+storage sweep and the Pub/Sub storage handler refuse them in any tenant's space, or the
+pipeline would process its own output. Under `MULTI_TENANT` they also refuse any object
+outside `tenants/<caller>/` or outside `DOCUMENT_BUCKET`
+(`document_store.ingest_refusal`), so one shared bucket cannot leak a staged document
+into another tenant's board.
 
 ---
 
@@ -830,9 +851,10 @@ The original rationale was that the analysis identity holds `aiplatform.user` wh
 execution identity does not, so the reasoning service could never act. **That half is
 now vestigial** -- nothing calls Vertex AI, so the role is irrelevant.
 
-The real boundary still holds and is the one worth stating: the analysis identity has
-**no `pubsub.publisher`**. It can reason about a shipment and cannot announce a decision
-about one.
+The other half holds only when the split is deployed. With `EXECUTOR_URL` set, the
+analysis identity can go without `pubsub.publisher`: it can reason about a shipment and
+cannot announce a decision about one. The deployed service does not set it, publishes
+directly, and holds `roles/pubsub.publisher` (README, *Deploy to Cloud Run*).
 
 ---
 
@@ -851,14 +873,10 @@ An architecture document that omits these is marketing.
   reads, so a visitor holds exactly `viewer`, but that is still every case on the board.
   Deliberate for a demo over synthetic data, and it must change before a customer's data
   is in the store.
-- **The document-intake vision step bypasses the billing rollups.** It is inserted
-  straight into `steps` and never passes through `_record_step`, so the audit row
-  prices it and `/api/v1/billing/usage` does not. MiniCPM-V has the highest input rate
-  in the table. `backfill_rollups` cannot repair it, because it skips any case that
-  already has `_agent_calls`.
-- **The pricing formula exists in four places** -- the canonical `lineage.cost_usd()`
-  which the orchestrator does not call, plus three inline copies. A rate-card change is
-  four correct edits.
+- **Document cases recorded before the intake step reached the billing rollups stay
+  under-counted.** Intake is now rolled up like every other step, through
+  `lineage.cost_usd()`, the one pricing implementation. `backfill_rollups` cannot repair
+  the older cases, because it skips any case that already has `_agent_calls`.
 - **No Google Cloud cost is attributed.** Firestore, Cloud Run time, Model Armor,
   Cloud Storage and Tavily are unmetered, which understates cost of service most for
   the rules-cleared traffic the unit economics lean on.
@@ -867,9 +885,8 @@ An architecture document that omits these is marketing.
   `VF_TENANT_MEMBERS` declares. No tenant is derived from an email domain any more:
   `tenant_from_email()` did that, and it made `acme.com` and `acme.net` one customer
   (authorization review finding T02).
-- **`MULTI_TENANT=true` has never run against Firestore.** The ingest sinks resolve no
-  tenant and would raise under it, and every behavioural isolation test runs on
-  `MemoryStore` -- `FirestoreStore` is covered only by signature parity, despite the two
+- **`MULTI_TENANT=true` has never run against Firestore.** Every behavioural isolation
+  test runs on `MemoryStore` -- `FirestoreStore` is covered only by signature parity, despite the two
   backends filtering by different mechanisms, apart from `put_case`'s ownership rule,
   which `tests/test_tenant_isolation.py` also runs against a fake of the client calls
   it makes. Membership resolution itself is
@@ -877,7 +894,7 @@ An architecture document that omits these is marketing.
   Firestore transactions behind boundary publish/revoke, `put_case` and the sign-in ledger are
   exercised against the emulator in `tests/test_firestore_emulator.py`, which is skipped
   unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so `store.py`, which
-  holds the production backend, sits at 53% line coverage while the package is at 84.6%.
+  holds the production backend, sits at 59% line coverage while the package is at 85.8%.
 - **Concurrent publishes in one tenant queue.** Publish and revoke are one Firestore
   transaction on the tenant's `boundary_counters` document, retried as a whole on
   contention. Against the emulator six simultaneous publishes all succeeded with distinct
@@ -888,8 +905,7 @@ An architecture document that omits these is marketing.
   `X-VF-Tenant` selected among the `service` principal's own memberships, where the
   operator role is checked; a body `tenant_id` must repeat it (409 otherwise), and the
   `case_id` must be a case of that organisation (404 otherwise). This route is the
-  only place `case_id` ownership is checked before egress; ingestion paths are still
-  not multi-tenant.
+  only place `case_id` ownership is checked before egress.
 - **The general rate limiter keys on email or IP, never on a tenant**, and its storage
   is `memory://`, so limits are per-instance and reset on deploy. Console password
   sign-in is the exception: it is counted on a shared Firestore ledger

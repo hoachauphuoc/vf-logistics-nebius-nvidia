@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Floorline console
 
-## Getting Started
+The Next.js 16 half of the `vf-app` container. In the deployed image it listens on
+`$PORT`, the only port Cloud Run routes to, and reaches the Flask API on
+`127.0.0.1:9090` behind it (the root `Dockerfile` and `entrypoint.sh` build and start
+both). It is not deployed on its own, and not on Vercel.
 
-First, run the development server:
+## Run it locally
+
+The console needs the API. From the repository root, start Flask (port 8080 by default):
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+PYTHONPATH=src python -m vf_logistics.app
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then, from `frontend/`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm ci
+FLASK_API_BASE=http://127.0.0.1:8080 npm run dev    # http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Without `FLASK_API_BASE` the console looks for the API at `http://127.0.0.1:9090`, the
+address it has inside the container.
 
-## Learn More
+Sign-in and the console's other settings — `VF_SESSION_SECRET` (at least 32 characters,
+required in production, where a missing one takes the console offline), `VF_OPERATORS`,
+`VF_PUBLIC_READS`, `VF_ONE_CLICK_*` — are documented in the root `README.md`, under
+*Signing in* and *Environment variables → Console*.
 
-To learn more about Next.js, take a look at the following resources:
+## Checks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx tsc --noEmit    # typecheck
+npm run lint
+npm test            # 328 unit tests in 26 files (vitest)
+npm run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Where things are
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Path | What it is |
+|---|---|
+| `src/app/` | App Router pages: board, radar, review, audit, governance, devops, agents, evaluation, admin, today, outcomes, cases, respond, legal, login |
+| `src/components/` | UI, including the case trace sheet and the layout shell |
+| `src/lib/proxy-policy.ts` | The BFF allow-list; the only place the console's API key is attached |
+| `src/lib/upstream.ts` | The public API pass-through, with the caller's own credential |
+| `src/lib/help-content.ts` | The help text behind every `?` on the screens |
+| `src/proxy.ts` | The login door (Next 16 renamed `middleware` to `proxy`) |
+| `scripts/make-operator.mjs` | Creates a PBKDF2 operator record; writes the password to a file |
