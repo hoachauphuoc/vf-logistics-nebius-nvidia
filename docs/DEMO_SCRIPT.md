@@ -261,10 +261,13 @@ calls while Nano has many calls and little cost.
 > investigation.
 
 This is the clip that earns *Quality of the Idea*, and the argument is the one thing in the
-submission a judge is unlikely to have seen before: **model capacity is spent only where it
-can change what happens to a case.** The card is the evidence — cheap model on the
-high-volume hops, expensive model on the one hop whose output is a verdict on the dispute
-rather than a score the floor overrides.
+submission a judge is unlikely to have seen before: **the floor, not the model's size, is
+what makes the high-volume hops safe, so the expensive model is spent where the floor does
+not override its output.** The card is the evidence — cheap model on the high-volume hops,
+expensive model on the one hop whose output is a verdict on the dispute rather than a score
+the floor overrides. "Cannot change it" means the floor: no model can lower it. Do not
+stretch that into "a stronger model would add nothing" — where the floor is zero, the model
+is the only check, and whether a larger one would catch more there is not measured.
 
 The last sentence says *can trigger* on purpose. The debate runs only when the floor exceeds
 the model's score by 15 or more, so auto-clear is already ruled out and a person decides the
@@ -424,9 +427,9 @@ from GitHub. Do not fake it with a still: run the suite, let the green line be r
 seconds is enough because the numbers do the work, and a judge who wants the detail has the
 repository.
 
-CI is worth showing for a reason beyond the count: the workflow existed for weeks filtered
-on branch `main` while this repository uses `master`, so it had **never run once**. It runs
-now.
+CI is worth showing for a reason beyond the count: from 19 Sep (`ae240fb`) to 24 Sep
+(`9d683f6`) the workflow filtered on branch `main` while this repository uses `master`, so
+in those five days it **never ran once**. It runs now.
 
 ---
 

@@ -375,7 +375,8 @@ investigated case the agent was allowed to act on, with the hold, the SAR draft 
 analyst assignment executed. Opening a case changes nothing: a reviewer decides directly
 from any of the three states that wait on a person.
 
-The edge to `AUTO_CLEARED` is an allowlist. All four conditions must hold: effective
+The model-path edge to `AUTO_CLEARED` (from `SPECIALISTS_DONE`) is an allowlist. All four
+conditions must hold: effective
 risk below 40, a compliance status of exactly `CLEARED`, `auto_clear_permitted` read as
 `is True` (a case with no reconciliation is not consent), and no agent whose output
 failed validation. Until 14 Oct the compliance test was "not `BLOCKED` and not
@@ -457,9 +458,12 @@ not worth the same, so the mechanism is not symmetric.
 Three things a reader should not have to infer:
 
 1. **`auto_clear_permitted` is `floor == 0` and a stated floor, not `floor <= threshold`.**
-   A single MEDIUM finding anywhere blocks auto-clear entirely, however low the model
-   scored, and a validation that carries no risk floor at all is read as one that did
-   not run: `reconcile()` never permits auto-clear from it.
+   On the model path a single MEDIUM finding anywhere blocks auto-clear entirely, however
+   low the model scored, and a validation that carries no risk floor at all is read as one
+   that did not run: `reconcile()` never permits auto-clear from it. The pre-filter's
+   whitelist release runs no model and builds its own reconciliation: it sets MEDIUM and
+   LOW findings aside, and a finding that blocks auto-clear (a watched-lane origin finding
+   is one) withdraws that fast path instead.
 2. **A missing model score floors at 50, not 0.** A model outage routes to a human and
    can never release.
 3. **The asymmetry is asserted at runtime, not merely documented.** `validate()`

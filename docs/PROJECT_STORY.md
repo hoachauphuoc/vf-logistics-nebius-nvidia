@@ -24,10 +24,13 @@ exoneration releases contraband and a wrong escalation costs a human ten minutes
 
 That single rule decided the model layer, which is why our tiering is not the usual
 "big model for hard things". Fraud and compliance sit under the floor, so a stronger
-model there cannot change the outcome in the direction that matters — Nemotron 3
-Nano is the *correct* choice on those hops, not the affordable one. Nemotron 3 Ultra
-runs in exactly one place, the Senior Auditor debate, because that is the only hop whose
-output is a verdict the floor does not override rather than a score it does.
+model there cannot change the outcome in the direction that matters: a weaker one can
+miss a hold but can never release a shipment the rules stopped. So Nemotron 3 Nano on
+those hops is a choice the floor makes safe, not one we have shown is best; where the
+floor is zero the model is the only check, and whether a larger model would catch more
+there is not measured. Nemotron 3 Ultra runs in exactly one place, the Senior Auditor
+debate, because that is the only hop whose output is a verdict the floor does not
+override rather than a score it does.
 
 That rule is also the name. **Floorline** is the line the agents may climb above and
 never cross below.
@@ -119,8 +122,8 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
   the only place Ultra is used. It fires on its own only when the deterministic floor
   exceeds the model's score by 15 points or more; a reviewer can also run it by hand
   (Deep Review) on any case awaiting a person, where it records a verdict and changes
-  no route. Everywhere else a
-  stronger model cannot change the outcome, because the floor has already decided. By
+  no route. Everywhere else the floor has already decided whether a shipment may clear,
+  and a stronger model could only add holds above it. By
   the time the debate runs, auto-clear is already off the table and a person decides
   the case either way; what Ultra's verdict can do is send the dispute to a deep
   investigation on Super that it would otherwise skip. CONFIRM changes
@@ -269,8 +272,8 @@ deploys from a laptop with owner credentials, which is the general shape of the
 problem — a permission bug is invisible from the machine that has the permission.
 
 **A test suite that validated the wrong deployment, and passed.** Our document
-suite printed "All 7 documents matched" for weeks. Its base URL named a Cloud Run
-service in a *different* project — an earlier deployment that was still live and
+suite printed "All 7 documents matched" on every run until 23 Sep. Its base URL named a
+Cloud Run service in a *different* project — an earlier deployment that was still live and
 still answering `/health`. Every green run described code that was not in this
 repository, and we had quoted those runs as evidence in commit messages. A failing
 test is a problem; a passing test aimed at the wrong system is worse, because it

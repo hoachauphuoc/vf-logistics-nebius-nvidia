@@ -59,7 +59,7 @@ Details: [One click for judges](#one-click-for-judges).
     held (73.7% [51–89]; rules alone 11), but also 9 of the 19 honest look-alikes (rules
     alone 7), so the pairs cleanly separated fell from 4 to 3;
   - HS classifier on substitutions its reference never mentions: 11 of 12 caught, 0 of 12
-    honest cases flagged (95% upper bound 24.3%).
+    honest cases flagged (95% upper bound 24.2%).
 - **The weakness, in reviewer time:** at 0.2% fraud, the 2024 Vietnam customs rate, the
   rules would hold about **206 shipments per real fraud case** (151–271 if recall and
   false-positive rate both land at the best or worst end of their intervals; not a 95%
@@ -76,10 +76,10 @@ Details: [One click for judges](#one-click-for-judges).
   policy against the board on Governance; sign in as the Reviewer account and watch the
   console refuse to publish policy, naming the role it needs.
 - **Verify:** the console's Evaluation page (`/evaluation`) and `GET /api/v1/evaluation`
-  serve every committed report. The 95% intervals and the operating curve arrived in
-  `0468f98` (14 Oct 2026): a build of this repository serves them, and a deployment
-  built before that commit, which the live demo may still be, shows the point figures
-  only. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
+  serve every committed report. The 95% intervals and the operating curve arrived with
+  the `896bbae` merge (14 Oct 2026): a build of this repository serves them, and a
+  deployment built before that merge, which the live demo may still be, shows the point
+  figures only. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
   at no cost; [Reproducible testing](#reproducible-testing) has the rest.
 
 ## The problem
@@ -319,8 +319,8 @@ debate against Super's `$0.0015`.
 
 **Before:** one static HTML page served by Flask from `static/`.
 
-**Now:** a Next.js 16 console — 107 files and 20,657 lines of TypeScript, tests
-excluded. It began as seven screens over the operational API, since joined by Access
+**Now:** a Next.js 16 console — 107 files and 20,657 lines of TypeScript at `d76e64e`,
+tests excluded. It began as seven screens over the operational API, since joined by Access
 Control (`/admin`), Evaluation (`/evaluation`), three operator screens for the
 verification loop (`/today`, `/cases/<id>`, `/outcomes`) and a public upload page for
 shippers (`/respond/<token>`). It started on a Cloud Run service of its own; it now runs in the same
@@ -959,7 +959,7 @@ since: see *[Signing in](#signing-in)*.
 | `/api/v1/orchestrator/reset` | POST | Clear the tenant's cases and events (operator, **password sign-in only**). The audit trail is kept, and the reset is written to it as a `board_reset` row naming who did it |
 | `/api/v1/orchestrator/drain` | POST | Run up to `cases` pending cases (default 3, max 10) to a terminal state |
 | `/api/v1/events/document` | POST | Document intake. Multipart `file` (PDF or image). Screens for injection, transcribes, archives the original, then runs the case to a terminal state in the same request. |
-| `/api/v1/events/storage` | POST | Cloud Storage notification sink |
+| `/api/v1/events/storage` | POST | Cloud Storage notification sink (a Pub/Sub push); ignores the service's own `shipping-documents/` and `evidence/` output and, under `MULTI_TENANT`, any object outside the caller's tenant space in `DOCUMENT_BUCKET` |
 | `/api/v1/ingest/bucket-sweep` | POST | Ingest up to `limit` (default 10, max 25) unprocessed objects under `prefix` (default `inbox/`) in `DOCUMENT_BUCKET`; under `MULTI_TENANT`, only inside the caller's own tenant space |
 | `/api/v1/simulate/bulk` | POST | Randomised shipments, capped at `MAX_BULK_COUNT` |
 
@@ -1638,8 +1638,8 @@ python scripts/test_documents.py 3      # three passes, reports any disagreement
 
 Against a non-local base it refuses unless you pass `--yes-wipe-board`. That guard
 exists because this script once pointed at a service in a different project, passed
-for weeks while testing code that was not in this repository, and then deleted the
-seeded demo board the moment the URL was corrected.
+until 23 Sep (`126cbd6`) while testing code that was not in this repository, and then
+deleted the seeded demo board the moment the URL was corrected.
 
 Two live checks that need credentials and spend real tokens, so they are run by hand:
 

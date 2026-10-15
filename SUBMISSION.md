@@ -75,7 +75,9 @@ decision needs an account; credentials are in the private testing-instructions f
 The live service may be a build from before the changes merged on 14 Oct 2026. Those
 are in this repository: the 95% intervals and the operating curve on the Evaluation page
 (`896bbae`), the stricter checks on automated release and the registry-only learning
-discount (`711e3e6`), and the tenant-scoped document bucket (`17864e0`). A build from
+discount (`711e3e6`), the shipper history read fresh before each risk adjustment
+(`b5cd237`), the tenant-scoped document bucket (`17864e0`), and the Firestore store's
+refusal of an unversioned write over another tenant's case (`d76e64e`). A build from
 before them shows the evaluation as point figures only.
 
 ---
@@ -134,7 +136,9 @@ the port, so the work is measured in two ranges. From a clone of this repository
 first step; `git diff --shortstat 6bb1e59 00d896a` reports **297 files changed, 171,921
 insertions** across 49 commits for the first ten days, to 27 Sep; and
 `git diff --shortstat 6bb1e59 d76e64e` reports **395 files changed, +199,584 / −6,681**
-across 131 commits to 14 Oct (`d76e64e` is the last code change at the time of writing).
+across 131 commits to 14 Oct. The ranges end at commits, not `HEAD`, so the figures stay
+true: `d76e64e` is the last change to `src/` and `tests/` at the time of writing, and the
+commits after it change documentation, comments and on-screen text only.
 
 One thing was deliberately carried over rather than rebuilt: the deterministic
 governance layer — risk floor, untrusted-input boundary, delegation boundary, shipper
@@ -147,7 +151,7 @@ lines to 2,023 and `governance.py` from 492 to 894. The rows below were rebuilt.
 |---|---|---|---|
 | **Models** | 4 agents on Gemini 3.5 Flash + Flash-Lite, Vertex AI | 7 agents, 4 models on Token Factory: Nano ×4 hops, Super, **Ultra**, MiniCPM-V | The floor overrides a score but not a verdict, so reasoning capacity is only worth paying for on the debate — measured `$0.0198` per Ultra debate against `$0.0015` on Super |
 | **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,751 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
-| **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 107 files, 20,657 lines of TypeScript (tests excluded); it began as 7 screens, since joined by Access Control, Evaluation, three operator screens for the verification loop and a public upload page for shippers | The static page could not carry a session, and recording a decision had to be attributable |
+| **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 107 files, 20,657 lines of TypeScript at `d76e64e` (tests excluded); it began as 7 screens, since joined by Access Control, Evaluation, three operator screens for the verification loop and a public upload page for shippers | The static page could not carry a session, and recording a decision had to be attributable |
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
 | **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
 | **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
@@ -177,7 +181,9 @@ had published or would have:
   false-positive rate 35.1% → 21.9%, no recall lost on the corpus), would release new
   counterparties' first shipments unreviewed, and is the operator's call. The
   operating curve for the review threshold is on the Evaluation page of a build that
-  includes `896bbae`; the threshold was left where it is.
+  includes `896bbae`. It is a what-if over the rules' floors, not a setting: any non-zero
+  floor already withholds auto-clear, so moving along it would mean changing `reconcile()`
+  and the boundary. We left the threshold where it is.
 - **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
   `$0.068`–`$0.088` on inference and 90–106 Tavily searches, so the free search tier
   runs out around 200 cases while model spend is still negligible. Every cost figure
@@ -500,10 +506,11 @@ the live service once destroyed the seeded demo board.
   step-through
 - **Delegation Boundary** — versioned policy published by a named human; the
   only source of authority for protected actions
-- **Fail-closed execution gate** — no boundary, no execution; and no automated release
-  unless compliance returned exactly `CLEARED`, with a stated risk floor, a deterministic
-  finding count (under the default zero-findings rule), a usable declared value and,
-  where destinations are excluded, a stated destination
+- **Fail-closed execution gate** — no boundary, no execution. On the model path, no
+  automated release unless compliance returned exactly `CLEARED` with a stated risk floor;
+  and on every path, the deterministic pre-filter's included, the gate refuses a release
+  without a deterministic finding count (under the default zero-findings rule), a usable
+  declared value and, where destinations are excluded, a stated destination
 - **Deterministic risk floor** — arithmetic and code-resident lists constrain
   what the agent can claim
 - **Two-layer input screening** — Model Armor screens a text-layer PDF in
@@ -753,7 +760,7 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
-| Hosted project URL | done -- https://vf-app-350828852747.asia-southeast1.run.app, console and API in one service; it may be a build from before the 14 Oct merges named in the *Hosted project URL* section |
+| Hosted project URL | done -- https://vf-app-350828852747.asia-southeast1.run.app, console and API in one service; it may be a build from before the 14 Oct changes named in the *Hosted project URL* section |
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case that reaches the models), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 6 integration points |
@@ -773,8 +780,9 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Measured evaluation | detection benchmark on a held-out split, HS classifier on a holdout set, public enforcement cases and a rules operating curve, all with 95% intervals, served at `/evaluation` by a build that includes `896bbae` |
 
 The repository is public, so no judging-instruction share is required. Outstanding: the
-video, and a live service built from the final commit; until then the live demo lacks the
-14 Oct changes named in the *Hosted project URL* section.
+video, and a live service built from the final commit; until then the live demo may lack
+the 14 Oct changes named in the *Hosted project URL* section (on 15 Oct it did not yet
+serve the operating curve).
 
 ---
 
