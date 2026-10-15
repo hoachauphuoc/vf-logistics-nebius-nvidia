@@ -57,7 +57,8 @@ Details: [One click for judges](#one-click-for-judges).
     debate agents were not in this run, and most zero-day searches in it were stubbed;
   - 19 public enforcement cases, each paired with the honest trade it imitated: 14 frauds
     held (73.7% [51–89]; rules alone 11), but also 9 of the 19 honest look-alikes (rules
-    alone 7), so the pairs cleanly separated fell from 4 to 3;
+    alone 7). Five pairs came out fraud held and honest released, but two of those flipped
+    between runs of the model, so only 3 count as cleanly separated (rules alone: 4);
   - HS classifier on substitutions its reference never mentions: 11 of 12 caught, 0 of 12
     honest cases flagged (95% upper bound 24.2%).
 - **The weakness, in reviewer time:** at 0.2% fraud, the 2024 Vietnam customs rate, the
