@@ -2193,10 +2193,11 @@ def event_storage():
             # is worse than one dropped with a reason recorded.
             return jsonify({"ignored": True, "reason": "no bucket/object in notification"}), 200
 
-        # The service archives every intake into this prefix. Processing our own
-        # output would loop forever.
-        if name.startswith(orchestrator.ARCHIVE_PREFIX):
-            return jsonify({"ignored": True, "reason": "own archive output"}), 200
+        # The service's own archive and evidence output, and under MULTI_TENANT
+        # anything outside the caller's tenant space or the document bucket.
+        refusal = document_store.ingest_refusal(bucket, name, _tenant())
+        if refusal:
+            return jsonify({"ignored": True, "reason": refusal}), 200
 
         if mime_for(name) is None:
             return jsonify({"ignored": True, "reason": f"unsupported type: {name}"}), 200

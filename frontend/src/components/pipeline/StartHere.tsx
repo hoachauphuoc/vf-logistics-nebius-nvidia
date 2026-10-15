@@ -61,7 +61,7 @@ const STEPS: Array<{ title: string; body: string; href: string; cta: string }> =
   },
   {
     title: "Decide what the agent would not",
-    body: "Review Queue: the findings, the paperwork, and Release, Block or Request info under your name.",
+    body: "Review Queue: the findings, the paperwork, and Release, Block or Request info under your name. Release needs a password sign-in.",
     href: "/review",
     cta: "Open the queue",
   },
@@ -135,7 +135,8 @@ export function StartHere() {
             Continue as guest judge
           </button>
           <span className="text-[11px] text-dim">
-            One click, no password. Everything except clearing the board.
+            One click, no password. Releasing a shipment and changes that would outlast your
+            visit need a password sign-in.
           </span>
           {error && (
             <span role="alert" className="text-[11px] text-risk-critical">

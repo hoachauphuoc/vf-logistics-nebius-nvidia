@@ -1,0 +1,280 @@
+{
+  "arm": "rules",
+  "generated_at": "2026-10-14T08:25:37+0000",
+  "generated_by": "scripts/operating_curve.py",
+  "review_threshold": 40,
+  "prevalence": 0.002,
+  "corpus": {
+    "file": "synthetic_test_cases.json",
+    "seed": 20260920,
+    "total_available": 1000,
+    "composition": {
+      "shell_company": 300,
+      "hs_mismatch": 300,
+      "alias_evasion": 200,
+      "clean": 200
+    }
+  },
+  "sanctions_index": {
+    "version": 0,
+    "synced_at": null,
+    "age_days": null,
+    "source": "bundled_seed",
+    "entity_count": 12
+  },
+  "split_method": "sha256(case_id)[0] % 2: 0 = dev, 1 = holdout",
+  "splits": {
+    "dev": {
+      "cases_run": 547,
+      "attacks": 433,
+      "clean": 114,
+      "points": [
+        {
+          "threshold": 50,
+          "thresholds": [
+            1,
+            50
+          ],
+          "current": true,
+          "tp": 405,
+          "fp": 40,
+          "fn": 28,
+          "tn": 74,
+          "precision": 0.9101,
+          "recall": 0.9353,
+          "false_positive_rate": 0.3509,
+          "held_per_1000": 352.1,
+          "held_per_true_case": 188.2
+        },
+        {
+          "threshold": 65,
+          "thresholds": [
+            51,
+            65
+          ],
+          "current": false,
+          "tp": 259,
+          "fp": 27,
+          "fn": 174,
+          "tn": 87,
+          "precision": 0.9056,
+          "recall": 0.5982,
+          "false_positive_rate": 0.2368,
+          "held_per_1000": 237.5,
+          "held_per_true_case": 198.5
+        },
+        {
+          "threshold": 75,
+          "thresholds": [
+            66,
+            75
+          ],
+          "current": false,
+          "tp": 259,
+          "fp": 10,
+          "fn": 174,
+          "tn": 104,
+          "precision": 0.9628,
+          "recall": 0.5982,
+          "false_positive_rate": 0.0877,
+          "held_per_1000": 88.7,
+          "held_per_true_case": 74.2
+        },
+        {
+          "threshold": 80,
+          "thresholds": [
+            76,
+            80
+          ],
+          "current": false,
+          "tp": 257,
+          "fp": 6,
+          "fn": 176,
+          "tn": 108,
+          "precision": 0.9772,
+          "recall": 0.5935,
+          "false_positive_rate": 0.0526,
+          "held_per_1000": 53.7,
+          "held_per_true_case": 45.2
+        },
+        {
+          "threshold": 85,
+          "thresholds": [
+            81,
+            85
+          ],
+          "current": false,
+          "tp": 156,
+          "fp": 6,
+          "fn": 277,
+          "tn": 108,
+          "precision": 0.963,
+          "recall": 0.3603,
+          "false_positive_rate": 0.0526,
+          "held_per_1000": 53.2,
+          "held_per_true_case": 73.8
+        },
+        {
+          "threshold": 90,
+          "thresholds": [
+            86,
+            90
+          ],
+          "current": false,
+          "tp": 112,
+          "fp": 0,
+          "fn": 321,
+          "tn": 114,
+          "precision": 1.0,
+          "recall": 0.2587,
+          "false_positive_rate": 0.0,
+          "held_per_1000": 0.5,
+          "held_per_true_case": 1.0
+        },
+        {
+          "threshold": 100,
+          "thresholds": [
+            91,
+            100
+          ],
+          "current": false,
+          "tp": 69,
+          "fp": 0,
+          "fn": 364,
+          "tn": 114,
+          "precision": 1.0,
+          "recall": 0.1594,
+          "false_positive_rate": 0.0,
+          "held_per_1000": 0.3,
+          "held_per_true_case": 1.0
+        }
+      ]
+    },
+    "holdout": {
+      "cases_run": 453,
+      "attacks": 367,
+      "clean": 86,
+      "points": [
+        {
+          "threshold": 50,
+          "thresholds": [
+            1,
+            50
+          ],
+          "current": true,
+          "tp": 343,
+          "fp": 33,
+          "fn": 24,
+          "tn": 53,
+          "precision": 0.9122,
+          "recall": 0.9346,
+          "false_positive_rate": 0.3837,
+          "held_per_1000": 384.8,
+          "held_per_true_case": 205.9
+        },
+        {
+          "threshold": 65,
+          "thresholds": [
+            51,
+            65
+          ],
+          "current": false,
+          "tp": 246,
+          "fp": 22,
+          "fn": 121,
+          "tn": 64,
+          "precision": 0.9179,
+          "recall": 0.6703,
+          "false_positive_rate": 0.2558,
+          "held_per_1000": 256.6,
+          "held_per_true_case": 191.4
+        },
+        {
+          "threshold": 75,
+          "thresholds": [
+            66,
+            75
+          ],
+          "current": false,
+          "tp": 246,
+          "fp": 8,
+          "fn": 121,
+          "tn": 78,
+          "precision": 0.9685,
+          "recall": 0.6703,
+          "false_positive_rate": 0.093,
+          "held_per_1000": 94.2,
+          "held_per_true_case": 70.2
+        },
+        {
+          "threshold": 80,
+          "thresholds": [
+            76,
+            80
+          ],
+          "current": false,
+          "tp": 244,
+          "fp": 6,
+          "fn": 123,
+          "tn": 80,
+          "precision": 0.976,
+          "recall": 0.6649,
+          "false_positive_rate": 0.0698,
+          "held_per_1000": 71.0,
+          "held_per_true_case": 53.4
+        },
+        {
+          "threshold": 85,
+          "thresholds": [
+            81,
+            85
+          ],
+          "current": false,
+          "tp": 132,
+          "fp": 6,
+          "fn": 235,
+          "tn": 80,
+          "precision": 0.9565,
+          "recall": 0.3597,
+          "false_positive_rate": 0.0698,
+          "held_per_1000": 70.4,
+          "held_per_true_case": 97.8
+        },
+        {
+          "threshold": 90,
+          "thresholds": [
+            86,
+            90
+          ],
+          "current": false,
+          "tp": 95,
+          "fp": 0,
+          "fn": 272,
+          "tn": 86,
+          "precision": 1.0,
+          "recall": 0.2589,
+          "false_positive_rate": 0.0,
+          "held_per_1000": 0.5,
+          "held_per_true_case": 1.0
+        },
+        {
+          "threshold": 100,
+          "thresholds": [
+            91,
+            100
+          ],
+          "current": false,
+          "tp": 49,
+          "fp": 0,
+          "fn": 318,
+          "tn": 86,
+          "precision": 1.0,
+          "recall": 0.1335,
+          "false_positive_rate": 0.0,
+          "held_per_1000": 0.3,
+          "held_per_true_case": 1.0
+        }
+      ]
+    }
+  }
+}

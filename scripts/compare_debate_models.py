@@ -17,16 +17,19 @@ the outcome in the direction that matters, because the floor already decides. Pa
 3.3x for a score that gets overridden buys nothing.
 
 The debate is the one place that does not hold. It runs only when `score_disputed` is
-set -- the floor and the model disagree by 15 points or more -- and its output is not a
-score awaiting override. It is a reasoned CONFIRM or DISAGREE on whether that
-disagreement can be resolved without a person. That judgement IS the outcome, so
-reasoning capacity there is load-bearing.
+set -- the floor and the model disagree by 15 points or more -- so auto-clear is already
+ruled out and a person decides the case either way. Its output is not a score awaiting
+override but a reasoned CONFIRM or DISAGREE on whether the junior analyst missed
+something, and a genuine DISAGREE at or above DEBATE_ESCALATE_CONFIDENCE sends the case
+to deep investigation (orchestrator.debate_escalation). That judgement can change a
+case's route instead of being floored, so reasoning capacity there is load-bearing.
 
 WHAT TO LOOK FOR
 
-The number that would justify Ultra is not agreement with Super, it is fewer cases
-landing in front of a human for no good reason. A debate that CONFIRMs the floor sends
-the case to review; one that DISAGREEs with a well-argued reason can let it clear. So:
+The number that would justify Ultra is not agreement with Super, it is verdicts worth
+acting on. Nothing the debate says can clear a case: CONFIRM changes nothing, and a
+confident DISAGREE sends it to deep investigation before a reviewer sees it, so each
+one should be an investigation worth having run. So:
 
   * dispute resolution rate -- how many debates reach a verdict at all, rather than
     failing to parse or running out of tool rounds

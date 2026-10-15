@@ -470,6 +470,25 @@ class TestSimulator(unittest.TestCase):
         for s in ships:
             self.assertIn(s.get("_generated_profile"), {"clean", "suspicious", "bad"})
 
+    def test_each_profile_is_generated_as_described(self):
+        # The profile roll is the only unseeded branch in the module; pinning it
+        # makes every profile run on every test run, so line coverage stops
+        # moving between runs with the dice.
+        from unittest.mock import patch
+
+        from vf_logistics import simulator
+
+        for roll, profile in ((0.10, "clean"), (0.70, "suspicious"), (0.95, "bad")):
+            with self.subTest(profile=profile), \
+                    patch.object(simulator.random, "random", return_value=roll):
+                (ship,) = bulk_shipments(1, "P")
+                self.assertEqual(ship["_generated_profile"], profile)
+                if profile == "clean":
+                    self.assertLess(ship["declared_value"], 25000)
+                if profile == "bad":
+                    self.assertEqual(ship["shipper_tax_id"], "not provided")
+                    self.assertIn("Jebel Ali", ship["transit_points"])
+
 
 # ────────────────────────────────────────────────────────────────
 # 7. agents/_common.py

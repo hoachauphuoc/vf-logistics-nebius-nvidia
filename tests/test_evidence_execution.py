@@ -15,7 +15,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 from test_console_session import TEST_KEY  # noqa: E402
 from test_evidence_eval_approve import Base, tiny_pdf  # noqa: E402
-from vf_logistics import evidence  # noqa: E402
+from test_origin_inputs import plywood  # noqa: E402
+from vf_logistics import evidence, orchestrator  # noqa: E402
 
 REVIEWER = "reviewer@forwarder.example"
 
@@ -484,3 +485,41 @@ class TestN02Route(Base):
         assert first.status_code == 200 and first.get_json()["state"] == "EXECUTION_FAILED"
         assert second.status_code == 200 and second.get_json()["state"] == "RELEASED_BY_HUMAN"
         assert second.get_json()["message_id"] == "msg-http"
+
+
+class TestExecutedDecisionsReachTheLearningLoop(Base):
+    """
+    execute_approval is the only way a case with a verification record becomes
+    RELEASED_BY_HUMAN or BLOCKED_BY_HUMAN, so it must drop the cached human
+    history the learning loop scores from, as human_decide does.
+    """
+
+    def teardown_method(self):
+        orchestrator._invalidate_shipper_feedback()
+        super().teardown_method()
+
+    def test_a_second_block_executed_here_counts_for_the_next_shipment(self):
+        shipment = plywood()
+        name = shipment["shipper_name"]
+        run(self.store.put_case({
+            "case_id": "B-0", "shipment_id": "B-0", "state": "BLOCKED_BY_HUMAN",
+            "created_at": "2026-10-11T01:00:00+00:00",
+            "shipment": shipment, "actions": [], "reviews": [],
+        }))
+        orchestrator._invalidate_shipper_feedback()
+        # One block earns nothing yet, and reading it fills the cache.
+        assert run(orchestrator.shipper_risk_adjustment(name)) == 0
+
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        aid = run(evidence.approve(
+            "CASE-1", "block", REVIEWER, actor_auth="password",
+        ))["approval"]["approval_id"]
+        with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=OK_RECEIPT)):
+            result = run(evidence.execute_approval("CASE-1", aid, REVIEWER, actor_auth="password"))
+        assert result["state"] == "BLOCKED_BY_HUMAN"
+
+        # A stale cache answers 0 here, and the shipper's next borderline
+        # shipment could then auto-clear without the second block's +15.
+        assert run(orchestrator.shipper_risk_adjustment(name)) == 15

@@ -6,31 +6,82 @@ below. (VF Logistics is the freight operator in the demo; the repository, the Cl
 service `vf-app` and the API keep that name.)
 
 **Built on:** **Nebius Token Factory** for every model call, running **NVIDIA Nemotron 3
-Nano** (fraud, compliance, HS classification, zero-day radar), **NVIDIA Nemotron 3
-Super** (investigation) and **NVIDIA Nemotron 3 Ultra** (the Senior Auditor debate),
-plus MiniCPM-V-4.5 for reading scanned documents.
+Nano** (fraud, compliance, HS (Harmonized System) classification — whether the declared
+customs tariff code fits the goods — and the zero-day radar, an adverse-media search for
+parties no sanctions list has caught up with), **NVIDIA Nemotron 3 Super**
+(investigation) and **NVIDIA Nemotron 3 Ultra** (the Senior Auditor debate), plus
+MiniCPM-V-4.5 for reading scanned documents. **Tavily** live web search is called at
+runtime by compliance screening, route validation, investigation, the zero-day radar,
+the debate and the Governance page's sanctions scan; in the zero-day radar and the
+debate, Nemotron calls the search as a tool and chooses the query.
 
-**Hackathon:** Nebius x NVIDIA Global AI Hackathon
-**Track:** Best Apps and Agents
-**Bonus target:** Best Use of Tavily ($3,000, stackable with a Track Award)
+- **Hackathon:** Nebius x NVIDIA Global AI Hackathon
+- **Track:** Best Apps and Agents
+- **Bonus target:** Best Use of Tavily ($3,000, stackable with a Track Award)
 
-**Live demo (console):** https://vf-app-350828852747.asia-southeast1.run.app
-**API:** the same URL, under `/api/v1` — health at
-https://vf-app-350828852747.asia-southeast1.run.app/health, the OpenAPI document at
-https://vf-app-350828852747.asia-southeast1.run.app/api/v1/openapi.json
+- **Live demo (console):** https://vf-app-350828852747.asia-southeast1.run.app
+- **API:** the same URL, under `/api/v1` — health at
+  https://vf-app-350828852747.asia-southeast1.run.app/health, the OpenAPI document at
+  https://vf-app-350828852747.asia-southeast1.run.app/api/v1/openapi.json
 
-One Cloud Run service, `vf-app`, runs the Next.js console and the Flask API in one
-container. The console is readable without signing in — the board, every case trace,
-the review queue and the audit trail are all public. Two things are not: the spend
-figures (operator) and the archived original documents (reviewer), because an anonymous
-visitor is a real `viewer` and both sit above it. **Recording a decision needs an
-account**, because the audit trail names the person who released a shipment rather than
-the service that called the API, and a free-text name field would make that record
-worthless. Judges: **Continue as guest judge** on the login page signs you in with one
-click and can do everything except clear the board, publish or revoke the agent's
-authority, or edit the screening rules; the password accounts are in the
-Devpost submission's testing-instructions field — a governance-admin account, and one
-that holds only the Reviewer role, so you can watch the access control refuse something.
+**Judges:** everything is readable without signing in — the board, every case trace, the
+review queue and the audit trail; only the spend figures and the archived original
+documents need a role. **Continue as guest judge** on the login page signs you in with
+one click to inject shipments or upload a document, block a case or ask for information,
+and simulate a policy. Anything that releases cargo or would carry over to the next
+judge — releasing a shipment, clearing the board, publishing or revoking the agent's
+authority, editing the screening rules — needs a password sign-in, because the audit
+trail names the person who released a shipment. Two password accounts are in the Devpost testing-instructions
+field, one of them Reviewer-only so you can watch the access control refuse something.
+Details: [One click for judges](#one-click-for-judges).
+
+## At a glance
+
+- **What it is:** shipment screening for a forwarder's compliance desk. Deterministic
+  checks set a risk floor on every shipment; Nemotron agents on Nebius Token Factory score,
+  screen, investigate and debate above it, with live Tavily web search. Clear cases are
+  released inside limits a named person publishes; the rest go to a reviewer with the
+  evidence and a cited dossier.
+- **The one design rule:** a model may raise risk, never lower it below the floor:
+  `reconcile()` takes the higher of the model's score and the floor, and `validate()`
+  raises if the HS or zero-day model findings ever lowered it. Ultra runs only in the
+  debate, where its verdict can send a disputed case to a deep investigation it would
+  otherwise skip and can never clear one; a person still decides every disputed case.
+- **Measured** (95% Wilson intervals in brackets; the holdout corpus is synthetic):
+  - rules alone, 453 holdout cases: recall 93.5% [90–96], false-positive rate 38.4% [28–49];
+  - adding the two model checks benchmarked so far, the HS classifier and the zero-day
+    radar, on the same 200 holdout cases: recall 95.8% [91–98] → 100% [97–100], because
+    the HS classifier caught all 7 disguised tariff codes the rules missed. It also held
+    2 more honest shipments (false-positive rate 48.5% [32–65] → 54.5% [37–71]) and, by
+    design, released none the rules held. The fraud, compliance, investigation and
+    debate agents were not in this run, and most zero-day searches in it were stubbed;
+  - 19 public enforcement cases, each paired with the honest trade it imitated: 14 frauds
+    held (73.7% [51–89]; rules alone 11), but also 9 of the 19 honest look-alikes (rules
+    alone 7). Five pairs came out fraud held and honest released, but two of those flipped
+    between runs of the model, so only 3 count as cleanly separated (rules alone: 4);
+  - HS classifier on substitutions its reference never mentions: 11 of 12 caught, 0 of 12
+    honest cases flagged (95% upper bound 24.2%).
+- **The weakness, in reviewer time:** at 0.2% fraud, the 2024 Vietnam customs rate, the
+  rules would hold about **206 shipments per real fraud case** (151–271 if recall and
+  false-positive rate both land at the best or worst end of their intervals; not a 95%
+  interval), and on the 200-case subset the rules plus those two checks hold about 273
+  against the rules' 254. Customs' own targeting makes roughly 19 red-channel inspections
+  per violation found. So the product's job is to make each hold quick and defensible to
+  decide; the screen is not precise, and no real customer traffic has been measured.
+- **Cost:** under half a cent of model spend per case (`$0.068`–`$0.088` for a 20-case live
+  run; $1.01 per 1,000 for the HS and zero-day checks in the 200-case benchmark).
+  Tavily's search quota, not the models, is the binding constraint.
+- **Try it in a few minutes:** signed in as guest judge, upload
+  `sample_docs/injected_bol.pdf` in DevOps and watch Model Armor block it before any
+  model reads it; open a held case for its findings, sources and dossier; simulate a
+  policy against the board on Governance; sign in as the Reviewer account and watch the
+  console refuse to publish policy, naming the role it needs.
+- **Verify:** the console's Evaluation page (`/evaluation`) and `GET /api/v1/evaluation`
+  serve every committed report. The 95% intervals and the operating curve arrived with
+  the `896bbae` merge (14 Oct 2026): a build of this repository serves them, and a
+  deployment built before that merge, which the live demo may still be, shows the point
+  figures only. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
+  at no cost; [Reproducible testing](#reproducible-testing) has the rest.
 
 ## The problem
 
@@ -50,9 +101,10 @@ new customer, not a shell. Read together they are the pattern, but a rules engin
 them one at a time and an analyst has no time to read them together for every booking.
 
 So the job is two jobs. **Hold the right shipments** — and on the public enforcement cases
-in [Measured results](#public-enforcement-cases), the rules plus the agents held 14 of 19
-real frauds. And **make every hold quick and defensible to decide**, because at 0.2% fraud
-even a good screen holds hundreds of honest shipments per real one. That second job is
+in [Measured results](#public-enforcement-cases), the rules plus the HS and zero-day
+checks held 14 of 19 real frauds (rules alone: 11). And **make every hold quick and
+defensible to decide**, because at 0.2% fraud even a good screen holds hundreds of honest
+shipments per real one. That second job is
 where Floorline earns its place: each held case arrives with the findings, the sanctions
 list it was screened against and that list's date, live sources, the document, and a
 **due-diligence dossier** that cites the regulation each finding rests on.
@@ -76,24 +128,27 @@ list it was screened against and that list's date, live sources, the document, a
 people who must screen every shipment before it moves and answer for each release to a
 customs authority afterwards. Floorline closes the clear cases inside limits that desk
 publishes, sends the rest to a person with the evidence attached, and keeps an
-append-only record naming who or what allowed each action. Model spend is under half a
-cent per case (`$0.068`–`$0.088` for a 20-case run); the measured detection figures, on
+append-only record naming who or what allowed each action. The measured detection figures, on
 held-out synthetic data and on 19 public enforcement cases, are in
 [Measured results](#measured-results).
 
-A shipment event arrives and nobody touches it again. A background worker scores
-it for fraud, decides on that score whether compliance screening is warranted,
-decides on the screening whether to open a deep investigation, and then acts:
-releasing the shipment, assigning an analyst, or holding the cargo and drafting a
-suspicious activity report for human signature.
+A shipment event arrives and no one steps it through. Unless the deterministic
+pre-filter settles it outright, fraud and compliance screening run in parallel, then the
+HS check, the zero-day radar when its gate opens, and the debate when floor and model
+disagree. The result decides whether to open a deep investigation, and then the system
+acts: releasing the shipment, assigning an analyst, or holding the cargo and drafting a
+suspicious activity report for human signature. In the deployed configuration this runs
+inside the request that delivered the work, not in a background loop.
 
 End to end, for one case:
 
 > scanned document → Model Armor → document intake (MiniCPM-V) → deterministic risk
-> floor and pre-filter → fraud + compliance (NVIDIA Nemotron 3 Nano, live Tavily search)
-> → investigation (Nemotron 3 Super, Tavily) → auto-debate when floor and model disagree
-> (Nemotron 3 Ultra, calling tools) → delegation gate → release / hold / assign analyst /
-> draft SAR / webhook / Pub/Sub → audit trail
+> floor and pre-filter → fraud + compliance in parallel (NVIDIA Nemotron 3 Nano, live
+> Tavily search) → HS classifier and zero-day radar (Nano) → auto-debate when the floor
+> exceeds the model's score by 15+ (Nemotron 3 Ultra, calling tools) → investigation when
+> risk, compliance or a confident DISAGREE calls for it (Nemotron 3 Super, Tavily) →
+> delegation gate → release / hold / assign analyst / draft SAR / webhook / Pub/Sub →
+> audit trail
 
 The case trace opens on this chain for the case in front of you, with the model that ran
 each hop (`frontend/src/lib/case-chain.ts`).
@@ -111,9 +166,8 @@ actually go to Token Factory, which they do.
 
 ## The design rule: model capacity only where it can change the answer
 
-This is the one non-obvious decision in the system, and for a long time it was written
-down 1,000 lines below here as a footnote to an environment variable. It belongs at the
-top, because everything else about the model layer follows from it.
+This is the one non-obvious decision in the system, and everything else about the model
+layer follows from it.
 
 `verifier.py` computes a **deterministic risk floor**, and an agent may **raise** risk but
 never lower it below that floor. The rule is asymmetric on purpose: escalating on model
@@ -121,27 +175,38 @@ judgement is acceptable, exonerating on model judgement is not, because the cost
 wrong exoneration is released contraband and the cost of a wrong escalation is a human
 spending ten minutes on a clean shipment.
 
-**So Nemotron Nano on fraud and compliance is not a budget compromise. It is the correct
-choice.** A stronger model there cannot move the outcome in the direction that matters —
-the floor has already decided. Measured, putting those two on Ultra would cost 13× per
-call, against a rate that is only 3.3×, for no change in any decision.
+**So Nemotron Nano on fraud and compliance is a choice the floor makes safe, not one it
+proves best.** A weak model there can fail to add a hold, but it can never release a
+shipment the rules stopped: auto-clear needs a floor of zero (`reconcile()` in
+`verifier.py`). Where the floor is zero the model is the only check, and a larger model
+might catch more there; that has not been measured. What is known is the price: Ultra
+there would pay 13.3× Nano's per-token rate (16.7× on input, 12.5× on output;
+`config.PRICING`) on the two highest-volume calls in the pipeline.
 
 **And the debate is the one exception, which is why Ultra runs there and nowhere else.**
-It fires when the floor and the model disagree by 15 points or more, and what it emits is
+It fires when the floor exceeds the model's score by 15 points or more, so auto-clear is
+already ruled out, and what it emits is
 not another score for the floor to override — it is a reasoned CONFIRM or DISAGREE on
-whether the junior analyst missed something, and that verdict changes routing. In one
+whether the junior analyst missed something, and that verdict can change routing. In one
 direction only: a genuine DISAGREE at confidence 0.7 or above
-(`DEBATE_ESCALATE_CONFIDENCE`) sends the case to deep investigation on Nemotron Super —
-proposed outcome `ESCALATED`, a SAR drafted for sign-off — and may raise effective risk
-to the auditor's adjusted score, never lower it. CONFIRM, a forced default verdict or a
-low-confidence DISAGREE change nothing, and `case.debate_effect` records why. A person
-still decides every disputed case, because `score_disputed` is a `require_human_when`
-trigger in the delegation boundary. So this is the one hop whose output is a verdict on
-the dispute rather than a score the floor overrides, and reasoning capacity is
-load-bearing there. Measured: `$0.0198` per Ultra debate against Super's `$0.0015`.
+(`DEBATE_ESCALATE_CONFIDENCE`) sends the case to deep investigation on Nemotron Super
+when nothing else would have (effective risk under 70, and compliance not already
+`BLOCKED` or `REVIEW_REQUIRED`), and may raise effective risk to the auditor's adjusted
+score, never lower it. The case then proposes `ESCALATED` (a hold and a SAR draft)
+rather than `HELD_FOR_REVIEW`; the delegation gate executes neither, because
+`score_disputed` is a `require_human_when` trigger in the default boundary, so the case
+waits in `PENDING_HUMAN` with Super's report attached. CONFIRM, a forced default verdict
+or a low-confidence DISAGREE change nothing, and `case.debate_effect` records why. A
+person still decides every disputed case. So this is the one hop whose output is a
+verdict on the dispute rather than a score the floor overrides, which is why reasoning
+capacity is spent there. Measured: `$0.0198` per Ultra debate against Super's
+`$0.0015`. This is a design bet, not a measured gain: the debate fired twice in a
+20-case live run, and nothing yet shows Ultra resolves disputes better than Super
+(`scripts/compare_debate_models.py` measures exactly that).
 
-The invariant is not a convention. `validate()` computes the floor twice, with and
-without the model's finding, and raises if the model's contribution lowered it:
+The invariant is not a convention. `reconcile()` sets effective risk to the higher of
+the model's score and the floor, and `validate()` computes the floor twice, with and
+without the HS classifier's and zero-day radar's findings, and raises if they lowered it:
 
 ```python
     base_floor, base_high, _, _ = _floor_for(deterministic_only)
@@ -155,8 +220,8 @@ without the model's finding, and raises if the model's contribution lowered it:
 That runs on every call. The claim is checked rather than argued, which is the difference
 between a design rule and a comment.
 
-Full working, with the per-call measurements and why the cost multiple is 13× rather than
-the 3.3× the rate implies: *[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else)*.
+Full working, with the per-call measurements and why an Ultra debate cost 13× a Super
+one although Ultra's per-token rate is only 3.3× Super's: *[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else)*.
 
 ---
 
@@ -178,19 +243,24 @@ licence added. Both ranges can be checked from a clone of this repository:
 ```bash
 git fetch https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google.git main
 git diff --shortstat 755d998 6bb1e59   # the first port step: 32 files, +1,833 / -1,380
-git diff --shortstat 6bb1e59 b52ea52   # everything since: 297 files, +171,921, in 49 commits
+git diff --shortstat 6bb1e59 00d896a   # the first ten days, to 27 Sep: 297 files, +171,921, in 49 commits
+git diff --shortstat 6bb1e59 d76e64e   # to 14 Oct: 395 files, +199,584 / -6,681, in 131 commits
 ```
 
-The end of the second range is pinned to a commit rather than `HEAD`, which would make
-the figure wrong again with the next commit.
+The ends of the ranges are pinned to commits rather than `HEAD`, which would make the
+figures wrong again with the next commit; `d76e64e` is the last change to `src/` and
+`tests/` at the time of writing. Commit counts are from
+`git rev-list --count 6bb1e59..<end>`. These commands need the full history: a plain
+`git clone` (no `--depth`), or `git fetch --unshallow` first. In a shallow clone
+`6bb1e59` is missing and the counts come out wrong.
 
 The deterministic governance layer — risk floor, untrusted-input boundary,
 delegation boundary, shipper identity verification — was carried over rather than
 rebuilt, because none of it is model-specific. It is what keeps the system honest
-regardless of which model is reasoning. Carried over is not the same as untouched:
-`untrusted.py` is byte-for-byte the `755d998` file and `shipper_registry.py` differs
-by eleven lines added and two removed, while `verifier.py` grew from 487 lines to
-1,618 (+1,151 / −20) and `governance.py` from 492 to 659 (+184 / −17). The
+regardless of which model is reasoning. Carried over is not the same as untouched. At
+`d76e64e`, `untrusted.py` is byte-for-byte the `755d998` file and `shipper_registry.py`
+differs by twenty-one lines added and two removed, while `verifier.py` grew from 487
+lines to 2,023 (+1,561 / −25) and `governance.py` from 492 to 894 (+449 / −47). The
 false-positive tuning below is one of the changes to `verifier.py`.
 
 The areas below were rebuilt.
@@ -201,24 +271,27 @@ The areas below were rebuilt.
 and compliance; Flash-Lite for investigation, with `thinking_budget=8000`.
 
 **Now:** seven agents on Nebius Token Factory, four models chosen per job.
-Nemotron 3 Nano runs the four hops that touch every case; Super runs
-investigation; **Ultra runs the auto-debate**; MiniCPM-V-4.5 reads documents,
+Nemotron 3 Nano runs four hops (fraud and compliance on every case that reaches the
+models, HS classification and the zero-day radar when their inputs or gate apply); Super
+runs investigation; **Ultra runs the auto-debate**; MiniCPM-V-4.5 reads documents,
 because Token Factory carries no NVIDIA vision model yet.
 
 **Why the split rather than one model everywhere:** `verifier.py` computes a
 deterministic risk floor that an agent may raise but never lower, so on fraud and
-compliance a stronger model cannot move the outcome in the direction that matters.
-The debate is the exception — its CONFIRM/DISAGREE is a verdict that changes routing,
-not a score the floor overrides: a confident DISAGREE escalates the case, and nothing
-it says can lower risk — so that is the one place reasoning capacity is worth paying
-for. Measured: `$0.0198` per Ultra debate against Super's `$0.0015`.
+compliance a weaker model can miss a hold but can never release what the rules stopped;
+whether a larger model would add holds there is not measured.
+The debate is the exception — its CONFIRM/DISAGREE is a verdict that can change routing,
+not a score the floor overrides: a confident DISAGREE can send the case to an
+investigation it would otherwise skip, and nothing it says can lower risk — so that is
+the one place reasoning capacity is worth paying for. Measured: `$0.0198` per Ultra
+debate against Super's `$0.0015`.
 
 ### Three agents that did not exist
 
 **Before:** intake, fraud, compliance, investigation.
 
 **Now:** plus `hs_classifier_agent.py`, `zero_day_agent.py` and
-`debate_agent.py` — 1,656 lines including the chain-of-thought module.
+`debate_agent.py` — 1,751 lines including the chain-of-thought module.
 
 **Why each:**
 
@@ -229,24 +302,29 @@ for. Measured: `$0.0198` per Ultra debate against Super's `$0.0015`.
   holdout of substitutions absent from the reference material, and two few-shot
   examples made it **worse** on both, at 26.7% and 33.3%. Structured reasoning over a
   reference extract of the published heading contents — the production mode — took
-  it to **92.9%** recall at 100% precision on the pairs and **91.7%** with no false
-  alarms on the holdout. Examples did not help; reasoning against the published
-  headings did. Full table: *[HS classification, measured](#hs-classification-measured)*.
+  it to **92.9%** recall at 100% precision on the pairs and **91.7%** (11 of 12)
+  on the holdout with 0 of 12 honest cases flagged. Examples did not help; reasoning
+  against the published headings did. Full table: *[HS classification, measured](#hs-classification-measured)*.
 - **Zero-day screening.** Sanctions lists lag reality. This runs a live
-  adverse-media search when a shipment trips a gate — a dual-use heading, or two or
-  more distinct transhipment hubs.
-- **Auto-debate.** Fires with no human involved when the floor and the model
-  disagree by 15 points or more. Its verdict used to be recorded and read by nothing;
-  a genuine, confident DISAGREE now sends the case to deep investigation — upward
-  only.
+  adverse-media search when a shipment trips a code gate: a dual-use heading, a
+  high-risk destination, two or more distinct transhipment hubs, or a shipper with at
+  most one prior shipment on record (which covers every uploaded document whose shipper
+  is not in the counterparty book).
+- **Auto-debate.** Fires with no human involved when the floor exceeds the model's
+  score by 15 points or more. Its verdict used to be recorded and read by nothing;
+  a genuine, confident DISAGREE now sends the case to the deep investigation it would
+  otherwise skip and may raise its risk, never lower it. A person still decides the
+  case.
 
 ### The console
 
 **Before:** one static HTML page served by Flask from `static/`.
 
-**Now:** a Next.js 16 console — 67 files, 12,672 lines of TypeScript, seven screens
-over the operational API, since joined by Access Control (`/admin`) and Evaluation
-(`/evaluation`). It started on a Cloud Run service of its own; it now runs in the same
+**Now:** a Next.js 16 console — 107 files and 20,657 lines of TypeScript at `d76e64e`,
+tests excluded. It began as seven screens over the operational API, since joined by Access
+Control (`/admin`), Evaluation (`/evaluation`), three operator screens for the
+verification loop (`/today`, `/cases/<id>`, `/outcomes`) and a public upload page for
+shippers (`/respond/<token>`). It started on a Cloud Run service of its own; it now runs in the same
 container as the API, one service (`vf-app`) with Next.js on `$PORT` and Flask on
 `127.0.0.1:9090` behind it. The old page is still bundled, at `/legacy` when Flask
 runs on its own; the deployed container does not pass that path through.
@@ -260,7 +338,7 @@ reviewer to sign in before recording a decision. That requirement is the next it
 Anyone could record a decision under anyone's name, which makes an audit trail
 decoration rather than evidence.
 
-**Now:** HMAC-signed sessions (`auth.py`, 614 lines), operator records as
+**Now:** HMAC-signed sessions (`auth.py`, 1,125 lines), operator records as
 PBKDF2-SHA256 in `VF_OPERATORS`, and the audit entry names the authenticated
 account.
 
@@ -311,11 +389,12 @@ a model-cost figure.
 
 ### False positives, measured on a held-out split
 
-**Before the tuning in `afb3be3`:** the deterministic layer caught nearly every attack
+**Before the tuning in `8b798cc`:** the deterministic layer caught nearly every attack
 in the synthetic corpus and held most of the clean traffic with it — on the holdout
 split, a false-positive rate of 76.7%.
 
-**Now:** 38.4%, with precision 84.1% → 91.2% and recall 95.1% → 93.5%, and
+**Now:** 38.4% (95% interval 28–49%, on 86 clean cases), with precision 84.1% →
+91.2% and recall 95.1% → 93.5%, and
 sanctions-alias and shell-company detection unchanged at 100%. Two signals that
 separated nothing became *observations* — shown to the reviewer as context, with no
 floor, not counted as findings — and the tuning was chosen on the dev split only.
@@ -330,13 +409,16 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **922 backend tests** at 81% line coverage, 146 frontend tests, and a
-mutation check — `scripts/check_test_sensitivity.py` breaks 36 lines on purpose and
-the suite catches all 36. Five GitHub Actions jobs run on every push to `master`:
+**Now:** **1,486 backend tests** passing at 85.8% line coverage (16 more skip without
+a Firestore emulator), 328 frontend tests, and a mutation check —
+`scripts/check_test_sensitivity.py` breaks 112 lines of backend and console code on
+purpose and the suite catches all 112. The weak spot is `store.py` at 59%:
+`FirestoreStore`, the production backend, is exercised mainly by the emulator tests, and
+CI has no emulator job. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
 builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
-added here on 19 Sep (`a452fd6`) filtered on a branch named `main` while this
-repository uses `master`, so it never executed until `64c9e6d` fixed the trigger on
+added here on 19 Sep (`ae240fb`) filtered on a branch named `main` while this
+repository uses `master`, so it never executed until `9d683f6` fixed the trigger on
 24 Sep.
 
 ### Structure
@@ -344,9 +426,12 @@ repository uses `master`, so it never executed until `64c9e6d` fixed the trigger
 **Before:** a flat repository root — `main.py`, `orchestrator.py`, `agents/` and
 fifteen other modules at top level.
 
-**Now:** a `src/vf_logistics/` package with ten modules that did not exist at all:
-`auth.py`, `budget.py`, `tenant.py`, `b2b.py`, `openapi.py`, `sanctions.py`,
-`hs_reference.py`, `lineage.py`, `observability.py`, `schemas.py`.
+**Now:** a `src/vf_logistics/` package with sixteen modules that did not exist at all:
+`auth.py`, `b2b.py`, `budget.py`, `dossier.py`, `evaluation.py`, `evidence.py`,
+`hs_reference.py`, `lineage.py`, `membership.py`, `observability.py`, `openapi.py`,
+`sanctions.py`, `sanctions_sources.py`, `schemas.py`, `tenant.py`, `worklist.py`. That
+excludes `nebius_client.py` and `tavily_client.py`, which came with the first port step,
+and the new agents above.
 
 ## What the system does
 
@@ -358,8 +443,10 @@ governance control plane:
 | **Document Intake** | Transcribes bills of lading, invoices and packing lists into a structured record. Reports missing fields as missing rather than inventing them. | `openbmb/MiniCPM-V-4_5` | `temperature=0.0`, multimodal image input (PDFs rasterised first) |
 | **Fraud Detection** | Price manipulation, route fraud, weight/dimension fraud, document fraud, identity fraud, duplicate & time fraud. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `temperature=0.1` for stable scoring |
 | **Compliance Screening** | Sanctions exposure (OFAC/UN/EU patterns), trade & regulatory compliance, AML indicators — grounded by a live Tavily search. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `temperature=0.1`, runs in parallel with fraud, Tavily search injected as evidence |
-| **AI Investigation** | Multi-step case investigation, pattern analysis, network mapping. | `nvidia/nemotron-3-super-120b-a12b` | Only reached on escalated cases |
-| **Multi-Agent Debate** | Senior Auditor (Ultra) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. A confident DISAGREE escalates the case; nothing it says can lower risk. | `nvidia/Nemotron-3-Ultra-550b-a55b` | Fires automatically on a 15-point floor-model gap; also manual via "Deep Review". Function calling with 3 tools |
+| **HS Classification** | Whether the declared HS heading matches the cargo described, reasoned against the published heading contents. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `cot_strict` prompt, `temperature=0.0`; runs when goods and HS code are both stated |
+| **Zero-Day Radar** | Adverse-media search for parties no sanctions list has caught up with. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | Tavily news tool, last 45 days; only when its code gate opens |
+| **AI Investigation** | Multi-step case investigation, pattern analysis, network mapping. | `nvidia/nemotron-3-super-120b-a12b` | Only where compliance returned `BLOCKED` or `REVIEW_REQUIRED`, risk reached 70, or the debate confidently disagreed |
+| **Multi-Agent Debate** | Senior Auditor (Ultra) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. A confident DISAGREE can send the case to an investigation it would otherwise skip; nothing it says can lower risk. | `nvidia/Nemotron-3-Ultra-550b-a55b` | Fires automatically on a 15-point floor-model gap; also manual via "Deep Review". Function calling with 3 tools |
 
 ### Model selection, chosen per task
 
@@ -368,21 +455,21 @@ everyday calls, and reach for Ultra when you need serious reasoning. This
 system follows that shape directly:
 
 Fraud and compliance screening run on **Nemotron 3 Nano** — every shipment
-that arrives gets scored by both, so this is the highest-volume call in the
-pipeline. Nano is also fast and cheap, but that is a side benefit rather than the
-reason: these two hops sit under the deterministic floor, so a stronger model
-cannot move either outcome in the direction that matters. Choosing Nano here costs
-nothing in accuracy, which is what makes it the right choice rather than a
-compromise — see *[The design rule](#the-design-rule-model-capacity-only-where-it-can-change-the-answer)*.
+that reaches the models is scored by both, so this is the highest-volume call in the
+pipeline. Nano is also fast and cheap. The floor is what makes that safe: these two
+hops cannot release anything the rules stopped, so a weaker model here costs missed
+holds on cases the rules found clean, never a release of flagged cargo. Whether a
+larger model would add holds is not measured — see *[The design rule](#the-design-rule-model-capacity-only-where-it-can-change-the-answer)*.
 
 Investigation runs on **Nemotron 3 Super** — by the time a case reaches it, the
-fraud and compliance findings already exist; it only runs on cases that were
-escalated or where the deterministic floor and the model disagreed, so it is
-the low-volume, high-stakes call that can afford a stronger, pricier model.
+fraud and compliance findings already exist; it runs only where compliance returned
+`BLOCKED` or `REVIEW_REQUIRED`, effective risk reached 70, or the Senior Auditor
+confidently disagreed, so it is the low-volume, high-stakes call that can afford a
+stronger, pricier model.
 
 The debate agent runs on **Nemotron 3 Ultra**, and it is the only place Ultra is used.
 Not because the debate is the most important step, but because it is the only one whose
-output the deterministic floor does not override — see
+output is a verdict on a dispute rather than a score the deterministic floor overrides — see
 [Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else).
 Investigation deliberately stays on Super: it is 40% of measured spend already, and
 `INVESTIGATION_MODEL` can point it at Ultra if more Token Factory credit becomes
@@ -410,12 +497,14 @@ produced it, visible in the per-case trace in the dashboard.
 The compliance agent's sanctions screening used to rely entirely on the
 model's training-time knowledge of who is on OFAC/UN/EU lists. That is
 static and can go stale. Before scoring a shipment, the agent now calls
-`tavily_client.search()` with the shipper and receiver names (e.g. `"<name>"
+`tavily_client.search_cached()` with the shipper and receiver names (e.g. `"<name>"
 sanctions OR fraud OR "shell company"`), and the results are folded into the
 model's context as a clearly labelled, untrusted evidence block — a real
 runtime web search, not a documented-but-unused integration. A Tavily outage
-or a missing API key degrades the agent to its pre-Tavily behaviour rather
-than blocking the pipeline.
+or a missing API key never blocks the pipeline, and it is not passed off as a clean
+result either: the search status goes into the prompt (the worse of the shipper and
+receiver searches), so the model is told a search failed rather than that it found
+nothing.
 
 ### Multi-Agent Debate: Ultra reviews Nano
 
@@ -423,7 +512,8 @@ The most sophisticated reasoning pattern in the system is **Multi-Agent Debate**
 where a Senior Auditor (Nemotron Ultra 550B) reviews the Junior Analyst's
 (Nemotron Nano 30B) fraud assessment.
 
-**Why two models?** Nano is fast and cheap — it scores every shipment that arrives.
+**Why two models?** Nano is fast and cheap — it scores every shipment that reaches the
+models.
 But speed optimises for throughput, not for catching the subtle case that slips
 through. Ultra is slower and costs more, but it can challenge Nano's reasoning
 and catch what Nano missed. The debate is asymmetric: Ultra can call Nano back
@@ -445,7 +535,7 @@ and the rounds — with the raw record one click away, so the analyst sees exact
 Ultra did.
 
 **When it runs.** The debate fires **automatically**, with no human involved, when
-the deterministic floor and the model disagree by 15 points or more — measured at 2
+the deterministic floor exceeds the model's score by 15 points or more — measured at 2
 calls across 20 cases. A reviewer can also trigger it manually as "Deep Review"
 when:
 - The risk score seems too low for the red flags present
@@ -460,13 +550,16 @@ for why that is worth paying on this call and on no other.
 **What the automatic verdict changes, and what it cannot.** It never overrides a
 person's decision, and it can only push a case upward. A genuine DISAGREE at confidence
 0.7 or above (`DEBATE_ESCALATE_CONFIDENCE`) sends the case to deep investigation on
-Nemotron Super — proposed outcome `ESCALATED`, a SAR drafted for sign-off — and may
-raise effective risk to the auditor's adjusted score, never lower it. CONFIRM, a forced
-default verdict or a low-confidence DISAGREE change nothing, and `case.debate_effect`
-records which applied. Before this the verdict was recorded and read by nothing, so the
-most expensive call in the pipeline could not change a single outcome. A disputed case
-still goes to a person either way, because `score_disputed` is a `require_human_when`
-trigger in the delegation boundary. A manual Deep Review runs on a case already waiting
+Nemotron Super where its risk alone (under 70) and its compliance status would not have,
+and may raise effective risk to the auditor's adjusted score, never lower it. The case
+then proposes `ESCALATED` rather than `HELD_FOR_REVIEW`. CONFIRM, a forced default
+verdict or a low-confidence DISAGREE change nothing, and `case.debate_effect` records
+which applied. Before this the verdict was recorded and read by nothing, so the most
+expensive call in the pipeline could not change a single outcome. A disputed case still
+goes to a person either way, because `score_disputed` is a `require_human_when` trigger
+in the delegation boundary: the gate refuses the hold, nothing is executed (no hold, no
+SAR draft, no webhook), and the case waits in `PENDING_HUMAN` with the investigation's
+narrative for the reviewer. A manual Deep Review runs on a case already waiting
 for a person and is recorded as evidence for them; it reroutes nothing.
 
 ### The agents are not trusted
@@ -511,6 +604,16 @@ number would otherwise inherit that customer's clean history. A number that
 matches under a different name is reported as `identity_mismatch` and treated as
 worse than unknown.
 
+The human-feedback loop follows the same rule. Two human blocks of a shipper add 15 to
+its effective risk, and that may key on the free-text shipper name, because raising risk
+is always safe. Five human releases take 10 off, and that discount applies only to a
+shipper whose identity the registry verified, counting only human releases of that same
+verified counterparty: keyed on the name, a document could borrow any customer's clean
+history by typing it. In practice the discount is available only to counterparties in
+our book, and it never takes risk below the deterministic floor. The tallies are read
+fresh from the store on every scored case, because a cache dropped in one Cloud Run
+instance could miss a block recorded on another.
+
 The withheld fields are also reported to the fraud agent as *not available*
 rather than as a bare `N/A`, with an instruction that their absence says nothing
 about the shipment. The deterministic floor, not the model, remains the thing
@@ -531,6 +634,25 @@ person.
 With no active boundary the system is **SUSPENDED** and fails closed: it still
 analyses and proposes, but [`governance.py`](src/vf_logistics/governance.py)'s execution gate
 refuses every protected action.
+
+The release path fails closed on the shipment's side too. The orchestrator proposes an
+automated release only when compliance returned exactly `CLEARED` (an allowlist: an
+`UNKNOWN` or off-schema status used to clear, and now goes to review at HIGH priority)
+and `reconcile()` explicitly permitted it, which it never does without a stated risk
+floor. The gate then refuses a release when the deterministic finding count is missing
+(while the boundary keeps its default zero-findings rule), when the declared value is
+absent, unreadable, NaN or negative, or when the destination is blank while the boundary
+lists excluded destinations. Each of those used to read as
+zero or as nothing to check.
+
+That is the model path. Separately, the deterministic pre-filter releases a whitelisted
+or low-value domestic shipment with no model call at all: compliance is recorded as
+`COMPLIANT`, lesser findings are set aside, and the fast path is withdrawn by any HIGH or
+CRITICAL finding or any finding that blocks auto-clear (a watched-lane origin finding is
+one). That release still passes the same gate: risk at most 39, zero counted findings,
+declared value at most 25,000 USD, no excluded HS prefix or destination. At the time of
+writing, both automatic releases on the live board are of this kind; no case there has
+been released automatically on a model's score.
 
 ### The reviewer always has the paperwork
 
@@ -638,36 +760,50 @@ obligation comes from, not that it has been met.
                              |            v
                              |    Firestore cases (state INGESTED)
                              |
-     orchestrator.py: asyncio worker loop, runs with no request in flight,
-     claims a case under a lease, performs exactly one step, persists, repeats
+     orchestrator.py advance(): claims a case under a lease, performs exactly one
+     step, persists. Deployed (WORKER_MODE=ondemand) it runs inside the request
+     that delivered the work; WORKER_MODE=poll runs it in an asyncio loop instead.
                              |
-       INGESTED --> fraud_detection agent (Nemotron Nano) --> risk_score
+       INGESTED --> verifier.validate(): risk floor and pre-filter
           |
-          +-- risk < 40 --------------------> AUTO_CLEARED
-          |                                     release_shipment()
+          +-- pre-filter settles it, no model:
+          |     whitelist / low-value domestic --> AUTO_CLEARED  release_shipment()
+          |     blacklist --> proposes ESCALATED; compliance is BLOCKED, so the
+          |                   default boundary refuses the hold --> PENDING_HUMAN
           |
-          +-- risk >= 40 --> compliance agent (Nemotron Nano + Tavily)
-                    |
-                    +-- cleared, risk < 70 --> HELD_FOR_REVIEW
-                    |                            assign_analyst()
-                    |
-                    +-- BLOCKED / REVIEW_REQUIRED, or risk >= 70,
-                        or a confident Senior Auditor DISAGREE
-                              |
-                              v
-                     investigation agent (Nemotron Super)
-                              |
-                              v
-                           ESCALATED
-                             hold_shipment()
-                             draft_sar()
-                             notify_webhook()
-                             assign_analyst()
+          +-- grey area:
+                fraud (Nano) || compliance (Nano + Tavily) || route search (Tavily)
+                --> HS classifier (Nano), if goods and HS code are stated
+                --> zero-day radar (Nano + Tavily), if its code gate opens
+                --> re-validate --> auto-debate (Ultra), if floor - model >= 15
+                --> SPECIALISTS_DONE
+                      |
+                      +-- risk < 40, floor 0, compliance exactly CLEARED,
+                      |   no model failure --------------> AUTO_CLEARED
+                      |                                      release_shipment()
+                      |
+                      +-- compliance BLOCKED / REVIEW_REQUIRED, risk >= 70,
+                      |   or a confident Senior Auditor DISAGREE
+                      |         |
+                      |         v
+                      |   investigation agent (Nemotron Super) --> ESCALATED
+                      |                                      hold_shipment()
+                      |                                      draft_sar()
+                      |                                      notify_webhook()
+                      |                                      assign_analyst()
+                      |
+                      +-- otherwise -----------------------> HELD_FOR_REVIEW
+                                                             assign_analyst()
 
+       Any action the delegation boundary refuses ----------> PENDING_HUMAN
+         (under the default boundary: compliance BLOCKED, a disputed score --
+          so every debated case -- or an injection; nothing in the pack runs)
        Any step failing 3 times, with 5s/10s/20s backoff --> DEAD_LETTER
 
-       Terminal decisions are published to Pub/Sub case-decisions for
-       downstream ERP / WMS / billing, and every action lands in audit_log.
+       Model-path decisions the gate allows, and verification-loop executions,
+       are published to Pub/Sub case-decisions for downstream ERP / WMS /
+       billing. Pre-filter outcomes, refused proposals and releases or blocks
+       through /decide are recorded in audit_log only. Every action lands there.
 ```
 
 Thresholds are environment variables (`FRAUD_CLEAR_BELOW`, `INVESTIGATE_AT`), so
@@ -712,9 +848,10 @@ otherwise have skipped.
   images (`image_url` data URLs), not raw PDF bytes the way Gemini's native
   multimodal input did. `pypdfium2` renders the first page to PNG in
   `document_agent.py` before the call.
-- **Tavily failures degrade, not block** — `tavily_client.search()` returns an
-  empty list on any error (missing key, timeout, non-2xx), so a Tavily outage
-  falls back to model-only screening instead of failing the case.
+- **Tavily failures degrade, not block, and are named** — a missing key, a timeout
+  or a non-2xx never fails the case, and where a model reads the results
+  (`search_cached()` and `search_with_status()`) the failure status goes with them, so
+  an outage is not read as "searched, found nothing".
 
 ---
 
@@ -724,10 +861,10 @@ otherwise have skipped.
 |---|---|
 | Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance, HS classification, zero-day radar) + **NVIDIA Nemotron 3 Super** (investigation) + **NVIDIA Nemotron 3 Ultra** (Senior Auditor debate) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
 | Agent framework | `openai.AsyncOpenAI` (Token Factory's OpenAI-compatible endpoint) |
-| External signal | **Tavily Search API** — live sanctions/news lookup in the compliance agent |
+| External signal | **Tavily Search API** — live sanctions/news lookup in compliance, route validation, investigation, the zero-day radar, the debate and the Governance scan |
 | Input security | **Model Armor** (Google Cloud) — windowed prompt-injection screening |
 | Compute | **Cloud Run** (source deploy -> Cloud Build -> Artifact Registry) |
-| State | **Firestore** (Native mode) — cases, events, audit log |
+| State | **Firestore** (Native mode) — cases, events, audit log, delegation boundaries and four more collections |
 | Messaging | **Pub/Sub** — `shipment-events` in, `case-decisions` out |
 | Web | Flask + gunicorn, flask-cors |
 | Console | **Next.js 16** (App Router, React 19, Tailwind, TanStack Query), in the same container and Cloud Run service as the API |
@@ -744,9 +881,9 @@ task rather than one model everywhere:
 
 | Model | Where it runs | Why this size |
 |---|---|---|
-| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar — the four hops that touch **every** case | `verifier.py` computes a deterministic risk floor an agent may raise but never lower, so a stronger model cannot move these outcomes in the direction that matters |
+| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar — fraud and compliance on **every** case that reaches the models, the other two when their inputs or gate apply | `verifier.py` computes a deterministic risk floor an agent may raise but never lower, so a weaker model here can miss a hold but never release what the rules stopped; whether a larger one would add holds is not measured |
 | `nvidia/nemotron-3-super-120b-a12b` | investigation | writes the narrative a human reads; benefits from reasoning, does not decide the verdict |
-| `nvidia/Nemotron-3-Ultra-550b-a55b` | the auto-debate ("Senior Auditor") | the one place where the model's output is a verdict that changes routing rather than a score the floor overrides — a confident DISAGREE escalates the case, upward only — so reasoning capacity is worth paying for: measured `$0.0198` per debate against Super's `$0.0015` |
+| `nvidia/Nemotron-3-Ultra-550b-a55b` | the auto-debate ("Senior Auditor") | the one place where the model's output is a verdict that can change routing rather than a score the floor overrides — a confident DISAGREE can send the case to an investigation it would otherwise skip, upward only — so reasoning capacity is worth paying for: measured `$0.0198` per debate against Super's `$0.0015` |
 | `openbmb/MiniCPM-V-4_5` | document intake (vision) | not an NVIDIA model, and said plainly: Token Factory carries no NVIDIA vision model yet |
 
 **Where Token Factory accelerated the workflow.** All four models, from 30B to 550B plus a
@@ -761,19 +898,22 @@ is a thin wrapper, not a bespoke SDK. Three consequences that shaped the build:
   — cost nothing in plumbing. It took Nano from 40.0% to 92.9% recall on the pairs set
   and from 50.0% to 91.7% on the holdout.
 - **No GPU provisioning, so a 550B model was affordable to reach for once.** Ultra runs only
-  on the debate path, which fires when the deterministic floor and the model disagree by 15
-  points or more. Standing up 550B of capacity for an occasional call would not have been
+  on the debate path, which fires when the deterministic floor exceeds the model's score by
+  15 points or more. Standing up 550B of capacity for an occasional call would not have been
   worth it; per-token access made a rarely-used heavyweight practical.
 - **The port from the predecessor was a client change, not a rewrite.** The JSON contract
   each agent returns was preserved, so swapping Vertex AI Gemini for Token Factory changed
   the base URL, the model ids and the sampling parameters — not the pipeline.
 
 **Other Nebius services used: none.** Token Factory's inference API is the whole Nebius
-surface here. Serverless Endpoints and Serverless Jobs are encouraged by the track and are
-**not** used — the service runs on Cloud Run, which is stated rather than dressed up.
+surface here. Nebius AI Cloud, including Serverless Endpoints and Serverless Jobs, is
+encouraged by the track and is **not** used — the service runs on Cloud Run, which is
+stated rather than dressed up.
 
-**Tavily**, which is a separate bonus track, is a live runtime call in five places, not a
-stub. See *A real Tavily call, not a simulated one* above.
+**Tavily**, which is a separate bonus track, is a live runtime call in six places, not a
+stub: compliance screening, route validation, investigation, the zero-day radar, the
+debate's search tool, and the Governance page's sanctions scan and entity check. See
+*A real Tavily call, not a simulated one* above.
 
 ### Requirement check against the hackathon rules
 
@@ -787,7 +927,7 @@ track, the video, the feedback and the licence, which are.
 | Runtime call to Nebius Token Factory | every one of the seven agents |
 | At least one NVIDIA open source model | three Nemotron 3 sizes, table above |
 | Fits one of the four tracks | **Best Apps and Agents** |
-| Significantly updated after the Submission Period opened (26 Aug 2026) | every commit in this repository is dated 17–24 Sep 2026; `git log --reverse --format="%ai"` shows the first |
+| Significantly updated after the Submission Period opened (26 Aug 2026) | every commit in this repository is dated 17 Sep 2026 or later (first `6bb1e59`, 17 Sep; last change to `src/` and `tests/` `d76e64e`, 14 Oct); `git log --reverse --format="%ai" \| head -1` shows the first, in a full (not shallow) clone |
 | Written explanation of what was updated | *What was significantly updated during the Submission Period*, above |
 | URL to a working demo | the `vf-app` URL at the top of this file: the console at `/`, the API under `/api/v1` |
 | Public repository with a detectable open source licence | GitHub reports this repository's licence as **MIT** |
@@ -796,15 +936,16 @@ track, the video, the feedback and the licence, which are.
 | Feedback on Token Factory, AI Cloud and NVIDIA tools | `SUBMISSION.md` -> *Feedback on Nebius Token Factory, AI Cloud, and NVIDIA tools* |
 | Free, unrestricted access for judging, with credentials | *The demo accounts*, below |
 | Demonstration video under three minutes, public on YouTube | **OUTSTANDING** — the shooting script is `docs/DEMO_SCRIPT.md` |
-| Bonus: functional runtime Tavily call | `tavily_client.search()` on the live compliance path, five integration points |
+| Bonus: functional runtime Tavily call | `tavily_client.search_cached()` on the live compliance path (search status carried into the prompt), six integration points |
 
 ---
 
 ## API
 
-The JSON contract every agent returns was
-preserved through the port, so every endpoint below behaves identically to
-before; only the `model` field in each response envelope changed.
+The JSON contract every agent returns was preserved through the port, so the agent
+endpoints below answer in the shape they did before, with the `model` field in each
+response envelope naming the Token Factory model. Who may call each route has changed
+since: see *[Signing in](#signing-in)*.
 
 ### Autonomous orchestration
 
@@ -817,10 +958,10 @@ before; only the `model` field in each response envelope changed.
 | `/api/v1/orchestrator/case/<case_id>/dossier` | GET | The case as a due-diligence dossier (PDF), built by code from the stored case; viewer, like the case itself |
 | `/api/v1/orchestrator/tick` | POST | Advance the pipeline one step |
 | `/api/v1/orchestrator/reset` | POST | Clear the tenant's cases and events (operator, **password sign-in only**). The audit trail is kept, and the reset is written to it as a `board_reset` row naming who did it |
-| `/api/v1/orchestrator/drain` | POST | Run every pending case to a terminal state |
+| `/api/v1/orchestrator/drain` | POST | Run up to `cases` pending cases (default 3, max 10) to a terminal state |
 | `/api/v1/events/document` | POST | Document intake. Multipart `file` (PDF or image). Screens for injection, transcribes, archives the original, then runs the case to a terminal state in the same request. |
-| `/api/v1/events/storage` | POST | Cloud Storage notification sink |
-| `/api/v1/ingest/bucket-sweep` | POST | Ingest every unprocessed object in `DOCUMENT_BUCKET` |
+| `/api/v1/events/storage` | POST | Cloud Storage notification sink (a Pub/Sub push); ignores the service's own `shipping-documents/` and `evidence/` output and, under `MULTI_TENANT`, any object outside the caller's tenant space in `DOCUMENT_BUCKET` |
+| `/api/v1/ingest/bucket-sweep` | POST | Ingest up to `limit` (default 10, max 25) unprocessed objects under `prefix` (default `inbox/`) in `DOCUMENT_BUCKET`; under `MULTI_TENANT`, only inside the caller's own tenant space |
 | `/api/v1/simulate/bulk` | POST | Randomised shipments, capped at `MAX_BULK_COUNT` |
 
 ### Review, governance and configuration
@@ -834,16 +975,16 @@ before; only the `model` field in each response envelope changed.
 | `/api/v1/governance/boundaries` | GET | Every published boundary version |
 | `/api/v1/governance/publish` | POST | Publish a new delegation boundary |
 | `/api/v1/config` | GET | Effective configuration and thresholds |
-| `/api/v1/config/model` | GET, POST | Read or switch the Nemotron model used by fraud and compliance. Investigation is pinned separately via `INVESTIGATION_MODEL`. |
-| `/internal/execute` | POST | The execution surface, deployed a second time as a split-identity executor |
+| `/api/v1/config/model` | GET, POST | Read or switch the Nemotron model used by fraud and compliance, and by the HS classifier and zero-day radar unless `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` pin them. Investigation is pinned separately via `INVESTIGATION_MODEL`. |
+| `/internal/execute` | POST | The execution surface a split-identity executor serves when `EXECUTOR_URL` points at one; the deployed service publishes directly |
 
 ### Direct agent access
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Web dashboard (HTML) |
+| `/` | GET | Flask's own root. In the container Next.js serves the console here; Flask run on its own redirects to `CONSOLE_URL` if set, or serves the retired static dashboard (also at `/legacy`) |
 | `/health` | GET | Health check, store backend, worker status |
-| `/agents` | GET | Agent metadata & capabilities, including which model each runs on |
+| `/api/v1/agents` | GET | The four request/response agents (intake, fraud, compliance, investigation) with their capabilities and the model each runs on; the HS classifier, zero-day radar and debate show theirs on every hop of the case trace |
 | `/demo` | GET | Runs the fraud agent on a built-in sample shipment |
 | `/api/v1/fraud/analyze` | POST | Analyse one shipment |
 | `/api/v1/fraud/batch` | POST | Analyse many |
@@ -854,20 +995,25 @@ before; only the `model` field in each response envelope changed.
 
 ### Not listed above
 
-These three tables document 30 of the 51 registered routes — the ones a caller is
-likely to want. The five most useful omissions:
+These three tables document 31 of the 70 registered routes (68 paths) — the ones a
+caller is likely to want. The most useful omissions:
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/v1/review/<case_id>/deep-review` | POST | Triggers the Ultra debate manually; the same agent the orchestrator fires automatically |
+| `/api/v1/review/<case_id>/deep-review` | POST | Runs the Ultra debate by hand on a case awaiting review, the same agent the orchestrator fires automatically; here the verdict is recorded on the case and changes no route (reviewer) |
+| `/api/v1/review/<case_id>/request-evidence` | POST | Verification loop: ask the shipper for named documents through a signed link (reviewer) |
+| `/api/v1/review/<case_id>/evidence/<request_id>/link`, `.../cancel` | POST | Reissue a request's link, or cancel the request with a reason (reviewer) |
+| `/api/v1/review/<case_id>/reevaluate` | POST | Re-run the deterministic origin checks against the evidence received so far (reviewer) |
+| `/api/v1/review/<case_id>/approve`, `.../execute` | POST | Approve a release or block bound to an evidence version, then execute it (reviewer, **password sign-in only**) |
+| `/api/v1/evidence/respond` | POST | The shipper's upload through a signed link. The shipper has no account; the link's token, in `X-VF-Evidence-Token`, is the only credential |
 | `/api/v1/billing/usage` | GET | Windowed spend, including `tavily_searches` / `tavily_cached` / `tavily_billable` |
 | `/api/v1/cases` | GET | Case list, slim shape, filterable by state |
 | `/api/v1/audit` | GET | The audit trail, filterable by case, action or status |
-| `/api/v1/security/screen` | POST | The Red Team surface: paste an attack, get the real screen verdict |
+| `/api/v1/security/screen` | POST | The injection probe on the console's Agents page: paste an attack, get the real screen verdict |
 
-`GET /api/v1/openapi.json` serves a machine-readable document for the whole API, which
-is the authoritative list. `docs/swagger.json` is a generated snapshot of the B2B
-contract subset only.
+`GET /api/v1/auth/policy` lists every route with the role it enforces, and is the
+authoritative list. `GET /api/v1/openapi.json` and the generated `docs/swagger.json`
+describe the B2B contract (4 paths), not the whole API.
 
 ### Example
 
@@ -912,6 +1058,7 @@ Response (`analysis` is a JSON string produced by the model):
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 20 or later (the container uses 22) and npm, for the console
 - A Nebius Token Factory account and API key (https://tokenfactory.nebius.com/)
 - A Tavily API key (https://tavily.com/) — optional, the compliance agent
   degrades gracefully without it
@@ -950,6 +1097,24 @@ On PowerShell:
 ```powershell
 $env:PYTHONPATH = "src"; python -m vf_logistics.app
 ```
+
+`.env.example` sets `STORE_BACKEND=firestore` with a placeholder `PROJECT_ID`, so for a
+local run set `STORE_BACKEND=memory` in `.env`. Left as it is, the service falls back to
+memory only when no Firestore client can be built (no Google Cloud credentials on the
+machine), and `/health` reports which backend it got and why; with credentials present it
+would aim at the placeholder project instead.
+
+Port 8080 on its own serves only the retired static page at `/`. The console is the
+Next.js app in `frontend/`; start it in a second shell (details in
+[`frontend/README.md`](frontend/README.md)):
+
+```bash
+cd frontend && npm ci
+NEXT_PUBLIC_DEMO_MODE=false FLASK_API_BASE=http://127.0.0.1:8080 npm run dev   # http://localhost:3000
+```
+
+`NEXT_PUBLIC_DEMO_MODE` defaults to `true` outside a production build, which would show
+fixtures rather than your API.
 
 ### 2. Deploy to Cloud Run
 
@@ -1030,7 +1195,7 @@ BASE=$(gcloud run services describe vf-app \
   --region asia-southeast1 --format='value(status.url)')
 
 curl -s $BASE/health                  # expect store.backend=firestore, worker.mode=ondemand
-curl -s $BASE/api/v1/agents           # each agent reports the Nebius/NVIDIA model it runs on
+curl -s $BASE/api/v1/agents           # the four request/response agents and the model each runs on
 curl -s $BASE/api/v1/auth/whoami      # expect "role": "viewer" -- anonymous is a viewer
 curl -s $BASE/api/v1/auth/policy      # every route and the role it enforces
 
@@ -1061,13 +1226,16 @@ list, and `GET /api/v1/auth/policy` returns the table from the running service:
 
 | Role | Routes | What it adds |
 |---|---|---|
-| none | 6 | Health, the OpenAPI document and the agent roster |
-| `viewer` | 21 | Every read: cases, review queue, audit, governance, metrics, evaluation, and the policy dry run |
-| `reviewer` | 3 | Decide a case, request a deep review, open the archived original document |
-| `operator` | 23 | Anything that spends or ingests: shipments, documents, simulations, drains, resets, `/demo`, and the spend figures (`billing/usage`) |
-| `governance_admin` | 4 | Publish or revoke the delegation boundary, change the prefilter rules, run the news scan |
+| none | 6 | Health, the OpenAPI document, the agent roster (at `/agents` and `/api/v1/agents`), and Flask's own pages at `/` and `/legacy` |
+| `viewer` | 25 | Every read: cases, review queue, audit, governance, metrics, evaluation, and the policy dry run |
+| `reviewer` | 10 | Decide a case, request a deep review, open the archived original document, record time spent on a case, and the verification loop: request, reissue or cancel evidence, re-evaluate, approve and execute (the last two with a password sign-in) |
+| `operator` | 24 | Anything that spends or ingests: shipments, documents, simulations, drains, resets, `/demo`, and the spend figures (`billing/usage`) |
+| `governance_admin` | 5 | Publish or revoke the delegation boundary, change the prefilter rules, run the news scan, and the console's shared sign-in ledger (`/internal/login-throttle`) |
 
-Roles are cumulative: a reviewer is also a viewer, and so on up.
+Roles are cumulative: a reviewer is also a viewer, and so on up. One of the 24 operator
+rows is not what it looks like: `POST /api/v1/evidence/respond`, the shipper's upload
+through a signed link, is labelled operator in the listing, but the route checks only the
+link's token, because the shipper has no account.
 
 **How a caller gets a role.** The API key alone is `governance_admin`; it is a service
 credential, and the scripts in `scripts/` use it. A signed-in person holds the role their
@@ -1107,21 +1275,25 @@ a judge never has to touch `gcloud`.
 
 The login page and the board's **Start here** strip offer **Continue as guest judge**:
 one click, no password, and the session is `guest-judge@vf-logistics.demo`, a separate
-account listed in `ADMIN_EMAILS`. It can do everything the judge account can — inject
-shipments, decide cases, simulate a policy against the board — **except four changes
-that would carry over to the next judge**: clear the board, publish or revoke the
-delegation boundary (a revoke suspends the agent, and so does publishing one that
-permits nothing), and edit the pre-AI screening rules.
+account listed in `ADMIN_EMAILS`. It can do most of what the judge account can — inject
+shipments, block a case or ask for information, simulate a policy against the board —
+**except what releases cargo or would carry over to the next judge**: releasing a
+shipment, whether through Decide or the verification loop's approve and execute; clearing
+the board; publishing or revoking the delegation boundary (a revoke suspends the agent,
+and so does publishing one that permits nothing); and editing the pre-AI screening rules.
 
 Those exceptions are enforced twice, not hidden. The session token carries an `amr`
 claim (`password` or `one_click`) inside the same HMAC as the email, so it cannot be
 edited. The console's BFF refuses `orchestrator/reset`, `governance/publish`,
-`governance/revoke` and the `governance/prefilter-rules` PUT to any session that does
-not say `password`, and the
-API refuses them again with `auth.require_password_session`, which
-returns 403 with `required_auth: "password"`. A token without the claim — one minted
+`governance/revoke`, the `governance/prefilter-rules` PUT, and the verification loop's
+`review/<id>/approve` and `review/<id>/execute` to any session that does not say
+`password`, and the API refuses the same six routes again with
+`auth.require_password_session`, which returns 403 with `required_auth: "password"`. A
+release through `/decide` is refused by the orchestrator itself unless the decision was
+made from a password session; a block is not. A token without the claim — one minted
 before it existed — counts as *not* a password. A script holding only the API key still
-passes, because it has no session to ask about.
+passes the six routes, because it has no session to ask about, but it cannot release
+through `/decide`: there it records `actor_auth: "api_key"`, which is not a password.
 
 Every decision, publish and reset records `actor_auth` beside the name, so the Audit
 Trail can tag what was done from the public guest session. The button is off unless
@@ -1140,11 +1312,13 @@ Password sign-in is limited twice, before PBKDF2 runs: 5 attempts a minute per a
 and 20 per source address. The email is normalised once (trimmed and lower-cased) and that
 one value is both counted and checked. The count lives on the API's shared ledger
 (`/internal/login-throttle`, Firestore collection `login_throttle`), so every instance
-spends one allowance; if the ledger cannot answer, each instance falls back to its own.
-On Firestore the ledger is a fixed one-minute window counted with an atomic increment
-rather than a transaction: under a burst of attempts a transaction queues on its lock,
-the console gives up after three seconds, and the per-instance fallback would decide.
-Finished windows are deleted by a TTL policy on `login_throttle.expire_at`.
+spends one allowance. If the ledger cannot answer, the sign-in is refused with 503
+rather than counted per instance; only a development server with no API key counts
+locally. On Firestore the ledger is a fixed one-minute window counted with an atomic
+increment rather than a transaction: under a burst of attempts a transaction queues on
+its lock, the console gives up after three seconds, and every one of those sign-ins
+would be refused. Finished windows are deleted by a TTL policy on
+`login_throttle.expire_at`.
 
 ### Creating your own account
 
@@ -1177,13 +1351,21 @@ and in production a missing one takes the console **offline** rather than leavin
 
 ## Measured results
 
-Every figure here comes from a script in `scripts/`, is committed as a JSON report under
-`data/`, and is served read-only by `GET /api/v1/evaluation` to the console's Evaluation
-screen (`/evaluation`), so a number can be traced to the run that produced it. The
+Every figure here comes from a script in `scripts/` and is committed as a JSON report under
+`data/`, so a number can be traced to the run that produced it. All but the
+verification-loop run are also served read-only by `GET /api/v1/evaluation` to the
+console's Evaluation screen (`/evaluation`). The
 corpus is **synthetic** (`scripts/generate_synthetic_cases.py`, seed 20260920, 1,000
 cases: 300 shell-company transhipment, 300 HS mismatch, 200 sanctions-alias evasion, 200
 clean). No real shipment data is involved: these numbers say how the system behaves on
 the attacks we could describe, not on the ones we could not.
+
+Ranges in brackets are 95% Wilson score intervals on the counts behind each rate, in
+whole percent rounded outward as the Evaluation screen shows them, and served with the
+reports by the same endpoint. They arrived with the 14 Oct 2026 evaluation merge,
+`896bbae` (the endpoint change is `0468f98`, the screen `be8a31f`); a deployment built
+before it serves the point figures only. Some of the counts are small, and the
+intervals are there so a reader can see which differences mean something.
 
 ### The detection benchmark
 
@@ -1195,28 +1377,33 @@ only, so holdout is the number to quote.
 
 | Holdout, 453 cases | Before tuning | After tuning |
 |---|---|---|
-| Precision | 84.1% | 91.2% |
-| Recall | 95.1% | 93.5% |
+| Precision | 84.1% [80–88] | 91.2% [87–94] |
+| Recall | 95.1% [92–97] | 93.5% [90–96] (343/367) |
 | F1 | 0.893 | 0.923 |
-| False-positive rate (86 clean) | 76.7% | **38.4%** |
+| False-positive rate (86 clean) | 76.7% [66–85] | **38.4%** [28–49] (33/86) |
 | Sanctions-alias evasion caught | 87 / 87 | 87 / 87 |
 | Shell-company transhipment caught | 156 / 156 | 156 / 156 |
 | HS mismatch caught | 106 / 124 | 100 / 124 |
 
 The price of the tuning is the last row: six HS substitutions the rules used to hold now
 pass the rules alone, which is what the model arm is for. On dev after tuning the figures
-are 91.0% precision, 93.5% recall and a 35.1% false-positive rate, so the holdout result
-is not an artefact of which half the thresholds saw.
+are 91.0% precision [87–94], 93.5% recall [90–96] and a 35.1% false-positive rate
+[26–45]. Each holdout point estimate falls inside dev's interval, which is consistent
+with the thresholds not having been fitted to the half they saw; that the two intervals
+merely overlap would not, on its own, show that.
 
 **Full arm** — rules, the HS classifier (Nano, `cot_strict`) and the zero-day radar
-through the real gate, on 200 holdout cases taken by stride:
+behind its real search gate, on 200 holdout cases taken by stride. It is "full" only
+against the rules arm: the fraud and compliance agents (which can only add holds),
+investigation and the debate are not in it, and most zero-day searches were stubbed
+(below).
 
-| 200 holdout cases | Rules alone | Full system |
+| 200 holdout cases | Rules alone | Rules + HS + zero-day |
 |---|---|---|
-| Precision | 90.9% | 90.3% |
-| Recall | 95.8% | **100%** |
+| Precision | 90.9% [85–95] | 90.3% [85–94] |
+| Recall | 95.8% [91–98] | **100%** [97–100] (167/167) |
 | F1 | 0.933 | 0.949 |
-| False-positive rate (33 clean) | 48.5% | 54.5% |
+| False-positive rate (33 clean) | 48.5% [32–65] | 54.5% [37–71] (18/33) |
 
 The model layer caught the 7 HS substitutions the tuned rules missed and added 2 false
 positives, both an HS mismatch claimed against a non-controlled heading (floor 40). The
@@ -1239,13 +1426,58 @@ What belongs next to those numbers:
   search) and how the model handles an empty result; 79 of those 97 verdicts came from the
   final turn that asks for a verdict once the search budget is spent.
 
+#### Operating curve
+
+One recall and one false-positive rate say how the threshold in use does, not what moving
+it would buy. `scripts/operating_curve.py` re-scores the rules arm's per-case floors at
+every threshold that changes the answer and writes `data/operating_curve/rules.json`,
+which ships in the image and is drawn on the Evaluation screen of a build that includes
+`896bbae`. Floors take a handful of values, so each row stands for a range of thresholds;
+the two rows that another row matches or beats on both counts (81–85, 91–100) are left
+out here and kept in the file.
+Rules arm, holdout:
+
+| Review threshold | Recall | False-positive rate | Held per real case at 0.2% |
+|---|---|---|---|
+| **40, the benchmark's** (any value 1–50 holds the same) | 93.5% | 38.4% | ~206 |
+| 51–65 | 67.0% | 25.6% | ~191 |
+| 66–75 | 67.0% | 9.3% | ~70 |
+| 76–80 | 66.5% | 7.0% | ~53 |
+| 86–90 | 25.9% | 0% | ~1 |
+
+Raising the threshold into the 66–80 range would cut the reviewer load per real case by
+roughly three to four times, and recall would fall from 93.5% to about 67%. That is a
+trade between reviewer hours and released fraud that belongs to the operator who carries
+the consequences, so we left the threshold where it was and show the curve instead. The
+curve is a what-if over the rules' floors, not a setting: in the running system any
+non-zero floor withholds auto-clear (`reconcile()`), and the default boundary requires
+zero findings, so adopting a higher threshold would mean changing `reconcile()` and the
+boundary.
+
+#### Where the false positives come from
+
+On the dev split only, every one of the rules' 40 false positives traces to four findings:
+`SHIPPER_NO_HISTORY` sets the floor on 17 of them (15 with nothing else scoring),
+`VALUE_DENSITY_HIGH` on 12, `FREIGHT_ANOMALY` on 5, and `DUAL_USE_HS_CODE` on 6, all HS
+8471 laptops. We measured five candidate changes on dev and rejected all five: four were
+indefensible in compliance terms or keyed on how the generator builds cases, and one lost
+recall. So the holdout was not consulted and the verifier is unchanged. This is a null
+result, and we report it as one.
+
+The largest lever is policy rather than tuning. Counting a first-time shipper only as
+corroboration of another finding, never on its own, would take the dev false-positive
+rate from 35.1% to 21.9% with no recall lost on this corpus, and would release the first
+shipments of new counterparties unreviewed. Whether a desk accepts that is the
+operator's decision, not one we made for them.
+
 ### HS classification, measured
 
 `scripts/eval_hs.py` grades the classifier's own verdict, not the case outcome, on two
 sets: 30 pairs (`data/hs_pairs.yaml`, 15 evasive and 15 honest) and a 24-case holdout
 (`data/hs_holdout.yaml`, 12 and 12) of substitutions absent from the reference material.
-Recall is evasions caught. A reply the model failed to give is counted as neither class,
-so the counts in brackets are the graded cases.
+Recall is evasions caught. A reply the model failed to give, or an `unknown` verdict, is
+counted as neither class, so every rate in the table is over graded cases only and the
+counts in brackets are those graded cases.
 
 | Arm | Model | Pairs recall | Pairs FPR | Holdout recall | Holdout FPR |
 |---|---|---|---|---|---|
@@ -1255,7 +1487,7 @@ so the counts in brackets are the graded cases.
 | `cot_zero`: ordered method, verdict last | Nano | 40.0% (6/15) | 28.6% | — | — |
 | `cot`: method plus reasoning exemplars | Nano | 53.8% (7/13) | 21.4% | — | — |
 | `cot_ref`: method plus reference with exclusion notes | Nano | 100% (15/15) | 0% | — | — |
-| **`cot_strict`: method plus published heading contents (production)** | Nano | **92.9%** (13/14) | **0%** | **91.7%** (11/12) | **0%** |
+| **`cot_strict`: method plus published heading contents (production)** | Nano | **92.9%** (13/14) [68–99] | **0%** (0/15) [0–21] | **91.7%** (11/12) [64–99] | **0%** (0/12) [0–25] |
 | Teacher, `base` prompt | Super | 100% (15/15) | 6.7% | — | — |
 
 What the table says:
@@ -1271,8 +1503,11 @@ What the table says:
   test pairs in view, so it cannot be told apart from having been handed the answers.
   `cot_strict` strips them and sees only published heading contents; it is what production
   runs (`orchestrator.py`) and the only figure we quote.
-- **The holdout is the test that matters:** 91.7% with no false alarms, on substitutions
-  the reference never mentions, on Nano rather than Super.
+- **The holdout is the test that matters:** 11 of 12 evasions caught and 0 of 12 honest
+  cases flagged, on substitutions the reference never mentions, on Nano rather than
+  Super. Twelve is a small number: the 95% interval on that recall runs from 64% to 99%,
+  and "no false alarms" means 0 of 12, whose upper bound is 24.2% (the table rounds it
+  outward to 25).
 
 ### Public enforcement cases
 
@@ -1283,16 +1518,16 @@ OLAF prosecutions — each as the shipment the paperwork showed, beside the hone
 imitated, with the regulator's URL and a verbatim quote on every case
 (`data/public_cases.json`). Parties are screened against the real OFAC SDN and UN lists.
 
-| 19 pairs | Rules alone | Full system |
+| 19 pairs | Rules alone | Rules + HS + zero-day |
 |---|---|---|
-| Frauds held | 11 / 19 | 14 / 19 |
-| Honest counterparts held | 7 / 19 | 9 / 19 |
+| Frauds held | 11 / 19 (57.9% [36–77]) | 14 / 19 (73.7% [51–89]) |
+| Honest counterparts held | 7 / 19 (36.8% [19–59]) | 9 / 19 (47.4% [27–69]) |
 | Pairs separated (fraud held, honest cleared) | 4 | 3 |
 | Model cost | $0 | $0.034 |
 
-Read it as pairs. **Dual-use pairs are held on both sides**, correctly: controlled goods
-need a licence check whether or not this consignee is honest. **Six origin-fraud pairs
-are identical at booking** — Vietnamese-declared plywood made from Chinese veneer looks
+Read it as pairs. **Five of the seven dual-use pairs are held on both sides**, correctly:
+controlled goods need a licence check whether or not this consignee is honest. **Four
+origin-fraud pairs are identical at booking** — Vietnamese-declared plywood made from Chinese veneer looks
 exactly like plywood made from Vietnamese veneer — so no booking-time screen separates
 them, and the report says so rather than tuning a rule until it appears to. Two identical
 pairs received different verdicts from the model; that is counted as variance, not
@@ -1306,17 +1541,25 @@ OFAC's words), and change nothing on the synthetic corpus's clean shipments. And
 writes `LLC TESTKOMPLEKT` where a Russian invoice says `OOO Testkomplekt`; the name
 normaliser now treats Russian, CIS and Gulf legal forms like `LLC` and `Ltd`.
 
-**Workload at real fraud rates.** A corpus is a fifth to four-fifths fraud by
-construction; a forwarder's book is not. Vietnam Customs found a violation in 29,849 of
+**Workload at real fraud rates.** The test corpora are half fraud (the public pairs) to
+about four-fifths (the synthetic holdout, 367 of 453) by construction; a forwarder's book
+is not. Vietnam Customs found a violation in 29,849 of
 16.84 million declarations in 2024, **0.18%**. At 0.2%, the tuned rules hold about 385 of
-every 1,000 shipments to find about 2 real cases. The console's Evaluation screen shows
-this for every report at 0.2%, 1% and 2%. The conclusion we draw is that the product's job
+every 1,000 shipments to find about 2 real cases: about **206 held per real fraud case**,
+a precision at that prevalence of about 0.49%. On the 200-case subset the full arm ran,
+the rules plus the HS and zero-day checks hold about 273 per real case against the rules'
+254 on the same cases. Put recall and the false-positive rate at the favourable ends of
+their intervals and then the unfavourable ends, and the rules' figure runs from 151 to 271
+and the combined arm's from 191 to 359; those are best and worst corners, not a 95% interval. Customs'
+own targeting makes roughly 19 red-channel inspections per violation found. The console's Evaluation screen shows
+this for every report at 0.2%, 1% and 2% (the best and worst corners in a build that
+includes `896bbae`). The conclusion we draw is that the product's job
 is not to hold fewer shipments but to make each hold quick and defensible to decide —
 which is what the case trace, the Review screen and the dossier are for.
 
 ### When booking data is not enough: the verification loop
 
-The six identical origin-fraud pairs above prove that booking-time data alone cannot
+The four identical origin-fraud pairs above prove that booking-time data alone cannot
 distinguish a fraudulent plywood shipment from a legitimate one. Floorline now addresses
 this directly: when a shipment lands on a watched lane (HS 4412, Vietnam to US), the
 deterministic checks identify what is unverified, and the system organises the work of
@@ -1342,10 +1585,11 @@ collecting and evaluating the missing evidence.
    A publish failure records `EXECUTION_FAILED` (not `RELEASED`); the approval reverts to
    VALID for retry.
 
-**Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`):
+**Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`, report in
+`data/eval_results/verification_eval.json`):
 3/3 legitimate cases resolved correctly, 2/2 fraudulent blocked, 2 needs-evidence cases
 correctly held. **0 improper executions** (wrong authority, stale approval, or missing
-evidence). Median cost $0.000108/case, median latency 43ms -- **both from the mocked
+evidence). Median cost $0.000108/case, median latency 40ms -- **both from the mocked
 harness** (fixed token counts, no model or network calls), so they show the pipeline runs
 end to end, not what a real run costs or how long a person takes.
 
@@ -1362,19 +1606,24 @@ end to end, not what a real run costs or how long a person takes.
 ## Reproducible testing
 
 ```bash
-# Unit + integration tests: 1183, at 83% line coverage. CI fails below 75%.
+# The test tools are not in requirements.txt; install them first.
+pip install -r requirements.txt "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-cov>=4.1.0" "pytest-mock>=3.12.0"
+
+# Unit + integration tests: 1486 pass and 16 skip (the Firestore emulator tests, unless
+# FIRESTORE_EMULATOR_HOST is set), at 85.8% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
-# The mutation check: breaks 36 lines on purpose, one at a time, and requires the
+# The mutation check: breaks 112 lines on purpose, one at a time, and requires the
 # suite to fail on every one. It edits source in place and restores it, so it
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: typecheck, lint, 146 unit tests, production build
-cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build
+# Frontend: install, typecheck, lint, 328 unit tests in 26 files, production build
+(cd frontend && npm ci && npx tsc --noEmit && npm run lint && npm test && npm run build)
 
-# Counterparty book, offline
-python scripts/check_registry.py        # 11 checks
+# Counterparty book, offline. The script imports shipper_registry as a top-level
+# module, so both directories go on the path.
+PYTHONPATH=src/vf_logistics:src python scripts/check_registry.py   # 11 checks
 ```
 
 The document suite talks to a running service and **clears the board before every
@@ -1390,8 +1639,8 @@ python scripts/test_documents.py 3      # three passes, reports any disagreement
 
 Against a non-local base it refuses unless you pass `--yes-wipe-board`. That guard
 exists because this script once pointed at a service in a different project, passed
-for weeks while testing code that was not in this repository, and then deleted the
-seeded demo board the moment the URL was corrected.
+until 23 Sep (`126cbd6`) while testing code that was not in this repository, and then
+deleted the seeded demo board the moment the URL was corrected.
 
 Two live checks that need credentials and spend real tokens, so they are run by hand:
 
@@ -1407,14 +1656,14 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Sanctions & zero-day | 64 | Sanctions matching, list freshness, unseen-pattern handling |
 | Official sanctions lists | 14 | OFAC SDN and UN parsers on real rows cut from the published files, a registration number from OFAC's remarks, short aliases dropped, `OOO` read as `LLC`, and a refresh that refuses to publish half a list |
 | Due-diligence dossier | 11 | Every finding code lands on a reference that exists, the most specific guidance wins, the PDF renders from an empty or non-Latin case, a model's arrow is spelled out rather than printed as `?`, and the route is a viewer read scoped to the tenant |
-| Pure logic | 69 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
+| Pure logic | 70 | auth, config (including which GCP project is written to, and that none is guessed), schemas, simulator, untrusted, agents._common |
 | Decision paths | 57 | Every route a shipment can take through the state machine, and the heading the HS classifier is told was declared |
-| Tenant isolation | 43 | Cross-tenant reads, writes, and aggregation |
-| Hardening | 42 | Kill switch, Red Team screen, policy dry run, auto-debate, learning loop, per-hop I/O |
+| Tenant isolation | 52 | Cross-tenant reads, writes, and aggregation; one shared document bucket split by tenant; and `put_case` refusing a write over another tenant's case on both backends, the Firestore one against a fake of its client calls |
+| Hardening | 48 | Kill switch, the injection probe (`security/screen`), policy dry run, auto-debate, per-hop I/O, and the learning loop: a discount only for a registry-verified shipper, tallies read fresh on every scored case |
 | Document upload | 33 | Accepted types, the PDF branch, injection screening |
-| Console session | 41 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
+| Console session | 50 | HMAC signing, forged tokens, reviewer attribution, the signed sign-in method (`amr`), and what a forwarded session may and may not change |
 | Network defence | 34 | Rate limits, request size, header hygiene, CSP content, content-type allow-list |
-| Verifier | 34 | Risk reconciliation, prompt injection, whitelist, checks, and routing "to, from, or through" a restricted country |
+| Verifier | 36 | Risk reconciliation (no auto-clear without a stated floor), prompt injection, whitelist, checks, and routing "to, from, or through" a restricted country |
 | B2B contract | 28 | The published response shape callers depend on |
 | Routes | 27 | Security headers, CORS, auth, validation, pagination |
 | Schema enforcement | 37 | Untrusted document fields against the declared schema; that an investigation reply with no summary is a counted failure rather than a finished report; and that Super is asked without `json_object`, which measured 6/12 usable against 12/12, with one retry billed in full |
@@ -1431,7 +1680,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Observability | 16 | Logging, metrics, request context |
 | Security screen logic | 16 | Window arithmetic, and that an unreachable screen fails closed instead of reporting a clean document |
 | Output ceilings | 15 | Every agent's `max_tokens`, measured against its real maximum |
-| RBAC | 25 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that only a password sign-in may clear the board, revoke the boundary or edit the prefilter rules |
+| RBAC | 28 | Who gets which role — key alone, key plus session, unlisted address, a session that fails to verify — whether the routes honour it, and that exactly six routes need a password sign-in: clearing the board, publishing or revoking the boundary, editing the prefilter rules, and the verification loop's approve and execute |
 | Debate routing | 13 | A genuine, confident DISAGREE sends the case to investigation; a forced verdict does not; risk only moves up |
 | Concurrent decisions | 13 | Two reviewers deciding the same case |
 | False-positive tuning | 12 | Which signals are findings and which are context: observations carry no floor and are not counted |
@@ -1441,9 +1690,22 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
 | Audit integrity | 6 | The governance author is the authenticated identity, not a body field |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| Evaluation endpoint | 8 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; and the public-case pairs with their sources |
+| Evaluation endpoint | 19 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; the public-case pairs with their sources; Wilson intervals at the edges (0 of 12, 15 of 15) rounded outward; and the operating curve shipped in the image |
+| Operating curve | 5 | The threshold sweep on hand-built rows counted by eye, and `scripts/operating_curve.py` run once end to end |
+| Release fails closed | 15 | A missing reconciliation, a compliance status other than `CLEARED`, an unverified shipper's discount, a missing finding count, an absent or unusable declared value and a blank destination each withhold an automated release |
+| Document archive | 26 | The receipt written onto the case is one the reader can fetch back, and every storage failure is a receipt that says why, or an empty answer, never an exception; under `MULTI_TENANT`, objects filed and ingested only inside the tenant's own space |
+| Executor client | 18 | Every way the hop to the executor can fail — no executor, no identity token, a refusal, a crash, a transport error — comes back as something other than "done" |
+| Origin inputs | 150 | The watched-lane check behind the verification loop: a shipment on a watched lane cannot be cleared by the rules, and good papers never lower a floor |
+| Evidence request, response, re-evaluation, approval, execution | 175 | The signed link and who may use it, uploads through it, re-evaluation, approval bound to an evidence version, and atomic execution (`test_evidence_*.py`) |
+| Membership | 31 | Organisation membership resolved on the server, and the three ways a request authenticates |
+| Worklist | 26 | The Today and Outcomes read models and the arithmetic behind them |
+| Boundary history and schema | 32 | Versions never reused or overwritten; a permission written as the string `"false"` is refused rather than read as true |
+| Internal execute | 15 | `/internal/execute` acts only in the organisation it checked the role in |
+| Login throttle | 14 | One sign-in attempt ledger for every console instance |
+| Approval gate at the route | 14 | Who may release or approve through the real Flask routes, and what the legacy `/decide` refuses |
+| Firestore emulator | 18 | `FirestoreStore`'s transactions against the emulator; 16 of the 18 skip unless `FIRESTORE_EMULATOR_HOST` is set, and CI has no emulator job |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **922** | |
+| **Total** | **1,502** | 1,486 pass and 16 skip here (the emulator tests); 57 files |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1508,10 +1770,11 @@ collection.
 | `NEBIUS_API_KEY` | Nebius Token Factory API key | unset — required |
 | `NEBIUS_BASE_URL` | Token Factory OpenAI-compatible endpoint | `https://api.tokenfactory.nebius.com/v1/` |
 | `TAVILY_API_KEY` | Tavily API key for the compliance agent's live search | set in production via Secret Manager (`TAVILY_API_KEY`); optional locally — degrades gracefully if unset |
-| `NEMOTRON_MODEL` | Model for fraud detection and compliance screening | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` |
+| `NEMOTRON_MODEL` | Model for fraud detection and compliance screening, and for the HS classifier and zero-day radar unless `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` pin them | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` |
 | `VISION_MODEL` | Model for document intake | `openbmb/MiniCPM-V-4_5` |
 | `INVESTIGATION_MODEL` | Model for investigation, pinned separately | `nvidia/nemotron-3-super-120b-a12b` |
 | `DEBATE_MODEL` | Model for the debate agent — **the one place Nemotron Ultra is used by default**. See the note below the table. | `nvidia/Nemotron-3-Ultra-550b-a55b` |
+| `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` | Pin the HS classifier or the zero-day radar to its own model. Unset, each uses whatever model fraud and compliance are on, including after a `POST /api/v1/config/model` switch. | unset |
 | `MODEL_SWITCH_MAX_RATE_MULTIPLE` | How much dearer a model `POST /api/v1/config/model` may select without `confirm_higher_cost`, against the cheapest priced model. Super is 4.0× Nano and permitted; Ultra is 13.3× and answered 409. | `5.0` |
 | `TAVILY_ROUTE_CACHE_TTL_SECONDS` | TTL for the shipping-lane disruption search, whose query carries only a country pair. Measured: 20 searches across 6 distinct lanes. `0` disables. | `21600` (6h) |
 | `TAVILY_ENTITY_CACHE_TTL_SECONDS` | TTL for the shipper/receiver adverse-media searches. Shorter because these carry a counterparty — though Tavily is *not* the sanctions control. `0` disables. | `3600` (1h) |
@@ -1541,6 +1804,8 @@ collection.
 | `ADMIN_EMAILS` / `OPERATOR_EMAILS` / `REVIEWER_EMAILS` | Comma-separated addresses holding `governance_admin`, `operator` and `reviewer`. Trimmed and lowercased. A signed-in address in none of them is a viewer. Setting one with gcloud needs the alternate delimiter: `--update-env-vars "^\|^REVIEWER_EMAILS=a@x.com,b@x.com"`. | unset |
 | `VF_API_KEY` | Operator API key. Alone it grants `governance_admin`; forwarded by the console only alongside a verified session, which narrows it to that person's role. | set in production via Secret Manager |
 | `VF_TENANT_SPEND_CEILING_USD` | Per-tenant soft spend ceiling. Unset, garbage or `<= 0` all mean no ceiling. | unset |
+| `MULTI_TENANT` | `true` makes every request resolve its tenant and role from `VF_TENANT_MEMBERS`, and files and ingests documents in the shared `DOCUMENT_BUCKET` only under `tenants/<id>/`. Off, there is one tenant and roles come from the `*_EMAILS` lists. | `false` |
+| `VF_TENANT_MEMBERS` | Multi-tenant only: JSON `{principal: {tenant: role}}`, where a principal is a console email, `iap:<subject>`, or `service` for the API key. Each request's tenant and role come from here, and a person in several organisations picks one (sent as `X-VF-Tenant`). Unlisted principals are refused. With `MULTI_TENANT=true` the service will not boot if this is empty or malformed. Keep it in Secret Manager. | unset (ignored when `MULTI_TENANT` is off) |
 
 ### Console (the Next.js half of the `vf-app` container)
 
@@ -1548,7 +1813,6 @@ collection.
 |---|---|---|
 | `FLASK_API_BASE` | Backend base URL, read server-side per request. `entrypoint.sh` sets it to `http://127.0.0.1:9090` in the container; set it yourself only when running the console against a separate API. | set by `entrypoint.sh` |
 | `VF_SESSION_SECRET` | HMAC key for session cookies. Must be at least 32 characters; a shorter one is treated as absent. | unset — **required in production**, where a missing value takes the console offline rather than opening it |
-| `VF_TENANT_MEMBERS` | Multi-tenant only: JSON `{principal: {tenant: role}}`, where a principal is a console email, `iap:<subject>`, or `service` for the API key. Each request's tenant and role come from here, and a person in several organisations picks one (sent as `X-VF-Tenant`). Unlisted principals are refused. With `MULTI_TENANT=true` the service will not boot if this is empty or malformed. Keep it in Secret Manager. | unset (ignored when `MULTI_TENANT` is off) |
 | `VF_OPERATORS` | Semicolon-separated `email:iterations:salt:hash` records, PBKDF2-SHA256. Generate with `node frontend/scripts/make-operator.mjs <email> --out <dir>`, which writes the password to a file rather than printing it. | unset |
 | `VF_PUBLIC_READS` | `true` lets anonymous visitors read the console. Writes are never covered by it — the split is on the HTTP method, not a path list. Defaults to false so a deployment that forgets it is locked, not open. | `false` |
 | `VF_ONE_CLICK_JUDGE` | `true` offers the one-click guest-judge sign-in. Off unless set, like `VF_PUBLIC_READS`. | unset |
@@ -1558,8 +1822,9 @@ collection.
 
 `config.py` holds the shared model registry and per-token pricing for fraud
 and compliance. `POST /api/v1/config/model` switches between the registered
-Nemotron tiers at runtime; investigation ignores it and reads
-`INVESTIGATION_MODEL` at import.
+Nemotron tiers at runtime, and the HS classifier and zero-day radar follow the switch
+unless `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` pin them; investigation ignores it and
+reads `INVESTIGATION_MODEL` at import.
 
 #### Why Ultra is on the debate agent and nowhere else
 
@@ -1567,15 +1832,24 @@ Nemotron tiers at runtime; investigation ignores it and reads
 the reason is architectural rather than financial: `verifier.py` computes a deterministic
 risk floor, and an agent may **raise** risk but never lower it below that floor. A
 stronger model on fraud detection or compliance therefore cannot move the outcome in the
-direction that matters — the floor has already decided. Measured, putting those two on
-Ultra would cost 13× per call, against a rate that is only 3.3×, for no change in any
-decision.
+direction that matters — the floor has already decided whether a shipment may clear, and
+a model can only add holds above it. Ultra's per-token rate is 13.3× Nano's, blended
+(`config.rate_multiple`), on the two highest-volume calls; whether it would catch
+anything Nano misses there has not been measured.
 
-The debate is the exception. It runs only when the floor and the model disagree by 15
-points or more (measured: 2 calls across 20 cases) and what it emits is not a score
-awaiting override — it is a reasoned CONFIRM or DISAGREE on whether that disagreement can
-be settled without a person. That judgement *is* the outcome, so reasoning capacity is
-load-bearing.
+The debate is the exception. The orchestrator runs it only when the floor exceeds the
+model's score by 15 points or more (measured: 2 calls across 20 cases), and a reviewer can
+run it by hand with Deep Review on any case awaiting review. Either way auto-clear is
+already impossible and a person will decide the case. What it emits is not a
+score awaiting override but a reasoned CONFIRM or DISAGREE on whether the junior analyst
+missed something. CONFIRM changes nothing; on the automatic path a genuine DISAGREE at
+confidence 0.7 or above sends the case to deep investigation on Super and may raise its
+risk (by hand, the verdict is recorded for the reviewer and changes no route). So Ultra's
+verdict can send a disputed case to a deep investigation it would otherwise skip
+(effective risk under the 70 investigation bar, compliance not already `BLOCKED` or
+`REVIEW_REQUIRED`), and can never clear one — the one hop whose output is a verdict on the
+dispute rather than a score the floor overrides — and reasoning capacity is load-bearing
+there.
 
 **Measured cost, and it is higher than the rate suggests.** Three Ultra debates and two
 Super debates have now run on the live service:
@@ -1606,7 +1880,7 @@ to `nvidia/nemotron-3-super-120b-a12b` reverses the decision without a deploy.
 Measured on a 20-case run: **90–106 Tavily searches** (4.5–5.3 per case) against
 `$0.067994` of Nemotron. At the free tier's 1,000 credits a month that is **188–222
 cases**, while the model bill for those cases is under a dollar — so the external
-search, not inference, is what limits throughput. The board reseeded on 10/10 after the
+search, not inference, is what limits throughput. The board reseeded on 10 Oct 2026 after the
 investigation fix measured `$0.087906` for the same 20 cases: in the earlier run half the
 investigation replies were near-empty fragments, so a working investigation costs more
 than a broken one did. Searches were not re-counted on that run. `estimated_cost_usd` counts Nebius
@@ -1704,12 +1978,14 @@ OpenAI-compatible API, expects an `image_url` — sending raw PDF bytes there
 either errors or silently misreads the document. `document_agent.py` now
 rasterises the first page to PNG with `pypdfium2` before the call.
 
-**A degrade-gracefully rule matters as much for a new dependency as an old
-one.** Tavily is new to this system, and it would have been easy to let a
-missing key or a timeout raise into the request handler and fail the case.
-`tavily_client.search()` returns an empty list on any failure instead, so the
-compliance agent's worst case with Tavily broken is exactly its old behaviour
-without Tavily.
+**A failed search must not read as a clean one.** Tavily is new to this system, and it
+would have been easy to let a missing key or a timeout raise into the request handler
+and fail the case. Our first integration went the other way: `tavily_client.search()`
+returned an empty list on any failure, so the compliance model was told "searched,
+found nothing" about a search that never ran. Compliance now calls `search_cached()`
+and carries the search status into the prompt (the worse of the shipper and receiver
+searches), as the zero-day radar, investigation and the debate do, so an outage still
+never blocks a case but is never mistaken for a clean result.
 
 **JSON mode travels well across providers.** Both Gemini's
 `response_mime_type="application/json"` and the OpenAI-compatible
@@ -1745,8 +2021,9 @@ lists (18,525 records, refreshed by `scripts/refresh_sanctions.py` into GCS). Wh
 remains stubbed is historical data: the agents receive route-cost baselines as
 request fields rather than pulling them from a warehouse. Next steps: a real
 historical-baseline store, the EU and UK consolidated lists alongside OFAC and UN,
-a scheduled refresh instead of a hand-run one, and replacing the scripted simulator
-with a production Pub/Sub subscription from the shipment system.
+a scheduled refresh instead of a hand-run one, a CI job with the Firestore emulator so
+the 16 `FirestoreStore` tests that skip today run on every push, and replacing the
+scripted simulator with a production Pub/Sub subscription from the shipment system.
 
 Longer term, closing the loop on the humans this system currently escalates
 to: build a **Toloka**-backed human-in-the-loop review layer where real customs
@@ -1771,10 +2048,12 @@ collection effort.
 │   ├── orchestrator.py           Autonomous state machine + background worker
 │   ├── config.py                 Model registry, per-token pricing, runtime switch
 │   ├── governance.py             Delegation Boundary + fail-closed execution gate
+│   ├── evidence.py               Verification loop: evidence requests, the signed link, approval, execution
 │   ├── verifier.py               Deterministic risk floor (no model consulted)
 │   ├── untrusted.py              Schema whitelist for document-sourced fields
 │   ├── shipper_registry.py       Counterparty book: verifies a claimed shipper identity
 │   ├── sanctions.py              Sanctions index, loaded from Cloud Storage
+│   ├── sanctions_sources.py      Parsers for the OFAC SDN and UN consolidated lists
 │   ├── hs_reference.py           Published HS heading contents; took recall 40.0% → 92.9%
 │   ├── model_armor.py            Windowed prompt-injection screening
 │   ├── nebius_client.py          Nebius Token Factory client (OpenAI-compatible)
@@ -1783,13 +2062,16 @@ collection effort.
 │   ├── auth.py                   Roles, API keys, operator records
 │   ├── budget.py                 Per-tenant soft spend ceiling
 │   ├── tenant.py                 Tenant resolution and scoping
+│   ├── membership.py             Which tenant a principal may act in, and with what role (MULTI_TENANT)
 │   ├── lineage.py                Per-step cost attribution
 │   ├── evaluation.py             Serves the committed benchmark and HS reports, never per-case rows
+│   ├── worklist.py               Read models behind the Today and Outcomes screens
 │   ├── observability.py          Structured logging, metrics, request context
 │   ├── schemas.py                Request/response validation, and AGENT_OUTPUT_SCHEMAS for six agents' replies
 │   ├── openapi.py                Generates the OpenAPI document
 │   ├── b2b.py                    The published contract surface
 │   ├── document_render.py        Renders event-sourced shipments as a bill of lading
+│   ├── dossier.py                The case as a due-diligence dossier (PDF), built from the stored case
 │   ├── document_store.py         Cloud Storage document archive
 │   ├── executor_client.py        Calls the split-identity executor service
 │   ├── tools.py                  Actions taken on the operator's behalf
@@ -1806,13 +2088,14 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        39 files, 922 tests
+├── tests/                        57 files, 1,502 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
 ├── frontend/                     Next.js 16 console, built into the same image as the API
 │   ├── src/app/                  App Router pages: board, radar, review, audit, governance,
-│   │                             devops, agents, evaluation, admin, legal, login
+│   │                             devops, agents, evaluation, admin, legal, login, today,
+│   │                             outcomes, cases/[id], and the shipper's respond/[token]
 │   ├── src/components/           UI, incl. the case trace sheet and layout shell
 │   ├── src/lib/session.ts        HMAC session signing, via Web Crypto so it runs on Edge
 │   ├── src/lib/proxy-policy.ts   The BFF allow-list; the only place the console's key is attached
@@ -1826,6 +2109,7 @@ collection effort.
 │   └── terraform/                Cloud Armor policy (written, not applied)
 ├── docs/
 │   ├── ARCHITECTURE.md           The source of truth for how it fits together (includes mermaid diagrams)
+│   ├── architecture.html         The architecture diagram as a standalone page
 │   ├── DEMO_SCRIPT.md            Eleven scenes, timed to the narration track
 │   ├── PROJECT_STORY.md          What was built and what it cost to learn
 │   ├── swagger.json              Generated by scripts/build_docs.py — do not hand-edit

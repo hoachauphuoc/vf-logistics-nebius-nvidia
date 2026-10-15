@@ -194,9 +194,10 @@ function LoginForm() {
     <div className="mt-5">
       {/* The judge's way in, first. A judge with three minutes should not have to
           find a password in a private field to try the product; this signs them
-          in as a guest account with every right except the three whose effect
-          outlives the visit: clearing the board, revoking the boundary, and
-          editing the prefilter rules. */}
+          in as a guest account with every right of its role except the ones that
+          cannot be undone or outlive the visit: releasing a shipment, approving or
+          executing a verification-loop action, publishing or revoking the
+          boundary, clearing the board, and editing the prefilter rules. */}
       {offerOneClick && (
         <div className="mb-5">
           <Button
@@ -213,10 +214,11 @@ function LoginForm() {
             Continue as guest judge
           </Button>
           <p className="mt-2 text-[11px] leading-relaxed text-dim">
-            One click, no password. You can inject shipments, decide cases, and
-            simulate and publish policy. Clearing the board, revoking the
-            agent&rsquo;s authority and editing the screening rules need a password
-            sign-in below, because they would carry over to the next judge.
+            One click, no password. You can inject shipments, block a case or ask
+            for more information, and simulate policy. Releasing a shipment,
+            publishing or revoking the agent&rsquo;s authority, clearing the board
+            and editing the screening rules need a password sign-in below, because
+            they cannot be undone or would carry over to the next judge.
           </p>
           <div className="mt-4 flex items-center gap-2 text-[11px] text-dim" aria-hidden>
             <span className="h-px flex-1 bg-white/10" />

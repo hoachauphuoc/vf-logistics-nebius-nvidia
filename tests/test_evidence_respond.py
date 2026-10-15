@@ -314,3 +314,46 @@ class TestN03DocumentType(Base):
         links = self._links()
         result = self.submit(links["producer_declaration"])
         assert result["still_missing"] == ["certificate_of_origin", "input_purchase_invoices"]
+
+
+class TestEvidenceIsFiledUnderItsTenant(Base):
+    """
+    Evidence is archived in the bucket every tenant shares. Under MULTI_TENANT its
+    name carries the tenant the link was minted for, so a sweep can tell whose it
+    is and the service's own output is never ingested into another board.
+    """
+
+    TENANT = "acme-freight"
+
+    def test_the_upload_lands_under_the_tenant_the_link_was_minted_for(self):
+        from test_document_store import FakeGcs
+
+        from vf_logistics import document_store
+
+        gcs = FakeGcs()
+        mock_result = {
+            "agent": "evidence_extraction", "model": "test", "result": {},
+            "latency_ms": 5, "input_tokens": 1, "output_tokens": 1,
+            "parse_error": False, "at": "2026-10-12T08:00:00Z",
+        }
+        with patch.dict(os.environ, {"MULTI_TENANT": "true"}), \
+                patch.object(document_store, "BUCKET", "shared-documents"), \
+                patch.object(document_store, "_client", gcs), \
+                patch.object(document_store, "_client_error", None):
+            shipment = plywood()
+            run(self.store.put_case({
+                "case_id": "CASE-1", "shipment_id": "CASE-1", "state": "HELD_FOR_REVIEW",
+                "created_at": "2026-10-12T01:00:00+00:00", "updated_at": "2026-10-12T02:00:00+00:00",
+                "shipment": shipment, "validation": validate(shipment), "actions": [], "reviews": [],
+            }, tenant_id=self.TENANT))
+            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["token"]
+
+            with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock_result)), \
+                    patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})), \
+                    patch("vf_logistics.model_armor.extract_pdf_text", return_value=("text", None)):
+                result = run(evidence.receive_evidence(token, tiny_pdf(), "cert.pdf", "application/pdf"))
+
+        assert result["received"] is True
+        names = [name for _, name in gcs.objects]
+        assert len(names) == 1
+        assert names[0].startswith(f"tenants/{self.TENANT}/evidence/"), names[0]

@@ -139,7 +139,7 @@ SCENES: list[tuple[str, float, str]] = [
         "Floorline runs on NVIDIA Nemotron 3, through Nebius Token Factory. "
         "Rules set a risk floor an agent may raise, never lower. "
         "So fraud and compliance run on Nano: a stronger model cannot change it. "
-        "Ultra runs one hop, the debate, where its verdict is the answer.",
+        "Ultra runs only the debate, where its verdict can trigger an investigation.",
     ),
     (
         "4 - The floor overrules the model",
@@ -191,7 +191,8 @@ SCENES: list[tuple[str, float, str]] = [
     (
         "10 - Tests and CI",
         8.0,
-        "922 tests pass at 81 percent coverage, and CI runs them on every push.",
+        "Over fourteen hundred passing tests, over eighty-five percent coverage, "
+        "and CI on every push to master.",
     ),
     (
         "11 - Close",

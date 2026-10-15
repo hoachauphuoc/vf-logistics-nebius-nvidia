@@ -22,6 +22,12 @@ no nudging on the timeline.
 The narration text in this file is copied from `SCENES` in that script. **If you change one,
 change both** — and the script is the authority, because it is what produces the audio.
 
+**Regenerate the audio before upload.** The clip 3 and clip 10 lines were corrected on
+14 Oct and have not been synthesised since: synthesis needs Google TTS credentials that were
+not available where the text was changed. Any `build/narration.wav` or `build/narration.srt`
+rendered before then speaks the old lines, so render both again from the current `SCENES`
+(see *Regenerating the narration*) and cut the video against the new track.
+
 That instruction used to be the only thing keeping the two in step, which is how the old
 version ended up with a clip heading that started at 0:49 while the clip before it also
 ended at 1:11. There is now a check:
@@ -48,18 +54,23 @@ its cut.
 
 | Clip | Scene | Length | Screen |
 |---|---|---|---|
-| 1 | The problem: two identical shipments | 15s | Today `/today` showing two plywood cases held |
-| 2 | What is missing and why it matters | 10s | Case page `/cases/[id]` with ORIGIN_INPUTS_UNVERIFIED finding |
-| 3 | AI requests the right documents | 15s | Case page: click "Request evidence", show the HMAC link, name Nemotron |
-| 4 | Evidence received and reconciled | 15s | `/respond/[token]` upload page, then case timeline shows document received |
-| 5 | Re-evaluation: clarified vs contradicted | 15s | Case page: re-evaluate, timeline shows clarified/unresolved/contradictions |
-| 6 | Case A: approved and executed | 15s | Case A: approve release (password), execute, Pub/Sub message_id |
-| 7 | Case B: contradiction holds it for review | 15s | Case B: re-evaluate shows contradiction, floor raised, stays ESCALATED |
-| 8 | Stale approval blocked | 15s | Case A: submit new evidence, old approval SUPERSEDED, execute refused |
-| 9 | Results and measurement | 15s | Outcomes `/outcomes`: resolved, cost, rounds, 0 improper executions |
-| 10 | The stack: Nebius Token Factory and NVIDIA | 10s | Agents `/agents` page, name Nebius Token Factory and Nemotron aloud |
-| 11 | Close: what Floorline does for the operator | 10s | Today `/today` with cleared cases, closing statement |
+| 1 | The problem | 17s | Pipeline `/` |
+| 2 | A real document | 10s | DevOps `/devops` → *Upload a document* |
+| 3 | The design rule | 21s | Agent Console `/agents` |
+| 4 | The floor overrules the model | 19s | Pipeline → an escalated case → trace sheet, the three risk rows and the veto note |
+| 5 | Live evidence | 10s | Same sheet, scrolled to *Live evidence* |
+| 6 | The review queue | 12s | Review `/review` |
+| 7 | The dossier | 14s | Review → *Due-diligence dossier (PDF)* → the PDF in a new tab |
+| 8 | The delegation boundary | 24s | Governance `/governance` |
+| 9 | Prompt injection blocked | 14s | Review → the blocked case |
+| 10 | Tests and CI | 8s | Terminal, then the GitHub Actions run page |
+| 11 | Close | 16s | Evaluation `/evaluation` → *Public enforcement cases*, then Pipeline `/` |
 | | | **165s** | |
+
+This table follows `SCENES`. On 13 Oct it was replaced by an eleven-clip plan built around
+the verification loop (`git show 30469d9 -- docs/DEMO_SCRIPT.md`), whose lengths sum to
+150s and which neither `SCENES` nor the clip sections below carry yet, so the sync check
+failed on it. If that plan is adopted, `SCENES` comes first and this table follows it.
 
 ### What changed on 10/10, and why
 
@@ -85,10 +96,10 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 922 tests, a measured HS recall of 91.7% on a holdout, citations reproduced rather than
-  summarised — a judge scoring Technological Implementation had to read the repository to
-  find any of it. Clip 5 also carries the **Tavily bonus award**, which the old script
-  showed nowhere at all.
+  on camera.** 1,486 backend and 328 frontend tests, a measured HS recall of 91.7% on a
+  holdout, citations reproduced rather than summarised — a judge scoring Technological
+  Implementation had to read the repository to find any of it. Clip 5 also carries the
+  **Tavily bonus award**, which the old script showed nowhere at all.
 - **Clip 3 now states the design rule instead of the cost.** It used to justify Nano on
   price, which is the framing the README spends a thousand lines correcting: the floor is
   why Nano is *correct* on those hops, not why it is cheap. It also used to say spend was
@@ -132,12 +143,25 @@ system — before the Nebius port landed on 17/09. So restructuring cost nothing
       header shows a *One-click* chip; that is fine on camera and true. Do not press
       **Clear board** on DevOps: it is locked for this session anyway, and it would wipe
       the seeded board.
-- [ ] **Confirm the live revision has the latest console.** The header chip
+- [ ] **Know which Evaluation screen the live service has.** The bracketed 95% intervals
+      and the *Operating curve* table exist only in a build that includes the 14 Oct merge
+      `896bbae`, and on 15 Oct the live service predated it: the check below printed 0.
+      Clip 11 frames only the public-case table, which the live build already serves with
+      the same 14 and 11 of 19, so it does not depend on them. Do not frame the intervals
+      or the curve unless
+      `curl -s https://vf-app-350828852747.asia-southeast1.run.app/api/v1/evaluation | grep -c operating_curve`
+      prints 1 or more.
+- [ ] **Check the header chip.** The header chip
       *NVIDIA Nemotron 3 · Nebius Token Factory*, the *Start here* strip and the *End to
       end* chain at the top of every case trace are what make the required tools visible
-      in every frame. They are deployed (revision `vf-app-00011` and later — the dossier
-  button and the public-case table need it); if the
-      chip is missing you are looking at a cached or older page.
+      in every frame; if the chip is missing you are looking at a cached or older page.
+- [ ] **Clip 10 needs a green CI run on `master`.** CI runs only on pushes and pull
+      requests to `master`. As of 15 Oct the latest run there (`38526000085`, 14 Oct)
+      failed at lint, with the other four jobs green; the fix is on this branch, which is
+      not yet merged.
+      `gh run list --workflow CI --branch master --limit 1` must show `success` on the
+      commit you film. If it does not, merge first and wait for the run, or leave the
+      Actions shot out.
 
 ### Check these three screens before rolling clips 3, 4 and 5
 
@@ -155,7 +179,7 @@ stale tab, a wrong case, or a board that has not settled.
       shipped, the *Rules floor* row rendered on no case at all.
 - [ ] **Clip 4: the investigation step reads as a report.** In the same sheet the
       investigation hop should carry a summary, not a model-failure note. Before
-      `78d6db0`, half of Super's investigation replies were empty fragments that still
+      `afc6c3a`, half of Super's investigation replies were empty fragments that still
       parsed; the board was reseeded after the fix, so this should hold for every case,
       but look before you roll.
 - [ ] **Clip 5 only works against the live service.** `external_search_results` does not
@@ -201,12 +225,13 @@ recording if it crowds the board.
 The figure is 29,849 of 16.84 million (0.18%), from Vietnam Customs' own year-end release.
 It is said as a ratio on purpose: a judge remembers "one in five hundred", not "0.18".
 
-Worth letting the six columns be visible. On the board seeded for this take: eleven
-escalated, one held, two awaiting a person, two blocked by a person, two released by a
-person, two cleared automatically. Preparation adds one more awaiting a person (the
-blocked injection document) and clip 2 adds one more escalated. The spread is the point —
-this is not a demo where everything is suspicious. If you reseed, read the column counts
-off the seed script's summary rather than from this paragraph.
+Worth letting the six columns be visible. The counts change with every reseed and with
+any test traffic left on the live board, so read them off the board when you record
+rather than from this file. *Awaiting a person* holds three states (held for review,
+escalated with a red edge, and awaiting a person), and *Cleared* includes shipments a
+reviewer released. Preparation adds one more to *Awaiting a person* (the blocked
+injection document) and clip 2 adds the uploaded document's case. The spread is the point — this
+is not a demo where everything is suspicious.
 
 ---
 
@@ -232,12 +257,22 @@ calls while Nano has many calls and little cost.
 
 > Floorline runs on NVIDIA Nemotron 3, through Nebius Token Factory. Rules set a risk floor
 > an agent may raise, never lower. So fraud and compliance run on Nano: a stronger model
-> cannot change it. Ultra runs one hop, the debate, where its verdict is the answer.
+> cannot change it. Ultra runs only the debate, where its verdict can trigger an
+> investigation.
 
 This is the clip that earns *Quality of the Idea*, and the argument is the one thing in the
-submission a judge is unlikely to have seen before: **model capacity is spent only where it
-can change the answer.** The card is the evidence — cheap model on the high-volume hops,
-expensive model on the one hop whose output the floor does not override.
+submission a judge is unlikely to have seen before: **the floor, not the model's size, is
+what makes the high-volume hops safe, so the expensive model is spent where the floor does
+not override its output.** The card is the evidence — cheap model on the high-volume hops,
+expensive model on the one hop whose output is a verdict on the dispute rather than a score
+the floor overrides. "Cannot change it" means the floor: no model can lower it. Do not
+stretch that into "a stronger model would add nothing" — where the floor is zero, the model
+is the only check, and whether a larger one would catch more there is not measured.
+
+The last sentence says *can trigger* on purpose. The debate runs only when the floor exceeds
+the model's score by 15 or more, so auto-clear is already ruled out and a person decides the
+case either way. CONFIRM changes nothing; a genuine DISAGREE at confidence 0.7 or above
+sends the case to deep investigation and may raise its risk, never lower it.
 
 **Do not improvise a total.** Say what is on screen. A viewer can read the figures, and a
 number said loosely is a number they will check.
@@ -246,8 +281,9 @@ number said loosely is a number they will check.
 
 ## Clip 4 — The floor overrules the model (0:48 → 1:07, 19s)
 
-**Action:** Back to `/`. In the **Escalated** column open **`FULL-12-DUALUSE`** (industrial
-frequency converters under a dual-use heading). On the seeded board it reads *Model alone*
+**Action:** Back to `/`. In the **Awaiting a person** column open the red-edged
+**`FULL-12-DUALUSE`** card, state *Escalated* (industrial frequency converters under a
+dual-use heading). On the seeded board it reads *Model alone*
 78, *Rules floor* 85, *Effective risk* 85. The sheet opens on the **End to end** chain —
 every hop with the NVIDIA model that ran it, then the delegation gate and the actions — so
 hold on it for a beat, then scroll so the three risk rows and the amber veto paragraph are
@@ -256,7 +292,7 @@ model may raise risk but never lower it, so this score is arithmetic rather than
 judgement."*
 
 Fallback if that case is not vetoed after a reseed: **`FULL-16-FREIGHTANOMALY`** (in
-*Released by a reviewer*; 78 against a floor of 90 on this board). Any case works whose
+*Cleared*, released by a reviewer; 70 against a floor of 90 on this board). Any case works whose
 *Model alone* is below its *Rules floor* and which shows the veto paragraph; the two
 blacklist and sanctions cases also qualify but open on a denial banner that crowds the
 frame.
@@ -307,10 +343,12 @@ visible, then open one case and scroll so the document sits beside the findings.
 
 If you land on a case where the model and the floor disagreed by fifteen points or more, the
 disputed banner and the **Senior auditor debate** card with its CONFIRM/DISAGREE badge are
-both worth having in frame. On the seeded board two cases carry one, and only
-**`FULL-07-BLACKTAX`** is in the queue (model 68 against a floor of 100); the other,
-`FULL-05-SANCTIONS`, has already been blocked by a reviewer. Do not lengthen the clip for
-it — if you want it as its own beat, re-record at 18–20s, change that scene's seconds in
+both worth having in frame. On the seeded board two cases carry one,
+`FULL-16-FREIGHTANOMALY` (released by a reviewer) and `FULL-05-SANCTIONS` (blocked), and
+neither is in the queue, so this clip will not show a debate card unless you reseed.
+(`FULL-07-BLACKTAX` is in the queue, but the pre-filter settled it on a blacklisted tax
+id: no model ran, so there was nothing to debate.) Do not lengthen the clip for it — if
+you want it as its own beat, re-record at 18–20s, change that scene's seconds in
 `SCENES`, re-run `check_narration_budget.py`, and regenerate.
 
 ---
@@ -367,19 +405,31 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 ## Clip 10 — Tests and CI (2:21 → 2:29, 8s)
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
-tail of a real run — `python -m pytest tests/ -q` ending on `922 passed`. Then the GitHub
-Actions run page for `master`, with five green jobs visible.
+tail of a real run — `PYTHONPATH=src python -m pytest tests/ -q --cov=vf_logistics`, so
+the coverage table's `TOTAL` row sits just above the `1486 passed, 16 skipped` line. Then
+the GitHub Actions run page for `master`, with five green jobs visible.
 
-> 922 tests pass at 81 percent coverage, and CI runs them on every push.
+> Over fourteen hundred passing tests, over eighty-five percent coverage, and CI on every
+> push to master.
+
+The spoken figures match the terminal: 1,486 backend tests pass (16 more skip without a
+Firestore emulator) at 85.8% line coverage, which the `TOTAL` row prints as 86%. Coverage
+is the same on every run since a test pins the simulator's profile roll, so the line no
+longer has to hedge. The 328 frontend tests are not in the count. If the suite falls below
+1,400 or coverage to 85% or under, change `SCENES` before recording.
+
+"On every push to master" is the exact trigger: `.github/workflows/ci.yml` runs on pushes
+and pull requests to `master` (and `main`, which does not exist), not on pushes to other
+branches. Do not shorten it to "every push".
 
 **The console has no test or CI screen** — this evidence can only come from a terminal and
 from GitHub. Do not fake it with a still: run the suite, let the green line be real. Eight
 seconds is enough because the numbers do the work, and a judge who wants the detail has the
 repository.
 
-CI is worth showing for a reason beyond the count: the workflow existed for weeks filtered
-on branch `main` while this repository uses `master`, so it had **never run once**. It runs
-now.
+CI is worth showing for a reason beyond the count: from 19 Sep (`ae240fb`) to 24 Sep
+(`9d683f6`) the workflow filtered on branch `main` while this repository uses `master`, so
+in those five days it **never ran once**. It runs now.
 
 ---
 
@@ -394,8 +444,11 @@ seconds). Then cut back to `/` and let the board fill the frame, header chip inc
 > set, and stop when they should.
 
 "Says what it cannot see" is the *Missed* rows: origin fraud, which no booking shows. The
-table states it; the voice only points at it. **Fourteen is the full-pipeline figure**
-(`data/benchmark_results/public_full_all.json`); rules alone held eleven. If that file is
+table states it; the voice only points at it. **Fourteen is the figure in the column the
+console labels *Full pipeline*** (`data/benchmark_results/public_full_all.json`); rules
+alone held eleven. That arm is the rules plus the HS classifier and the zero-day radar:
+the fraud and compliance agents, investigation and the debate were not run on these
+cases, so do not describe it as the whole system. If that file is
 regenerated, re-read the number before recording. End on the board, not on a slide.
 
 ---
@@ -454,6 +507,9 @@ credentials.
   five points.
 - Anything about the debate being cheap. It is measured at `$0.0198` per debate against
   Super's `$0.0015`.
+- "The debate decides" or "its verdict is the answer". A person decides every disputed
+  case; the most a verdict can do is send it to deep investigation and raise its risk,
+  never lower it.
 - **"Super runs the debate."** It runs Ultra. Several source comments and two user-visible
   event strings said Super on that hop for weeks, and the same error had already been copied
   into the README, the architecture diagram and the Devpost submission once.

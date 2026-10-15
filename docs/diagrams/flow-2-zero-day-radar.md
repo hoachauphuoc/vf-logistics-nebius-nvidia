@@ -1,8 +1,8 @@
 # Flow 2 — Zero-Day Radar
 
-The sanctions index refreshes weekly. A company designated on Tuesday is invisible
-to it until the following Sunday, and that window is exactly when a designated
-party is most motivated to ship. This flow covers it by searching recent news —
+The sanctions index is refreshed by hand (flow 1). A company designated after the last
+refresh is invisible to it until the next one, and that window is exactly when a
+designated party is most motivated to ship. This flow covers it by searching recent news —
 but only when there is a reason to.
 
 ## Sequence
@@ -42,7 +42,7 @@ sequenceDiagram
             rect rgb(255, 245, 235)
                 ORC->>NANO: same history, tools withdrawn,<br/>"give your verdict now"
                 NANO-->>ORC: verdict JSON
-                Note over ORC,NANO: Without this the loop exits with no verdict.<br/>It happened on 73 of 93 cases — 78% — billing<br/>for three completions and returning nothing.
+                Note over ORC,NANO: Without this the loop exits with no verdict,<br/>billing for three completions and returning nothing.<br/>On the 200-case holdout 79 of 97 verdicts — 81% — came from<br/>this turn (most searches there were stubbed empty).
             end
         end
 
@@ -90,8 +90,10 @@ On the HS work the false-positive rate went **up** when the model was given more
 material to be cautious about. A search that fires when there is a reason produces
 evidence; one that always fires produces noise.
 
-Measured on 200 synthetic cases: the gate fired on 73 attacks and 20 clean cases —
-78.5% precision, against 46.5% if it fired on everything.
+Measured on the 200-case holdout: the gate fired on 84 attacks and 13 clean cases —
+86.6% precision, against 83.5% if it fired on everything (167 of the 200 are attacks).
+On that corpus the gate barely beats firing on everything; what it saves is the 103
+cases it did not search.
 
 ## Verdict to finding, upward only
 
@@ -143,15 +145,16 @@ should say which kind of evidence drove the case.
 ```mermaid
 flowchart LR
     A["1000 shipments"] --> B{"deterministic<br/>pre-filter"}
-    B -->|"resolved, ~51%"| C["USD 0<br/>no model call"]
+    B -->|"resolved"| C["USD 0<br/>no model call"]
     B -->|"needs a model"| D["HS classifier<br/>~USD 0.0003"]
     D --> E{"zero-day<br/>gate"}
-    E -->|"fires, ~47%"| F["+ Nano with tools<br/>~USD 0.0006"]
+    E -->|"fires: 97 of 200 on the holdout"| F["+ Nano with tools<br/>~USD 0.0006"]
     E -->|"does not fire"| G["no further spend"]
 
     style C fill:#dff0d8,stroke:#3c763d
 ```
 
-Measured end to end: **USD 0.89 per 1,000 shipments**, mean latency 31s, p95 76s.
+Measured on the 200-case holdout (rules, HS classifier and zero-day radar):
+**USD 1.01 per 1,000 shipments**, mean latency 24s, p95 54s.
 The latency is the cost of two sequential tool rounds on a 30B model, and it is why
 the API offers `?async=true` with a webhook rather than holding the connection.

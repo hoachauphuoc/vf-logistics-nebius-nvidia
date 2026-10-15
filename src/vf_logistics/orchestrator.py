@@ -15,9 +15,11 @@ State machine. Three actionable states, not five:
      |  then auto_debate if the floor and the model disagree by >= 15 points
      v
   SPECIALISTS_DONE
-     |-- effective risk < FRAUD_CLEAR_BELOW ------> AUTO_CLEARED   release_shipment
+     |-- effective risk < FRAUD_CLEAR_BELOW, compliance CLEARED
+     |   and reconcile() permits auto-clear ------> AUTO_CLEARED   release_shipment
      |
-     |-- cleared and risk < INVESTIGATE_AT -------> HELD_FOR_REVIEW assign_analyst
+     |-- otherwise, if not blocked / review
+     |   required and risk < INVESTIGATE_AT ------> HELD_FOR_REVIEW assign_analyst
      |
      |-- blocked / review required, or risk >= INVESTIGATE_AT
      v  investigation agent
@@ -82,6 +84,7 @@ from vf_logistics.agents import debate_agent
 from vf_logistics.agents.zero_day_agent import interpret as interpret_zero_day
 from vf_logistics.agents.zero_day_agent import screen_zero_day
 from vf_logistics.agents.zero_day_agent import should_screen as should_screen_zero_day
+from vf_logistics.schemas import ComplianceStatus
 from vf_logistics.store import (
     TENANT_FIELD,
     OptimisticLockError,
@@ -91,10 +94,6 @@ from vf_logistics.store import (
 )
 
 log = logging.getLogger(__name__)
-
-# Objects the service writes itself. Notifications for this prefix are ignored,
-# or the pipeline would process its own archived output in a loop.
-ARCHIVE_PREFIX = "shipping-documents/"
 
 # --- Decision thresholds. Env-overridable so the policy is not buried in code.
 FRAUD_CLEAR_BELOW = int(os.getenv("FRAUD_CLEAR_BELOW", "40"))
@@ -357,7 +356,7 @@ async def ingest_shipment(
         if rendered:
             filename = f"{shipment_id}-bill-of-lading.pdf"
             receipt = await document_store.archive(
-                rendered, filename, "application/pdf", case_id
+                rendered, filename, "application/pdf", case_id, tenant_id=tenant_id,
             )
             case["provenance"] = {
                 **case["provenance"],
@@ -447,7 +446,8 @@ async def ingest_document(
             tenant_id=tenant_id,
         )
         receipt = await document_store.archive(
-            document_bytes, filename, mime_type or "application/pdf", case["case_id"]
+            document_bytes, filename, mime_type or "application/pdf", case["case_id"],
+            tenant_id=tenant_id,
         )
         case["provenance"] = {"filename": filename, **receipt}
         case["input_security"] = {"model_armor": pre_screen, "model_invoked": False}
@@ -523,6 +523,7 @@ async def ingest_document(
         filename,
         response.get("source_mime", "application/pdf"),
         case_id,
+        tenant_id=tenant_id,
     )
 
     intake_step = {
@@ -1251,11 +1252,16 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         # before. Deliberately applied after reconcile() so it can move the
         # effective risk but never lowers the deterministic floor itself -- the
         # clamp below keeps a trusted shipper from being discounted past 0, and
-        # a rules-only auto-clear never reaches this branch at all.
-        shipper_name = (case.get("shipment") or {}).get("shipper_name", "")
-        adj = await shipper_risk_adjustment(shipper_name, tenant_id=tenant)
+        # a rules-only auto-clear never reaches this branch at all. The shipment
+        # is passed so a discount can rest on its verified identity rather than
+        # on the name it claims; see shipper_risk_adjustment().
+        shipper_name = shipment.get("shipper_name", "")
+        adj = await shipper_risk_adjustment(
+            shipper_name, tenant_id=tenant, shipment=shipment,
+        )
         if adj != 0:
             feedback = await get_shipper_feedback(shipper_name, tenant_id=tenant) or {}
+            verified = await get_verified_shipper_feedback(shipment, tenant_id=tenant)
             old_risk = reconciled["effective_risk"]
             # Clamped at the deterministic floor, not at 0. The comment above always
             # promised this and the code did not keep it: a shipper with five human
@@ -1269,7 +1275,12 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             reconciled["learning_note"] = (
                 f"Risk {old_risk} -> {reconciled['effective_risk']} ({adj:+d} proposed) from "
                 f"{feedback.get('released', 0)} human release(s) and "
-                f"{feedback.get('blocked', 0)} human block(s) on this shipper"
+                f"{feedback.get('blocked', 0)} human block(s) under this shipper name"
+                + (
+                    f"; {verified['released']} release(s) and {verified['blocked']} "
+                    f"block(s) of its registry-verified identity"
+                    if verified else ""
+                )
                 + (
                     f"; held at the deterministic floor of {floor}"
                     if old_risk + adj < floor else ""
@@ -1354,8 +1365,16 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
     elif state == "SPECIALISTS_DONE":
         risk = case.get("risk_score") or 0
         reconciled = case.get("reconciliation") or {}
-        may_auto_clear = reconciled.get("auto_clear_permitted", True)
+        # Read the way governance._check_release reads it: only an explicit True
+        # from reconcile() permits. A case with no reconciliation has no record
+        # that the deterministic checks agreed, and absence must not read as
+        # consent.
+        may_auto_clear = reconciled.get("auto_clear_permitted") is True
         status = (case.get("compliance_status") or "").upper()
+        # An allowlist, not a denylist of the two known refusals. "UNKNOWN", an
+        # off-schema value that slipped past validation, or a status from an
+        # older record is a screening nobody can read as clean.
+        compliance_cleared = status == ComplianceStatus.CLEARED.value
 
         # Any agent that returned nothing usable -- unparseable JSON, or JSON that
         # failed its schema after the retries in nebius_client were exhausted.
@@ -1369,7 +1388,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         clean = (
             risk < FRAUD_CLEAR_BELOW
             and may_auto_clear
-            and status not in ("BLOCKED", "REVIEW_REQUIRED")
+            and compliance_cleared
             and not model_failed
         )
         needs_investigation = (
@@ -1415,21 +1434,43 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
                 ],
             )
         elif not needs_investigation:
-            case = await _decide(
-                case,
-                "HELD_FOR_REVIEW",
-                (
+            # The rationale names what actually withheld the release. "Above the
+            # threshold" would be false on the decision record of a low-risk case
+            # held by a deterministic veto or by a compliance status that is not a
+            # clearance.
+            if model_failed:
+                held_reason = (
                     f"Model output from {', '.join(failed_agents)} could not be "
                     f"validated after retries, so no automated decision is safe "
                     f"on this case."
-                    if model_failed else
+                )
+            elif not compliance_cleared:
+                held_reason = (
+                    f"Compliance returned "
+                    f"{case.get('compliance_status') or 'no status'}, which is not a "
+                    f"clearance, so the shipment is not released without a human."
+                )
+            elif risk < FRAUD_CLEAR_BELOW:
+                held_reason = (
+                    f"Effective risk {risk}/100 is under the auto-clear threshold, but "
+                    f"deterministic validation did not permit an automated release, "
+                    f"so a human reviewer is assigned."
+                )
+            else:
+                held_reason = (
                     f"Compliance cleared the shipment but effective risk {risk}/100 is "
                     f"above the auto-clear threshold, so a human reviewer is assigned."
-                ),
+                )
+            case = await _decide(
+                case,
+                "HELD_FOR_REVIEW",
+                held_reason,
                 [
                     ("assign_analyst", {
                         "queue": "trade-review",
-                        "priority": "HIGH" if model_failed else "NORMAL",
+                        "priority": (
+                            "HIGH" if model_failed or not compliance_cleared else "NORMAL"
+                        ),
                     }),
                     ("publish_decision", {
                         "decision": {"outcome": "HELD_FOR_REVIEW", "effective_risk": risk}
@@ -1702,7 +1743,16 @@ async def sweep_bucket(
 
     Objects whose case already exists are skipped rather than reprocessed, which
     is what makes repeated sweeps safe to run.
+
+    Under MULTI_TENANT the prefix is read inside the caller's own space
+    (tenants/<tenant_id>/), so "inbox/" sweeps that tenant's inbox. The listing
+    is narrowed that way for efficiency only; each object is still checked by
+    ingest_refusal(), which is what keeps other tenants' objects and the
+    service's own output out of this board whatever prefix was asked for.
     """
+    root = document_store.tenant_root(tenant_id)
+    if not prefix.startswith(root):
+        prefix = root + prefix
     names = await document_store.list_objects(prefix, limit * 3)
     store = get_store()
 
@@ -1712,7 +1762,7 @@ async def sweep_bucket(
     for name in names:
         if len(processed) >= limit:
             break
-        if name.startswith(ARCHIVE_PREFIX) or name.endswith("/"):
+        if document_store.ingest_refusal(document_store.BUCKET, name, tenant_id):
             continue
 
         marker = await store.get_case(
@@ -1760,7 +1810,15 @@ async def ingest_from_storage(
     The marker is tenant-scoped along with everything else, which means two
     tenants staging the same object path each get their own marker rather than
     the second silently seeing the first's as a duplicate and processing nothing.
+
+    Refuses, before reading anything, an object that does not belong in this
+    tenant's board (see document_store.ingest_refusal). Both callers check
+    first; this is the check that cannot be skipped by a third.
     """
+    refusal = document_store.ingest_refusal(bucket, name, tenant_id)
+    if refusal:
+        return {"accepted": False, "ignored": True, "reason": refusal}
+
     store = get_store()
     marker_id = f"CASE-DOCOBJ-{_object_key(name)}"
 
@@ -1981,9 +2039,14 @@ async def human_decide(
 # truth for "what did a human decide", so the history is read from there.
 #
 # The cache is a read-through TTL cache only. Losing it costs one query, not
-# correctness.
+# correctness. Every writer of a human decision (human_decide,
+# evidence.execute_approval) drops it, but only in its own process, so on its
+# own it would let another instance miss a decision for up to the TTL.
+# shipper_risk_adjustment() therefore refreshes it before every decision; the
+# cache serves only the reads that follow in the same scoring step.
 
-_FEEDBACK_STATES = ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN")
+_FEEDBACK_OUTCOMES = {"RELEASED_BY_HUMAN": "released", "BLOCKED_BY_HUMAN": "blocked"}
+_FEEDBACK_STATES = tuple(_FEEDBACK_OUTCOMES)
 _FEEDBACK_TTL_SECONDS = 30.0
 _FEEDBACK_SCAN_LIMIT = 500
 
@@ -1992,26 +2055,47 @@ _FEEDBACK_SCAN_LIMIT = 500
 # shipper_risk_adjustment(), which moves the effective risk score by up to 15
 # points, so one customer's reviewers blocking "Acme Trading" twice would have
 # raised the risk of a different customer's unrelated "Acme Trading".
-_feedback_cache: dict[str, dict[str, dict[str, Any]]] = {}
+#
+# Each tenant's entry holds two tallies over the same cases: "by_name", keyed on
+# the free-text shipper_name, and "by_identity", keyed on the counterparty-book
+# tax ID of shipments shipper_registry verified. shipper_risk_adjustment() says
+# why a discount may only come from the second.
+_feedback_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
 _feedback_cache_at: dict[str, float] = {}
 
 
-def _shipper_key(shipper_name: str) -> str:
+def _shipper_key(shipper_name: str | None) -> str:
     return (shipper_name or "").strip().lower()
+
+
+def _verified_identity(shipment: dict[str, Any] | None) -> str:
+    """
+    The counterparty-book key of a shipper the registry verified, else "".
+
+    shipper_registry.enrich() writes shipper_identity_status at intake, from the
+    book and after sanitisation, so a document cannot assert it. "verified" means
+    the tax ID and the company name both matched one entry, and the normalised
+    tax ID is that entry's key.
+    """
+    if not isinstance(shipment, dict):
+        return ""
+    if shipment.get("shipper_identity_status") != "verified":
+        return ""
+    return shipper_registry._norm_tax_id(shipment.get("shipper_tax_id"))
 
 
 async def _load_shipper_feedback(
     force: bool = False, tenant_id: str | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Rebuild the per-shipper release/block tallies from stored cases."""
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Rebuild the release/block tallies, by shipper name and by verified identity."""
     key = tenant_id or ""
     at = _feedback_cache_at.get(key, 0.0)
     fresh = (time.monotonic() - at) < _FEEDBACK_TTL_SECONDS
-    if at and fresh and not force:
-        return _feedback_cache.get(key, {})
+    if at and fresh and not force and key in _feedback_cache:
+        return _feedback_cache[key]
 
     store = get_store()
-    tallies: dict[str, dict[str, Any]] = {}
+    tallies: dict[str, dict[str, dict[str, Any]]] = {"by_name": {}, "by_identity": {}}
     cursor = None
     scanned = 0
 
@@ -2023,21 +2107,28 @@ async def _load_shipper_feedback(
         if not page:
             break
         for case in page:
-            key = _shipper_key((case.get("shipment") or {}).get("shipper_name"))
-            if not key:
+            outcome = _FEEDBACK_OUTCOMES.get(str(case.get("state")))
+            if outcome is None:
                 continue
-            row = tallies.setdefault(key, {"released": 0, "blocked": 0})
-            if case.get("state") == "RELEASED_BY_HUMAN":
-                row["released"] += 1
-            elif case.get("state") == "BLOCKED_BY_HUMAN":
-                row["blocked"] += 1
+            shipment: dict[str, Any] = case.get("shipment") or {}
+            # `who`, not `key`: `key` is the tenant this result is cached under,
+            # and rebinding it here would file the tallies under whichever
+            # shipper came last, where another tenant's lookup could find them.
+            for tally, who in (
+                (tallies["by_name"], _shipper_key(shipment.get("shipper_name"))),
+                (tallies["by_identity"], _verified_identity(shipment)),
+            ):
+                if who:
+                    row = tally.setdefault(who, {"released": 0, "blocked": 0})
+                    row[outcome] += 1
         scanned += len(page)
         if not cursor:
             break
 
-    for row in tallies.values():
-        total = row["released"] + row["blocked"]
-        row["clearance_rate"] = (row["released"] / total) if total else 0.0
+    for tally in tallies.values():
+        for row in tally.values():
+            total = row["released"] + row["blocked"]
+            row["clearance_rate"] = (row["released"] / total) if total else 0.0
 
     _feedback_cache[key] = tallies
     _feedback_cache_at[key] = time.monotonic()
@@ -2052,33 +2143,67 @@ def _invalidate_shipper_feedback() -> None:
 async def get_shipper_feedback(
     shipper_name: str, tenant_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Release/block history for a shipper, or None if a human never ruled."""
+    """Release/block history under a shipper name, or None if a human never ruled."""
     key = _shipper_key(shipper_name)
     if not key:
         return None
-    return (await _load_shipper_feedback(tenant_id=tenant_id)).get(key)
+    return (await _load_shipper_feedback(tenant_id=tenant_id))["by_name"].get(key)
+
+
+async def get_verified_shipper_feedback(
+    shipment: dict[str, Any] | None, tenant_id: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Release/block history of the registry-verified shipper behind `shipment`.
+
+    None when the shipment's identity is not verified, or when no human has ruled
+    on a shipment verified as that same counterparty.
+    """
+    identity = _verified_identity(shipment)
+    if not identity:
+        return None
+    return (await _load_shipper_feedback(tenant_id=tenant_id))["by_identity"].get(identity)
 
 
 async def shipper_risk_adjustment(
-    shipper_name: str, tenant_id: str | None = None,
+    shipper_name: str,
+    tenant_id: str | None = None,
+    shipment: dict[str, Any] | None = None,
 ) -> int:
     """
     Risk adjustment implied by how humans have historically ruled on a shipper.
 
     Positive raises effective risk, negative lowers it:
     - blocked 2+ times by a human -> +15
-    - released 5+ times by a human -> -10
+    - released 5+ times by a human -> -10, for a registry-verified shipper only
 
     Blocks are checked first and with a lower threshold on purpose: a shipper a
     human has stopped twice should not be discounted because it also has a long
     tail of releases.
+
+    The two directions rest on different evidence because they fail differently.
+    The penalty may key on the free-text shipper_name: raising risk is always
+    safe, and a wrong name match costs a review. The discount can carry a
+    borderline score under FRAUD_CLEAR_BELOW and release cargo, so it requires
+    `shipment` to carry an identity shipper_registry verified (tax ID and company
+    name together) and counts only human releases of that same verified
+    counterparty. Keyed on the name, a document could borrow any shipper's
+    history by typing its name, which is the impersonation the registry exists to
+    refuse; shipper_name is not even a field the registry checks. A caller that
+    passes no shipment gets the penalty and never the discount.
     """
-    feedback = await get_shipper_feedback(shipper_name, tenant_id=tenant_id)
-    if not feedback:
-        return 0
-    if feedback["blocked"] >= 2:
+    # Read fresh. This is the one reader whose answer moves a release decision,
+    # and a cached tally can only be missing decisions recorded since it was
+    # built -- on another Cloud Run instance, whose invalidation never reaches
+    # this one. A missed second block is a missed +15, which can let a
+    # borderline shipment clear. The rescan is one bounded query per scored
+    # case; the reads below, and the learning note, then hit what it cached.
+    await _load_shipper_feedback(force=True, tenant_id=tenant_id)
+    named = await get_shipper_feedback(shipper_name, tenant_id=tenant_id) or {}
+    verified = await get_verified_shipper_feedback(shipment, tenant_id=tenant_id) or {}
+    if named.get("blocked", 0) >= 2 or verified.get("blocked", 0) >= 2:
         return 15
-    if feedback["released"] >= 5:
+    if verified.get("released", 0) >= 5:
         return -10
     return 0
 

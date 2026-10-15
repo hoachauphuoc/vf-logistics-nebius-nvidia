@@ -8,10 +8,12 @@
  * about roles.
  *
  * WHAT IT CANNOT DO. The session it mints is marked `amr: "one_click"`, and the
- * routes whose effect outlives the visitor -- clearing the board, publishing or
+ * routes whose effect cannot be undone or outlives the visitor -- approving or
+ * executing a verification-loop action, clearing the board, publishing or
  * revoking the delegation boundary, and editing the prefilter rules -- refuse it
- * in both the BFF and Flask (auth.require_password_session). A judge who wants
- * those signs in with a password; simulating a boundary stays open.
+ * in both the BFF and Flask (auth.require_password_session). A release through
+ * /decide is refused too, by orchestrator.human_decide. A judge who wants those
+ * signs in with a password; simulating a boundary stays open.
  *
  * OFF BY DEFAULT, like VF_PUBLIC_READS: a deployment that forgets the variables
  * offers no button. VF_ONE_CLICK_UNTIL turns it off on a date, so the public

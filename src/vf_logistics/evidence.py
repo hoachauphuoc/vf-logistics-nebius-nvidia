@@ -628,7 +628,7 @@ async def receive_evidence(
 
     archive = await document_store.archive(
         file_bytes, filename, mime_type, case_id,
-        prefix=f"evidence/{request_id}",
+        prefix=f"{document_store.EVIDENCE_PREFIX}{request_id}", tenant_id=scope,
     )
 
     # -- Extract facts --
@@ -1226,6 +1226,15 @@ async def execute_approval(
         case2.setdefault("actions", []).append(pub_receipt)
 
     await _write(case2, ev2, tenant_id)
+    if final_state in ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN"):
+        # The learning loop reads human release/block history through a TTL
+        # cache, and this is the only way a case with a verification record
+        # reaches either state. Left cached, a second block recorded here would
+        # not add its +15 to this shipper's next shipment until the TTL ran out,
+        # and that shipment could auto-clear. Imported here, like tools above,
+        # so that importing evidence does not pull in every agent module.
+        from vf_logistics import orchestrator
+        orchestrator._invalidate_shipper_feedback()
     await _audit(case_id, f"evidence_executed_{action}", executor, actor_auth, {
         "execution_id": execution_id,
         "approval_id": approval_id,

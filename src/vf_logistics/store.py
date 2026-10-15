@@ -182,6 +182,30 @@ def _owned_by(doc: dict[str, Any] | None, tenant_id: str) -> bool:
     return owner == tenant_id
 
 
+def _keep_case_owner(
+    case: dict[str, Any], existing: dict[str, Any] | None, requested: str | None,
+) -> None:
+    """
+    Settle who owns `case` before it is written over `existing` (None if new).
+
+    MemoryStore.put_case's rule, used by both FirestoreStore.put_case paths so the
+    two backends cannot drift apart again: a stored case with an owner keeps it,
+    and a write requested as any other tenant raises rather than re-homing -- or,
+    without a version check, replacing -- the case. A new case, or one written
+    before tenant stamping, is stamped with the requested tenant.
+    """
+    owner = (existing or {}).get(TENANT_FIELD)
+    if owner:
+        if requested and requested != owner:
+            raise tenant.TenantError(
+                f"case {case['case_id']} belongs to tenant {owner!r}; "
+                f"refusing to write it as {requested!r}"
+            )
+        case[TENANT_FIELD] = owner
+    else:
+        _stamp_tenant(case, requested)
+
+
 def _throttle_id(tenant_id: str, key: str) -> str:
     """
     The document id for a rate-limit counter.
@@ -1266,7 +1290,8 @@ class FirestoreStore:
                 current version matches. Pass None for new cases.
             tenant_id: Owner. An existing case keeps the owner already on the
                 stored document, so an update made in another tenant's request
-                context raises instead of silently re-homing the case.
+                context raises instead of silently re-homing the case. That
+                holds with or without expected_version.
 
         Raises:
             OptimisticLockError: If expected_version does not match current.
@@ -1279,11 +1304,26 @@ class FirestoreStore:
             ref = self._cases.document(case_id)
 
             if expected_version is None:
-                # New case or unconditional write
-                _stamp_tenant(case, requested)
-                case["_version"] = 1
-                case["_updated_at"] = utcnow()
-                ref.set(case)
+                # New case or unconditional write -- but never over another
+                # tenant's case. This was a blind ref.set(), and case ids derive
+                # from the shipment id a document states (CASE-<shipment_id>), so
+                # tenant B ingesting a shipment that reused tenant A's id replaced
+                # A's case; MemoryStore refused the same write. The owner is read
+                # in the same transaction as the write, so a case another writer
+                # creates between the check and the write is not replaced unseen:
+                # Firestore makes one of the two transactions retry, and the
+                # retry reads that case.
+                @self._fs.transactional
+                def _do(t: Any) -> None:
+                    snap = ref.get(transaction=t)
+                    _keep_case_owner(case, snap.to_dict() if snap.exists else None, requested)
+                    # As before: an unversioned write restarts the count at 1,
+                    # where MemoryStore continues it from the stored version.
+                    case["_version"] = 1
+                    case["_updated_at"] = utcnow()
+                    t.set(ref, case)
+
+                self._run_transaction(_do)
                 return
 
             # Optimistic locking with transaction
@@ -1305,16 +1345,7 @@ class FirestoreStore:
 
                 # Checked inside the transaction so it cannot race a concurrent
                 # write that changes the owner.
-                owner = current.get(TENANT_FIELD)
-                if owner:
-                    if requested and requested != owner:
-                        raise tenant.TenantError(
-                            f"case {case_id} belongs to tenant {owner!r}; "
-                            f"refusing to write it as {requested!r}"
-                        )
-                    case[TENANT_FIELD] = owner
-                else:
-                    _stamp_tenant(case, requested)
+                _keep_case_owner(case, current, requested)
 
                 case["_version"] = current_version + 1
                 case["_updated_at"] = utcnow()

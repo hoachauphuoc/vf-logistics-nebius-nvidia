@@ -424,27 +424,39 @@ class TestModelTransparency(unittest.TestCase):
 class TestLearningLoop(unittest.TestCase):
     """Feedback must survive a process restart and be shared across instances."""
 
+    # A shipment as shipper_registry.enrich() leaves it when the tax ID and the
+    # company name both match the counterparty book.
+    VERIFIED = {
+        "shipper_name": "Acme Corp",
+        "shipper_tax_id": "0301234567",
+        "shipper_identity_status": "verified",
+    }
+
     def setUp(self):
         _reset_store()
 
-    async def _seed(self, released=0, blocked=0, shipper="Acme Corp"):
+    async def _seed(self, released=0, blocked=0, shipper="Acme Corp",
+                    verified=False, tenant_id=None):
         st = store_mod.get_store()
+        shipment = dict(self.VERIFIED, shipper_name=shipper) if verified else {
+            "shipper_name": shipper,
+        }
         n = 0
         for i in range(released):
             await st.put_case({
                 "case_id": f"R-{i}", "shipment_id": f"R{i}",
                 "state": "RELEASED_BY_HUMAN",
                 "created_at": f"2026-09-19T10:{i:02d}:00.000000+00:00",
-                "shipment": {"shipper_name": shipper}, "steps": [], "actions": [],
-            })
+                "shipment": dict(shipment), "steps": [], "actions": [],
+            }, tenant_id=tenant_id)
             n += 1
         for i in range(blocked):
             await st.put_case({
                 "case_id": f"B-{i}", "shipment_id": f"B{i}",
                 "state": "BLOCKED_BY_HUMAN",
                 "created_at": f"2026-09-19T11:{i:02d}:00.000000+00:00",
-                "shipment": {"shipper_name": shipper}, "steps": [], "actions": [],
-            })
+                "shipment": dict(shipment), "steps": [], "actions": [],
+            }, tenant_id=tenant_id)
             n += 1
         orchestrator._invalidate_shipper_feedback()
         return n
@@ -460,32 +472,89 @@ class TestLearningLoop(unittest.TestCase):
         self.assertEqual(fb["blocked"], 1)
         self.assertAlmostEqual(fb["clearance_rate"], 0.75)
 
-    def test_five_releases_earn_a_discount(self):
+    def _adjust(self, shipment=None, name="Acme Corp"):
+        return _run(orchestrator.shipper_risk_adjustment(name, shipment=shipment))
+
+    def test_five_releases_of_a_verified_shipper_earn_a_discount(self):
+        _run(self._seed(released=5, verified=True))
+        self.assertEqual(self._adjust(self.VERIFIED), -10)
+
+    def test_five_releases_under_a_name_alone_earn_no_discount(self):
+        """
+        The discount can push a borderline score under FRAUD_CLEAR_BELOW, and the
+        name is whatever the document says. Neither the caller's name nor a
+        shipment whose identity the registry did not verify may claim it.
+        """
         _run(self._seed(released=5))
-        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), -10)
+        self.assertEqual(self._adjust(), 0)
+        self.assertEqual(self._adjust({"shipper_name": "Acme Corp"}), 0)
+        self.assertEqual(
+            self._adjust(dict(self.VERIFIED, shipper_identity_status="unknown")), 0,
+        )
+
+    def test_a_verified_shipper_does_not_inherit_unverified_releases(self):
+        """Releases of shipments that only used the name are not its history."""
+        _run(self._seed(released=5))
+        self.assertEqual(self._adjust(self.VERIFIED), 0)
+
+    def test_the_discount_follows_the_verified_identity_not_the_name(self):
+        """shipper_name is a free-text contact field the registry never checks."""
+        _run(self._seed(released=5, verified=True, shipper="Someone Else"))
+        self.assertEqual(self._adjust(self.VERIFIED), -10)
+        other = dict(self.VERIFIED, shipper_tax_id="0302887411")
+        self.assertEqual(self._adjust(other), 0)
 
     def test_two_blocks_earn_a_penalty(self):
         _run(self._seed(blocked=2))
         self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), 15)
 
+    def test_two_blocks_of_a_verified_identity_earn_a_penalty(self):
+        _run(self._seed(blocked=2, verified=True, shipper="Someone Else"))
+        self.assertEqual(self._adjust(self.VERIFIED), 15)
+
     def test_blocks_outweigh_releases(self):
         # A shipper a human stopped twice must not be discounted because it
         # also has a long tail of releases.
-        _run(self._seed(released=9, blocked=2))
-        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), 15)
+        _run(self._seed(released=9, blocked=2, verified=True))
+        self.assertEqual(self._adjust(self.VERIFIED), 15)
 
     def test_lookup_is_case_insensitive(self):
-        _run(self._seed(released=5, shipper="Acme Corp"))
-        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("ACME CORP")), -10)
+        _run(self._seed(blocked=2, shipper="Acme Corp"))
+        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("ACME CORP")), 15)
 
     def test_survives_cache_loss(self):
         # The point of deriving from the store: dropping the cache, as a cold
         # start does, must not change the answer.
-        _run(self._seed(released=5))
-        first = _run(orchestrator.shipper_risk_adjustment("Acme Corp"))
+        _run(self._seed(released=5, verified=True))
+        first = self._adjust(self.VERIFIED)
+        self.assertEqual(first, -10)
         orchestrator._invalidate_shipper_feedback()
         orchestrator._feedback_cache = {}
-        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), first)
+        self.assertEqual(self._adjust(self.VERIFIED), first)
+
+    def test_a_decision_recorded_elsewhere_counts_at_once(self):
+        """
+        Another instance records a block and drops only its own cache. The
+        adjustment here must still see it: a missed second block is a missed +15.
+        """
+        _run(self._seed(blocked=1))
+        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), 0)
+        # Written straight to the store, as another process would, with no
+        # invalidation of this process's cache.
+        _run(store_mod.get_store().put_case({
+            "case_id": "B-elsewhere", "shipment_id": "BX",
+            "state": "BLOCKED_BY_HUMAN",
+            "created_at": "2026-09-19T12:00:00.000000+00:00",
+            "shipment": {"shipper_name": "Acme Corp"}, "steps": [], "actions": [],
+        }))
+        self.assertEqual(_run(orchestrator.shipper_risk_adjustment("Acme Corp")), 15)
+
+    def test_tallies_are_cached_under_the_tenant(self):
+        """Not under the last shipper scanned, where another tenant could read them."""
+        _run(self._seed(released=1, shipper="Acme Corp", tenant_id="tenant-a"))
+        _run(orchestrator._load_shipper_feedback(tenant_id="tenant-a"))
+        self.assertIn("tenant-a", orchestrator._feedback_cache)
+        self.assertNotIn("acme corp", orchestrator._feedback_cache)
 
     def test_unnamed_shipper_is_ignored(self):
         self.assertIsNone(_run(orchestrator.get_shipper_feedback("")))

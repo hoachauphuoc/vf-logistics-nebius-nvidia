@@ -142,9 +142,11 @@ export function AccountMenu() {
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-[20rem]">
             Signed in with the judge button. You can do everything this account
-            can except three changes that would carry over to the next visitor:
-            clearing the board, revoking the agent&rsquo;s authority and editing the
-            pre-AI screening rules. Click to sign in with a password.
+            can except what cannot be undone or would carry over to the next
+            visitor: releasing a shipment, approving or executing a verification
+            step, publishing or revoking the agent&rsquo;s authority, clearing the
+            board and editing the pre-AI screening rules. Click to sign in with a
+            password.
           </TooltipContent>
         </Tooltip>
       )}

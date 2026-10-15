@@ -7,6 +7,7 @@ import {
   caseStateLabel,
   complianceStatusLabel,
   formatClock,
+  formatInterval,
   formatLatency,
   formatRelative,
   formatTokens,
@@ -39,6 +40,7 @@ const HELPERS: Array<[string, (v: never) => string]> = [
   ["formatLatency", formatLatency as (v: never) => string],
   ["formatRelative", formatRelative as (v: never) => string],
   ["formatClock", formatClock as (v: never) => string],
+  ["formatInterval", formatInterval as (v: never) => string],
   ["shortModelName", shortModelName as (v: never) => string],
   ["humaniseAgent", humaniseAgent as (v: never) => string],
   ["humaniseCode", humaniseCode as (v: never) => string],
@@ -96,6 +98,26 @@ describe("formatUsd", () => {
   it("returns the sentinel for NaN and Infinity", () => {
     expect(formatUsd(NaN)).toBe(NO_VALUE);
     expect(formatUsd(Infinity)).toBe(NO_VALUE);
+  });
+});
+
+describe("formatInterval", () => {
+  it("rounds outward, so the range is never shown narrower than it is", () => {
+    // The rules arm's holdout recall: 343 of 367, Wilson 0.9045-0.9557.
+    expect(formatInterval({ low: 0.9045, high: 0.9557 })).toBe("90–96");
+    expect(formatInterval({ low: 0.6461, high: 0.9851 })).toBe("64–99");
+  });
+
+  it("keeps the edges exact", () => {
+    expect(formatInterval({ low: 0, high: 0.2425 })).toBe("0–25");
+    expect(formatInterval({ low: 0.7961, high: 1 })).toBe("79–100");
+    // Float noise must not widen a bound that sits on a whole percentage.
+    expect(formatInterval({ low: 0.29, high: 0.29 })).toBe("29–29");
+  });
+
+  it("returns the sentinel for an interval nobody could compute", () => {
+    expect(formatInterval(null)).toBe(NO_VALUE);
+    expect(formatInterval({ low: NaN, high: 1 })).toBe(NO_VALUE);
   });
 });
 
