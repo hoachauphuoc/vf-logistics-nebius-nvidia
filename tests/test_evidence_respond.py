@@ -88,8 +88,12 @@ class Base:
         out = run(evidence.request_evidence(case_id, REVIEWER))
         return out["request"]["request_id"], out["token"]
 
-    def submit(self, token, data=None, filename="cert.pdf", mime="application/pdf"):
-        """Submit evidence through receive_evidence, mocking the extraction."""
+    def submit(self, token, data=None, filename="cert.pdf", mime="application/pdf", **envelope_extra):
+        """Submit evidence through receive_evidence, mocking the extraction.
+
+        `envelope_extra` are added to the mocked extraction envelope, e.g.
+        source_pages=3, source_pages_read=1 as document_agent.extract_evidence reports them.
+        """
         if data is None:
             data = tiny_pdf()
         extracted = {"producer_name": "Saigon Plywood", "origin_country": "Vietnam"}
@@ -97,6 +101,7 @@ class Base:
             "agent": "evidence_extraction", "model": "test", "result": extracted,
             "latency_ms": 50, "input_tokens": 100, "output_tokens": 50,
             "parse_error": False, "at": "2026-10-12T08:00:00Z",
+            **envelope_extra,
         }
         with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock_result)):
             with patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})):
@@ -232,6 +237,31 @@ class TestModelArmorBlock(Base):
         doc = self.stored()["verification"]["documents"][0]
         assert doc["blocked"] is True
         assert doc["extracted"] is None
+
+
+
+class TestPagesKeptOnTheDocument(Base):
+    """The reader sees page 1 only. The document record keeps how many pages the file has
+    and how many were read, as `pages` and `pages_read`."""
+
+    def _only_document(self):
+        return self.stored()["verification"]["documents"][0]
+
+    def test_the_page_counts_of_the_extraction_are_kept(self):
+        self.put()
+        _, token = self.request_and_token()
+        self.submit(token, source_pages=3, source_pages_read=1)
+        doc = self._only_document()
+        assert doc["pages"] == 3
+        assert doc["pages_read"] == 1
+
+    def test_an_extraction_that_reports_no_pages_leaves_them_none(self):
+        self.put()
+        _, token = self.request_and_token()
+        self.submit(token)
+        doc = self._only_document()
+        assert "pages" in doc and "pages_read" in doc
+        assert doc["pages"] is None and doc["pages_read"] is None
 
 
 class TestTheRoute(Base):

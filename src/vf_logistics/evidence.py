@@ -659,6 +659,11 @@ async def receive_evidence(
         "content_type": mime_type,
         "received_at": now,
         "blocked": blocked,
+        # How much of the file the reader saw, named as in ingest_document's
+        # provenance: `pages` is the PDF's page count, `pages_read` how many of them
+        # were transcribed. None when no extraction ran (blocked) or it did not say.
+        "pages": extraction.get("source_pages") if extraction else None,
+        "pages_read": extraction.get("source_pages_read") if extraction else None,
         "extracted": extraction.get("result") if extraction and not extraction.get("parse_error") else None,
         "extraction": {
             "model": extraction.get("model") if extraction else None,

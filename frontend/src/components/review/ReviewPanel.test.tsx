@@ -114,8 +114,20 @@ describe("ReviewPanel verification actions", () => {
     expect(requestEvidence).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     const banner = await screen.findByTestId("evidence-links");
-    expect(banner.textContent).toContain("certificate_of_origin: /respond/cert-token");
-    expect(banner.textContent).toContain("producer_declaration: /respond/decl-token");
+    // Full addresses a reviewer can paste into an email, not bare paths.
+    const origin = window.location.origin;
+    expect(banner.textContent).toContain(`certificate_of_origin: ${origin}/respond/cert-token`);
+    expect(banner.textContent).toContain(`producer_declaration: ${origin}/respond/decl-token`);
+  });
+
+  it("shows the request-level link as a full address when the API sends no per-document links", async () => {
+    vi.mocked(requestEvidence).mockResolvedValueOnce({ path: "/respond/request-level" });
+    renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "need papers" } });
+    fireEvent.click(screen.getByRole("button", { name: "Request info" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    const banner = await screen.findByTestId("evidence-links");
+    expect(banner.textContent).toContain(`${window.location.origin}/respond/request-level`);
   });
 
   it("says it is waiting for the shipper and offers Cancel while awaiting evidence", async () => {
@@ -137,6 +149,15 @@ describe("ReviewPanel verification actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(executeApproval).toHaveBeenCalledWith("CASE-1", "evapr-1"));
     expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("reloads the case when approve-then-execute ends in EXECUTION_FAILED, so Retry can appear", async () => {
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(executeApproval).toHaveBeenCalledWith("CASE-1", "evapr-9"));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/execution failed/i);
   });
 
   it("offers Execute for an approved case", () => {

@@ -71,6 +71,16 @@ function signInHref(): string {
     typeof window === "undefined" ? "/review" : window.location.pathname + window.location.search;
   return `/login?next=${encodeURIComponent(here)}`;
 }
+
+/**
+ * The address a shipper opens, from the path the API returns (`/respond/<token>`).
+ * The path alone is not something a reviewer can paste into an email. Without a
+ * window (server rendering) the path is the best there is.
+ */
+function absoluteLink(path: string): string {
+  return typeof window === "undefined" ? path : new URL(path, window.location.origin).toString();
+}
+
 /**
  * The archived paperwork, or a specific reason there is none.
  *
@@ -352,6 +362,9 @@ export function ReviewPanel({
       if (state === "EXECUTION_FAILED") {
         setFormError("The decision was approved but execution failed. You can retry.");
         setPending(null);
+        // Reload the case: it is now EXECUTION_FAILED, and the Retry button only
+        // appears once the page has that state. The case page does not poll.
+        onDecided();
         return;
       }
       setFormError(null);
@@ -373,10 +386,10 @@ export function ReviewPanel({
       // here for the reviewer to copy.
       const links = Array.isArray(data?.links)
         ? (data.links as Array<{ doc_type?: string; path?: string }>)
-            .map((l) => (l.path ? `${l.doc_type ? l.doc_type + ": " : ""}${l.path}` : ""))
+            .map((l) => (l.path ? `${l.doc_type ? l.doc_type + ": " : ""}${absoluteLink(l.path)}` : ""))
             .filter(Boolean)
         : typeof data?.path === "string"
-          ? [data.path]
+          ? [absoluteLink(data.path)]
           : [];
       setEvidenceLinks(links);
       onDecided();
