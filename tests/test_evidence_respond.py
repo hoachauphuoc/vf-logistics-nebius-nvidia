@@ -345,6 +345,40 @@ class TestN03DocumentType(Base):
         result = self.submit(links["producer_declaration"])
         assert result["still_missing"] == ["certificate_of_origin", "input_purchase_invoices"]
 
+    def test_a_reissued_link_still_files_each_document_under_its_own_type(self):
+        """N03 reproduction: three documents requested, a new link issued, and the invoice
+        sent first. Through the reissued per-document link it is stored as the invoice;
+        before, the reissue returned only an untyped link, which filed it as the first
+        type still missing (the certificate of origin)."""
+        links = self._links()
+        request_id = self.stored()["verification"]["requests"][0]["request_id"]
+        reissued = run(evidence.reissue_link("CASE-1", request_id, REVIEWER))
+        new_links = {link["doc_type"]: link["token"] for link in reissued["links"]}
+        assert sorted(new_links) == sorted(self.DOCS)
+        result = self.submit(new_links["input_purchase_invoices"])
+        assert result["doc_type"] == "input_purchase_invoices"
+        assert result["still_missing"] == ["certificate_of_origin", "producer_declaration"]
+        stored = self.stored()["verification"]
+        assert [d["doc_type"] for d in stored["documents"]] == ["input_purchase_invoices"]
+        assert list(stored["requests"][0]["received_docs"]) == ["input_purchase_invoices"]
+        # The links from before the reissue are retired, typed or not.
+        with pytest.raises(evidence.EvidenceError) as raised:
+            self.submit(links["certificate_of_origin"])
+        assert raised.value.status == 403
+
+    def test_a_reissue_after_a_receipt_offers_links_only_for_what_is_still_missing(self):
+        links = self._links()
+        self.submit(links["producer_declaration"])
+        request_id = self.stored()["verification"]["requests"][0]["request_id"]
+        reissued = run(evidence.reissue_link("CASE-1", request_id, REVIEWER))
+        assert [link["doc_type"] for link in reissued["links"]] == [
+            "certificate_of_origin", "input_purchase_invoices",
+        ]
+        # The new link for the invoice files it as the invoice, not as the first type missing.
+        result = self.submit(reissued["links"][1]["token"])
+        assert result["doc_type"] == "input_purchase_invoices"
+        assert result["still_missing"] == ["certificate_of_origin"]
+
 
 class TestEvidenceIsFiledUnderItsTenant(Base):
     """

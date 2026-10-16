@@ -42,6 +42,42 @@ export function latestEvaluation(c: Pick<Case, "verification">): EvidenceEvaluat
   return null;
 }
 
+/** An execution that was claimed but never confirmed, and whether its lease has run out. */
+export interface ExecutionClaim {
+  approval: EvidenceApproval;
+  execution: EvidenceExecution;
+  /** True once the lease has ended: the execution is interrupted, not running. */
+  expired: boolean;
+}
+
+/**
+ * The claim a case in EXECUTING is sitting on, or null when there is none to read.
+ *
+ * Mirrors evidence.execute_approval, which is the authority: an approval that is
+ * CLAIMING on an EXECUTING case, with a "claiming" execution of its own whose
+ * `claim_expires_epoch` (Unix SECONDS) is still in the future, is being worked on by
+ * someone, and everything is refused 409 until the lease ends; after that the same
+ * execution is resumed. A missing epoch counts as expired, as it does there.
+ *
+ * Only a hint for the screen. The browser clock is not the server's, so the server
+ * answers the real question whenever somebody acts on it.
+ */
+export function executionClaim(
+  c: Pick<Case, "state" | "verification">,
+  now: number = Date.now(),
+): ExecutionClaim | null {
+  if (c.state !== "EXECUTING") return null;
+  const v = c.verification;
+  const approval = (v?.approvals ?? []).find((a) => a.status === "CLAIMING");
+  if (!approval) return null;
+  const execution = [...(v?.executions ?? [])]
+    .reverse()
+    .find((e) => e.approval_id === approval.approval_id && e.status === "claiming");
+  if (!execution) return null;
+  const leaseEndsMs = (Number(execution.claim_expires_epoch) || 0) * 1000;
+  return { approval, execution, expired: now >= leaseEndsMs };
+}
+
 /**
  * "risk 55 (floor 45)": the score, and the floor when it is not the score. The score
  * is the higher of the model's and the floor, and good papers never lower the floor,

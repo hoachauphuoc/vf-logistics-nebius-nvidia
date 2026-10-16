@@ -156,10 +156,15 @@ export type CaseState =
   | "EXECUTION_FAILED";
 
 /** Cases sitting in a person's queue. Mirrors AWAITING_HUMAN. */
-/** States of the verification loop in which a reviewer still has an action to take. */
+/**
+ * States of the verification loop in which a reviewer still has an action to take,
+ * or has to be told what an execution is doing (EXECUTING: running, or interrupted
+ * with its claim expired).
+ */
 export const VERIFICATION_LOOP_STATES: readonly string[] = [
   "AWAITING_EVIDENCE",
   "APPROVED",
+  "EXECUTING",
   "EXECUTION_FAILED",
 ];
 
@@ -636,6 +641,14 @@ export interface EvidenceExecution {
   message_id?: string | null;
   at: string;
   reason?: string | null;
+  /**
+   * Unix SECONDS (not milliseconds) at which this claim's lease ends. Set while the
+   * status is "claiming". evidence.execute_approval refuses a second execute until
+   * then and resumes the same execution after it; a missing value counts as expired.
+   */
+  claim_expires_epoch?: number | null;
+  /** Who picked an interrupted claim up again, and when. */
+  resumed?: Array<{ executor: string; at: string }>;
 }
 
 export interface Verification {

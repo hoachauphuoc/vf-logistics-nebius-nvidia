@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -485,6 +486,82 @@ class TestN02Route(Base):
         assert first.status_code == 200 and first.get_json()["state"] == "EXECUTION_FAILED"
         assert second.status_code == 200 and second.get_json()["state"] == "RELEASED_BY_HUMAN"
         assert second.get_json()["message_id"] == "msg-http"
+
+
+class TestN08BInterruptedExecutionOverHttp(Base):
+    """What the console reads and does about an execution that was claimed and never
+    confirmed. It offers Resume from the case JSON a viewer can read, so that JSON must
+    carry the claim and its deadline (Unix seconds); the answer to Resume is the
+    backend's, and its 409 text is what the console shows."""
+
+    def setup_method(self):
+        super().setup_method()
+        from vf_logistics import app as app_mod
+
+        self.app_mod = app_mod
+        self.was = app_mod.limiter.enabled
+        app_mod.limiter.enabled = False
+        self.client = app_mod.app.test_client()
+
+    def teardown_method(self):
+        self.app_mod.limiter.enabled = self.was
+        super().teardown_method()
+
+    def _interrupted(self):
+        """A case left EXECUTING / CLAIMING by a send that never came back."""
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        boom = AsyncMock(side_effect=asyncio.CancelledError)
+        with patch("vf_logistics.tools.publish_decision", new=boom), pytest.raises(asyncio.CancelledError):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        return approval_id
+
+    def _headers(self):
+        from test_console_session import mint
+
+        return {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(REVIEWER, amr="password")}
+
+    def test_the_case_a_viewer_reads_carries_the_claim_and_its_deadline(self):
+        before = time.time()
+        approval_id = self._interrupted()
+        served = self.client.get("/api/v1/orchestrator/case/CASE-1").get_json()
+        assert served["state"] == "EXECUTING"
+        record = served["verification"]
+        assert [(a["approval_id"], a["status"]) for a in record["approvals"]] == [(approval_id, "CLAIMING")]
+        (execution,) = record["executions"]
+        assert execution["approval_id"] == approval_id and execution["status"] == "claiming"
+        # Seconds since the epoch, one lease from the claim: the console compares it with
+        # its own clock to tell a running execution from an interrupted one.
+        assert before + evidence.CLAIM_LEASE_S <= execution["claim_expires_epoch"] <= time.time() + evidence.CLAIM_LEASE_S
+
+    def test_a_resume_inside_the_lease_is_refused_with_the_text_the_console_shows(self):
+        approval_id = self._interrupted()
+        with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=OK_RECEIPT)) as publish:
+            response = self.client.post("/api/v1/review/CASE-1/execute",
+                                        json={"approval_id": approval_id}, headers=self._headers())
+        assert response.status_code == 409
+        assert "Another execution of this approval is in progress" in response.get_json()["error"]
+        publish.assert_not_called()
+        assert self.stored()["state"] == "EXECUTING"
+
+    def test_a_resume_after_the_lease_continues_the_same_execution(self):
+        approval_id = self._interrupted()
+        case = self.stored()
+        claimed = case["verification"]["executions"][0]["execution_id"]
+        case["verification"]["executions"][0]["claim_expires_epoch"] = time.time() - 1
+        run(self.store.put_case(case))
+        with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=OK_RECEIPT)):
+            response = self.client.post("/api/v1/review/CASE-1/execute",
+                                        json={"approval_id": approval_id}, headers=self._headers())
+        assert response.status_code == 200 and response.get_json()["state"] == "RELEASED_BY_HUMAN"
+        stored = self.stored()
+        assert [e["execution_id"] for e in stored["verification"]["executions"]] == [claimed]
+        assert stored["verification"]["executions"][0]["status"] == "sent"
+        assert stored["verification"]["approvals"][0]["status"] == "EXECUTED"
 
 
 class TestExecutedDecisionsReachTheLearningLoop(Base):

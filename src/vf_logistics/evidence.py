@@ -221,6 +221,23 @@ def _issue(
     return token, expires
 
 
+def _document_links(
+    request: dict[str, Any], scope: str, case_id: str, doc_types: list[str],
+) -> list[dict[str, str]]:
+    """
+    N03: one link per document type, each token naming the type it is for. They carry
+    the request's CURRENT link_seq, so the next `_issue` retires them along with the
+    request-level token. Call it after `_issue`, never before.
+    """
+    links = []
+    for dt in doc_types:
+        dt_token, _ = mint_token(
+            scope, case_id, str(request["request_id"]), int(request["link_seq"]), doc_type=dt,
+        )
+        links.append({"doc_type": dt, "token": dt_token, "path": link_path(dt_token)})
+    return links
+
+
 # --------------------------------------------------------------------------
 # Operations
 # --------------------------------------------------------------------------
@@ -399,10 +416,7 @@ async def request_evidence(
     }
     # N03: mint one link per doc_type so the token carries which document to expect.
     token, _ = _issue(request, scope, case_id, requested_by, now)
-    links = []
-    for dt in wanted:
-        dt_token, dt_expires = mint_token(scope, case_id, str(request["request_id"]), int(request["link_seq"]), doc_type=dt)  # type: ignore[arg-type]
-        links.append({"doc_type": dt, "token": dt_token, "path": link_path(dt_token)})
+    links = _document_links(request, scope, case_id, wanted)
     record["requests"].append(request)
 
     if state != AWAITING_EVIDENCE:
@@ -446,7 +460,14 @@ async def reissue_link(
     actor_auth: str | None = None,
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
-    """A new link for an open request. The old one stops working."""
+    """
+    A new link for an open request. The old one stops working.
+
+    Returns {"request", "token", "path", "links"}. `links` has one typed link per
+    document the request still waits for (N03), the same shape request_evidence
+    returns. Send those: the top-level `token` has no document type, so an upload
+    through it is filed as the first type still missing, whatever it really is.
+    """
     store = get_store()
     stored = await store.get_case(case_id, tenant_id=tenant_id)
     if not stored:
@@ -460,13 +481,22 @@ async def reissue_link(
         raise EvidenceError(f"That request is {str(request.get('status')).lower()}; no link can be issued for it.", 409)
 
     now = utcnow()
-    token, _ = _issue(request, tenant.resolve(tenant_id), case_id, issued_by, now)
+    scope = tenant.resolve(tenant_id)
+    token, _ = _issue(request, scope, case_id, issued_by, now)
+    received_docs = request.get("received_docs") or {}
+    still_missing = [d for d in request.get("documents") or [] if d not in received_docs]
+    links = _document_links(request, scope, case_id, still_missing)
     case["updated_at"] = now
     await _write(case, expected_version, tenant_id)
     await _audit(case_id, "evidence_link_issued", issued_by, actor_auth, {
         "request_id": request_id, "seq": request["link_seq"],
     }, tenant_id)
-    return {"request": public_request(request), "token": token, "path": link_path(token)}
+    return {
+        "request": public_request(request),
+        "token": token,
+        "path": link_path(token),
+        "links": links,
+    }
 
 
 async def cancel_request(

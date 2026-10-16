@@ -1268,6 +1268,22 @@ def _canon_country(text: Any) -> str:
     return _COUNTRY_ALIASES.get(name, name)
 
 
+# N06-A: the extracted fields that must name ONE country. `input_origins` is left out
+# on purpose: a producer's declaration lists several countries and is meant to.
+_ONE_COUNTRY_FIELDS = ("origin_country", "goods_origin_country", "supplier_country")
+
+
+def _names_several_countries(value: Any) -> bool:
+    """A list that states more than one distinct country, e.g. ["Vietnam", "China"].
+
+    Entries that say nothing ("not stated") and spellings of one country ("Vietnam",
+    "Viet Nam") do not count, so ["not stated", "Vietnam"] still names one.
+    """
+    if not isinstance(value, (list, tuple)):
+        return False
+    return len({_canon_country(_scalar(v)) for v in value if _is_meaningful(v)}) > 1
+
+
 def watched_lane(shipment: dict[str, Any]) -> CircumventionRule | None:
     """The watch row this shipment's declared lane matches, if any."""
     digits = re.sub(r"\D", "", str(shipment.get("hs_code") or ""))
@@ -1404,6 +1420,10 @@ def check_origin_evidence(
             if required and not all(
                 any(_states_something(ext.get(f)) for f in group) for group in required
             ):
+                continue
+            # N06-A: a country field that lists two countries does not say where the
+            # goods come from, so the paper is unproven. It stays in `read_by_type`.
+            if any(_names_several_countries(ext.get(f)) for f in _ONE_COUNTRY_FIELDS):
                 continue
             if not ext:
                 continue
