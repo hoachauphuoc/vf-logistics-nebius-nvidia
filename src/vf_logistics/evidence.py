@@ -639,7 +639,14 @@ async def receive_evidence(
             )
         doc_type = token_doc_type
     else:
-        # A request-level link (no document in the token): the first one not yet in.
+        # A request-level link (no document in the token) cannot say which paper an upload is.
+        # With one document requested there is nothing to confuse; with several, the upload
+        # would be filed under whichever is still missing, whatever it actually is (N03).
+        if len(requested_docs) > 1:
+            raise EvidenceError(
+                "This link does not say which document it is for. Ask for a link for each document.",
+                400,
+            )
         doc_type = still_missing[0] if still_missing else (
             requested_docs[0] if requested_docs else "unknown"
         )
@@ -823,6 +830,7 @@ async def reevaluate(
         "clarified": evidence_result.get("present") or [],
         "unresolved": evidence_result.get("missing") or [],
         "contradictions": evidence_result.get("contradictions") or [],
+        "unread": evidence_result.get("unread") or [],
         "status": evidence_result["status"],
         "ruleset_version": case.get("validation", {}).get("checks_run"),
     }
@@ -874,6 +882,33 @@ APPROVED = "APPROVED"
 APPROVABLE_STATES = ("HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")
 
 
+async def approve_exception(
+    case_id: str,
+    approver: str,
+    reason: str,
+    waived: list[str],
+    *,
+    actor_auth: str | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Release over unresolved or contradicting evidence, as an operation of its own.
+
+    The caller names every item it waives (the unresolved documents, and
+    "contradiction:<kind>" for each contradiction) and gives a reason; the approval
+    records both. Who may call it is decided by the route (operator role and a
+    password sign-in); approve() enforces the password rule again.
+    """
+    if not (reason or "").strip():
+        raise EvidenceError("An exception needs a reason.", 400)
+    if not waived:
+        raise EvidenceError("An exception must name what it waives.", 400)
+    return await approve(
+        case_id, "release", approver, note=reason.strip(), actor_auth=actor_auth,
+        waived=[str(w) for w in waived], tenant_id=tenant_id,
+    )
+
+
 async def approve(
     case_id: str,
     action: str,
@@ -882,6 +917,7 @@ async def approve(
     note: str = "",
     actor_auth: str | None = None,
     execute: bool = True,
+    waived: list[str] | None = None,
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -945,6 +981,9 @@ async def approve(
             "A release approval needs a password sign-in, not a one-click session.", 403,
         )
 
+    if waived is not None and action != "release":
+        raise EvidenceError("Only a release can be an exception.", 400)
+
     exception: dict[str, Any] | None = None
     if action == "release" and latest_eval:
         unresolved = [str(u) for u in (latest_eval.get("unresolved") or [])]
@@ -963,6 +1002,11 @@ async def approve(
                 what.append(f"unresolved evidence ({', '.join(unresolved)})")
             if contradicted:
                 what.append("papers that contradict the declared origin")
+            needed = unresolved + [f"contradiction:{c['kind']}" for c in contradictions]
+            if waived is not None and sorted(set(waived)) != sorted(set(needed)):
+                raise EvidenceError(
+                    "An exception must name every waived item: " + ", ".join(needed) + ".", 400,
+                )
             if not (note or "").strip():
                 raise EvidenceError(
                     f"Release with {' and '.join(what)} requires a note explaining the exception.",
@@ -975,8 +1019,14 @@ async def approve(
             }
             if contradicted:
                 exception["contradictions"] = contradictions
+            if waived is not None:
+                exception["operation"] = "exception"
+                exception["waived"] = sorted(set(waived))
 
     now = utcnow()
+    if waived is not None and exception is None:
+        raise EvidenceError("There is nothing to waive: approve the release normally.", 409)
+
     approval: dict[str, Any] = {
         "approval_id": new_id("evapr"),
         "action": action,
@@ -1239,7 +1289,15 @@ async def execute_approval(
         raise EvidenceError("execution record lost during write", 500)
 
     if pub_failed:
-        exe2["status"] = "send_failed"
+        # A publish that timed out may have been accepted. Say so, so the retry is read as
+        # "result unknown, same key" and not as "nothing was sent" (N01).
+        unknown = isinstance(pub_receipt, dict) and pub_receipt.get("status") == "unknown"
+        exe2["status"] = "send_unknown" if unknown else "send_failed"
+        if unknown:
+            exe2["reason"] = (
+                "The publish timed out and may have been accepted; "
+                "a retry reuses the same idempotency key."
+            )
         exe2["message_id"] = None
         apr2["status"] = "VALID"  # revert so retry is possible
         case2["state"] = "EXECUTION_FAILED"

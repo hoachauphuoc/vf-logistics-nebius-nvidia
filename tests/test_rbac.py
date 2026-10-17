@@ -508,6 +508,7 @@ class TestRoutePolicy(unittest.TestCase):
             "/api/v1/governance/prefilter-rules",
             "/api/v1/review/<case_id>/approve",
             "/api/v1/review/<case_id>/execute",
+            "/api/v1/review/<case_id>/approve-exception",
         })
         put = next(
             r for r in self.rows

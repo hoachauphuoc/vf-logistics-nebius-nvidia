@@ -42,7 +42,7 @@ class TestAnEarlierPublishIsNotRepeated(Base):
     def test_a_publish_that_failed_is_sent_again(self):
         pubsub, published = _fake_pubsub([TimeoutError("deadline exceeded"), "msg-2"])
         first = self._publish(pubsub)
-        assert first["status"] == "failed"
+        assert first["status"] == "unknown"
         second = self._publish(pubsub)
         assert second["status"] == "done"
         assert second["detail"]["message_id"] == "msg-2"

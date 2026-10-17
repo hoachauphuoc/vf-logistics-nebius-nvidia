@@ -69,7 +69,7 @@ class Base:
 
     def request_and_submit(self, case_id="CASE-1", extracted=None, documents=None):
         out = run(evidence.request_evidence(case_id, REVIEWER, documents=documents or ["certificate_of_origin"]))
-        token = out["token"]
+        token = out["links"][0]["token"]
         ext = extracted or {"producer_name": "Saigon Plywood", "origin_country": "Vietnam"}
         mock = {
             "agent": "evidence_extraction", "model": "test", "result": ext,

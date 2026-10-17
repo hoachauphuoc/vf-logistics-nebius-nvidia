@@ -2444,6 +2444,25 @@ def review_approve(case_id: str) -> Any:
     ))
 
 
+@app.route("/api/v1/review/<case_id>/approve-exception", methods=["POST"])
+@require_operator
+@require_password_session
+@limiter.limit("10 per minute")
+def review_approve_exception(case_id: str) -> Any:
+    """Release over unresolved or contradicting evidence: a reason and every waived item."""
+    from vf_logistics import evidence
+
+    body = _json_object()
+    person, actor_auth = _acting_person(body)
+    waived = body.get("waived")
+    if not isinstance(waived, list):
+        return jsonify({"error": "waived must be a list of the items this exception waives"}), 400
+    return _evidence_response(evidence.approve_exception(
+        case_id, person, str(body.get("reason") or "").strip(), [str(w) for w in waived],
+        actor_auth=actor_auth, tenant_id=_tenant(),
+    ))
+
+
 @app.route("/api/v1/review/<case_id>/execute", methods=["POST"])
 @require_reviewer
 @require_password_session

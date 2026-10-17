@@ -1358,6 +1358,22 @@ def _company_key(name: Any) -> str:
     return " ".join(w for w in words if w not in _COMPANY_SUFFIXES)
 
 
+def _read_in_part(doc: dict[str, Any]) -> bool:
+    """
+    True when the record says the file had more pages than the reader saw.
+
+    `pages` and `pages_read` are written by evidence.receive_evidence from the reader's
+    own counts, never from the extraction. A record without them, or with anything but
+    two integers, is not read as partial.
+    """
+    pages, pages_read = doc.get("pages"), doc.get("pages_read")
+    return (
+        isinstance(pages, int) and not isinstance(pages, bool)
+        and isinstance(pages_read, int) and not isinstance(pages_read, bool)
+        and pages_read < pages
+    )
+
+
 def _as_list(value: Any) -> list[Any]:
     if value is None or value == "":
         return []
@@ -1382,7 +1398,7 @@ def check_origin_evidence(
     the extractor is a model, so a wrongly read document can raise a false alarm a
     reviewer then dismisses, and can never clear a shipment.
 
-    Returns {"status": "missing"|"provided"|"contradicted", "present", "missing",
+    Returns {"status": "missing"|"provided"|"contradicted", "present", "missing", "unread",
     "findings", "contradictions"}; `findings` are extra findings to add to the case
     (empty unless something contradicts).
     """
@@ -1397,6 +1413,7 @@ def check_origin_evidence(
     # leave a paper unproven; it must never hide what the paper says.
     by_type: dict[str, list[dict[str, Any]]] = {}
     read_by_type: dict[str, list[dict[str, Any]]] = {}
+    unread: list[dict[str, Any]] = []
     # Every group must hold a meaningful value; within a group any one field will do.
     # An invoice names who sold the inputs AND where the goods came from: one without
     # the other does not show where the inputs originate, so it is not evidence.
@@ -1416,6 +1433,12 @@ def check_origin_evidence(
             ext = doc["extracted"]
             if ext:
                 read_by_type.setdefault(dt, []).append(ext)
+            # N06-B: a paper the reader only partly read cannot prove what its other pages
+            # say. It stays in `read_by_type` above, so what it does say is still read for
+            # contradictions; it is left out of `by_type`, so it counts as unproven.
+            if _read_in_part(doc):
+                unread.append({"doc_type": dt, "pages": doc["pages"], "pages_read": doc["pages_read"]})
+                continue
             required = _REQUIRED_FIELDS.get(dt, ())
             if required and not all(
                 any(_states_something(ext.get(f)) for f in group) for group in required
@@ -1516,6 +1539,7 @@ def check_origin_evidence(
         "missing": missing,
         "findings": findings,
         "contradictions": contradictions,
+        "unread": unread,
     }
 
 

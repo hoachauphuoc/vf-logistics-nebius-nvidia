@@ -385,7 +385,7 @@ class TestN02APublishThatFails(Base):
 
         case = self.stored()
         record = case["verification"]
-        assert [e["status"] for e in record["executions"]] == ["send_failed", "sent"]
+        assert [e["status"] for e in record["executions"]] == ["send_unknown", "sent"]
         assert len({e["execution_id"] for e in record["executions"]}) == 2
         assert record["approvals"][0]["status"] == "EXECUTED"
         assert case["state"] == "RELEASED_BY_HUMAN"
@@ -395,7 +395,7 @@ class TestN02APublishThatFails(Base):
         starts = [(r["state_before"], r["state_after"]) for r in case["reviews"][-2:]]
         assert starts == [("APPROVED", "EXECUTION_FAILED"), ("EXECUTION_FAILED", "RELEASED_BY_HUMAN")]
         # The audit trail: the failed publish is recorded as failed, the retry as done.
-        assert [r["status"] for r in self._audit_rows("publish_decision")] == ["failed", "done"]
+        assert [r["status"] for r in self._audit_rows("publish_decision")] == ["unknown", "done"]
         assert [r["detail"]["pub_failed"] for r in self._audit_rows("evidence_executed_release")] == [True, False]
         # release_shipment is re-run on every attempt, so there are two rows. That is
         # today's behaviour (it is not idempotent), pinned so a change is deliberate.

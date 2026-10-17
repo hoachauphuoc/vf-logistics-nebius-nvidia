@@ -279,9 +279,10 @@ async def publish_decision_direct(
         )
     except Exception as exc:  # noqa: BLE001
         return await _audit(
-            case_id,
-            "publish_decision",
+            case_id, "publish_decision",
             {**body, "error": f"{type(exc).__name__}: {exc}"},
-            status="failed",
+            # A timeout means the broker may have accepted the message, which is not the same
+            # as "not sent" (N01). A retry carries the same idempotency key.
+            status="unknown" if isinstance(exc, TimeoutError) else "failed",
             tenant_id=tenant_id,
         )

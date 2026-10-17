@@ -101,6 +101,7 @@ def evaluate_case(case_spec):
             # Request evidence (1 doc per type that we have)
             doc_types = list(evidence_data.keys())
             out = run(evidence.request_evidence(case_id, REVIEWER, documents=doc_types))
+            links = {link["doc_type"]: link["token"] for link in out["links"]}
             result["request_rounds"] = 1
 
             # Submit each document
@@ -116,7 +117,7 @@ def evaluate_case(case_spec):
                     with patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})):
                         with patch("vf_logistics.model_armor.extract_pdf_text", return_value=("text", None)):
                             with patch("vf_logistics.document_store.archive", new=AsyncMock(return_value={"archived": True, "uri": f"gs://eval/{case_id}/{dt}"})):
-                                run(evidence.receive_evidence(out["token"], tiny_pdf(), f"{dt}.pdf", "application/pdf"))
+                                run(evidence.receive_evidence(links[dt], tiny_pdf(), f"{dt}.pdf", "application/pdf"))
 
             # Reevaluate
             run(evidence.reevaluate(case_id))

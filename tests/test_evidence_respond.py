@@ -86,7 +86,7 @@ class Base:
 
     def request_and_token(self, case_id="CASE-1"):
         out = run(evidence.request_evidence(case_id, REVIEWER))
-        return out["request"]["request_id"], out["token"]
+        return out["request"]["request_id"], out["links"][0]["token"]
 
     def submit(self, token, data=None, filename="cert.pdf", mime="application/pdf", **envelope_extra):
         """Submit evidence through receive_evidence, mocking the extraction.
@@ -410,7 +410,7 @@ class TestEvidenceIsFiledUnderItsTenant(Base):
                 "created_at": "2026-10-12T01:00:00+00:00", "updated_at": "2026-10-12T02:00:00+00:00",
                 "shipment": shipment, "validation": validate(shipment), "actions": [], "reviews": [],
             }, tenant_id=self.TENANT))
-            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["token"]
+            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["links"][0]["token"]
 
             with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock_result)), \
                     patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})), \

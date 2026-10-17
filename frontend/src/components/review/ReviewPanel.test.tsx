@@ -284,6 +284,15 @@ describe("ReviewPanel: releasing against contradicting papers (Rev2 C3)", () => 
     );
   });
 
+  it("sends nothing when the reviewer cancels the confirmation (Release, then Cancel)", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "provided", risk_floor: 45 }));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull());
+    expect(approveCase).not.toHaveBeenCalled();
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
   it("still needs a note to block, as before", async () => {
     renderPanel(evaluated("ESCALATED", CONTRADICTED));
     fireEvent.click(screen.getByRole("button", { name: "Block" }));
