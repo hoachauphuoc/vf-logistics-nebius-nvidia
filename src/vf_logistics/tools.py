@@ -174,6 +174,33 @@ async def notify_webhook(
 # Publish the decision for downstream systems
 # --------------------------------------------------------------------------
 
+async def _earlier_publish(
+    case_id: str, key: str, tenant_id: str | None,
+) -> dict[str, Any] | None:
+    """
+    The audit row of a publish with this idempotency key that went out, or None.
+
+    A retry after an interrupted execution must not publish the decision a second
+    time when the first publish was accepted and only its confirmation was lost.
+    Only a row that carries a message id proves the publish; a failed one does not.
+    """
+    rows, _ = await get_store().query_audit(
+        case_id=case_id, action="publish_decision", status="done", limit=200,
+        tenant_id=tenant_id,
+    )
+    for row in rows:
+        detail = row.get("detail") or {}
+        if detail.get("idempotency_key") != key:
+            continue
+        delegated = detail.get("executor")
+        message_id = detail.get("message_id") or (
+            delegated.get("message_id") if isinstance(delegated, dict) else None
+        )
+        if message_id:
+            return row
+    return None
+
+
 async def publish_decision(
     case_id: str, decision: dict[str, Any], tenant_id: str | None = None,
 ) -> dict[str, Any]:
@@ -191,6 +218,12 @@ async def publish_decision(
     with a 403 if the running identity lacks pubsub.publisher, which is the
     intended outcome rather than something to work around.
     """
+    key = decision.get("idempotency_key")
+    if key:
+        earlier = await _earlier_publish(case_id, str(key), tenant_id)
+        if earlier is not None:
+            return earlier
+
     body = {"case_id": case_id, **decision, "at": utcnow()}
 
     if executor_client.configured():
@@ -231,7 +264,12 @@ async def publish_decision_direct(
                 raise RuntimeError("no Google Cloud project to publish to: set PROJECT_ID")
             publisher = pubsub_v1.PublisherClient()
             topic = publisher.topic_path(project, DECISIONS_TOPIC)
-            future = publisher.publish(topic, json.dumps(body).encode("utf-8"))
+            # The key is also a message attribute so a subscriber can drop a repeat
+            # without parsing the body (N01). Attribute values must be strings.
+            attributes = {}
+            if body.get("idempotency_key"):
+                attributes["idempotency_key"] = str(body["idempotency_key"])
+            future = publisher.publish(topic, json.dumps(body).encode("utf-8"), **attributes)
             return future.result(timeout=15)
 
         message_id = await asyncio.to_thread(_publish)
@@ -241,9 +279,10 @@ async def publish_decision_direct(
         )
     except Exception as exc:  # noqa: BLE001
         return await _audit(
-            case_id,
-            "publish_decision",
+            case_id, "publish_decision",
             {**body, "error": f"{type(exc).__name__}: {exc}"},
-            status="failed",
+            # A timeout means the broker may have accepted the message, which is not the same
+            # as "not sent" (N01). A retry carries the same idempotency key.
+            status="unknown" if isinstance(exc, TimeoutError) else "failed",
             tenant_id=tenant_id,
         )

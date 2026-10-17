@@ -221,6 +221,23 @@ def _issue(
     return token, expires
 
 
+def _document_links(
+    request: dict[str, Any], scope: str, case_id: str, doc_types: list[str],
+) -> list[dict[str, str]]:
+    """
+    N03: one link per document type, each token naming the type it is for. They carry
+    the request's CURRENT link_seq, so the next `_issue` retires them along with the
+    request-level token. Call it after `_issue`, never before.
+    """
+    links = []
+    for dt in doc_types:
+        dt_token, _ = mint_token(
+            scope, case_id, str(request["request_id"]), int(request["link_seq"]), doc_type=dt,
+        )
+        links.append({"doc_type": dt, "token": dt_token, "path": link_path(dt_token)})
+    return links
+
+
 # --------------------------------------------------------------------------
 # Operations
 # --------------------------------------------------------------------------
@@ -399,10 +416,7 @@ async def request_evidence(
     }
     # N03: mint one link per doc_type so the token carries which document to expect.
     token, _ = _issue(request, scope, case_id, requested_by, now)
-    links = []
-    for dt in wanted:
-        dt_token, dt_expires = mint_token(scope, case_id, str(request["request_id"]), int(request["link_seq"]), doc_type=dt)  # type: ignore[arg-type]
-        links.append({"doc_type": dt, "token": dt_token, "path": link_path(dt_token)})
+    links = _document_links(request, scope, case_id, wanted)
     record["requests"].append(request)
 
     if state != AWAITING_EVIDENCE:
@@ -446,7 +460,14 @@ async def reissue_link(
     actor_auth: str | None = None,
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
-    """A new link for an open request. The old one stops working."""
+    """
+    A new link for an open request. The old one stops working.
+
+    Returns {"request", "token", "path", "links"}. `links` has one typed link per
+    document the request still waits for (N03), the same shape request_evidence
+    returns. Send those: the top-level `token` has no document type, so an upload
+    through it is filed as the first type still missing, whatever it really is.
+    """
     store = get_store()
     stored = await store.get_case(case_id, tenant_id=tenant_id)
     if not stored:
@@ -460,13 +481,22 @@ async def reissue_link(
         raise EvidenceError(f"That request is {str(request.get('status')).lower()}; no link can be issued for it.", 409)
 
     now = utcnow()
-    token, _ = _issue(request, tenant.resolve(tenant_id), case_id, issued_by, now)
+    scope = tenant.resolve(tenant_id)
+    token, _ = _issue(request, scope, case_id, issued_by, now)
+    received_docs = request.get("received_docs") or {}
+    still_missing = [d for d in request.get("documents") or [] if d not in received_docs]
+    links = _document_links(request, scope, case_id, still_missing)
     case["updated_at"] = now
     await _write(case, expected_version, tenant_id)
     await _audit(case_id, "evidence_link_issued", issued_by, actor_auth, {
         "request_id": request_id, "seq": request["link_seq"],
     }, tenant_id)
-    return {"request": public_request(request), "token": token, "path": link_path(token)}
+    return {
+        "request": public_request(request),
+        "token": token,
+        "path": link_path(token),
+        "links": links,
+    }
 
 
 async def cancel_request(
@@ -609,7 +639,14 @@ async def receive_evidence(
             )
         doc_type = token_doc_type
     else:
-        # A request-level link (no document in the token): the first one not yet in.
+        # A request-level link (no document in the token) cannot say which paper an upload is.
+        # With one document requested there is nothing to confuse; with several, the upload
+        # would be filed under whichever is still missing, whatever it actually is (N03).
+        if len(requested_docs) > 1:
+            raise EvidenceError(
+                "This link does not say which document it is for. Ask for a link for each document.",
+                400,
+            )
         doc_type = still_missing[0] if still_missing else (
             requested_docs[0] if requested_docs else "unknown"
         )
@@ -659,6 +696,11 @@ async def receive_evidence(
         "content_type": mime_type,
         "received_at": now,
         "blocked": blocked,
+        # How much of the file the reader saw, named as in ingest_document's
+        # provenance: `pages` is the PDF's page count, `pages_read` how many of them
+        # were transcribed. None when no extraction ran (blocked) or it did not say.
+        "pages": extraction.get("source_pages") if extraction else None,
+        "pages_read": extraction.get("source_pages_read") if extraction else None,
         "extracted": extraction.get("result") if extraction and not extraction.get("parse_error") else None,
         "extraction": {
             "model": extraction.get("model") if extraction else None,
@@ -788,6 +830,7 @@ async def reevaluate(
         "clarified": evidence_result.get("present") or [],
         "unresolved": evidence_result.get("missing") or [],
         "contradictions": evidence_result.get("contradictions") or [],
+        "unread": evidence_result.get("unread") or [],
         "status": evidence_result["status"],
         "ruleset_version": case.get("validation", {}).get("checks_run"),
     }
@@ -839,6 +882,33 @@ APPROVED = "APPROVED"
 APPROVABLE_STATES = ("HELD_FOR_REVIEW", "ESCALATED", "PENDING_HUMAN")
 
 
+async def approve_exception(
+    case_id: str,
+    approver: str,
+    reason: str,
+    waived: list[str],
+    *,
+    actor_auth: str | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Release over unresolved or contradicting evidence, as an operation of its own.
+
+    The caller names every item it waives (the unresolved documents, and
+    "contradiction:<kind>" for each contradiction) and gives a reason; the approval
+    records both. Who may call it is decided by the route (operator role and a
+    password sign-in); approve() enforces the password rule again.
+    """
+    if not (reason or "").strip():
+        raise EvidenceError("An exception needs a reason.", 400)
+    if not waived:
+        raise EvidenceError("An exception must name what it waives.", 400)
+    return await approve(
+        case_id, "release", approver, note=reason.strip(), actor_auth=actor_auth,
+        waived=[str(w) for w in waived], tenant_id=tenant_id,
+    )
+
+
 async def approve(
     case_id: str,
     action: str,
@@ -847,6 +917,7 @@ async def approve(
     note: str = "",
     actor_auth: str | None = None,
     execute: bool = True,
+    waived: list[str] | None = None,
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -859,7 +930,8 @@ async def approve(
     Preconditions:
     - state in APPROVABLE_STATES
     - no request OPEN or SENT (all evidence must have been accounted for)
-    - the evaluation at the current evidence_version exists
+    - the evaluation at the current evidence_version exists (for a block at evidence
+      version 0 none is needed; a release always needs one)
     - actor_auth == "password" for a release (policy A01 for one-click)
     """
     if action not in ("release", "block"):
@@ -895,10 +967,22 @@ async def approve(
             "The evidence has been updated but not yet re-evaluated. Re-evaluate first.", 409,
         )
 
+    # N04: a release also needs an evaluation at version 0. A request cancelled before
+    # anything arrived leaves no evaluation at all, and a release then went through
+    # with nothing checked. A block does not need one: it only holds the shipment.
+    if latest_eval is None and action == "release":
+        raise EvidenceError(
+            "This release has not been evaluated: no evaluation of the evidence on file "
+            "exists yet. Re-evaluate first, then approve the release.", 409,
+        )
+
     if action == "release" and actor_auth != "password":
         raise EvidenceError(
             "A release approval needs a password sign-in, not a one-click session.", 403,
         )
+
+    if waived is not None and action != "release":
+        raise EvidenceError("Only a release can be an exception.", 400)
 
     exception: dict[str, Any] | None = None
     if action == "release" and latest_eval:
@@ -918,6 +1002,11 @@ async def approve(
                 what.append(f"unresolved evidence ({', '.join(unresolved)})")
             if contradicted:
                 what.append("papers that contradict the declared origin")
+            needed = unresolved + [f"contradiction:{c['kind']}" for c in contradictions]
+            if waived is not None and sorted(set(waived)) != sorted(set(needed)):
+                raise EvidenceError(
+                    "An exception must name every waived item: " + ", ".join(needed) + ".", 400,
+                )
             if not (note or "").strip():
                 raise EvidenceError(
                     f"Release with {' and '.join(what)} requires a note explaining the exception.",
@@ -930,8 +1019,14 @@ async def approve(
             }
             if contradicted:
                 exception["contradictions"] = contradictions
+            if waived is not None:
+                exception["operation"] = "exception"
+                exception["waived"] = sorted(set(waived))
 
     now = utcnow()
+    if waived is not None and exception is None:
+        raise EvidenceError("There is nothing to waive: approve the release normally.", 409)
+
     approval: dict[str, Any] = {
         "approval_id": new_id("evapr"),
         "action": action,
@@ -1194,7 +1289,15 @@ async def execute_approval(
         raise EvidenceError("execution record lost during write", 500)
 
     if pub_failed:
-        exe2["status"] = "send_failed"
+        # A publish that timed out may have been accepted. Say so, so the retry is read as
+        # "result unknown, same key" and not as "nothing was sent" (N01).
+        unknown = isinstance(pub_receipt, dict) and pub_receipt.get("status") == "unknown"
+        exe2["status"] = "send_unknown" if unknown else "send_failed"
+        if unknown:
+            exe2["reason"] = (
+                "The publish timed out and may have been accepted; "
+                "a retry reuses the same idempotency key."
+            )
         exe2["message_id"] = None
         apr2["status"] = "VALID"  # revert so retry is possible
         case2["state"] = "EXECUTION_FAILED"

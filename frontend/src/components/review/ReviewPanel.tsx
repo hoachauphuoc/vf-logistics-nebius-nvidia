@@ -2,7 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { AlertTriangle, FileText, Loader2, Lock, LogIn, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { HelpDot } from "@/components/help/HelpDot";
 import { ErrorState } from "@/components/layout/States";
@@ -33,7 +33,7 @@ import {
 } from "@/lib/format";
 import { helpFor } from "@/lib/help-content";
 import { type Identity, lockReason, roleLabel, useIdentity } from "@/lib/identity";
-import { CONTRADICTION_KIND_LABEL, isContradicted, latestEvaluation } from "@/lib/operations";
+import { CONTRADICTION_KIND_LABEL, executionClaim, isContradicted, latestEvaluation } from "@/lib/operations";
 import {
   AWAITING_HUMAN,
   HUMAN_ACTION_RESULT,
@@ -71,6 +71,16 @@ function signInHref(): string {
     typeof window === "undefined" ? "/review" : window.location.pathname + window.location.search;
   return `/login?next=${encodeURIComponent(here)}`;
 }
+
+/**
+ * The address a shipper opens, from the path the API returns (`/respond/<token>`).
+ * The path alone is not something a reviewer can paste into an email. Without a
+ * window (server rendering) the path is the best there is.
+ */
+function absoluteLink(path: string): string {
+  return typeof window === "undefined" ? path : new URL(path, window.location.origin).toString();
+}
+
 /**
  * The archived paperwork, or a specific reason there is none.
  *
@@ -231,6 +241,16 @@ export function ReviewPanel({
   const [confirmDeep, setConfirmDeep] = useState(false);
   const [evidenceLinks, setEvidenceLinks] = useState<string[]>([]);
 
+  // The clock the execution claim is read against. A claim's lease runs out while
+  // this panel is open, and nothing else re-renders it, so while the case is
+  // EXECUTING the clock is moved on every 15 seconds. Not ticking otherwise.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (c.state !== "EXECUTING") return;
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, [c.state]);
+
   // Who this decision will be recorded as, and whether they may record one.
   //
   // This used to be a text input the reviewer typed, and the typed value was what
@@ -352,6 +372,9 @@ export function ReviewPanel({
       if (state === "EXECUTION_FAILED") {
         setFormError("The decision was approved but execution failed. You can retry.");
         setPending(null);
+        // Reload the case: it is now EXECUTION_FAILED, and the Retry button only
+        // appears once the page has that state. The case page does not poll.
+        onDecided();
         return;
       }
       setFormError(null);
@@ -373,10 +396,10 @@ export function ReviewPanel({
       // here for the reviewer to copy.
       const links = Array.isArray(data?.links)
         ? (data.links as Array<{ doc_type?: string; path?: string }>)
-            .map((l) => (l.path ? `${l.doc_type ? l.doc_type + ": " : ""}${l.path}` : ""))
+            .map((l) => (l.path ? `${l.doc_type ? l.doc_type + ": " : ""}${absoluteLink(l.path)}` : ""))
             .filter(Boolean)
         : typeof data?.path === "string"
-          ? [data.path]
+          ? [absoluteLink(data.path)]
           : [];
       setEvidenceLinks(links);
       onDecided();
@@ -406,6 +429,14 @@ export function ReviewPanel({
   const validApproval = (c.verification?.approvals ?? []).find(
     (a) => a.status === "VALID",
   );
+  // EXECUTING with a claim whose lease has run out is an interrupted execution; with
+  // the lease still running (or no claim to read) it is somebody's execution in flight.
+  const claim = executionClaim(c, now);
+  const interrupted = claim?.expired === true;
+  // The approval Resume continues: the CLAIMING one of an interrupted execution. Only a
+  // hint that the lease is over -- evidence.execute_approval decides, and answers 409
+  // while the claim is still live (the message is shown in the form's alert).
+  const resumable = interrupted ? claim?.approval : undefined;
 
   const verificationCancel = useMutation({
     mutationFn: () => {
@@ -425,8 +456,9 @@ export function ReviewPanel({
 
   const verificationExecute = useMutation({
     mutationFn: () => {
-      if (!validApproval) throw new Error("No valid approval to execute");
-      return executeApproval(c.case_id, validApproval.approval_id);
+      const approval = resumable ?? validApproval;
+      if (!approval) throw new Error("No valid approval to execute");
+      return executeApproval(c.case_id, approval.approval_id);
     },
     onSuccess: (result) => {
       if ((result as Record<string, unknown>)?.state === "EXECUTION_FAILED") {
@@ -723,6 +755,16 @@ export function ReviewPanel({
               Approved, ready to execute.
             </p>
           )}
+          {hasVerification && c.state === "EXECUTING" && (
+            <p
+              className={cn("text-[11.5px]", interrupted ? "text-risk-warn" : "text-dim")}
+              data-testid="state-hint"
+            >
+              {interrupted
+                ? "Execution interrupted - claim expired. The earlier attempt never confirmed that the decision was sent. Resume continues it."
+                : "Execution in progress. The decision is being sent; this page shows the result when it finishes."}
+            </p>
+          )}
           {hasVerification && c.state === "EXECUTION_FAILED" && (
             <p className="text-[11.5px] text-risk-critical" data-testid="state-hint">
               Execution failed. Retry to send the decision again.
@@ -769,8 +811,8 @@ export function ReviewPanel({
               </div>
             )}
           {hasVerification &&
-            (c.state === "APPROVED" || c.state === "EXECUTION_FAILED") &&
-            validApproval && (
+            (resumable != null ||
+              ((c.state === "APPROVED" || c.state === "EXECUTION_FAILED") && validApproval != null)) && (
               <Button
                 size="sm"
                 disabled={verificationExecute.isPending}
@@ -780,7 +822,7 @@ export function ReviewPanel({
                 {verificationExecute.isPending && (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none" />
                 )}
-                {c.state === "EXECUTION_FAILED" ? "Retry" : "Execute"}
+                {resumable ? "Resume" : c.state === "EXECUTION_FAILED" ? "Retry" : "Execute"}
               </Button>
             )}
 

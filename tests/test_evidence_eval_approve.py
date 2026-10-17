@@ -69,7 +69,7 @@ class Base:
 
     def request_and_submit(self, case_id="CASE-1", extracted=None, documents=None):
         out = run(evidence.request_evidence(case_id, REVIEWER, documents=documents or ["certificate_of_origin"]))
-        token = out["token"]
+        token = out["links"][0]["token"]
         ext = extracted or {"producer_name": "Saigon Plywood", "origin_country": "Vietnam"}
         mock = {
             "agent": "evidence_extraction", "model": "test", "result": ext,
@@ -646,3 +646,125 @@ class TestReevaluateKeepsAnEscalation(Base):
         _submit_per_type({link["doc_type"]: link["token"] for link in out["links"]},
                          {**PAPERS, "certificate_of_origin": {"producer_name": "Saigon Plywood Co", "origin_country": "China"}})
         assert run(evidence.reevaluate("CASE-1"))["state"] == "ESCALATED"
+
+class TestN04ReleaseNeedsAnEvaluation(Base):
+    """
+    A release is approved on an evaluation of the evidence on file. A request cancelled
+    before anything arrived leaves evidence_version at 0 with NO evaluation, and approve()
+    must refuse a release then: the console executes an approval at once, so the shipment
+    would be released with nothing checked.
+    """
+
+    def _requested_then_cancelled(self, state="HELD_FOR_REVIEW"):
+        self.put(state=state)
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        run(evidence.cancel_request(
+            "CASE-1", out["request"]["request_id"], REVIEWER, "Shipper unreachable",
+        ))
+        case = self.stored()
+        assert case["state"] == state
+        assert case["verification"]["evidence_version"] == 0
+        assert case["verification"]["evaluations"] == []
+        return case
+
+    def test_request_cancel_then_release_with_an_empty_note_is_refused(self):
+        before = self._requested_then_cancelled()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 409
+        assert "re-evaluate" in raised.value.message.lower()
+        after = self.stored()
+        assert after["state"] == "HELD_FOR_REVIEW"
+        assert after["_version"] == before["_version"]
+        assert after["verification"]["approvals"] == []
+
+    def test_a_note_does_not_stand_in_for_the_missing_evaluation(self):
+        self._requested_then_cancelled()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Seen it", actor_auth="password"))
+        assert raised.value.status == 409
+        assert self.stored()["verification"]["approvals"] == []
+
+    def test_the_case_is_not_stranded_re_evaluate_then_release_with_a_reason(self):
+        self._requested_then_cancelled()
+        with pytest.raises(evidence.EvidenceError):
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        result = run(evidence.reevaluate("CASE-1"))
+        evaluation = result["evaluation"]
+        assert evaluation["evidence_version"] == 0
+        assert evaluation["status"] == "missing"
+        assert evaluation["unresolved"] == DOCS3
+        assert result["state"] == "HELD_FOR_REVIEW"
+        # Nothing was received, so every paper is unresolved: the release is an
+        # exception and needs its reason, exactly as after a partial set.
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400
+        approved = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Papers seen on site", actor_auth="password",
+        ))
+        approval = approved["approval"]
+        assert approved["state"] == "APPROVED"
+        assert approval["evaluation_id"] == evaluation["evaluation_id"]
+        assert approval["evidence_version"] == 0
+        assert approval["exception"]["unresolved"] == DOCS3
+        assert approval["exception"]["reason"] == "Papers seen on site"
+
+    def test_an_escalated_case_is_refused_too_and_stays_escalated(self):
+        self._requested_then_cancelled(state="ESCALATED")
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="ok", actor_auth="password"))
+        assert raised.value.status == 409
+        assert run(evidence.reevaluate("CASE-1"))["state"] == "ESCALATED"
+
+    def test_a_block_needs_no_evaluation_because_it_only_holds_the_shipment(self):
+        self._requested_then_cancelled()
+        result = run(evidence.approve("CASE-1", "block", REVIEWER, note="", actor_auth="password"))
+        assert result["state"] == "APPROVED"
+        assert result["approval"]["action"] == "block"
+        assert result["approval"]["evaluation_id"] is None
+
+    def test_the_normal_path_is_unchanged(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        _submit_per_type({link["doc_type"]: link["token"] for link in out["links"]}, PAPERS)
+        evaluation = run(evidence.reevaluate("CASE-1"))["evaluation"]
+        result = run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert result["state"] == "APPROVED"
+        assert result["approval"]["evaluation_id"] == evaluation["evaluation_id"]
+        assert result["approval"]["evidence_version"] == 3
+
+    def test_new_evidence_without_a_new_evaluation_is_still_refused(self):
+        """Above version 0 the rule is the old one, for a release and for a block."""
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _submit_per_type(links, {dt: PAPERS[dt] for dt in DOCS3[:2]})
+        run(evidence.reevaluate("CASE-1"))
+        # The third paper arrives after the evaluation on file: version 3, evaluated at 2.
+        _submit_per_type(links, {DOCS3[2]: PAPERS[DOCS3[2]]})
+        assert self.stored()["state"] == "HELD_FOR_REVIEW"
+        assert self.stored()["verification"]["evidence_version"] == 3
+        for action in ("release", "block"):
+            with pytest.raises(evidence.EvidenceError) as raised:
+                run(evidence.approve("CASE-1", action, REVIEWER, note="ok", actor_auth="password"))
+            assert raised.value.status == 409
+            assert "not yet re-evaluated" in raised.value.message
+
+    def test_a_case_that_never_asked_for_documents_is_refused_and_not_changed(self):
+        """Not reachable from the console (a case with no verification record is decided
+        through /decide), but the API refuses it too, writes nothing, and leaves /decide open."""
+        from vf_logistics import orchestrator
+
+        self.put()
+        before = self.stored()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="ok", actor_auth="password"))
+        assert raised.value.status == 409
+        after = self.stored()
+        assert "verification" not in after
+        assert after["_version"] == before["_version"]
+        decided = run(orchestrator.human_decide(
+            "CASE-1", "release", REVIEWER, "reviewed", actor_auth="password",
+        ))
+        assert decided["ok"] is True

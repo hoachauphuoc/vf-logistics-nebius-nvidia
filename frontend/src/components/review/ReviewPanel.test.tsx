@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -35,8 +35,8 @@ vi.mock("@/lib/identity", async (importOriginal) => ({
   }),
 }));
 
-import { approveCase, cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
-import type { Case } from "@/lib/types";
+import { ApiError, approveCase, cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
+import { type Case, VERIFICATION_LOOP_STATES } from "@/lib/types";
 
 import { ReviewPanel } from "./ReviewPanel";
 
@@ -114,8 +114,20 @@ describe("ReviewPanel verification actions", () => {
     expect(requestEvidence).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
     const banner = await screen.findByTestId("evidence-links");
-    expect(banner.textContent).toContain("certificate_of_origin: /respond/cert-token");
-    expect(banner.textContent).toContain("producer_declaration: /respond/decl-token");
+    // Full addresses a reviewer can paste into an email, not bare paths.
+    const origin = window.location.origin;
+    expect(banner.textContent).toContain(`certificate_of_origin: ${origin}/respond/cert-token`);
+    expect(banner.textContent).toContain(`producer_declaration: ${origin}/respond/decl-token`);
+  });
+
+  it("shows the request-level link as a full address when the API sends no per-document links", async () => {
+    vi.mocked(requestEvidence).mockResolvedValueOnce({ path: "/respond/request-level" });
+    renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "need papers" } });
+    fireEvent.click(screen.getByRole("button", { name: "Request info" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    const banner = await screen.findByTestId("evidence-links");
+    expect(banner.textContent).toContain(`${window.location.origin}/respond/request-level`);
   });
 
   it("says it is waiting for the shipper and offers Cancel while awaiting evidence", async () => {
@@ -137,6 +149,15 @@ describe("ReviewPanel verification actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(executeApproval).toHaveBeenCalledWith("CASE-1", "evapr-1"));
     expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("reloads the case when approve-then-execute ends in EXECUTION_FAILED, so Retry can appear", async () => {
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(executeApproval).toHaveBeenCalledWith("CASE-1", "evapr-9"));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/execution failed/i);
   });
 
   it("offers Execute for an approved case", () => {
@@ -263,6 +284,15 @@ describe("ReviewPanel: releasing against contradicting papers (Rev2 C3)", () => 
     );
   });
 
+  it("sends nothing when the reviewer cancels the confirmation (Release, then Cancel)", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "provided", risk_floor: 45 }));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull());
+    expect(approveCase).not.toHaveBeenCalled();
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
   it("still needs a note to block, as before", async () => {
     renderPanel(evaluated("ESCALATED", CONTRADICTED));
     fireEvent.click(screen.getByRole("button", { name: "Block" }));
@@ -314,3 +344,160 @@ describe("ReviewPanel: a partial re-evaluate leaves the request open (Rev2 N04)"
     expect(screen.queryByRole("button", { name: "Cancel request" })).toBeNull();
   });
 });
+
+
+/**
+ * N08-B display: an EXECUTING case is either being worked on (the claim's lease is
+ * still running) or interrupted (the lease has run out, so evidence.execute_approval
+ * would resume it). The panel says which, from data the case already carries.
+ * `claim_expires_epoch` is Unix SECONDS, as the backend writes it.
+ */
+function executing(claimExpiresEpoch?: number): Case {
+  return makeCase("EXECUTING", {
+    approvals: [
+      { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "CLAIMING", at: "" },
+    ],
+    executions: [
+      {
+        execution_id: "evexe-1", approval_id: "evapr-1", executor: "r", status: "claiming", at: "",
+        ...(claimExpiresEpoch === undefined ? {} : { claim_expires_epoch: claimExpiresEpoch }),
+      },
+    ],
+  });
+}
+
+const inSeconds = (s: number) => Math.floor(Date.now() / 1000) + s;
+
+describe("ReviewPanel: an execution in flight or interrupted (N08-B)", () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.useRealTimers());
+
+  it("says the execution is in progress while the claim's lease is still running", () => {
+    renderPanel(executing(inSeconds(300)));
+    const hint = screen.getByTestId("state-hint").textContent ?? "";
+    expect(hint).toMatch(/Execution in progress/);
+    expect(hint).not.toMatch(/interrupted/);
+  });
+
+  it("says the execution is interrupted once the lease has expired", () => {
+    renderPanel(executing(inSeconds(-60)));
+    const hint = screen.getByTestId("state-hint").textContent ?? "";
+    expect(hint).toMatch(/Execution interrupted - claim expired/);
+    expect(hint).not.toMatch(/in progress/);
+  });
+
+  it("treats a claim with no recorded expiry as expired, as the backend does", () => {
+    renderPanel(executing(undefined));
+    expect(screen.getByTestId("state-hint").textContent).toMatch(/Execution interrupted - claim expired/);
+  });
+
+  it("does not call an EXECUTING case interrupted when there is no claim to read", () => {
+    renderPanel(makeCase("EXECUTING"));
+    expect(screen.getByTestId("state-hint").textContent).toMatch(/Execution in progress/);
+  });
+
+  it.each([
+    ["running", 300],
+    ["expired", -60],
+  ])("offers no Execute, Retry or decision button for an EXECUTING case whose lease is %s", (_label, offset) => {
+    renderPanel(executing(inSeconds(offset)));
+    for (const name of ["Execute", "Retry", "Release", "Block", "Request info", "Re-evaluate"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+  });
+
+  it("moves from in progress to interrupted when the lease runs out while the page is open", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(new Date("2026-10-15T10:00:00Z"));
+    renderPanel(executing(Math.floor(Date.now() / 1000) + 20));
+    expect(screen.getByTestId("state-hint").textContent).toMatch(/Execution in progress/);
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(screen.getByTestId("state-hint").textContent).toMatch(/Execution interrupted - claim expired/);
+  });
+
+  it("lets the case page mount the panel for an EXECUTING case", () => {
+    // The page shows "Nobody owes this case anything" instead of the panel for any
+    // state this list lacks.
+    expect(VERIFICATION_LOOP_STATES).toContain("EXECUTING");
+  });
+});
+
+
+/**
+ * N08-B action: Resume continues an interrupted execution -- a CLAIMING approval on
+ * an EXECUTING case whose claim has expired -- through the same executeApproval call
+ * as Execute and Retry. The button is a hint that the lease is over; the backend stays
+ * the authority and answers 409 while the claim is still live.
+ */
+describe("ReviewPanel: resuming an interrupted execution (N08-B)", () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.useRealTimers());
+
+  it("offers Resume, and calls executeApproval with the claimed approval, once the claim has expired", async () => {
+    vi.mocked(executeApproval).mockResolvedValueOnce({ state: "RELEASED_BY_HUMAN" });
+    const onDecided = renderPanel(executing(inSeconds(-60)));
+    expect(screen.getByTestId("state-hint").textContent).toMatch(/Resume continues it/);
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(executeApproval).toHaveBeenCalledWith("CASE-1", "evapr-1"));
+    await waitFor(() => expect(onDecided).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("offers Resume for a claim with no recorded expiry", () => {
+    renderPanel(executing(undefined));
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
+  it("does not offer Resume while the claim's lease is still running", () => {
+    renderPanel(executing(inSeconds(300)));
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
+  it("does not offer Resume for an EXECUTING case with no claim to read", () => {
+    renderPanel(makeCase("EXECUTING"));
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+
+  it.each(["APPROVED", "EXECUTION_FAILED", "HELD_FOR_REVIEW", "RELEASED_BY_HUMAN"])(
+    "does not offer Resume on a %s case, whatever its approvals say",
+    (state) => {
+      const stale = executing(inSeconds(-60));
+      renderPanel({ ...stale, state } as unknown as Case);
+      expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    },
+  );
+
+  it("shows the backend's refusal when the claim is still live there", async () => {
+    const refusal =
+      "Another execution of this approval is in progress. Try again after it finishes or its claim expires.";
+    vi.mocked(executeApproval).mockRejectedValueOnce(new ApiError(refusal, 409, "http"));
+    const onDecided = renderPanel(executing(inSeconds(-60)));
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(refusal);
+    expect(onDecided).not.toHaveBeenCalled();
+    // The reviewer can try again later: the button is not left disabled.
+    expect((screen.getByRole("button", { name: "Resume" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("offers Resume only after the lease runs out while the page is open", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(new Date("2026-10-15T10:00:00Z"));
+    renderPanel(executing(Math.floor(Date.now() / 1000) + 20));
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
+  it("keeps Execute for an approved case, with no Resume beside it", () => {
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    renderPanel(makeCase("APPROVED", { approvals: [approval] }));
+    expect(screen.getByRole("button", { name: "Execute" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+});
+

@@ -400,3 +400,59 @@ class TestN06WhatCountsAsNothingStated:
         declaration = {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": origins}
         out = check_origin_evidence(plywood(), docs(**{**GOOD, "producer_declaration": declaration}))
         assert out["status"] == "provided"
+
+
+class TestN06ACountryFieldsNameOneCountry:
+    """origin_country, goods_origin_country and supplier_country must name ONE country.
+    A list of two different countries used to count as stated (one meaningful entry was
+    enough), so a certificate for ["Vietnam", "China"] read as "provided"."""
+
+    @pytest.mark.parametrize("value", [
+        ["Vietnam", "China"], ["China", "Vietnam"], ["Vietnam", "Indonesia"],
+        ["Vietnam", "Viet Nam", "China"], ["not stated", "Vietnam", "China"],
+    ])
+    def test_a_certificate_for_two_countries_is_not_provided(self, value):
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": value}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["status"] == "missing"
+        assert out["missing"] == ["certificate_of_origin"]
+        assert "certificate_of_origin" not in out["present"]
+        assert out["findings"] == [] and out["contradictions"] == []
+
+    @pytest.mark.parametrize("value", [
+        ["Vietnam"], "Vietnam", ["Viet Nam"], ["Vietnam", "Viet Nam"],
+        ["not stated", "Vietnam"], ["Vietnam", "N/A"],
+    ])
+    def test_one_country_is_still_provided_however_it_is_wrapped_or_spelled(self, value):
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": value}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["status"] == "provided"
+        assert out["missing"] == []
+
+    @pytest.mark.parametrize("origins", [
+        ["Vietnam"], ["Vietnam", "Indonesia"], ["Vietnam", "Indonesia", "Malaysia"],
+    ])
+    def test_the_producers_declaration_may_still_list_several_input_origins(self, origins):
+        # input_origins is a list on purpose; it is not one of the one-country fields.
+        declaration = {"producer_name": "Saigon Plywood Co., Ltd.", "input_origins": origins}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "producer_declaration": declaration}))
+        assert out["status"] == "provided"
+
+    @pytest.mark.parametrize("field", ["goods_origin_country", "supplier_country"])
+    def test_an_invoice_listing_two_countries_is_not_provided(self, field):
+        invoice = {**GOOD["input_purchase_invoices"], field: ["Vietnam", "China"]}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "missing"
+        assert out["missing"] == ["input_purchase_invoices"]
+
+    def test_an_invoice_with_two_countries_is_still_read_for_contradictions(self):
+        # Still read for contradictions: China is a watched input origin on the plywood lane.
+        invoice = {
+            "supplier_name": "Mekong Veneer",
+            "supplier_country": "China",
+            "goods_origin_country": ["Vietnam", "Indonesia"],
+            "producer_name": "Saigon Plywood Co",
+        }
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "contradicted"
+        assert any(c["kind"] == "input_origin" for c in out["contradictions"])

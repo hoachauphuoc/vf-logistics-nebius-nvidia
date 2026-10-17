@@ -86,10 +86,14 @@ class Base:
 
     def request_and_token(self, case_id="CASE-1"):
         out = run(evidence.request_evidence(case_id, REVIEWER))
-        return out["request"]["request_id"], out["token"]
+        return out["request"]["request_id"], out["links"][0]["token"]
 
-    def submit(self, token, data=None, filename="cert.pdf", mime="application/pdf"):
-        """Submit evidence through receive_evidence, mocking the extraction."""
+    def submit(self, token, data=None, filename="cert.pdf", mime="application/pdf", **envelope_extra):
+        """Submit evidence through receive_evidence, mocking the extraction.
+
+        `envelope_extra` are added to the mocked extraction envelope, e.g.
+        source_pages=3, source_pages_read=1 as document_agent.extract_evidence reports them.
+        """
         if data is None:
             data = tiny_pdf()
         extracted = {"producer_name": "Saigon Plywood", "origin_country": "Vietnam"}
@@ -97,6 +101,7 @@ class Base:
             "agent": "evidence_extraction", "model": "test", "result": extracted,
             "latency_ms": 50, "input_tokens": 100, "output_tokens": 50,
             "parse_error": False, "at": "2026-10-12T08:00:00Z",
+            **envelope_extra,
         }
         with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock_result)):
             with patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})):
@@ -234,6 +239,31 @@ class TestModelArmorBlock(Base):
         assert doc["extracted"] is None
 
 
+
+class TestPagesKeptOnTheDocument(Base):
+    """The reader sees page 1 only. The document record keeps how many pages the file has
+    and how many were read, as `pages` and `pages_read`."""
+
+    def _only_document(self):
+        return self.stored()["verification"]["documents"][0]
+
+    def test_the_page_counts_of_the_extraction_are_kept(self):
+        self.put()
+        _, token = self.request_and_token()
+        self.submit(token, source_pages=3, source_pages_read=1)
+        doc = self._only_document()
+        assert doc["pages"] == 3
+        assert doc["pages_read"] == 1
+
+    def test_an_extraction_that_reports_no_pages_leaves_them_none(self):
+        self.put()
+        _, token = self.request_and_token()
+        self.submit(token)
+        doc = self._only_document()
+        assert "pages" in doc and "pages_read" in doc
+        assert doc["pages"] is None and doc["pages_read"] is None
+
+
 class TestTheRoute(Base):
     def test_the_route_accepts_a_multipart_upload(self):
         self.put()
@@ -315,6 +345,40 @@ class TestN03DocumentType(Base):
         result = self.submit(links["producer_declaration"])
         assert result["still_missing"] == ["certificate_of_origin", "input_purchase_invoices"]
 
+    def test_a_reissued_link_still_files_each_document_under_its_own_type(self):
+        """N03 reproduction: three documents requested, a new link issued, and the invoice
+        sent first. Through the reissued per-document link it is stored as the invoice;
+        before, the reissue returned only an untyped link, which filed it as the first
+        type still missing (the certificate of origin)."""
+        links = self._links()
+        request_id = self.stored()["verification"]["requests"][0]["request_id"]
+        reissued = run(evidence.reissue_link("CASE-1", request_id, REVIEWER))
+        new_links = {link["doc_type"]: link["token"] for link in reissued["links"]}
+        assert sorted(new_links) == sorted(self.DOCS)
+        result = self.submit(new_links["input_purchase_invoices"])
+        assert result["doc_type"] == "input_purchase_invoices"
+        assert result["still_missing"] == ["certificate_of_origin", "producer_declaration"]
+        stored = self.stored()["verification"]
+        assert [d["doc_type"] for d in stored["documents"]] == ["input_purchase_invoices"]
+        assert list(stored["requests"][0]["received_docs"]) == ["input_purchase_invoices"]
+        # The links from before the reissue are retired, typed or not.
+        with pytest.raises(evidence.EvidenceError) as raised:
+            self.submit(links["certificate_of_origin"])
+        assert raised.value.status == 403
+
+    def test_a_reissue_after_a_receipt_offers_links_only_for_what_is_still_missing(self):
+        links = self._links()
+        self.submit(links["producer_declaration"])
+        request_id = self.stored()["verification"]["requests"][0]["request_id"]
+        reissued = run(evidence.reissue_link("CASE-1", request_id, REVIEWER))
+        assert [link["doc_type"] for link in reissued["links"]] == [
+            "certificate_of_origin", "input_purchase_invoices",
+        ]
+        # The new link for the invoice files it as the invoice, not as the first type missing.
+        result = self.submit(reissued["links"][1]["token"])
+        assert result["doc_type"] == "input_purchase_invoices"
+        assert result["still_missing"] == ["certificate_of_origin"]
+
 
 class TestEvidenceIsFiledUnderItsTenant(Base):
     """
@@ -346,7 +410,7 @@ class TestEvidenceIsFiledUnderItsTenant(Base):
                 "created_at": "2026-10-12T01:00:00+00:00", "updated_at": "2026-10-12T02:00:00+00:00",
                 "shipment": shipment, "validation": validate(shipment), "actions": [], "reviews": [],
             }, tenant_id=self.TENANT))
-            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["token"]
+            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["links"][0]["token"]
 
             with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock_result)), \
                     patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})), \

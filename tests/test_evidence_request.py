@@ -310,6 +310,32 @@ class TestLinksAndCancelling(Base):
         prints = [o["token_fingerprint"] for o in request["outbox"]]
         assert len(prints) == 2 and prints[0] != prints[1]
 
+    def test_n03_a_new_link_comes_as_one_typed_link_per_document(self):
+        """N03: the reissued answer has the same per-document shape as the first request."""
+        self.put()
+        docs = ["certificate_of_origin", "producer_declaration", "input_purchase_invoices"]
+        first = self.ask(documents=docs)
+        second = run(evidence.reissue_link("CASE-1", first["request"]["request_id"], REVIEWER))
+        assert [link["doc_type"] for link in second["links"]] == docs
+        for link in second["links"]:
+            claims = evidence.read_token(link["token"])
+            assert claims["d"] == link["doc_type"]
+            assert claims["s"] == 2 and claims["r"] == first["request"]["request_id"]
+            assert link["path"] == f"/respond/{link['token']}"
+        # The old top-level keys are still there, and the old links are retired.
+        assert second["path"] == f"/respond/{second['token']}"
+        assert evidence.read_token(second["token"])["s"] == 2
+        assert all(evidence.read_token(link["token"])["s"] == 1 for link in first["links"])
+
+    def test_n03_no_link_is_in_the_case_after_a_reissue(self):
+        self.put()
+        first = self.ask()
+        second = run(evidence.reissue_link("CASE-1", first["request"]["request_id"], REVIEWER))
+        stored = json.dumps(self.stored())
+        for link in second["links"]:
+            assert link["token"] not in stored
+            assert link["token"].split(".")[1] not in stored
+
     def test_cancelling_the_only_request_returns_the_case_to_where_it_was(self):
         self.put(state="ESCALATED")
         first = self.ask()
@@ -419,6 +445,7 @@ class TestTheRoutes(Base):
                                headers=self.reviewer()).get_json()["request"]["request_id"]
         link = self.client.post(f"/api/v1/review/CASE-1/evidence/{rid}/link", json={}, headers=self.reviewer())
         assert link.status_code == 200 and link.headers["Cache-Control"] == "no-store"
+        assert [item["doc_type"] for item in link.get_json()["links"]] == list(ORIGIN_EVIDENCE_DOCS)
         no_reason = self.client.post(f"/api/v1/review/CASE-1/evidence/{rid}/cancel", json={}, headers=self.reviewer())
         assert no_reason.status_code == 400
         done = self.client.post(f"/api/v1/review/CASE-1/evidence/{rid}/cancel",
