@@ -1284,6 +1284,19 @@ def _names_several_countries(value: Any) -> bool:
     return len({_canon_country(_scalar(v)) for v in value if _is_meaningful(v)}) > 1
 
 
+def _stated_country(value: Any) -> str:
+    """The one country a field states, in its canonical spelling; "" when it states none or several.
+
+    A list is read by its distinct stated entries, so ["not stated", "China"] and
+    ["China", "PRC"] both state China. The completeness test accepts such a list as one
+    country, so the contradiction reads must take it the same way (N06): a list they
+    skipped was a paper counted as provided and never compared with the declaration.
+    """
+    values = value if isinstance(value, (list, tuple)) else [value]
+    names = {_canon_country(_scalar(v)) for v in values if _is_meaningful(v)}
+    return names.pop() if len(names) == 1 else ""
+
+
 def watched_lane(shipment: dict[str, Any]) -> CircumventionRule | None:
     """The watch row this shipment's declared lane matches, if any."""
     digits = re.sub(r"\D", "", str(shipment.get("hs_code") or ""))
@@ -1461,10 +1474,10 @@ def check_origin_evidence(
     contradictions: list[dict[str, Any]] = []
 
     for cert in read_by_type.get("certificate_of_origin", []):
-        raw_origin = _scalar(cert.get("origin_country"))
-        if not _is_meaningful(raw_origin):
+        raw_origin = _stated_country(cert.get("origin_country"))
+        if not raw_origin:
             continue
-        stated = _canon_country(raw_origin)
+        stated = raw_origin
         if stated and declared and stated != declared:
             contradictions.append({
                 "kind": "certificate_country",
@@ -1484,9 +1497,9 @@ def check_origin_evidence(
             # not shadow a supplier country that is stated.
             goods_origin = next(
                 (
-                    _canon_country(_scalar(v))
+                    _stated_country(v)
                     for v in (inv.get("goods_origin_country"), inv.get("supplier_country"))
-                    if _is_meaningful(v)
+                    if _stated_country(v)
                 ),
                 "",
             )

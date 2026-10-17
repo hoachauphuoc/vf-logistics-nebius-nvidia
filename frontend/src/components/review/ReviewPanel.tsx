@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toaster";
-import { approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+import { ApiError, approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
 import { caseHref } from "@/lib/case-links";
 import {
   actionLabel,
@@ -54,6 +54,13 @@ import { cn } from "@/lib/utils";
  * could drift from it. A Next page module may export nothing but its page, which
  * is why it could not simply be imported from there.
  */
+
+// A dropped or timed-out connection says nothing about what the server did: the decision
+// may have been approved or executed before the answer was lost (N08). A refusal the
+// server sent (kind "http") is an answer, so there is nothing to reload.
+function outcomeUnknown(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === "unreachable";
+}
 
 const ACTION_LABEL: Record<HumanAction, string> = {
   release: "Release",
@@ -359,6 +366,9 @@ export function ReviewPanel({
 
   // N08: For cases in the verification loop, route decisions through the new API.
   const verificationApprove = useMutation({
+    onSettled: (_data, error) => {
+      if (outcomeUnknown(error)) onDecided();
+    },
     mutationFn: async (action: "release" | "block") => {
       const res = await approveCase(c.case_id, action, note);
       if ((res as Record<string, unknown>).approval) {
@@ -455,6 +465,9 @@ export function ReviewPanel({
   });
 
   const verificationExecute = useMutation({
+    onSettled: (_data, error) => {
+      if (outcomeUnknown(error)) onDecided();
+    },
     mutationFn: () => {
       const approval = resumable ?? validApproval;
       if (!approval) throw new Error("No valid approval to execute");

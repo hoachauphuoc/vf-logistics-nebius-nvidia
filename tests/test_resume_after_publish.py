@@ -63,3 +63,36 @@ class TestAResumeAfterAnAcceptedPublish(Base):
         assert [e["status"] for e in stored["verification"]["executions"]] == ["sent"]
         assert stored["verification"]["executions"][0]["message_id"] == "msg-1"
         assert stored["verification"]["approvals"][0]["status"] == "EXECUTED"
+
+
+class TestARecordThatFailsToSaveAfterTheBrokerAccepted(Base):
+    def test_the_message_id_is_kept_and_the_decision_is_sent_once(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
+        real_audit = tools._audit
+        refused: list[str] = []
+
+        async def store_down_once(case_id, action, detail, status="done", tenant_id=None):
+            # The first save of the publish record fails after the broker accepted the message.
+            if action == "publish_decision" and not refused:
+                refused.append(action)
+                raise RuntimeError("ServiceUnavailable: the store did not answer")
+            return await real_audit(case_id, action, detail, status, tenant_id)
+
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub), \
+                patch("vf_logistics.tools._audit", new=store_down_once):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        assert result["message_id"] == "msg-1"
+        assert len(published) == 1
+        stored = self.stored()
+        assert [e["status"] for e in stored["verification"]["executions"]] == ["sent"]
+        assert stored["verification"]["executions"][0]["message_id"] == "msg-1"
+        rows = [r for r in run(self.store.list_audit(limit=500)) if r.get("action") == "publish_decision"]
+        assert [(r["status"], r["detail"]["message_id"]) for r in rows] == [("done", "msg-1")]

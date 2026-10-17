@@ -91,6 +91,17 @@ export function riskLabel(c: Pick<Case, "risk_score" | "reconciliation">): strin
     : `risk ${c.risk_score}`;
 }
 
+/**
+ * How often the case page reads a case again, in milliseconds, or false for never.
+ *
+ * An execution ends on the server without anyone asking the page, so a page that read
+ * the case once as EXECUTING would later show a finished decision as "interrupted" with a
+ * Resume button (N08). Every other state changes only when somebody acts on this page.
+ */
+export function caseRefetchMs(state: string | undefined): number | false {
+  return state === "EXECUTING" ? 15_000 : false;
+}
+
 /** Whether the evidence on file contradicts the declaration. */
 export function isContradicted(evaluation: EvidenceEvaluation | null | undefined): boolean {
   if (!evaluation) return false;

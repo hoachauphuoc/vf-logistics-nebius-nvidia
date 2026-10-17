@@ -445,6 +445,37 @@ class TestN06ACountryFieldsNameOneCountry:
         assert out["status"] == "missing"
         assert out["missing"] == ["input_purchase_invoices"]
 
+    @pytest.mark.parametrize("value", [
+        ["not stated", "China"], ["China", "PRC"], ["N/A", "People's Republic of China"],
+    ])
+    def test_a_certificate_for_china_contradicts_a_vietnam_declaration(self, value):
+        # One country, however it is wrapped: it must be compared with the declaration (N06).
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": value}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["status"] == "contradicted"
+        assert "certificate_country" in [c["kind"] for c in out["contradictions"]]
+
+    @pytest.mark.parametrize("goods_origin,supplier_country", [
+        (["not stated", "China"], "Vietnam"),
+        (["China", "PRC"], "Vietnam"),
+        ("not stated", ["China", "PRC"]),
+    ])
+    def test_an_invoice_for_china_goods_contradicts_however_the_field_is_written(self, goods_origin, supplier_country):
+        invoice = {
+            **GOOD["input_purchase_invoices"],
+            "goods_origin_country": goods_origin,
+            "supplier_country": supplier_country,
+        }
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "contradicted"
+        assert "input_origin" in [c["kind"] for c in out["contradictions"]]
+
+    def test_two_spellings_of_the_declared_country_contradict_nothing(self):
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": ["Vietnam", "Viet Nam"]}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["status"] == "provided"
+        assert out["contradictions"] == []
+
     def test_an_invoice_with_two_countries_is_still_read_for_contradictions(self):
         # Still read for contradictions: China is a watched input origin on the plywood lane.
         invoice = {

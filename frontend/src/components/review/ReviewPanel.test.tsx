@@ -493,6 +493,36 @@ describe("ReviewPanel: resuming an interrupted execution (N08-B)", () => {
     expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
   });
 
+  it("reloads the case when Release's execute step loses the connection, and still shows the error", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(
+      new ApiError("The request took longer than 20s and was abandoned.", 0, "unreachable"),
+    );
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/took longer than 20s/);
+  });
+
+  it("reloads the case when Retry loses the connection", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(new ApiError("Failed to fetch", 0, "unreachable"));
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("EXECUTION_FAILED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("does not reload for a refusal the server sent, which is an answer and not a lost connection", async () => {
+    vi.mocked(approveCase).mockRejectedValueOnce(new ApiError("Re-evaluate first.", 409, "http"));
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Re-evaluate first.");
+    expect(onDecided).not.toHaveBeenCalled();
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
   it("keeps Execute for an approved case, with no Resume beside it", () => {
     const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
     renderPanel(makeCase("APPROVED", { approvals: [approval] }));

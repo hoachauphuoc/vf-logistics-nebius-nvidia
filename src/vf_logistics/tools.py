@@ -241,6 +241,19 @@ async def publish_decision(
     return await publish_decision_direct(case_id, body, tenant_id=tenant_id)
 
 
+def _may_have_been_accepted(exc: BaseException) -> bool:
+    """
+    True when the broker may have taken the message although the call raised.
+
+    A timeout, and the Google SDK's DeadlineExceeded and RetryError, say nothing about
+    whether the message went out (N01). They are matched by class name down the MRO so
+    this module needs no google.api_core import.
+    """
+    return isinstance(exc, TimeoutError) or any(
+        cls.__name__ in ("DeadlineExceeded", "RetryError") for cls in type(exc).__mro__
+    )
+
+
 async def publish_decision_direct(
     case_id: str, body: dict[str, Any], tenant_id: str | None = None,
 ) -> dict[str, Any]:
@@ -251,6 +264,10 @@ async def publish_decision_direct(
     behalf of the analysis service in the split-identity deployment.
     """
     try:
+        # Filled once the broker has accepted the message (N01). A failure to SAVE its record
+        # is not a failure to SEND: reading it as one lost the message id, and the retry
+        # published the decision a second time.
+        accepted: dict[str, Any] = {}
         import asyncio
 
         from google.cloud import pubsub_v1
@@ -273,6 +290,7 @@ async def publish_decision_direct(
             return future.result(timeout=15)
 
         message_id = await asyncio.to_thread(_publish)
+        accepted["message_id"] = message_id
         return await _audit(
             case_id, "publish_decision", {**body, "message_id": message_id},
             tenant_id=tenant_id,
@@ -280,9 +298,10 @@ async def publish_decision_direct(
     except Exception as exc:  # noqa: BLE001
         return await _audit(
             case_id, "publish_decision",
-            {**body, "error": f"{type(exc).__name__}: {exc}"},
+            {**body, **accepted, "error": f"{type(exc).__name__}: {exc}"},
             # A timeout means the broker may have accepted the message, which is not the same
             # as "not sent" (N01). A retry carries the same idempotency key.
-            status="unknown" if isinstance(exc, TimeoutError) else "failed",
+            # An accepted message is a sent one, whatever happened to its first record.
+            status="done" if accepted else ("unknown" if _may_have_been_accepted(exc) else "failed"),
             tenant_id=tenant_id,
         )

@@ -19,6 +19,13 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
   13. `--only N08e`; `--only N03d1t` (red: log shows `pytest exit 1`), `--only N03d1c`, then `--only V3` (its log lists the existing tests N03d1c breaks; migrate them next). The combined task N03d1 is parked, superseded by N03d1t/N03d1c.
   13. `--only RM1t` (its tests must fail: the log shows `pytest exit 1`), then `--only RM1c` (same tests green).
   14. `--only RM2t` (red), then `--only RM2c` (green). After RM2c the Master reviews from `runs/<ID>/attempt_N.diff` and runs no git.
+  15. PRE-DEPLOY GATE (phase PD, review VI 2026-10-15 + CLAUDE.md section 7). In this order, one id per run:
+      `PDSYNC` (the code to test is exactly origin/master), `PD1` (add the newer fixes to the review VI table),
+      `V2` (review VI table: every counted check PASS), `VFULL` (backend, ruff, tsc, lint, vitest), `PDCI` (GitHub CI,
+      typecheck/mypy included, green on the origin/master commit). GO for deploy only if all five logs are green and the
+      human checklist in task PDCI's context is done. After the human deploys: `PDPOST` (the live service answers and runs
+      the new code). Every task here is verify_only except PD1.
+  16. REVERIFICATION VI of 2026-10-17 (commit 76e6b01), one id per run, in this order, reading `git diff` after each: `--only N06e` (P1: a country field read like a bare string), `--only N01e1`, then `--only N01e2` (P1: DeadlineExceeded/RetryError are unknown; an accepted publish keeps its message id when its record fails to save), `--only N08g`, then `--only N08h` (P2: reload after a lost connection; poll an EXECUTING case). Then `--only VFULL`. Not fixable in this repository, listed in the report: the receiving side must drop a repeat by the idempotency_key attribute; a process that dies between the broker's accept and any save; a real Firestore/Pub/Sub/browser run; the "27 checks" figure in the fix report against the 25 in scripts/verify_review_vi.py.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -70,6 +77,12 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
 | 29v | V3 | verify_only: which existing tests the N03d1c change breaks |
 | 29m | N03m1, N03m2 | Migrate the two test helpers to the typed link of the first document (human approved) |
 | 29w | V4 | verify_only: the full backend suite |
+| PD-a | PDSYNC | verify_only: the working tree's code equals origin/master (what will be deployed) |
+| PD-b | PD1 | Review VI table also checks send_unknown, the refused request-level link, the unread record |
+| PD-c | V2 | verify_only: review VI table (rerun after PD1) |
+| PD-d | VFULL | verify_only: backend suite, ruff, tsc, lint, vitest (rerun) |
+| PD-e | PDCI | verify_only: GitHub CI on the origin/master commit, every job green (mypy ratchet included) |
+| PD-f | PDPOST | verify_only, AFTER the human deploys: the live service is healthy and serves the new code |
 
 N03d1c round 1: FIX, 10 existing tests broke (9 in test_evidence_respond.py, 1 in test_evidence_eval_approve.py), human approved migrating the two helpers; log runs/V3/attempt_1.log. Next: run N03m1, N03m2, V3, V4.
 N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test still uses the request-level link (N03m3), and test_operating_curve fails because the relative --basetemp makes the script print a relative path (environmental; V4 now uses an absolute basetemp via %CD%); V3 was skipped as "failed earlier, unchanged" and is superseded by V4. Logs runs/V4/attempt_1.log. Next: run N03m3, then V4. Limit reached after this round: if V4 is not clean, stop and report.
@@ -77,6 +90,13 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 28 | RM1c | Runner: claude_command always passes --disable-slash-commands |
 | 29 | RM2t | Runner: test that every attempt writes attempt_N.diff (red first) |
 | 30 | RM2c | Runner: run_task writes attempt_N.diff before any restore |
+| 31 | N06e | A country field with one country twice or an unstated entry is compared with the declaration (N06) |
+| 32 | N01e1 | DeadlineExceeded and RetryError are recorded as unknown, not failed (N01) |
+| 33 | N01e2 | An accepted publish keeps its message id when its record fails to save (N01) |
+| 34 | N08g | ReviewPanel reloads the case after a lost connection on approve or execute (N08) |
+| 35 | N08h | The case page reads an EXECUTING case again every 15 seconds (N08) |
+
+N01e2 round 1: RERUN, its mypy test_command wanted tools.py clean but 2 no-any-return errors exist outside the change (lines 200 and 290; tools.py is not in the strict list); replaced by a ruff check; code and tests passed (38 + 105), log runs/N01e2/attempt_2.log
 
 ---
 
@@ -4776,6 +4796,177 @@ A verify_only task for the question "was it merged?". `git fetch origin` only up
 A verify_only task that only reads: the pull requests whose head is gemma-backlog (state, base branch, merged time, merge status, CI rollup) and the CI checks of the branch. Output in `orchestrator/runs/VPR/attempt_1.log`. If `gh` is missing or not signed in, the log says so and the answer has to come from VMERGE2.
 <!-- TASK_END -->
 
+<!-- TASK_START: VLOCAL -->
+## Meta
+- title: Local master versus origin/master (read-only)
+- verify_only: true
+- test_commands:
+  - git log --oneline --decorate -5
+  - git branch -vv
+  - git rev-parse HEAD origin/master origin/gemma-backlog
+  - git rev-list --left-right --count origin/master...HEAD
+
+## Context
+Read-only git commands, output in `orchestrator/runs/VLOCAL/attempt_1.log`. The last line prints "<commits only on origin/master> <commits only on local HEAD>": a first number 0 and a second number above 0 means the local branch is ahead of origin/master and the push did not reach the remote.
+<!-- TASK_END -->
+
+<!-- TASK_START: VCI -->
+## Meta
+- title: CI state on GitHub (read-only, GitHub CLI)
+- verify_only: true
+- test_commands:
+  - git ls-remote --heads origin master gemma-backlog
+  - gh pr list --repo hoachauphuoc/vf-logistics-nebius-nvidia --state all --limit 5 --json number,title,state,headRefName,baseRefName,mergedAt,mergeStateStatus
+  - gh run list --repo hoachauphuoc/vf-logistics-nebius-nvidia --limit 10 --json databaseId,workflowName,headBranch,headSha,event,status,conclusion,createdAt
+
+## Context
+Read-only: the heads of master and gemma-backlog on the remote, the latest pull requests, and the latest GitHub Actions runs with their branch, commit, status and conclusion. Output in `orchestrator/runs/VCI/attempt_1.log`. It reruns on every invocation.
+<!-- TASK_END -->
+
+<!-- TASK_START: VBRANCH -->
+## Meta
+- title: Which remote branches have commits that master does not (read-only after a fetch)
+- verify_only: true
+- test_commands:
+  - git fetch origin --prune
+  - git merge-base --is-ancestor origin/gemma-backlog origin/master && echo GEMMA_BACKLOG_IN_MASTER || echo GEMMA_BACKLOG_NOT_IN_MASTER
+  - git log --oneline --decorate -4 origin/master
+  - git log --oneline --format="%h %an %ad %s" --date=short origin/master..origin/claude/kind-meitner-gqllb8
+  - git rev-list --count origin/master..origin/claude/fervent-darwin-ij8esp
+  - git rev-list --count origin/master..origin/claude/elegant-pascal-lsbuxt
+  - git rev-list --count origin/master..origin/gemma-backlog
+
+## Context
+Read-only after `git fetch origin --prune` (updates remote-tracking refs only). For each branch: how many commits it has that origin/master does not (0 = nothing would be lost by deleting it), and the commit(s) that claude/kind-meitner-gqllb8 has beyond master. Output in `orchestrator/runs/VBRANCH/attempt_1.log`.
+<!-- TASK_END -->
+
+<!-- TASK_START: VKEEP -->
+## Meta
+- title: What the one extra commit of claude/kind-meitner-gqllb8 contains (read-only)
+- verify_only: true
+- test_commands:
+  - git show --stat --format="%h %an %ad%n%s%n%b" --date=short 8031a83
+  - git ls-tree -r --name-only origin/master -- orchestrator/execution_plan.md
+
+## Context
+Read-only. The commit `8031a83` is the only commit of the branch that master lacks. The first command lists its files, the second shows whether master has the same file path today. Output in `orchestrator/runs/VKEEP/attempt_1.log`.
+<!-- TASK_END -->
+
+<!-- TASK_START: PDSYNC -->
+## Meta
+- title: Pre-deploy, step 1 - the code under test is exactly origin/master
+- verify_only: true
+- test_commands:
+  - git fetch origin
+  - git status -sb
+  - git rev-parse HEAD origin/master
+  - git diff --stat origin/master -- src frontend tests requirements.txt pyproject.toml Dockerfile Dockerfile.backend entrypoint.sh
+  - git diff --quiet origin/master -- src frontend tests requirements.txt pyproject.toml Dockerfile Dockerfile.backend entrypoint.sh
+
+## Context
+Every later check runs on the working tree, so it must hold the code that will be deployed: the application, its tests and the files that build the image, compared with origin/master. The last command exits 1 when anything differs; the one before shows what. `scripts/` and `orchestrator/` are tooling, not part of the image, and are left out on purpose (PD1 changes `scripts/verify_review_vi.py`). Read-only apart from `git fetch`, which only updates remote-tracking refs.
+<!-- TASK_END -->
+
+<!-- TASK_START: PD1 -->
+## Meta
+- title: Pre-deploy, step 2 - the review VI table also checks the fixes made after it was written
+- depends_on: []
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python scripts/verify_review_vi.py --no-frontend
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+scripts/verify_review_vi.py is the single table that answers "is review VI fixed?". Three fixes landed after it was written and are not rows yet: a timed-out send recorded as send_unknown (N01), the request-level link refused when several documents were requested (N03), and the evaluation record that names papers read only in part (N06). This task adds one row each, pointing at their existing tests. The second command runs the table (it always exits 0); the verdict is read from V2's log.
+
+## Prompt
+``````text
+TASK PD1. Add three rows to the list CHECKS in scripts/verify_review_vi.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not change any existing row.
+
+EDIT 1. old_string, ONE line (4 leading spaces; occurs once, at line 100):
+```python
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+new_string is the block below: three new rows, and then that same line again as the last line:
+```python
+    ("N01-f", "N01", "a timed-out send is recorded as send_unknown and the retry sends with the same key", "py",
+     [("test_send_unknown.py", "test_a_timeout_is_recorded_as_unknown_and_keeps_the_key"),
+      ("test_send_unknown.py", "test_a_timed_out_send_is_unknown_and_the_retry_sends_with_the_same_key")]),
+    ("N03-c", "N03", "a link without a document type is refused when several documents were requested", "py",
+     [("test_untyped_link.py", "test_with_several_documents_requested_it_is_refused"),
+      ("test_untyped_link.py", "test_with_one_document_requested_the_request_level_link_still_works")]),
+    ("N06-e", "N06", "the evaluation record names the papers that were read only in part", "py",
+     [("test_unread_pages_evaluation.py", "test_a_received_paper_read_in_part_is_unresolved_and_says_why")]),
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+
+DONE WHEN: only this file changed, by the eight added lines; every existing row is unchanged.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: PDCI -->
+## Meta
+- title: Pre-deploy, step 5 - GitHub CI is green on the exact origin/master commit
+- verify_only: true
+- test_commands:
+  - git fetch origin
+  - python -c "import json,subprocess as s; R='hoachauphuoc/vf-logistics-nebius-nvidia'; sha=s.check_output(['git','rev-parse','origin/master'],text=True).strip(); runs=json.loads(s.check_output(['gh','run','list','--repo',R,'--workflow','CI','--branch','master','--limit','5','--json','databaseId,headSha,status,conclusion,event'],text=True)); run=next((r for r in runs if r['headSha']==sha),None); print('origin/master',sha); print('CI run',run); jobs=json.loads(s.check_output(['gh','run','view',str(run['databaseId']),'--repo',R,'--json','jobs'],text=True))['jobs'] if run else []; print('\n'.join(j['name']+': '+str(j['conclusion']) for j in jobs)); ok=bool(run) and run['conclusion']=='success' and bool(jobs) and all(j['conclusion']=='success' for j in jobs); print('CI_ON_DEPLOY_COMMIT_GREEN' if ok else 'CI_NOT_PROVEN'); raise SystemExit(0 if ok else 1)"
+
+## Context
+The CI workflow (.github/workflows/ci.yml) runs on every push to master: lint, typecheck (strict mypy on the clean modules and the ratchet on the whole package, Python 3.11, pinned mypy), tests, frontend, and a container job that builds and smoke-tests the images. This task finds the CI run for the exact origin/master commit and prints every job with its conclusion; it passes only when the run and every job are "success". It is also the mypy proof: the local mypy line in VFULL cannot be trusted on this machine (a numpy stub with Python 3.12 syntax stops mypy before it checks anything).
+
+HUMAN CHECKLIST BEFORE DEPLOY (cannot be checked from this machine; the Master does not touch production):
+1. Open evidence requests on the live service. Production runs an older build that gave shippers ONE link per request. After this deploy such a link is refused (400) when the request asked for several documents (N03). For every open request with several documents: after deploy, issue a new link (the console's new-link action) and send the typed links again.
+2. Firestore: 16 backend tests skip without the Firestore emulator. Run them in an environment that has it (the agent may not run gcloud), or accept the gap knowingly.
+3. Configuration: this deploy needs no new environment variable or secret. The new route approve-exception needs an account in OPERATOR_EMAILS to be used; the console does not call it yet.
+4. The deploy itself (Cloud Run `vf-app`) is the human's, with their credentials.
+5. Recommended by the review: one end-to-end run in a real browser with two cases (reviewer asks, shipper uploads without signing in, re-evaluate, decision with a reason, execution), and note the evidence version, decider and result of each.
+<!-- TASK_END -->
+
+<!-- TASK_START: PDPOST -->
+## Meta
+- title: After deploy - the live service is healthy and serves the new code
+- verify_only: true
+- test_commands:
+  - python -c "import httpx; B='https://vf-app-350828852747.asia-southeast1.run.app'; h=httpx.get(B+'/health',timeout=30); print('health',h.status_code,h.text[:300]); p=httpx.get(B+'/api/v1/review/CASE-PROBE/approve-exception',timeout=30); print('approve-exception GET',p.status_code); ok=h.status_code==200 and p.status_code==405; print('NEW_CODE_LIVE' if ok else 'NOT_PROVEN'); raise SystemExit(0 if ok else 1)"
+
+## Context
+Run ONLY after the human has deployed. Two read-only GET requests to the live service, no credentials: `/health` must answer 200, and the route added in this release (`/api/v1/review/<id>/approve-exception`, POST only) must answer 405 Method Not Allowed to a GET. 405 means the route exists, so the new code is serving; 404 means the old build is still live. Nothing is written on the service.
+<!-- TASK_END -->
+
+<!-- TASK_START: VPDF -->
+## Meta
+- title: Print the Japanese review report (HTML) to PDF with headless Edge
+- verify_only: true
+- test_commands:
+  - if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (echo EDGE_FOUND) else (echo EDGE_MISSING)
+  - "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless --disable-gpu --no-pdf-header-footer --print-to-pdf="%CD%\orchestrator\runs\VPDF\review_vi_report_ja.pdf" "%CD%\orchestrator\archive\review_vi_report_ja.html"
+  - dir orchestrator\runs\VPDF
+
+## Context
+A verify_only task that produces a file instead of changing code: it prints `orchestrator/archive/review_vi_report_ja.html` (the Japanese report for the reviewer) to `orchestrator/runs/VPDF/review_vi_report_ja.pdf` with headless Edge, then lists the folder to show the file size. Nothing outside `orchestrator/runs/` is written. If the first line says EDGE_MISSING, the second command fails and the log says so.
+<!-- TASK_END -->
+
+<!-- TASK_START: VCHK -->
+## Meta
+- title: Recheck after the review corrections - commit present, gate green, nothing deployed
+- verify_only: true
+- test_commands:
+  - git log --oneline -6
+  - git status --porcelain
+  - git rev-parse HEAD origin/master
+  - git diff --stat origin/master -- src frontend tests requirements.txt pyproject.toml Dockerfile Dockerfile.backend entrypoint.sh
+
+## Context
+Read-only check that the corrections the human reported are committed: the last commits, the working tree (which should list only the tooling files not yet committed), and whether HEAD's code equals origin/master. The gate itself is rerun as separate tasks (V2, VFULL) after this one.
+<!-- TASK_END -->
+
 ## Parked
 
 <!-- PARKED_TASK_START: C3 -->
@@ -5448,5 +5639,561 @@ The line `restore(opts.repo, snap)` further down must stay where it is.
 DONE WHEN: `import difflib` is above `import fnmatch`; `write_diff` is defined right above `enforce_scope`;
 the write_diff call is directly above that cp.update line in run_task.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if any anchor is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N06e -->
+## Meta
+- title: A country field that holds one country twice or with an unstated entry is compared with the declaration (N06, verifier)
+- depends_on: []
+- target_files:
+  - src/vf_logistics/verifier.py
+  - tests/test_origin_inputs.py
+- test_commands:
+  - python -m pytest tests/test_origin_inputs.py -q
+  - python -m pytest tests/test_verifier.py tests/test_evidence_respond.py tests/test_evidence_eval_approve.py -q
+  - python -m mypy src/vf_logistics/verifier.py --ignore-missing-imports --follow-imports=silent
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Independent reverification of 2026-10-17 (commit 76e6b01), finding N06 (P1, partly fixed). A certificate whose origin_country is ["not stated", "China"] or ["China", "PRC"] counts as "provided" in the completeness test (it holds one country), but the contradiction read in check_origin_evidence only looks at a bare string, so the list is skipped: 0 contradictions, status provided, and Release is approved with no reason and no recorded exception. The same holds for goods_origin_country / supplier_country on the invoice. A bare "China" is caught (floor 45 -> 80), so the same paper passes or fails by how the field is wrapped.
+Fix: one helper, `_stated_country`, reads a country field by its distinct stated entries and returns the one canonical country (or "" for none or several). The completeness test and the contradiction reads then see the same value. This only adds contradictions: the risk floor is never lowered. A field that lists two different countries stays unproven (existing N06-A), and a producer declaration's input_origins is untouched.
+Master review (from the log): with the tests and without the verifier.py edits, `python -m pytest tests/test_origin_inputs.py -q` shows 6 failed; with both, it passes. The Master also checks that Edit 3 and Edit 4 left no other use of raw_origin.
+
+## Prompt
+``````text
+TASK N06e. A country field that states one country (twice, or beside an unstated entry) must be compared with the declaration, like a bare string. Six one-line edits in verifier.py and one insertion in the test file.
+
+FILES YOU MAY EDIT (only these two): src/vf_logistics/verifier.py and tests/test_origin_inputs.py. Both use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on these files. Do not touch any other line, any existing test, or any import.
+
+EDIT 1 (verifier.py, add the helper after _names_several_countries). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    return len({_canon_country(_scalar(v)) for v in value if _is_meaningful(v)}) > 1
+```
+new_string is that same line, then two blank lines, then the helper:
+```python
+    return len({_canon_country(_scalar(v)) for v in value if _is_meaningful(v)}) > 1
+
+
+def _stated_country(value: Any) -> str:
+    """The one country a field states, in its canonical spelling; "" when it states none or several.
+
+    A list is read by its distinct stated entries, so ["not stated", "China"] and
+    ["China", "PRC"] both state China. The completeness test accepts such a list as one
+    country, so the contradiction reads must take it the same way (N06): a list they
+    skipped was a paper counted as provided and never compared with the declaration.
+    """
+    values = value if isinstance(value, (list, tuple)) else [value]
+    names = {_canon_country(_scalar(v)) for v in values if _is_meaningful(v)}
+    return names.pop() if len(names) == 1 else ""
+```
+
+EDIT 2 (verifier.py, certificate). old_string, ONE line (8 leading spaces; occurs once):
+```python
+        raw_origin = _scalar(cert.get("origin_country"))
+```
+new_string, ONE line:
+```python
+        raw_origin = _stated_country(cert.get("origin_country"))
+```
+
+EDIT 3 (verifier.py). old_string, ONE line (8 leading spaces; occurs once):
+```python
+        if not _is_meaningful(raw_origin):
+```
+new_string, ONE line:
+```python
+        if not raw_origin:
+```
+
+EDIT 4 (verifier.py). old_string, ONE line (8 leading spaces; occurs once):
+```python
+        stated = _canon_country(raw_origin)
+```
+new_string, ONE line:
+```python
+        stated = raw_origin
+```
+
+EDIT 5 (verifier.py, invoice). old_string, ONE line (20 leading spaces; occurs once; it is the line inside `goods_origin = next(`):
+```python
+                    _canon_country(_scalar(v))
+```
+new_string, ONE line:
+```python
+                    _stated_country(v)
+```
+
+EDIT 6 (verifier.py, invoice). old_string, ONE line (20 leading spaces; occurs once; the line right below the `for v in (inv.get("goods_origin_country"), ...)` line):
+```python
+                    if _is_meaningful(v)
+```
+new_string, ONE line:
+```python
+                    if _stated_country(v)
+```
+Do not change anything else in verifier.py: not _names_several_countries, not the completeness loop, not the producer_declaration read.
+
+EDIT 7 (tests/test_origin_inputs.py, three tests inside class TestN06ACountryFieldsNameOneCountry, directly before its last test). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    def test_an_invoice_with_two_countries_is_still_read_for_contradictions(self):
+```
+new_string is the three tests below, a blank line, and then that same line again:
+```python
+    @pytest.mark.parametrize("value", [
+        ["not stated", "China"], ["China", "PRC"], ["N/A", "People's Republic of China"],
+    ])
+    def test_a_certificate_for_china_contradicts_a_vietnam_declaration(self, value):
+        # One country, however it is wrapped: it must be compared with the declaration (N06).
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": value}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["status"] == "contradicted"
+        assert "certificate_country" in [c["kind"] for c in out["contradictions"]]
+
+    @pytest.mark.parametrize("goods_origin,supplier_country", [
+        (["not stated", "China"], "Vietnam"),
+        (["China", "PRC"], "Vietnam"),
+        ("not stated", ["China", "PRC"]),
+    ])
+    def test_an_invoice_for_china_goods_contradicts_however_the_field_is_written(self, goods_origin, supplier_country):
+        invoice = {
+            **GOOD["input_purchase_invoices"],
+            "goods_origin_country": goods_origin,
+            "supplier_country": supplier_country,
+        }
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "input_purchase_invoices": invoice}))
+        assert out["status"] == "contradicted"
+        assert "input_origin" in [c["kind"] for c in out["contradictions"]]
+
+    def test_two_spellings_of_the_declared_country_contradict_nothing(self):
+        cert = {"producer_name": "Saigon Plywood Co., Ltd.", "origin_country": ["Vietnam", "Viet Nam"]}
+        out = check_origin_evidence(plywood(), docs(**{**GOOD, "certificate_of_origin": cert}))
+        assert out["status"] == "provided"
+        assert out["contradictions"] == []
+
+```
+
+DONE WHEN: only these two files changed; verifier.py gained the helper and has six edited lines, all in the places above; the test file gained the three tests (the first two parametrized).
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N01e1 -->
+## Meta
+- title: A publish that the Google SDK reports as DeadlineExceeded or RetryError is recorded as unknown, not failed (N01, tools)
+- depends_on: []
+- target_files:
+  - src/vf_logistics/tools.py
+  - tests/test_publish_dedupe.py
+- test_commands:
+  - python -m pytest tests/test_publish_dedupe.py tests/test_evidence_execution.py -q
+  - python -m pytest tests/test_resume_after_publish.py tests/test_publish_attribute.py tests/test_executor_client.py tests/test_pure_logic.py tests/test_internal_execute.py -q
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Independent reverification of 2026-10-17, finding N01 (P1, partly fixed). N01d1 records a built-in TimeoutError as "unknown", but the Google Pub/Sub client reports a publish that ran out of time as google.api_core.exceptions.DeadlineExceeded or RetryError, which are not TimeoutError, so those are still recorded as "failed" and read as "nothing was sent". The check goes by class name, through the exception's MRO, so tools.py needs no google.api_core import and the test needs none (google.api_core cannot be imported in this environment: protobuf version clash). Every other exception stays "failed". A retry still sends and carries the same idempotency key.
+Master review (from the log): with the test and without the tools.py edits, test_publish_dedupe.py shows 1 failed; with them it passes.
+
+## Prompt
+``````text
+TASK N01e1. A DeadlineExceeded or RetryError from the publish is "unknown", like a TimeoutError. One helper and one changed line in tools.py, two tests in test_publish_dedupe.py.
+
+FILES YOU MAY EDIT (only these two): src/vf_logistics/tools.py and tests/test_publish_dedupe.py. Both use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on these files. Add no import.
+
+EDIT 1 (tools.py, add a helper above publish_decision_direct). old_string, ONE line (no leading spaces; occurs once):
+```python
+async def publish_decision_direct(
+```
+new_string is the helper below, then two blank lines, then that same line again:
+```python
+def _may_have_been_accepted(exc: BaseException) -> bool:
+    """
+    True when the broker may have taken the message although the call raised.
+
+    A timeout, and the Google SDK's DeadlineExceeded and RetryError, say nothing about
+    whether the message went out (N01). They are matched by class name down the MRO so
+    this module needs no google.api_core import.
+    """
+    return isinstance(exc, TimeoutError) or any(
+        cls.__name__ in ("DeadlineExceeded", "RetryError") for cls in type(exc).__mro__
+    )
+```
+
+EDIT 2 (tools.py). old_string, ONE line (12 leading spaces; occurs once):
+```python
+            status="unknown" if isinstance(exc, TimeoutError) else "failed",
+```
+new_string, ONE line:
+```python
+            status="unknown" if _may_have_been_accepted(exc) else "failed",
+```
+Do not change anything else in tools.py.
+
+EDIT 3 (tests/test_publish_dedupe.py, two tests inside class TestAnEarlierPublishIsNotRepeated, before its last test). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    def test_a_decision_without_a_key_is_always_sent(self):
+```
+new_string is the two tests below, a blank line, and then that same line again:
+```python
+    def test_an_sdk_deadline_error_is_unknown_not_failed(self):
+        # The names are the SDK's own; google.api_core cannot be imported here.
+        class DeadlineExceeded(Exception):
+            pass
+
+        class RetryError(Exception):
+            pass
+
+        for n, error in enumerate((DeadlineExceeded("504 Deadline Exceeded"), RetryError("Deadline of 60.0s exceeded"))):
+            pubsub, _ = _fake_pubsub([error])
+            first = self._publish(pubsub, key=f"exec-sdk-{n}")
+            assert first["status"] == "unknown"
+            assert first["detail"]["error"].startswith(type(error).__name__)
+
+    def test_any_other_publish_error_stays_failed(self):
+        class ServiceUnavailable(Exception):
+            pass
+
+        pubsub, _ = _fake_pubsub([ServiceUnavailable("503 Service Unavailable")])
+        assert self._publish(pubsub)["status"] == "failed"
+
+```
+
+DONE WHEN: only these two files changed; tools.py gained the helper and one changed line; the test file gained the two tests.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N01e2 -->
+## Meta
+- title: A publish the broker accepted keeps its message id when saving its record fails (N01, tools)
+- depends_on:
+  - N01e1
+- target_files:
+  - src/vf_logistics/tools.py
+  - tests/test_resume_after_publish.py
+- test_commands:
+  - python -m pytest tests/test_resume_after_publish.py tests/test_publish_dedupe.py tests/test_evidence_execution.py -q
+  - python -m pytest tests/test_publish_attribute.py tests/test_executor_client.py tests/test_pure_logic.py tests/test_internal_execute.py -q
+  - python -m ruff check src/vf_logistics/tools.py tests/test_resume_after_publish.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 480
+- max_retries: 1
+
+## Context
+Independent reverification of 2026-10-17, finding N01 (P1, partly fixed). In publish_decision_direct the Pub/Sub publish and the audit save of its success sit in one try. Reproduced: the broker accepted "msg-1", the save of the audit row raised ServiceUnavailable once, the handler took it for a failed send and wrote a "failed" row with no message id; the case became EXECUTION_FAILED, and Retry published the same decision again ("msg-2"). The lookup of an earlier publish only counts rows that carry a message id, so it could not see the first one.
+Fix: remember that the broker accepted the message (`accepted`). If the save then raises, the handler saves the row again WITH the message id and status "done"; the caller reads it as sent. If that second save also raises, the exception still reaches the caller as before (nothing new is hidden), so the receiving side must keep dropping a repeat by the idempotency_key message attribute (N01a); that is outside this repository, as is a process that dies between the accept and any save.
+Master review (from the log): with the new test and without the tools.py edits the test fails (the case ends EXECUTION_FAILED and the message id is lost); with them it passes, and the other listed suites pass.
+
+## Prompt
+``````text
+TASK N01e2. When the broker accepted the message but saving its record failed, the record is saved again with the message id. Four one-line edits in tools.py (all inside publish_decision_direct) and one test class in test_resume_after_publish.py. Task N01e1 is already applied: the status line below mentions _may_have_been_accepted.
+
+FILES YOU MAY EDIT (only these two): src/vf_logistics/tools.py and tests/test_resume_after_publish.py. Both use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on these files. Add no import. Change no other line of publish_decision_direct.
+
+EDIT 1 (tools.py). old_string, ONE line (8 leading spaces; occurs once):
+```python
+        import asyncio
+```
+new_string is the lines below (the last is the old line):
+```python
+        # Filled once the broker has accepted the message (N01). A failure to SAVE its record
+        # is not a failure to SEND: reading it as one lost the message id, and the retry
+        # published the decision a second time.
+        accepted: dict[str, Any] = {}
+        import asyncio
+```
+
+EDIT 2 (tools.py). old_string, ONE line (8 leading spaces; occurs once):
+```python
+        message_id = await asyncio.to_thread(_publish)
+```
+new_string is that line and the line below it:
+```python
+        message_id = await asyncio.to_thread(_publish)
+        accepted["message_id"] = message_id
+```
+
+EDIT 3 (tools.py, inside the `except Exception as exc:` block). old_string, ONE line (12 leading spaces; occurs once):
+```python
+            {**body, "error": f"{type(exc).__name__}: {exc}"},
+```
+new_string, ONE line:
+```python
+            {**body, **accepted, "error": f"{type(exc).__name__}: {exc}"},
+```
+
+EDIT 4 (tools.py, the status line in the same block). old_string, ONE line (12 leading spaces; occurs once):
+```python
+            status="unknown" if _may_have_been_accepted(exc) else "failed",
+```
+new_string is the two lines below:
+```python
+            # An accepted message is a sent one, whatever happened to its first record.
+            status="done" if accepted else ("unknown" if _may_have_been_accepted(exc) else "failed"),
+```
+
+EDIT 5 (tests/test_resume_after_publish.py, a new class at the end of the file). old_string, ONE line (8 leading spaces; occurs once; it is the last line of the file):
+```python
+        assert stored["verification"]["approvals"][0]["status"] == "EXECUTED"
+```
+new_string is that same line, then two blank lines, then the class:
+```python
+        assert stored["verification"]["approvals"][0]["status"] == "EXECUTED"
+
+
+class TestARecordThatFailsToSaveAfterTheBrokerAccepted(Base):
+    def test_the_message_id_is_kept_and_the_decision_is_sent_once(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
+        real_audit = tools._audit
+        refused: list[str] = []
+
+        async def store_down_once(case_id, action, detail, status="done", tenant_id=None):
+            # The first save of the publish record fails after the broker accepted the message.
+            if action == "publish_decision" and not refused:
+                refused.append(action)
+                raise RuntimeError("ServiceUnavailable: the store did not answer")
+            return await real_audit(case_id, action, detail, status, tenant_id)
+
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub), \
+                patch("vf_logistics.tools._audit", new=store_down_once):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        assert result["message_id"] == "msg-1"
+        assert len(published) == 1
+        stored = self.stored()
+        assert [e["status"] for e in stored["verification"]["executions"]] == ["sent"]
+        assert stored["verification"]["executions"][0]["message_id"] == "msg-1"
+        rows = [r for r in run(self.store.list_audit(limit=500)) if r.get("action") == "publish_decision"]
+        assert [(r["status"], r["detail"]["message_id"]) for r in rows] == [("done", "msg-1")]
+```
+
+DONE WHEN: only these two files changed; tools.py has four changed places, all inside publish_decision_direct; the test file gained one class at its end.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08g -->
+## Meta
+- title: The review panel reloads the case when approve or execute loses the connection (N08, frontend)
+- depends_on: []
+- target_files:
+  - frontend/src/components/review/ReviewPanel.tsx
+  - frontend/src/components/review/ReviewPanel.test.tsx
+- test_commands:
+  - [frontend] npx vitest run src/components/review/ReviewPanel.test.tsx
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Independent reverification of 2026-10-17, finding N08 (partly fixed), part A. On the real ReviewPanel, Release -> Confirm -> approve succeeds -> execute fails with a 20-second timeout: onError only shows the message, the case is not reloaded, and the screen stays in the state before the approval, although the server approved and may be executing. Only the EXECUTION_FAILED answer reloaded the case (task A1).
+Fix: a connection failure (ApiError kind "unreachable") says nothing about what the server did, so the approve/execute mutations call onDecided() (the reload) after it. A refusal the server sent (kind "http", e.g. 409 "in progress" or "Re-evaluate first") is an answer, so it does not reload: the existing test "shows the backend's refusal when the claim is still live there" stays as it is.
+Master review (from the log): the vitest run shows 3 more passing tests; with the tests and without the ReviewPanel.tsx edits, the two "reloads the case" tests fail; tsc and lint pass.
+
+## Prompt
+``````text
+TASK N08g. After a lost connection, ReviewPanel reloads the case. Four edits in ReviewPanel.tsx and three tests in ReviewPanel.test.tsx.
+
+FILES YOU MAY EDIT (only these two): frontend/src/components/review/ReviewPanel.tsx and frontend/src/components/review/ReviewPanel.test.tsx. Both use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on these files. Do not change any mock or any existing test; ApiError, approveCase, executeApproval, renderPanel, makeCase, fireEvent, screen and waitFor already exist in the test file.
+
+EDIT 1 (ReviewPanel.tsx, import). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+import { approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+```
+new_string, ONE line (only `ApiError, ` is new):
+```tsx
+import { ApiError, approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+```
+
+EDIT 2 (ReviewPanel.tsx, a helper). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+const ACTION_LABEL: Record<HumanAction, string> = {
+```
+new_string is the helper below, a blank line, and then that same line again:
+```tsx
+// A dropped or timed-out connection says nothing about what the server did: the decision
+// may have been approved or executed before the answer was lost (N08). A refusal the
+// server sent (kind "http") is an answer, so there is nothing to reload.
+function outcomeUnknown(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === "unreachable";
+}
+
+const ACTION_LABEL: Record<HumanAction, string> = {
+```
+
+EDIT 3 (ReviewPanel.tsx). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  const verificationApprove = useMutation({
+```
+new_string is the three lines below (the first is the old line):
+```tsx
+  const verificationApprove = useMutation({
+    onSettled: (_data, error) => {
+      if (outcomeUnknown(error)) onDecided();
+    },
+```
+
+EDIT 4 (ReviewPanel.tsx). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  const verificationExecute = useMutation({
+```
+new_string is the three lines below (the first is the old line):
+```tsx
+  const verificationExecute = useMutation({
+    onSettled: (_data, error) => {
+      if (outcomeUnknown(error)) onDecided();
+    },
+```
+Change nothing else in ReviewPanel.tsx: not the onSuccess or onError handlers, not the other mutations.
+
+EDIT 5 (ReviewPanel.test.tsx, three tests inside the describe "ReviewPanel: resuming an interrupted execution (N08-B)", before its last test). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  it("keeps Execute for an approved case, with no Resume beside it", () => {
+```
+new_string is the three tests below, a blank line, and then that same line again:
+```tsx
+  it("reloads the case when Release's execute step loses the connection, and still shows the error", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(
+      new ApiError("The request took longer than 20s and was abandoned.", 0, "unreachable"),
+    );
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/took longer than 20s/);
+  });
+
+  it("reloads the case when Retry loses the connection", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(new ApiError("Failed to fetch", 0, "unreachable"));
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("EXECUTION_FAILED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("does not reload for a refusal the server sent, which is an answer and not a lost connection", async () => {
+    vi.mocked(approveCase).mockRejectedValueOnce(new ApiError("Re-evaluate first.", 409, "http"));
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Re-evaluate first.");
+    expect(onDecided).not.toHaveBeenCalled();
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
+  it("keeps Execute for an approved case, with no Resume beside it", () => {
+```
+(The line `  it("keeps Execute ...` at the end of new_string is the old line, kept.)
+
+DONE WHEN: only these two files changed; ReviewPanel.tsx gained the ApiError import, one helper and two onSettled blocks; the test file gained three tests.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08h -->
+## Meta
+- title: The case page reads an EXECUTING case again every 15 seconds (N08, frontend)
+- depends_on: []
+- target_files:
+  - frontend/src/lib/operations.ts
+  - frontend/src/lib/operations.test.ts
+  - frontend/src/app/cases/[id]/page.tsx
+- test_commands:
+  - [frontend] npx vitest run src/lib/operations.test.ts src/components/review/ReviewPanel.test.tsx
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Independent reverification of 2026-10-17, finding N08 (partly fixed), part B. On the real CasePage a case was read once as EXECUTING; the API then changed it to RELEASED_BY_HUMAN and the 60-second clock ticked: the page read no new data, so once the claim lease expired it showed "interrupted - claim expired" with a Resume button for a decision that had completed. The panel's 15-second timer only moves the clock; nothing reloads the case.
+Fix: the case query refetches every 15 seconds while the case is EXECUTING and not otherwise. The decision is a small pure function (caseRefetchMs) so a test can pin it; the page uses it as `refetchInterval`. The backend already refuses a second execution of an approval that is no longer executable (409), so a stale Resume click is still refused.
+Master review (from the log): operations.test.ts shows 2 more passing tests (they fail on the old code because caseRefetchMs does not exist); the page change is one import word and two lines, which the Master reads in `git diff` because no page test mounts CasePage.
+
+## Prompt
+``````text
+TASK N08h. The case page reads an EXECUTING case again every 15 seconds. One new function with two tests, and a two-line change in the page.
+
+FILES YOU MAY EDIT (only these three): frontend/src/lib/operations.ts, frontend/src/lib/operations.test.ts and frontend/src/app/cases/[id]/page.tsx. All use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on these files. Change nothing else.
+
+EDIT 1 (operations.ts, add the function). old_string, ONE line (no leading spaces; occurs once):
+```ts
+/** Whether the evidence on file contradicts the declaration. */
+```
+new_string is the function below, a blank line, and then that same line again:
+```ts
+/**
+ * How often the case page reads a case again, in milliseconds, or false for never.
+ *
+ * An execution ends on the server without anyone asking the page, so a page that read
+ * the case once as EXECUTING would later show a finished decision as "interrupted" with a
+ * Resume button (N08). Every other state changes only when somebody acts on this page.
+ */
+export function caseRefetchMs(state: string | undefined): number | false {
+  return state === "EXECUTING" ? 15_000 : false;
+}
+```
+
+EDIT 2 (operations.test.ts, import). old_string, ONE line (2 leading spaces; occurs once):
+```ts
+  buildCaseTimeline,
+```
+new_string is these two lines:
+```ts
+  buildCaseTimeline,
+  caseRefetchMs,
+```
+
+EDIT 3 (operations.test.ts, tests). old_string, ONE line (no leading spaces; occurs once):
+```ts
+describe("riskLabel", () => {
+```
+new_string is the block below, a blank line, and then that same line again:
+```ts
+describe("caseRefetchMs", () => {
+  it("reads an executing case again every 15 seconds", () => {
+    expect(caseRefetchMs("EXECUTING")).toBe(15_000);
+  });
+
+  it("leaves every other state, and a page with no data yet, alone", () => {
+    for (const state of ["HELD_FOR_REVIEW", "APPROVED", "EXECUTION_FAILED", "RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN", undefined]) {
+      expect(caseRefetchMs(state)).toBe(false);
+    }
+  });
+});
+```
+
+EDIT 4 (page.tsx, import). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+import { buildCaseTimeline, informationRounds, riskLabel } from "@/lib/operations";
+```
+new_string, ONE line:
+```tsx
+import { buildCaseTimeline, caseRefetchMs, informationRounds, riskLabel } from "@/lib/operations";
+```
+
+EDIT 5 (page.tsx, the case query). old_string, ONE line (4 leading spaces; occurs once):
+```tsx
+    queryFn: () => fetchCase(caseId),
+```
+new_string is these three lines (the first is the old line):
+```tsx
+    queryFn: () => fetchCase(caseId),
+    // An execution ends on the server without anyone asking this page (N08).
+    refetchInterval: (query) => caseRefetchMs(query.state.data?.state),
+```
+
+DONE WHEN: only these three files changed; operations.ts gained one function; operations.test.ts gained one import word and one describe; page.tsx gained one import word and two lines.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->

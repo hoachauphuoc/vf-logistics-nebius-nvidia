@@ -5,6 +5,7 @@ import { helpFor } from "@/lib/help-content";
 import {
   BUCKET_LABEL,
   buildCaseTimeline,
+  caseRefetchMs,
   coverage,
   describeSpread,
   dueStatus,
@@ -342,6 +343,18 @@ describe("a finding the papers have answered", () => {
     expect(findingEvent(caseWith({ status: "contradicted", contradictions: [{ kind: "input_origin", detail: "x" }] }))?.tone).toBe("bad");
     expect(findingEvent(caseWith({}, 4))?.tone).toBe("bad");
     expect(findingEvent(caseWith(null))?.title).toBe("Origin inputs unverified — floor 45");
+  });
+});
+
+describe("caseRefetchMs", () => {
+  it("reads an executing case again every 15 seconds", () => {
+    expect(caseRefetchMs("EXECUTING")).toBe(15_000);
+  });
+
+  it("leaves every other state, and a page with no data yet, alone", () => {
+    for (const state of ["HELD_FOR_REVIEW", "APPROVED", "EXECUTION_FAILED", "RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN", undefined]) {
+      expect(caseRefetchMs(state)).toBe(false);
+    }
   });
 });
 

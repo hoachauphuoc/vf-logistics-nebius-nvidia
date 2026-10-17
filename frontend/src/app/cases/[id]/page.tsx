@@ -17,7 +17,7 @@ import { fetchAuditTrail, fetchCase, queryKeys } from "@/lib/api";
 import { caseHref } from "@/lib/case-links";
 import { caseStateLabel, formatUsd } from "@/lib/format";
 import { holds, useIdentity } from "@/lib/identity";
-import { buildCaseTimeline, informationRounds, riskLabel } from "@/lib/operations";
+import { buildCaseTimeline, caseRefetchMs, informationRounds, riskLabel } from "@/lib/operations";
 import { useTenant } from "@/lib/tenant-context";
 import { AWAITING_HUMAN, type CaseState, VERIFICATION_LOOP_STATES } from "@/lib/types";
 
@@ -41,6 +41,8 @@ export default function CasePage() {
   const detail = useQuery({
     queryKey: queryKeys.case(tenant.id, caseId),
     queryFn: () => fetchCase(caseId),
+    // An execution ends on the server without anyone asking this page (N08).
+    refetchInterval: (query) => caseRefetchMs(query.state.data?.state),
     enabled: caseId !== "",
     retry: false,
   });

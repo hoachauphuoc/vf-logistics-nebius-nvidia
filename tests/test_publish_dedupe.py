@@ -55,6 +55,27 @@ class TestAnEarlierPublishIsNotRepeated(Base):
         self._publish(pubsub, case_id="CASE-2")
         assert len(published) == 3
 
+    def test_an_sdk_deadline_error_is_unknown_not_failed(self):
+        # The names are the SDK's own; google.api_core cannot be imported here.
+        class DeadlineExceeded(Exception):
+            pass
+
+        class RetryError(Exception):
+            pass
+
+        for n, error in enumerate((DeadlineExceeded("504 Deadline Exceeded"), RetryError("Deadline of 60.0s exceeded"))):
+            pubsub, _ = _fake_pubsub([error])
+            first = self._publish(pubsub, key=f"exec-sdk-{n}")
+            assert first["status"] == "unknown"
+            assert first["detail"]["error"].startswith(type(error).__name__)
+
+    def test_any_other_publish_error_stays_failed(self):
+        class ServiceUnavailable(Exception):
+            pass
+
+        pubsub, _ = _fake_pubsub([ServiceUnavailable("503 Service Unavailable")])
+        assert self._publish(pubsub)["status"] == "failed"
+
     def test_a_decision_without_a_key_is_always_sent(self):
         pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
         self._publish(pubsub, key=None)
