@@ -72,8 +72,9 @@ One Cloud Run service runs the console and the API in one container. The console
 readable without signing in: an anonymous visitor is a real `viewer`. Recording a review
 decision needs an account; credentials are in the private testing-instructions field below.
 
-The live service may be a build from before the changes merged on 14 Oct 2026. Those
-are in this repository: the 95% intervals and the operating curve on the Evaluation page
+The live service may be a build from before the changes merged on 14 Oct 2026, and before
+the verification-loop fixes of 16–17 Oct (`3e6b1dd` to `443c524`). Those 14 Oct changes are
+in this repository: the 95% intervals and the operating curve on the Evaluation page
 (`896bbae`), the stricter checks on automated release and the registry-only learning
 discount (`711e3e6`), the shipper history read fresh before each risk adjustment
 (`b5cd237`), the tenant-scoped document bucket (`17864e0`), and the Firestore store's
@@ -137,8 +138,10 @@ first step; `git diff --shortstat 6bb1e59 00d896a` reports **297 files changed, 
 insertions** across 49 commits for the first ten days, to 27 Sep; and
 `git diff --shortstat 6bb1e59 d76e64e` reports **395 files changed, +199,584 / −6,681**
 across 131 commits to 14 Oct. The ranges end at commits, not `HEAD`, so the figures stay
-true: `d76e64e` is the last change to `src/` and `tests/` at the time of writing, and the
-commits after it change documentation, comments and on-screen text only.
+true. Six commits after `d76e64e`, from `3e6b1dd` (16 Oct) to `443c524` (17 Oct), change
+`src/` and `tests/` again: they fix the verification loop (one publish per idempotency key, an
+exception route for releases over unresolved evidence, an `unknown` send state) and add the
+runner tooling that checked those fixes. They are outside these ranges.
 
 One thing was deliberately carried over rather than rebuilt: the deterministic
 governance layer — risk floor, untrusted-input boundary, delegation boundary, shipper
@@ -155,10 +158,10 @@ lines to 2,023 and `governance.py` from 492 to 894. The rows below were rebuilt.
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
 | **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
 | **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **1,486** backend tests passing at 85.8% coverage (16 more skip without a Firestore emulator), 328 frontend tests, and a mutation check that breaks 112 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **1,564** backend tests passing at 85.9% coverage (16 more skip without a Firestore emulator), 350 frontend tests, and a mutation check that breaks 112 lines and sees every one caught | A test nobody has seen fail is not evidence |
 | **CI** | none in `755d998`; the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (strict on clean modules, a ratchet on the rest), tests with a 75% coverage floor, frontend, and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 16 modules that did not exist: auth, b2b, budget, dossier, evaluation, evidence, hs_reference, lineage, membership, observability, openapi, sanctions, sanctions_sources, schemas, tenant, worklist | — |
-| **Verification loop** | `Request info` wrote a note and moved on; no way to track what was asked, whether it arrived, or whether the answer changed anything | 6-step evidence loop: request with HMAC link, receive and extract per doc type, re-evaluate against extracted facts, approve bound to evidence version, execute with claim-before-send and publish-failure handling. 7 endpoints for the loop plus the worklist and outcomes reads, 3 operator screens, 0 improper executions on the 7-case evaluation corpus (a mocked harness) | Four identical origin-fraud pairs proved booking data alone is not enough. The loop is how the system collects what is missing and reaches a defensible decision |
+| **Verification loop** | `Request info` wrote a note and moved on; no way to track what was asked, whether it arrived, or whether the answer changed anything | 6-step evidence loop: request with HMAC link, receive and extract per doc type, re-evaluate against extracted facts, approve bound to evidence version, execute with claim-before-send, one publish per idempotency key and publish-failure handling. 8 endpoints for the loop (the exception approval among them) plus the worklist and outcomes reads, 3 operator screens, 0 improper executions on the 7-case evaluation corpus (a mocked harness) | Four identical origin-fraud pairs proved booking data alone is not enough. The loop is how the system collects what is missing and reaches a defensible decision |
 
 Three measured results worth stating plainly, because each corrected an assumption we
 had published or would have:
@@ -764,7 +767,7 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case that reaches the models), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 6 integration points |
-| Automated test suite | 1,486 backend tests passing, 16 skipped without a Firestore emulator (pytest, 85.8% coverage), 328 frontend tests (vitest), mutation check 112/112 |
+| Automated test suite | 1,564 backend tests passing, 16 skipped without a Firestore emulator (pytest, 85.9% coverage), 350 frontend tests (vitest), mutation check 112/112 |
 | CI pipeline | GitHub Actions, five jobs, every one able to fail the build: ruff; mypy, strict on clean modules and a ceiling on the rest that may only fall; pytest with `--cov-fail-under=75`; frontend typecheck, lint, tests and build; and a container job that builds both images and smoke-tests the deployed one |
 | Auto-debate on score disputes | done -- fires without human intervention; a confident DISAGREE can send the case to an investigation it would otherwise skip, upward only; a person decides every disputed case |
 | Human feedback learning loop | done -- derived from reviewed cases, read fresh on every scored case; two human blocks raise risk by name, five human releases lower it only for a registry-verified counterparty, never below the floor |

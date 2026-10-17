@@ -602,11 +602,16 @@ never a duplicate publish. While a claim's lease (`CLAIM_LEASE_S`, 300 s) is run
 which cannot tell a crashed process from a slow one, and a same-person second call while
 the first was still sending used to be treated as a resume and published again. After a
 real crash the same person therefore waits out the lease before retrying. The publish
-carries a fixed `idempotency_key` (`exec-<approval_id>`); it only deduplicates if the
-consumer of the decisions topic acts on it, and nothing in this repository does.
+carries the key `exec-<approval_id>` in the body and as a Pub/Sub message attribute, so a
+subscriber can drop a repeat without parsing the body. Before it sends, `publish_decision`
+looks for an earlier audit row with the same key whose publish was accepted (it carries a
+message id) and returns that row instead of publishing again. A publish that times out is
+recorded as `unknown`, not `failed`: the broker may have accepted it, and the retry carries
+the same key.
 
 **Publish failure (N02):** a publish that raises, or whose receipt carries no `message_id`,
-records `send_failed` and moves the case to `EXECUTION_FAILED`. The approval reverts to
+records `send_failed` (`send_unknown` when it timed out) and moves the case to
+`EXECUTION_FAILED`. The approval reverts to
 `VALID` for retry, the retry's review entry records the state it really started from, and
 `release_shipment` is re-run (and re-audited) on every attempt: it is not idempotent. With
 `EXECUTOR_URL` set the publish is delegated and the id is read from `detail.executor.message_id`
@@ -655,6 +660,12 @@ input origin: the declaration exists to say where the inputs came from.
 were waived next to the reason and the approver, as a release with unresolved evidence does.
 Block is unaffected. The console shows the contradictions (evidence check block, timeline) and
 asks for the reason before it opens the confirmation.
+
+**Exception route:** a release over unresolved or contradicting evidence can also be sent to
+`POST /api/v1/review/<case_id>/approve-exception`, which takes a reason and a list of every item
+it waives (the unresolved document types, and `contradiction:<kind>` for each contradiction). It
+needs the operator role and a password sign-in, refuses an empty reason or an empty list with a 400,
+and then goes through the same `approve(release)` path, so the approval records the same exception.
 
 ---
 
@@ -914,7 +925,7 @@ An architecture document that omits these is marketing.
   Firestore transactions behind boundary publish/revoke, `put_case` and the sign-in ledger are
   exercised against the emulator in `tests/test_firestore_emulator.py`, which is skipped
   unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so `store.py`, which
-  holds the production backend, sits at 59% line coverage while the package is at 85.8%.
+  holds the production backend, sits at 59% line coverage while the package is at 85.9%.
 - **Concurrent publishes in one tenant queue.** Publish and revoke are one Firestore
   transaction on the tenant's `boundary_counters` document, retried as a whole on
   contention. Against the emulator six simultaneous publishes all succeeded with distinct

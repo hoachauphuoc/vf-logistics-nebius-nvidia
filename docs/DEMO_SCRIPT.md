@@ -96,7 +96,7 @@ lengths previously in `SCENES` were measured on 31/08 against footage of the **p
 system — before the Nebius port landed on 17/09. So restructuring cost nothing.
 
 - **Clips 5 and 9 are new, and they exist because the rigour in this project was invisible
-  on camera.** 1,486 backend and 328 frontend tests, a measured HS recall of 91.7% on a
+  on camera.** 1,564 backend and 350 frontend tests, a measured HS recall of 91.7% on a
   holdout, citations reproduced rather than summarised — a judge scoring Technological
   Implementation had to read the repository to find any of it. Clip 5 also carries the
   **Tavily bonus award**, which the old script showed nowhere at all.
@@ -406,16 +406,16 @@ Verified on live traffic: the case trace reads *blocked at intake, model never i
 
 **Action:** Two shots, roughly four seconds each, cut together. First a terminal showing the
 tail of a real run — `PYTHONPATH=src python -m pytest tests/ -q --cov=vf_logistics`, so
-the coverage table's `TOTAL` row sits just above the `1486 passed, 16 skipped` line. Then
+the coverage table's `TOTAL` row sits just above the `1564 passed, 16 skipped` line. Then
 the GitHub Actions run page for `master`, with five green jobs visible.
 
 > Over fourteen hundred passing tests, over eighty-five percent coverage, and CI on every
 > push to master.
 
-The spoken figures match the terminal: 1,486 backend tests pass (16 more skip without a
-Firestore emulator) at 85.8% line coverage, which the `TOTAL` row prints as 86%. Coverage
+The spoken figures match the terminal: 1,564 backend tests pass (16 more skip without a
+Firestore emulator) at 85.9% line coverage, which the `TOTAL` row prints as 86%. Coverage
 is the same on every run since a test pins the simulator's profile roll, so the line no
-longer has to hedge. The 328 frontend tests are not in the count. If the suite falls below
+longer has to hedge. The 350 frontend tests are not in the count. If the suite falls below
 1,400 or coverage to 85% or under, change `SCENES` before recording.
 
 "On every push to master" is the exact trigger: `.github/workflows/ci.yml` runs on pushes

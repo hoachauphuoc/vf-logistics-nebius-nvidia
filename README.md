@@ -248,8 +248,9 @@ git diff --shortstat 6bb1e59 d76e64e   # to 14 Oct: 395 files, +199,584 / -6,681
 ```
 
 The ends of the ranges are pinned to commits rather than `HEAD`, which would make the
-figures wrong again with the next commit; `d76e64e` is the last change to `src/` and
-`tests/` at the time of writing. Commit counts are from
+figures wrong again with the next commit. `d76e64e` is the last change to `src/` and
+`tests/` before the verification-loop fixes of 16–17 Oct (`3e6b1dd` to `443c524`), which are
+outside these ranges. Commit counts are from
 `git rev-list --count 6bb1e59..<end>`. These commands need the full history: a plain
 `git clone` (no `--depth`), or `git fetch --unshallow` first. In a shallow clone
 `6bb1e59` is missing and the counts come out wrong.
@@ -409,8 +410,8 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **1,486 backend tests** passing at 85.8% line coverage (16 more skip without
-a Firestore emulator), 328 frontend tests, and a mutation check —
+**Now:** **1,564 backend tests** passing at 85.9% line coverage (16 more skip without
+a Firestore emulator), 350 frontend tests, and a mutation check —
 `scripts/check_test_sensitivity.py` breaks 112 lines of backend and console code on
 purpose and the suite catches all 112. The weak spot is `store.py` at 59%:
 `FirestoreStore`, the production backend, is exercised mainly by the emulator tests, and
@@ -1005,6 +1006,7 @@ caller is likely to want. The most useful omissions:
 | `/api/v1/review/<case_id>/evidence/<request_id>/link`, `.../cancel` | POST | Reissue a request's link, or cancel the request with a reason (reviewer) |
 | `/api/v1/review/<case_id>/reevaluate` | POST | Re-run the deterministic origin checks against the evidence received so far (reviewer) |
 | `/api/v1/review/<case_id>/approve`, `.../execute` | POST | Approve a release or block bound to an evidence version, then execute it (reviewer, **password sign-in only**) |
+| `/api/v1/review/<case_id>/approve-exception` | POST | Release over unresolved or contradicting evidence, with a reason and the list of items waived (operator, **password sign-in only**) |
 | `/api/v1/evidence/respond` | POST | The shipper's upload through a signed link. The shipper has no account; the link's token, in `X-VF-Evidence-Token`, is the only credential |
 | `/api/v1/billing/usage` | GET | Windowed spend, including `tavily_searches` / `tavily_cached` / `tavily_billable` |
 | `/api/v1/cases` | GET | Case list, slim shape, filterable by state |
@@ -1609,8 +1611,8 @@ end to end, not what a real run costs or how long a person takes.
 # The test tools are not in requirements.txt; install them first.
 pip install -r requirements.txt "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-cov>=4.1.0" "pytest-mock>=3.12.0"
 
-# Unit + integration tests: 1486 pass and 16 skip (the Firestore emulator tests, unless
-# FIRESTORE_EMULATOR_HOST is set), at 85.8% line coverage. CI fails below 75%.
+# Unit + integration tests: 1564 pass and 16 skip (the Firestore emulator tests, unless
+# FIRESTORE_EMULATOR_HOST is set), at 85.9% line coverage. CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
 # The mutation check: breaks 112 lines on purpose, one at a time, and requires the
@@ -1618,7 +1620,7 @@ python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: install, typecheck, lint, 328 unit tests in 26 files, production build
+# Frontend: install, typecheck, lint, 350 unit tests in 26 files, production build
 (cd frontend && npm ci && npx tsc --noEmit && npm run lint && npm test && npm run build)
 
 # Counterparty book, offline. The script imports shipper_registry as a top-level
@@ -1695,8 +1697,8 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Release fails closed | 15 | A missing reconciliation, a compliance status other than `CLEARED`, an unverified shipper's discount, a missing finding count, an absent or unusable declared value and a blank destination each withhold an automated release |
 | Document archive | 26 | The receipt written onto the case is one the reader can fetch back, and every storage failure is a receipt that says why, or an empty answer, never an exception; under `MULTI_TENANT`, objects filed and ingested only inside the tenant's own space |
 | Executor client | 18 | Every way the hop to the executor can fail — no executor, no identity token, a refusal, a crash, a transport error — comes back as something other than "done" |
-| Origin inputs | 150 | The watched-lane check behind the verification loop: a shipment on a watched lane cannot be cleared by the rules, and good papers never lower a floor |
-| Evidence request, response, re-evaluation, approval, execution | 175 | The signed link and who may use it, uploads through it, re-evaluation, approval bound to an evidence version, and atomic execution (`test_evidence_*.py`) |
+| Origin inputs | 167 | The watched-lane check behind the verification loop: a shipment on a watched lane cannot be cleared by the rules, and good papers never lower a floor |
+| Evidence request, response, re-evaluation, approval, execution | 192 | The signed link and who may use it, uploads through it, re-evaluation, approval bound to an evidence version, and atomic execution (`test_evidence_*.py`) |
 | Membership | 31 | Organisation membership resolved on the server, and the three ways a request authenticates |
 | Worklist | 26 | The Today and Outcomes read models and the arithmetic behind them |
 | Boundary history and schema | 32 | Versions never reused or overwritten; a permission written as the string `"false"` is refused rather than read as true |
@@ -1705,7 +1707,13 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Approval gate at the route | 14 | Who may release or approve through the real Flask routes, and what the legacy `/decide` refuses |
 | Firestore emulator | 18 | `FirestoreStore`'s transactions against the emulator; 16 of the 18 skip unless `FIRESTORE_EMULATOR_HOST` is set, and CI has no emulator job |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
-| **Total** | **1,502** | 1,486 pass and 16 skip here (the emulator tests); 57 files |
+| Exception approval and route | 11 | A release over unresolved or contradicting evidence is an operation of its own: the reason is mandatory, and the waived findings are stored on the approval |
+| Publish once per key | 7 | A decision is published once per idempotency key, the key travels as a Pub/Sub attribute, and a resume after an accepted but unconfirmed publish does not publish again |
+| Unknown send | 5 | A publish that timed out is recorded as `unknown`, not `failed`, so the retry is read as "result unknown, same key" |
+| Unread pages | 7 | A paper the reader only partly read is not provided as read, and the evaluation says why a received paper is unresolved |
+| Untyped links | 3 | A request-level link carries no document type, so with several documents requested it cannot say which slot an upload fills |
+| Automation runner | 11 | The sub-agent's CLI flags, the per-attempt diff, and `verify_only` tasks that run their tests without a model (development tooling, not the product) |
+| **Total** | **1,580** | 1,564 pass and 16 skip here (the emulator tests); 70 files |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -2088,7 +2096,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        57 files, 1,502 tests
+├── tests/                        70 files, 1,580 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
