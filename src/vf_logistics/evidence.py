@@ -894,7 +894,8 @@ async def approve(
     Preconditions:
     - state in APPROVABLE_STATES
     - no request OPEN or SENT (all evidence must have been accounted for)
-    - the evaluation at the current evidence_version exists
+    - the evaluation at the current evidence_version exists (for a block at evidence
+      version 0 none is needed; a release always needs one)
     - actor_auth == "password" for a release (policy A01 for one-click)
     """
     if action not in ("release", "block"):
@@ -928,6 +929,15 @@ async def approve(
     if latest_eval is None and ev_version > 0:
         raise EvidenceError(
             "The evidence has been updated but not yet re-evaluated. Re-evaluate first.", 409,
+        )
+
+    # N04: a release also needs an evaluation at version 0. A request cancelled before
+    # anything arrived leaves no evaluation at all, and a release then went through
+    # with nothing checked. A block does not need one: it only holds the shipment.
+    if latest_eval is None and action == "release":
+        raise EvidenceError(
+            "This release has not been evaluated: no evaluation of the evidence on file "
+            "exists yet. Re-evaluate first, then approve the release.", 409,
         )
 
     if action == "release" and actor_auth != "password":
