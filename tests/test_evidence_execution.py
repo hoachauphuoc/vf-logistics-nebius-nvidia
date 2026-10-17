@@ -320,8 +320,8 @@ def _fake_pubsub(results):
     .result(), anything else returned as the message id. Returns (module, published)."""
     published: list[dict] = []
 
-    def publish(topic, data):
-        published.append({"topic": topic, "body": __import__("json").loads(data)})
+    def publish(topic, data, **attributes):
+        published.append({"topic": topic, "attributes": attributes, "body": __import__("json").loads(data)})
         outcome = results.pop(0)
         future = MagicMock()
         if isinstance(outcome, Exception):
