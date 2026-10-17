@@ -28,6 +28,7 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
   16. REVERIFICATION VI of 2026-10-17 (commit 76e6b01), one id per run, in this order, reading `git diff` after each: `--only N06e` (P1: a country field read like a bare string), `--only N01e1`, then `--only N01e2` (P1: DeadlineExceeded/RetryError are unknown; an accepted publish keeps its message id when its record fails to save), `--only N08g`, then `--only N08h` (P2: reload after a lost connection; poll an EXECUTING case). Then `--only VFULL`. Not fixable in this repository, listed in the report: the receiving side must drop a repeat by the idempotency_key attribute; a process that dies between the broker's accept and any save; a real Firestore/Pub/Sub/browser run; the "27 checks" figure in the fix report against the 25 in scripts/verify_review_vi.py.
   17. FOLLOW-UP of the reverification: the mypy command of VFULL was fixed in the plan (it now passes --python-version of the running Python and fails when mypy stops early; before, mypy exited 2 on a numpy stub, the parsed count was 1 and the gate passed vacuously). Then `--only VR1`, then `--only VR2` (one at a time; each runs the whole table), then `--only VFULL` to prove the new command, and `--only VMYPY` shows the raw mypy output.
   18. N08 GAPS found by the Master check of 83826f6: `--only N08i` (the review page did not poll an EXECUTING case), then `--only N08jt` (red: 3 named tests fail), then `--only N08jc` (a 409 from execute reads the case again; human decision: the Resume-refusal test now expects one reload). Then `--only VFULL`.
+  19. OPEN ITEMS OF THE FIX REPORT that the repository can close, one id per run: `--only N01mt` (red), `--only N01mc`, `--only N01kt` (red: 2 named tests), `--only N01kc`, `--only N08kt`, `--only N08kv` (red on the old page), then `--only VFULL`. Still open after these, by design: a process killed outright between the broker's accept and the save (needs a human decision: duplicates for the receiver to drop, or no automatic resend), the receiving side, the real environment.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -103,6 +104,17 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 39t | N08jt | Tests first: a 409 from execute (Resume, Execute, Release) reads the case again (N08) |
 | 39c | N08jc | Code for N08jt |
 | 40 | VR3 | Review VI table: row N08-h for the 409-reloads-the-case tests |
+| 41t | N01mt | Tests first: a publish record that fails to save twice keeps the accepted message id (N01) |
+| 41c | N01mc | Code for N01mt: `_save_publish_record` hands an accepted receipt back unsaved |
+| 42t | N01kt | Tests first: a cancellation around the publish leaves a record a Resume can read (N01) |
+| 42c | N01kc | Code for N01kt: `except asyncio.CancelledError` saves shielded, then re-raises |
+| 43t | N08kt | Test for the review page: polls an EXECUTING case, stops when it ends (N08) |
+| 43v | N08kv | verify_only: that test fails on the page before N08i (red proof) |
+| 41f | N01mcf1 | Fix round 1 of N01mc: remove the blank line inside the signature of publish_decision_direct |
+
+N01mc round 1: FIX, behaviour passed (40 tests, ruff clean) but EDIT 1 left a blank line inside the signature of publish_decision_direct; log runs/N01mc/attempt_1.log, diff runs/N01mc/attempt_1.diff.
+N01mcf1 (round 1 of N01mc): PASS, blank line removed, 40 tests and ruff green; log runs/N01mcf1/attempt_1.log.
+N01kc round 1: RERUN, the one-line anchor was not unique (prefix of the handler at line 166); both attempts dropped the next line, IndentationError; prompt now uses the unique two-line anchor; failed logs were runs/N01kc/attempt_1.log, attempt_2.log (attempt_1.log is overwritten by the rerun). Rerun: PASS, 43 tests and ruff green, runs/N01kc/attempt_1.log.
 
 N01e2 round 1: RERUN, its mypy test_command wanted tools.py clean but 2 no-any-return errors exist outside the change (lines 200 and 290; tools.py is not in the strict list); replaced by a ruff check; code and tests passed (38 + 105), log runs/N01e2/attempt_2.log
 
@@ -6556,5 +6568,500 @@ new_string is the row below, and then that same line again:
 
 DONE WHEN: only this file changed; one row sits directly above the E01-a row.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N01mt -->
+## Meta
+- title: Tests first - a publish record that fails to save twice keeps the accepted message id (N01)
+- depends_on:
+  - N08jc
+- target_files:
+  - tests/test_resume_after_publish.py
+- test_commands:
+  - python -c "import subprocess,sys; r=subprocess.call('python -m pytest tests/test_resume_after_publish.py -q -p no:cacheprovider', shell=True); print('pytest exit', r); sys.exit(0 if r == 1 else 1)"
+  - python -m ruff check tests/test_resume_after_publish.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Open item of the reverification VI fix report: "if the second save also fails, the exception reaches the caller and the message id can be lost". In tools.publish_decision_direct, after the broker accepted, the success record fails to save, the except handler saves again (N01e2), and if THAT save fails too the exception leaves publish_decision; evidence.execute_approval catches it (evidence.py line 1268) as a failed send: EXECUTION_FAILED, send_failed, and Retry publishes the decision a second time although msg-1 was known.
+This task writes the tests only (new class at the end of the file). Expected on the current code: test_the_execution_is_recorded_as_sent_with_the_message_id FAILS (state EXECUTION_FAILED); the fence test test_a_record_that_cannot_be_saved_for_a_message_that_never_went_out_still_raises PASSES on both (nothing went out, so the error must still reach the caller: fail closed). The test command passes when pytest exits 1.
+Master review: in the log exactly the one named test fails, at the `result["state"]` assertion; every other test in the file passes.
+
+## Prompt
+``````text
+TASK N01mt. Tests only: one new test class at the END of tests/test_resume_after_publish.py. Do not edit any source file: the first test is meant to fail until the next task.
+
+FILE YOU MAY EDIT (only this one): tests/test_resume_after_publish.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not change any existing test. asyncio, os, time, patch, pytest, Base, _fake_pubsub, _with_pubsub, evidence, tools, REVIEWER and run already exist in this file.
+
+EDIT 1 (add at the END of the file, never at the top). old_string, ONE line (8 leading spaces; it is the last line of the file and occurs once):
+```python
+        assert [(r["status"], r["detail"]["message_id"]) for r in rows] == [("done", "msg-1")]
+```
+new_string is that same line first, then two blank lines, then the class below:
+```python
+        assert [(r["status"], r["detail"]["message_id"]) for r in rows] == [("done", "msg-1")]
+
+
+class TestARecordThatFailsToSaveTwiceAfterTheBrokerAccepted(Base):
+    def test_the_execution_is_recorded_as_sent_with_the_message_id(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
+        real_audit = tools._audit
+
+        async def store_down_for_publish(case_id, action, detail, status="done", tenant_id=None):
+            # Both saves of the publish record fail; the broker has the message (N01).
+            if action == "publish_decision":
+                raise RuntimeError("ServiceUnavailable: the store did not answer")
+            return await real_audit(case_id, action, detail, status, tenant_id)
+
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub), \
+                patch("vf_logistics.tools._audit", new=store_down_for_publish):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        assert result["message_id"] == "msg-1"
+        assert len(published) == 1
+        stored = self.stored()
+        assert [e["status"] for e in stored["verification"]["executions"]] == ["sent"]
+        assert stored["verification"]["executions"][0]["message_id"] == "msg-1"
+
+    def test_a_record_that_cannot_be_saved_for_a_message_that_never_went_out_still_raises(self):
+        # Nothing went out, so there is no message id to hand back: the error goes on and
+        # the caller records a failed send.
+        class ServiceUnavailable(Exception):
+            pass
+
+        pubsub, _ = _fake_pubsub([ServiceUnavailable("503 Service Unavailable")])
+
+        async def store_down(*args, **kwargs):
+            raise RuntimeError("the store did not answer")
+
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub), \
+                patch("vf_logistics.tools._audit", new=store_down), \
+                pytest.raises(RuntimeError, match="store did not answer"):
+            run(tools.publish_decision("CASE-1", {"outcome": "RELEASED_BY_HUMAN", "idempotency_key": "exec-apr-9"}))
+```
+
+DONE WHEN: only this file changed; the old last line is kept and the new class follows it at the end of the file.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N01mc -->
+## Meta
+- title: Code for N01mt - an accepted message's receipt is handed back when its record cannot be saved (N01)
+- depends_on:
+  - N01mt
+- target_files:
+  - src/vf_logistics/tools.py
+- test_commands:
+  - python -m pytest tests/test_resume_after_publish.py tests/test_publish_dedupe.py tests/test_evidence_execution.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/tools.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Code for the tests of N01mt. A new helper `_save_publish_record` saves the publish record through `_audit`; when the store refuses it AND the broker accepted the message, it returns the receipt unsaved (same shape as an `_audit` entry, without audit_id) instead of raising, so evidence.published_message_id reads msg-1 and the execution is recorded as sent. Without an accepted message it raises as before (fail closed: nothing went out). The except handler of publish_decision_direct calls the helper instead of `_audit` and passes `accepted=bool(accepted)`; `accepted` is keyword-only with no default, so no caller can forget it.
+Edit 2 uses a TWO-line old_string on purpose: `        return await _audit(` occurs many times in tools.py, so only the pair with the line above it is unique. The Edit tool matches a two-line old_string on a CRLF file (N08jt did the same and passed).
+Master review: the N01mt tests pass, test_publish_dedupe.py and test_evidence_execution.py stay green, ruff passes; `git diff` shows one helper, one renamed call and one added keyword.
+
+## Prompt
+``````text
+TASK N01mc. Three edits in src/vf_logistics/tools.py, in this order. Nothing else.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/tools.py. It uses Windows line endings (CRLF). Use the Edit tool. Never use Write on this file. Do not edit any test. Do not touch `_audit`, `_may_have_been_accepted`, `publish_decision`, `_earlier_publish` or the `try:` part of publish_decision_direct. `_audit`, `utcnow` and `Any` already exist in this module.
+
+EDIT 1 (a new helper, directly above publish_decision_direct). old_string, ONE line (no leading spaces; occurs once):
+```python
+async def publish_decision_direct(
+```
+new_string is the helper below, two blank lines, and then that same line again:
+```python
+async def _save_publish_record(
+    case_id: str, action: str, detail: dict[str, Any], status: str = "done",
+    tenant_id: str | None = None, *, accepted: bool,
+) -> dict[str, Any]:
+    """
+    Save the record of a publish; for a message the broker accepted, hand the receipt
+    back unsaved when the store refuses it.
+
+    Raising there turned a sent message into "nothing was sent": the execution failed and
+    the retry published the decision a second time although its message id was known (N01).
+    Without an accepted message the error goes on, and the caller records a failed send.
+    """
+    try:
+        return await _audit(case_id, action, detail, status=status, tenant_id=tenant_id)
+    except Exception:  # noqa: BLE001
+        if not accepted:
+            raise
+        return {"case_id": case_id, "action": action, "status": status, "detail": detail, "at": utcnow()}
+
+
+async def publish_decision_direct(
+```
+
+EDIT 2 (the except handler calls the helper). This is the ONLY edit with a TWO-line old_string (the first line has 4 leading spaces, the second 8; the pair occurs once):
+```python
+    except Exception as exc:  # noqa: BLE001
+        return await _audit(
+```
+new_string, two lines (only `_audit` becomes `_save_publish_record`):
+```python
+    except Exception as exc:  # noqa: BLE001
+        return await _save_publish_record(
+```
+
+EDIT 3 (pass accepted). old_string, ONE line (12 leading spaces; occurs once):
+```python
+            status="done" if accepted else ("unknown" if _may_have_been_accepted(exc) else "failed"),
+```
+new_string is these two lines (the first is the old line, kept):
+```python
+            status="done" if accepted else ("unknown" if _may_have_been_accepted(exc) else "failed"),
+            accepted=bool(accepted),
+```
+The lines around it (the three comment lines above and `tenant_id=tenant_id,` below) stay as they are.
+
+DONE WHEN: only tools.py changed: one new function above publish_decision_direct, `_audit` renamed to `_save_publish_record` in the except handler only, and one `accepted=bool(accepted),` line.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N01kt -->
+## Meta
+- title: Tests first - a cancellation around the publish leaves a record a Resume can read (N01)
+- depends_on:
+  - N01mc
+- target_files:
+  - tests/test_resume_after_publish.py
+- test_commands:
+  - python -c "import subprocess,sys; r=subprocess.call('python -m pytest tests/test_resume_after_publish.py -q -p no:cacheprovider', shell=True); print('pytest exit', r); sys.exit(0 if r == 1 else 1)"
+  - python -m ruff check tests/test_resume_after_publish.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Reverification VI, N01, case reproduced by the reviewer: after the broker accepted, the task is interrupted with CancelledError before the publish record is saved; the case stays EXECUTING/claiming with no record, and a Resume after the lease publishes a second time. `except Exception` in publish_decision_direct does not catch CancelledError (a BaseException), so nothing is saved.
+Three tests in a new class at the end of the file:
+1. cancelled while saving after the broker accepted: a record ("done", msg-1) exists, and the Resume after the lease does not publish again. FAILS on the current code (no record).
+2. cancelled while waiting for the broker (asyncio.to_thread replaced by a coroutine that raises CancelledError): an "unknown" record with the idempotency key exists. FAILS on the current code.
+3. same as 2 with the store down too: the caller still gets CancelledError, not the store's error. PASSES on both (a fence for the next task).
+The test command passes when pytest exits 1. Patching `asyncio.to_thread` is safe here: MemoryStore (the tests' store) does not use it.
+Master review: in the log exactly tests 1 and 2 fail, every other test passes (including the N01mt class).
+
+## Prompt
+``````text
+TASK N01kt. Tests only: one new test class at the END of tests/test_resume_after_publish.py. Do not edit any source file: two of these tests are meant to fail until the next task.
+
+FILE YOU MAY EDIT (only this one): tests/test_resume_after_publish.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not change any existing test. asyncio, os, time, patch, pytest, Base, _fake_pubsub, _with_pubsub, evidence, tools, REVIEWER and run already exist in this file.
+
+EDIT 1 (add at the END of the file, never at the top). old_string, ONE line (12 leading spaces; it is the last line of the file and occurs once):
+```python
+            run(tools.publish_decision("CASE-1", {"outcome": "RELEASED_BY_HUMAN", "idempotency_key": "exec-apr-9"}))
+```
+new_string is that same line first, then two blank lines, then the class below:
+```python
+            run(tools.publish_decision("CASE-1", {"outcome": "RELEASED_BY_HUMAN", "idempotency_key": "exec-apr-9"}))
+
+
+class TestACancellationAroundThePublish(Base):
+    def test_a_cancellation_after_the_broker_accepted_keeps_the_message_id_for_the_resume(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
+        real_audit = tools._audit
+        cancelled: list[str] = []
+
+        async def cancelled_while_saving(case_id, action, detail, status="done", tenant_id=None):
+            # The task is cancelled while it saves the publish record, after the broker accepted.
+            if action == "publish_decision" and not cancelled:
+                cancelled.append(action)
+                raise asyncio.CancelledError
+            return await real_audit(case_id, action, detail, status, tenant_id)
+
+        env = {"PROJECT_ID": "test-project"}
+        with patch.dict(os.environ, env), _with_pubsub(pubsub), \
+                patch("vf_logistics.tools._audit", new=cancelled_while_saving), \
+                pytest.raises(asyncio.CancelledError):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert len(published) == 1
+        assert self.stored()["state"] == "EXECUTING"
+        rows = [r for r in run(self.store.list_audit(limit=500)) if r.get("action") == "publish_decision"]
+        assert [(r["status"], r["detail"]["message_id"]) for r in rows] == [("done", "msg-1")]
+
+        case = self.stored()
+        case["verification"]["executions"][0]["claim_expires_epoch"] = time.time() - 1
+        run(self.store.put_case(case))
+
+        with patch.dict(os.environ, env), _with_pubsub(pubsub):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        assert result["message_id"] == "msg-1"
+        assert len(published) == 1
+
+    def test_a_cancellation_before_the_broker_answered_is_recorded_as_unknown(self):
+        pubsub, _ = _fake_pubsub(["msg-1"])
+
+        async def cancelled_while_waiting(*args, **kwargs):
+            raise asyncio.CancelledError
+
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub), \
+                patch("asyncio.to_thread", new=cancelled_while_waiting), \
+                pytest.raises(asyncio.CancelledError):
+            run(tools.publish_decision("CASE-1", {"outcome": "RELEASED_BY_HUMAN", "idempotency_key": "exec-apr-7"}))
+        rows = [r for r in run(self.store.list_audit(limit=500)) if r.get("action") == "publish_decision"]
+        assert [r["status"] for r in rows] == ["unknown"]
+        assert rows[0]["detail"]["error"].startswith("CancelledError")
+        assert rows[0]["detail"]["idempotency_key"] == "exec-apr-7"
+
+    def test_the_cancellation_still_reaches_the_caller_when_the_store_is_down_too(self):
+        pubsub, _ = _fake_pubsub(["msg-1"])
+
+        async def cancelled_while_waiting(*args, **kwargs):
+            raise asyncio.CancelledError
+
+        async def store_down(*args, **kwargs):
+            raise RuntimeError("the store did not answer")
+
+        with patch.dict(os.environ, {"PROJECT_ID": "test-project"}), _with_pubsub(pubsub), \
+                patch("asyncio.to_thread", new=cancelled_while_waiting), \
+                patch("vf_logistics.tools._audit", new=store_down), \
+                pytest.raises(asyncio.CancelledError):
+            run(tools.publish_decision("CASE-1", {"outcome": "RELEASED_BY_HUMAN", "idempotency_key": "exec-apr-6"}))
+```
+
+DONE WHEN: only this file changed; the old last line is kept and the new class follows it at the end of the file.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N01kc -->
+## Meta
+- title: Code for N01kt - a cancelled publish saves its record shielded, then the cancellation goes on (N01)
+- depends_on:
+  - N01kt
+- target_files:
+  - src/vf_logistics/tools.py
+- test_commands:
+  - python -m pytest tests/test_resume_after_publish.py tests/test_publish_dedupe.py tests/test_evidence_execution.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/tools.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Code for the tests of N01kt. A new `except asyncio.CancelledError` clause, placed BEFORE `except Exception` in publish_decision_direct, saves the publish record through `_save_publish_record` (N01mc) inside `asyncio.shield`, so a second cancellation cannot stop the save: "done" with the message id when the broker had accepted, "unknown" otherwise (like a timeout; a retry reuses the same idempotency key). Then it re-raises: the cancellation is never swallowed. If that save fails (only possible without an accepted message, since the helper hands an accepted receipt back), the store's error is dropped so the caller still sees CancelledError (test 3 of N01kt).
+`asyncio` is the function-local `import asyncio` at the top of the try block; it is bound before any await, so the except clause can name it. Leave that import where it is.
+Not covered and stays in block 3 of the report: a process killed outright (SIGKILL, out of memory) between the broker's accept and the save runs no handler at all.
+Round 1 (RERUN): the first prompt anchored on `    except Exception as exc:  # noqa: BLE001` alone, which is also a prefix of the handler at line 166, so the Edit tool found two matches; both attempts widened the anchor and dropped the `return await _save_publish_record(` line (IndentationError, runs/N01kc/attempt_1.log, attempt_2.log). The anchor is now the unique two-line pair.
+Master review: all N01kt and N01mt tests pass, the neighbouring suites stay green, ruff passes; `git diff` shows one new except clause and nothing else.
+
+## Prompt
+``````text
+TASK N01kc. One insertion in src/vf_logistics/tools.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/tools.py. It uses Windows line endings (CRLF). Use the Edit tool. Never use Write on this file. Do not edit any test. Do not touch the `import asyncio` line, `_save_publish_record`, `_audit` or the existing `except Exception` handler. `_save_publish_record`, `body`, `accepted`, `case_id` and `tenant_id` already exist in this function.
+
+EDIT 1 (a new except clause, directly above the existing one). This edit uses a TWO-line old_string on purpose: the first line alone also matches another handler in this file ("... BLE001 - a failed alert must not kill the case"). old_string, these TWO lines (the first has 4 leading spaces, the second 8; the pair occurs once):
+```python
+    except Exception as exc:  # noqa: BLE001
+        return await _save_publish_record(
+```
+new_string is the clause below, and then those SAME TWO lines again, unchanged:
+```python
+    except asyncio.CancelledError as exc:
+        # Cancelled while the broker was taking the message, or after it had (N01). The
+        # record is saved shielded from the cancellation, so a Resume after the lease finds
+        # the message id (or an unknown outcome) instead of reading "nothing was sent".
+        try:
+            await asyncio.shield(_save_publish_record(
+                case_id, "publish_decision",
+                {**body, **accepted, "error": f"{type(exc).__name__}: {exc}"},
+                status="done" if accepted else "unknown",
+                tenant_id=tenant_id, accepted=bool(accepted),
+            ))
+        except Exception:  # noqa: BLE001
+            # Only possible without an accepted message (nothing went out): the store's
+            # error must not replace the cancellation the caller is waiting for.
+            pass
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return await _save_publish_record(
+```
+(The last two lines of new_string are the two old lines, kept: after the edit `        return await _save_publish_record(` must still directly follow `    except Exception as exc:  # noqa: BLE001`. Indentation: `except` 4 spaces, its body 8, the inner `try` body 12, the call arguments 16.)
+
+DONE WHEN: only tools.py changed: one new `except asyncio.CancelledError` clause directly above `except Exception as exc:  # noqa: BLE001`.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08kt -->
+## Meta
+- title: Test for the review page - an EXECUTING case is read again every 15 seconds and the polling stops when it ends (N08)
+- depends_on: []
+- target_files:
+  - frontend/src/app/review/page.test.tsx
+- test_commands:
+  - [frontend] npx vitest run src/app/review/page.test.tsx
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Open item of the fix report: "no test mounts the /review page; the 15-second reload was confirmed only by the tested rule (caseRefetchMs) and the diff". N08i already added `refetchInterval` to the page's detail query, so this test is expected to PASS here; its red proof against the page before N08i is task N08kv.
+The test mounts the real ReviewQueuePage with a real QueryClient and fake timers. Mocked: the API (queue empty, fetchCase answers EXECUTING then RELEASED_BY_HUMAN), the tenant hook, the ?case= listener (opens CASE-1), ReviewPanel (a stub that prints the state the page hands it; the panel has its own tests) and HelpDot. Template: src/app/evaluation/page.test.tsx (vi.mock with importOriginal, then import the page).
+Master review: the log shows 1 passing test in page.test.tsx; tsc and lint pass.
+
+## Prompt
+``````text
+TASK N08kt. Create ONE new file: frontend/src/app/review/page.test.tsx, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): frontend/src/app/review/page.test.tsx. It does not exist yet: create it with the Write tool. Do not edit page.tsx or any other file.
+
+Content (copy exactly):
+```tsx
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  fetchReviewQueue: vi.fn(async () => ({ items: [], next_cursor: null })),
+  fetchCase: vi.fn(),
+}));
+vi.mock("@/lib/tenant-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tenant-context")>()),
+  useTenant: () => ({ tenant: { id: "tenant-a" } }),
+}));
+vi.mock("@/lib/url-state", async (importOriginal) => {
+  const { useEffect } = await import("react");
+  return {
+    ...(await importOriginal<typeof import("@/lib/url-state")>()),
+    // The page is opened on ?case=CASE-1.
+    CaseParamListener: ({ onChange }: { onChange: (caseId: string | null) => void }) => {
+      useEffect(() => onChange("CASE-1"), [onChange]);
+      return null;
+    },
+    writeCaseParam: vi.fn(),
+  };
+});
+// The panel has its own tests; here it only shows which state the page handed it.
+vi.mock("@/components/review/ReviewPanel", () => ({
+  ReviewPanel: ({ detail }: { detail?: { state: string } }) => <p data-testid="panel-state">{detail?.state ?? "none"}</p>,
+}));
+vi.mock("@/components/help/HelpDot", () => ({ HelpDot: () => null }));
+
+import { fetchCase } from "@/lib/api";
+
+import ReviewQueuePage from "./page";
+
+/**
+ * N08: the review page shows the case a link opened. An execution ends on the server
+ * without anyone asking the page, so while the case is EXECUTING the page reads it again
+ * every 15 seconds; once it has finished, the polling stops.
+ */
+describe("Review page: an executing case is read again (N08)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("reads an executing case again after 15 seconds and stops once it has finished", async () => {
+    vi.mocked(fetchCase)
+      .mockResolvedValueOnce({ case_id: "CASE-1", state: "EXECUTING" } as never)
+      .mockResolvedValue({ case_id: "CASE-1", state: "RELEASED_BY_HUMAN" } as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ReviewQueuePage />
+      </QueryClientProvider>,
+    );
+    expect((await screen.findByTestId("panel-state")).textContent).toBe("EXECUTING");
+    expect(fetchCase).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(fetchCase).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByTestId("panel-state").textContent).toBe("RELEASED_BY_HUMAN"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(fetchCase).toHaveBeenCalledTimes(2);
+  });
+});
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if frontend/src/app/review/page.test.tsx already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08kv -->
+## Meta
+- title: verify_only - the review page test fails on the page before N08i (red proof)
+- verify_only: true
+- depends_on:
+  - N08kt
+- test_commands:
+  - python -c "import subprocess as s, tarfile, io, os, shutil, sys, _winapi; d='orchestrator/runs/N08kv/old'; j=d+'/frontend/node_modules'; os.path.isdir(j) and os.rmdir(j); shutil.rmtree(d, ignore_errors=True); os.makedirs(d); tarfile.open(fileobj=io.BytesIO(s.check_output(['git','archive','3420388~1','frontend'])), mode='r:').extractall(d, filter='data'); _winapi.CreateJunction(os.path.abspath('frontend/node_modules'), os.path.abspath(j)); shutil.copy('frontend/src/app/review/page.test.tsx', d+'/frontend/src/app/review/page.test.tsx'); r=s.call('npx vitest run src/app/review/page.test.tsx', shell=True, cwd=d+'/frontend'); os.rmdir(j); print('vitest exit on the page before N08i', r); sys.exit(0 if r == 1 else 1)"
+- timeout_sec: 600
+
+## Context
+Red proof for N08kt without touching the working tree. The command extracts `frontend/` as it was at 3420388~1 (cfd18f8: before N08i, so the review page has no refetchInterval) into orchestrator/runs/N08kv/old with `git archive` (reads git, writes only under orchestrator/runs/), links the real frontend/node_modules into it with a directory junction, copies the new page.test.tsx in, runs it there, removes the junction (os.rmdir removes the link, never the target), and passes only when vitest exits 1.
+Master review: the log shows the test failing at `expect(fetchCase).toHaveBeenCalledTimes(2)` with "called 1 times"; any other failure (module not found, fs access) means the proof did not run: report "red not verified" for N08kt rather than claiming it.
+<!-- TASK_END -->
+
+<!-- TASK_START: N01mcf1 -->
+## Meta
+- title: Fix round 1 of N01mc - remove the blank line inserted inside the signature of publish_decision_direct
+- depends_on:
+  - N01mc
+- target_files:
+  - src/vf_logistics/tools.py
+- test_commands:
+  - python -c "l=open('src/vf_logistics/tools.py',encoding='utf-8').read().splitlines(); i=l.index('async def publish_decision_direct('); print(repr(l[i+1])); raise SystemExit(0 if l[i+1].startswith('    case_id: str') else 1)"
+  - python -m pytest tests/test_resume_after_publish.py tests/test_publish_dedupe.py tests/test_evidence_execution.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/tools.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+N01mc passed (40 tests, ruff clean) but its EDIT 1 left an empty line between `async def publish_decision_direct(` and its first parameter line (runs/N01mc/attempt_1.diff). Valid Python, but a stray change in a reviewed diff. This task removes only that empty line.
+Master review: the first test command prints `'    case_id: str, ...'`; `git diff src/vf_logistics/tools.py` no longer shows the blank line.
+
+## Prompt
+``````text
+TASK N01mcf1. Remove ONE empty line in src/vf_logistics/tools.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/tools.py. It uses Windows line endings (CRLF). Use the Edit tool. Never use Write on this file.
+
+Today the file has these three lines (the middle one is empty):
+```python
+async def publish_decision_direct(
+
+    case_id: str, body: dict[str, Any], tenant_id: str | None = None,
+```
+EDIT 1. old_string is those THREE lines exactly (first line no leading spaces, second line empty, third line 4 leading spaces). new_string is the same without the empty line:
+```python
+async def publish_decision_direct(
+    case_id: str, body: dict[str, Any], tenant_id: str | None = None,
+```
+
+DONE WHEN: `async def publish_decision_direct(` is directly followed by its `case_id: str, ...` line, and nothing else in the file changed.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the three lines are not found exactly once.
 ``````
 <!-- TASK_END -->

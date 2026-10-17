@@ -254,6 +254,26 @@ def _may_have_been_accepted(exc: BaseException) -> bool:
     )
 
 
+async def _save_publish_record(
+    case_id: str, action: str, detail: dict[str, Any], status: str = "done",
+    tenant_id: str | None = None, *, accepted: bool,
+) -> dict[str, Any]:
+    """
+    Save the record of a publish; for a message the broker accepted, hand the receipt
+    back unsaved when the store refuses it.
+
+    Raising there turned a sent message into "nothing was sent": the execution failed and
+    the retry published the decision a second time although its message id was known (N01).
+    Without an accepted message the error goes on, and the caller records a failed send.
+    """
+    try:
+        return await _audit(case_id, action, detail, status=status, tenant_id=tenant_id)
+    except Exception:  # noqa: BLE001
+        if not accepted:
+            raise
+        return {"case_id": case_id, "action": action, "status": status, "detail": detail, "at": utcnow()}
+
+
 async def publish_decision_direct(
     case_id: str, body: dict[str, Any], tenant_id: str | None = None,
 ) -> dict[str, Any]:
@@ -295,13 +315,30 @@ async def publish_decision_direct(
             case_id, "publish_decision", {**body, "message_id": message_id},
             tenant_id=tenant_id,
         )
+    except asyncio.CancelledError as exc:
+        # Cancelled while the broker was taking the message, or after it had (N01). The
+        # record is saved shielded from the cancellation, so a Resume after the lease finds
+        # the message id (or an unknown outcome) instead of reading "nothing was sent".
+        try:
+            await asyncio.shield(_save_publish_record(
+                case_id, "publish_decision",
+                {**body, **accepted, "error": f"{type(exc).__name__}: {exc}"},
+                status="done" if accepted else "unknown",
+                tenant_id=tenant_id, accepted=bool(accepted),
+            ))
+        except Exception:  # noqa: BLE001
+            # Only possible without an accepted message (nothing went out): the store's
+            # error must not replace the cancellation the caller is waiting for.
+            pass
+        raise
     except Exception as exc:  # noqa: BLE001
-        return await _audit(
+        return await _save_publish_record(
             case_id, "publish_decision",
             {**body, **accepted, "error": f"{type(exc).__name__}: {exc}"},
             # A timeout means the broker may have accepted the message, which is not the same
             # as "not sent" (N01). A retry carries the same idempotency key.
             # An accepted message is a sent one, whatever happened to its first record.
             status="done" if accepted else ("unknown" if _may_have_been_accepted(exc) else "failed"),
+            accepted=bool(accepted),
             tenant_id=tenant_id,
         )
