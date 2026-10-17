@@ -4734,6 +4734,48 @@ STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not fo
 ``````
 <!-- TASK_END -->
 
+<!-- TASK_START: VMERGE -->
+## Meta
+- title: Where the branches stand (local refs only, no fetch)
+- verify_only: true
+- test_commands:
+  - git status -sb
+  - git branch -a -vv
+  - git log --oneline --decorate -8 --all
+  - git log --oneline -5
+
+## Context
+A verify_only task with read-only git commands, the output in `orchestrator/runs/VMERGE/attempt_1.log`. It answers "was the work merged into main/master?" from the LOCAL refs only: it does not fetch, so a merge made on GitHub after the last fetch is not visible here.
+<!-- TASK_END -->
+
+<!-- TASK_START: VMERGE2 -->
+## Meta
+- title: Was gemma-backlog merged into master (after a fetch)
+- verify_only: true
+- test_commands:
+  - git fetch origin
+  - git status -sb
+  - git branch -r --contains HEAD
+  - git merge-base --is-ancestor HEAD origin/master && echo MERGED_INTO_ORIGIN_MASTER || echo NOT_MERGED_INTO_ORIGIN_MASTER
+  - git log --oneline --decorate -6 origin/master
+  - git ls-remote --heads origin
+
+## Context
+A verify_only task for the question "was it merged?". `git fetch origin` only updates the remote-tracking refs (no change to the working tree, the branch or any file); the other commands are read-only. Output in `orchestrator/runs/VMERGE2/attempt_1.log`. A squash or rebase merge would not make HEAD an ancestor of origin/master, so the log also lists the newest commits of origin/master and the remote heads.
+<!-- TASK_END -->
+
+<!-- TASK_START: VPR -->
+## Meta
+- title: Pull request state of gemma-backlog (read-only, GitHub CLI)
+- verify_only: true
+- test_commands:
+  - gh pr list --repo hoachauphuoc/vf-logistics-nebius-nvidia --head gemma-backlog --state all --json number,title,state,mergedAt,baseRefName,mergeStateStatus,statusCheckRollup
+  - gh pr checks --repo hoachauphuoc/vf-logistics-nebius-nvidia gemma-backlog
+
+## Context
+A verify_only task that only reads: the pull requests whose head is gemma-backlog (state, base branch, merged time, merge status, CI rollup) and the CI checks of the branch. Output in `orchestrator/runs/VPR/attempt_1.log`. If `gh` is missing or not signed in, the log says so and the answer has to come from VMERGE2.
+<!-- TASK_END -->
+
 ## Parked
 
 <!-- PARKED_TASK_START: C3 -->
