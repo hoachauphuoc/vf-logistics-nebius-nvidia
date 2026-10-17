@@ -16,7 +16,9 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
       with `verify_only: true`; it is not written before, because the old parser would reject it.
   12. `--only N06d1`, `--only N06d2`, `--only N01d1`, `--only N01d2` (one at a time, in this order), then `--only V2` to re-measure.
       N06d1 and N06d2 replace the parked task C3, which stays parked.
+  13. `--only N08e`; `--only N03d1t` (red: log shows `pytest exit 1`), `--only N03d1c`, then `--only V3` (its log lists the existing tests N03d1c breaks; migrate them next). The combined task N03d1 is parked, superseded by N03d1t/N03d1c.
   13. `--only RM1t` (its tests must fail: the log shows `pytest exit 1`), then `--only RM1c` (same tests green).
+  14. `--only RM2t` (red), then `--only RM2c` (green). After RM2c the Master reviews from `runs/<ID>/attempt_N.diff` and runs no git.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -62,8 +64,19 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
 | 24 | N06d2 | The evaluation record lists the papers that were not fully read |
 | 25 | N01d1 | A publish that timed out is recorded as unknown, not failed: tools |
 | 26 | N01d2 | An execution whose send timed out is recorded as send_unknown: evidence |
+| 27 | N08e | Frontend test: Release then Cancel sends nothing |
+| 28t | N03d1t | Tests first: a request-level link is refused when several documents were requested |
+| 28c | N03d1c | Code for N03d1t |
+| 29v | V3 | verify_only: which existing tests the N03d1c change breaks |
+| 29m | N03m1, N03m2 | Migrate the two test helpers to the typed link of the first document (human approved) |
+| 29w | V4 | verify_only: the full backend suite |
+
+N03d1c round 1: FIX, 10 existing tests broke (9 in test_evidence_respond.py, 1 in test_evidence_eval_approve.py), human approved migrating the two helpers; log runs/V3/attempt_1.log. Next: run N03m1, N03m2, V3, V4.
+N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test still uses the request-level link (N03m3), and test_operating_curve fails because the relative --basetemp makes the script print a relative path (environmental; V4 now uses an absolute basetemp via %CD%); V3 was skipped as "failed earlier, unchanged" and is superseded by V4. Logs runs/V4/attempt_1.log. Next: run N03m3, then V4. Limit reached after this round: if V4 is not clean, stop and report.
 | 27 | RM1t | Runner: test that the sub-agent starts with skills disabled (red first) |
 | 28 | RM1c | Runner: claude_command always passes --disable-slash-commands |
+| 29 | RM2t | Runner: test that every attempt writes attempt_N.diff (red first) |
+| 30 | RM2c | Runner: run_task writes attempt_N.diff before any restore |
 
 ---
 
@@ -4168,6 +4181,559 @@ STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not fo
 ``````
 <!-- TASK_END -->
 
+<!-- TASK_START: N08e -->
+## Meta
+- title: Test that Release then Cancel sends nothing (N08, frontend)
+- depends_on: []
+- target_files:
+  - frontend/src/components/review/ReviewPanel.test.tsx
+- test_commands:
+  - [frontend] npx vitest run src/components/review/ReviewPanel.test.tsx
+  - [frontend] npx tsc --noEmit
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Review VI, N08: "pressing Release then Cancel calls neither approve nor execute" was verified by the reviewer's own test; the repository has none, so the verification script lists it as NO TEST (check N08-e). The behaviour already exists (the confirmation dialog sends nothing before Confirm); this task only adds the test. No source file changes.
+Master review (from the log): the vitest run shows one more passing test in ReviewPanel.test.tsx than before; tsc passes.
+
+## Prompt
+``````text
+TASK N08e. Add ONE test to frontend/src/components/review/ReviewPanel.test.tsx. Nothing else.
+
+FILE YOU MAY EDIT (only this one): frontend/src/components/review/ReviewPanel.test.tsx. The file may use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not add imports and do not change any mock: renderPanel, evaluated, fireEvent, screen, waitFor, approveCase and executeApproval already exist in the file.
+
+WHERE: inside the describe block that holds the test "leaves a clean release as it was", directly before the test "still needs a note to block, as before". old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  it("still needs a note to block, as before", async () => {
+```
+new_string is the block below: the new test, a blank line, and then that same line again:
+```tsx
+  it("sends nothing when the reviewer cancels the confirmation (Release, then Cancel)", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "provided", risk_floor: 45 }));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull());
+    expect(approveCase).not.toHaveBeenCalled();
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
+  it("still needs a note to block, as before", async () => {
+```
+
+DONE WHEN: only this file changed, by the added test and nothing else; every existing test is untouched.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found.
+``````
+<!-- TASK_END -->
+
+<!-- PARKED_TASK_START: N03d1 -->
+## Meta
+- title: A request-level link is refused when several documents were requested (N03)
+- depends_on: []
+- target_files:
+  - src/vf_logistics/evidence.py
+  - tests/test_untyped_link.py
+- test_commands:
+  - python -m pytest tests/test_untyped_link.py -q
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Review VI, N03 (what is left): requests and re-issues now return one typed link per document, but the request-level link (`token`/`path`, no document type) is still honoured in receive_evidence, and with several documents requested it files the upload under the first one still missing, whatever the paper is. Fix: that link is refused (400, with a message that names the next step) when more than one document was requested; with one document requested it keeps working.
+KNOWN FALLOUT: existing tests that upload through the request-level link of a multi-document request will now fail. This task deliberately runs only its own new test file; the existing tests are measured next by the verify_only task V3, whose log lists every one that fails, and they are migrated in later tasks. Do not touch them here.
+Master review (from the log): `3 passed` for tests/test_untyped_link.py; before the edit the first test fails.
+
+## Prompt
+``````text
+TASK N03d1. In src/vf_logistics/evidence.py, function receive_evidence(), refuse a request-level link when several documents were requested. One edit and one new test file.
+
+FILES YOU MAY EDIT (only these two):
+1. src/vf_logistics/evidence.py, only the one place below.
+2. tests/test_untyped_link.py, a NEW file: it does not exist yet. Create it with Write, with exactly the content given at the end.
+evidence.py uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on evidence.py. Do not edit any existing test.
+
+EDIT 1. old_string, ONE line (8 leading spaces; occurs once):
+```python
+        # A request-level link (no document in the token): the first one not yet in.
+```
+new_string is the block below. It REPLACES that one comment line; the two lines that follow it in the file (`doc_type = still_missing[0] if still_missing else (` and its continuation) stay exactly as they are:
+```python
+        # A request-level link (no document in the token) cannot say which paper an upload is.
+        # With one document requested there is nothing to confuse; with several, the upload
+        # would be filed under whichever is still missing, whatever it actually is (N03).
+        if len(requested_docs) > 1:
+            raise EvidenceError(
+                "This link does not say which document it is for. Ask for a link for each document.",
+                400,
+            )
+```
+
+THE NEW FILE tests/test_untyped_link.py (create with Write, exactly this content):
+```python
+"""
+A request-level link carries no document type. With several documents requested it cannot say
+which paper an upload is, so it is refused instead of filing the upload under whichever is still
+missing (review VI, N03). With one document requested there is nothing to confuse.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(__file__))
+from test_evidence_eval_approve import DOCS3, PAPERS, Base, tiny_pdf  # noqa: E402
+from vf_logistics import evidence  # noqa: E402
+
+REVIEWER = "reviewer@forwarder.example"
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def _receive(token, extracted):
+    mock = {
+        "agent": "evidence_extraction", "model": "test", "result": extracted,
+        "latency_ms": 10, "input_tokens": 10, "output_tokens": 10,
+        "parse_error": False, "at": "2026-10-12T08:00:00Z",
+    }
+    with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock)), \
+            patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})), \
+            patch("vf_logistics.model_armor.extract_pdf_text", return_value=("text", None)), \
+            patch("vf_logistics.document_store.archive", new=AsyncMock(return_value={"archived": True, "uri": "gs://t/d"})):
+        return run(evidence.receive_evidence(token, tiny_pdf(), "doc.pdf", "application/pdf"))
+
+
+class TestARequestLevelLink(Base):
+    def test_with_several_documents_requested_it_is_refused(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        with pytest.raises(evidence.EvidenceError) as raised:
+            _receive(out["token"], PAPERS["input_purchase_invoices"])
+        assert raised.value.status == 400
+        assert "which document" in raised.value.message
+        assert self.stored()["verification"]["documents"] == []
+
+    def test_a_typed_link_still_files_the_upload_under_its_own_type(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _receive(links["input_purchase_invoices"], PAPERS["input_purchase_invoices"])
+        stored = self.stored()["verification"]["documents"]
+        assert [d["doc_type"] for d in stored] == ["input_purchase_invoices"]
+
+    def test_with_one_document_requested_the_request_level_link_still_works(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=["certificate_of_origin"]))
+        _receive(out["token"], PAPERS["certificate_of_origin"])
+        stored = self.stored()["verification"]["documents"]
+        assert [d["doc_type"] for d in stored] == ["certificate_of_origin"]
+```
+
+DONE WHEN: only the two files changed; evidence.py gained the block in place of one comment line and nothing else; the new file has 3 tests.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found, or if tests/test_untyped_link.py already exists.
+``````
+<!-- PARKED_TASK_END -->
+
+<!-- TASK_START: N03d1t -->
+## Meta
+- title: Tests first: a request-level link is refused when several documents were requested (N03)
+- depends_on: []
+- target_files:
+  - tests/test_untyped_link.py
+- test_commands:
+  - python -c "import subprocess,sys; r=subprocess.call('python -m pytest tests/test_untyped_link.py -q --basetemp=orchestrator/runs/N03d1t/pytest-tmp', shell=True); print('pytest exit', r); sys.exit(0 if r == 1 else 1)"
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Review VI, N03 (what is left): requests and re-issues return one typed link per document, but the request-level link (`token`/`path`, no document type) is still honoured by receive_evidence and, with several documents requested, files the upload under the first one still missing, whatever the paper is. Fix in two tasks (tests first): this one adds the tests, which must FAIL now (the log shows `pytest exit 1`: the refusal test fails, the other two pass); N03d1c makes them pass. The earlier combined task N03d1 is parked: it did not give a red proof.
+Expected in the log: `pytest exit 1`, `1 failed, 2 passed`.
+
+## Prompt
+``````text
+TASK N03d1t. Create ONE new test file. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_untyped_link.py, a NEW file: it does not exist yet. Create it with Write, with exactly the content below, character for character. Do not edit any other file.
+
+```python
+"""
+A request-level link carries no document type. With several documents requested it cannot say
+which paper an upload is, so it is refused instead of filing the upload under whichever is still
+missing (review VI, N03). With one document requested there is nothing to confuse.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(__file__))
+from test_evidence_eval_approve import DOCS3, PAPERS, Base, tiny_pdf  # noqa: E402
+from vf_logistics import evidence  # noqa: E402
+
+REVIEWER = "reviewer@forwarder.example"
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def _receive(token, extracted):
+    mock = {
+        "agent": "evidence_extraction", "model": "test", "result": extracted,
+        "latency_ms": 10, "input_tokens": 10, "output_tokens": 10,
+        "parse_error": False, "at": "2026-10-12T08:00:00Z",
+    }
+    with patch("vf_logistics.agents.document_agent.extract_evidence", new=AsyncMock(return_value=mock)), \
+            patch("vf_logistics.model_armor.screen", new=AsyncMock(return_value={"blocked": False})), \
+            patch("vf_logistics.model_armor.extract_pdf_text", return_value=("text", None)), \
+            patch("vf_logistics.document_store.archive", new=AsyncMock(return_value={"archived": True, "uri": "gs://t/d"})):
+        return run(evidence.receive_evidence(token, tiny_pdf(), "doc.pdf", "application/pdf"))
+
+
+class TestARequestLevelLink(Base):
+    def test_with_several_documents_requested_it_is_refused(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        with pytest.raises(evidence.EvidenceError) as raised:
+            _receive(out["token"], PAPERS["input_purchase_invoices"])
+        assert raised.value.status == 400
+        assert "which document" in raised.value.message
+        assert self.stored()["verification"]["documents"] == []
+
+    def test_a_typed_link_still_files_the_upload_under_its_own_type(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=DOCS3))
+        links = {link["doc_type"]: link["token"] for link in out["links"]}
+        _receive(links["input_purchase_invoices"], PAPERS["input_purchase_invoices"])
+        stored = self.stored()["verification"]["documents"]
+        assert [d["doc_type"] for d in stored] == ["input_purchase_invoices"]
+
+    def test_with_one_document_requested_the_request_level_link_still_works(self):
+        self.put()
+        out = run(evidence.request_evidence("CASE-1", REVIEWER, documents=["certificate_of_origin"]))
+        _receive(out["token"], PAPERS["certificate_of_origin"])
+        stored = self.stored()["verification"]["documents"]
+        assert [d["doc_type"] for d in stored] == ["certificate_of_origin"]
+```
+
+DONE WHEN: only tests/test_untyped_link.py was created, with exactly the content above (3 tests).
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if tests/test_untyped_link.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N03d1c -->
+## Meta
+- title: Code: a request-level link is refused when several documents were requested (N03)
+- depends_on:
+  - N03d1t
+- target_files:
+  - src/vf_logistics/evidence.py
+- test_commands:
+  - python -m pytest tests/test_untyped_link.py -q --basetemp=orchestrator/runs/N03d1c/pytest-tmp
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Second half of N03d1t. receive_evidence() refuses a request-level link (400, message names the next step) when more than one document was requested; with one document requested it keeps working. KNOWN FALLOUT: existing tests that upload through the request-level link of a multi-document request will now fail. This task runs only its own tests; the existing tests are measured by the verify_only task V3 and migrated afterwards. Do not touch them here.
+Expected in the log: `3 passed`.
+
+## Prompt
+``````text
+TASK N03d1c. In src/vf_logistics/evidence.py, function receive_evidence(), refuse a request-level link when several documents were requested. One edit.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/evidence.py, only the one place below. The file uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on evidence.py. Do not edit any test.
+
+EDIT 1. old_string, ONE line (8 leading spaces; occurs once):
+```python
+        # A request-level link (no document in the token): the first one not yet in.
+```
+new_string is the block below. It REPLACES that one comment line; the two lines that follow it in the file (`doc_type = still_missing[0] if still_missing else (` and its continuation) stay exactly as they are:
+```python
+        # A request-level link (no document in the token) cannot say which paper an upload is.
+        # With one document requested there is nothing to confuse; with several, the upload
+        # would be filed under whichever is still missing, whatever it actually is (N03).
+        if len(requested_docs) > 1:
+            raise EvidenceError(
+                "This link does not say which document it is for. Ask for a link for each document.",
+                400,
+            )
+```
+
+DONE WHEN: only evidence.py changed, by that block in place of one comment line and nothing else.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found, or if tests/test_untyped_link.py does not exist (task N03d1t not applied).
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N03m1 -->
+## Meta
+- title: Test helper request_and_token uses the typed link of the first document (N03 migration, round 1)
+- depends_on:
+  - N03d1c
+- target_files:
+  - tests/test_evidence_respond.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('tests/test_evidence_respond.py', encoding='utf-8').read()); print('syntax ok')"
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+N03d1c refuses the request-level link when several documents were requested, so the helper `request_and_token` (a request for the default documents, then `out["token"]`) breaks 9 tests of this file. The human approved migrating the helper: it returns the typed link of the first requested document instead. That is the same document the request-level link used to pick (the first one still missing), so what the tests upload is unchanged. Only the helper changes; no test body, no assertion. The command only checks the syntax: the effect is measured by the verify_only task V3 (a failing test there is a finding, not a failure of this task).
+
+## Prompt
+``````text
+TASK N03m1. Change ONE line of the helper request_and_token in tests/test_evidence_respond.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_evidence_respond.py. It may use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not edit any test or assertion.
+
+EDIT 1. old_string, ONE line (8 leading spaces; occurs once, at line 89):
+```python
+        return out["request"]["request_id"], out["token"]
+```
+new_string, ONE line:
+```python
+        return out["request"]["request_id"], out["links"][0]["token"]
+```
+
+DONE WHEN: only this file changed, by that one line.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N03m2 -->
+## Meta
+- title: Test helper request_and_submit uses the typed link of the first document (N03 migration, round 1)
+- depends_on:
+  - N03d1c
+- target_files:
+  - tests/test_evidence_eval_approve.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('tests/test_evidence_eval_approve.py', encoding='utf-8').read()); print('syntax ok')"
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Same migration for the shared helper `Base.request_and_submit` in test_evidence_eval_approve.py (imported by other test files): it takes `out["token"]`, which N03d1c refuses when several documents are requested (it broke test_a_request_with_documents_still_missing_stays_open_after_evaluation). It takes the typed link of the first requested document instead; with a single document requested that is the same document as before. One line; the effect is measured by V3 and V4.
+
+## Prompt
+``````text
+TASK N03m2. Change ONE line of the helper request_and_submit in tests/test_evidence_eval_approve.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_evidence_eval_approve.py. It may use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not edit any test or assertion.
+
+EDIT 1. old_string, ONE line (8 leading spaces; occurs once, at line 72):
+```python
+        token = out["token"]
+```
+new_string, ONE line:
+```python
+        token = out["links"][0]["token"]
+```
+
+DONE WHEN: only this file changed, by that one line.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N03m3 -->
+## Meta
+- title: Tenant upload test uses the typed link of the first document (N03 migration, round 2)
+- depends_on:
+  - N03m1
+- target_files:
+  - tests/test_evidence_respond.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('tests/test_evidence_respond.py', encoding='utf-8').read()); print('syntax ok')"
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Round 2 of the N03 migration. The full-suite log (runs/V4/attempt_1.log) shows one test still failing because of N03d1c: test_the_upload_lands_under_the_tenant_the_link_was_minted_for builds its own request without the helper and uploads through the request-level `["token"]` of a multi-document request. It takes the typed link of the first document instead (the same document the request-level link used to pick). One line; the effect is measured by V4.
+
+## Prompt
+``````text
+TASK N03m3. Change ONE line in tests/test_evidence_respond.py, inside test_the_upload_lands_under_the_tenant_the_link_was_minted_for. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_evidence_respond.py. It may use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not edit any other test or assertion.
+
+EDIT 1. old_string, ONE line (12 leading spaces; occurs once, at line 413):
+```python
+            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["token"]
+```
+new_string, ONE line:
+```python
+            token = run(evidence.request_evidence("CASE-1", REVIEWER, tenant_id=self.TENANT))["links"][0]["token"]
+```
+
+DONE WHEN: only this file changed, by that one line.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: V3 -->
+## Meta
+- title: Measure which existing tests the request-level link change breaks
+- verify_only: true
+- test_commands:
+  - python -m pytest tests/test_evidence_request.py tests/test_evidence_respond.py tests/test_evidence_eval_approve.py tests/test_evidence_execution.py tests/test_evidence_reevaluable_mirror.py tests/test_n07_policy_gate.py tests/test_origin_inputs.py tests/test_exception_approval.py tests/test_exception_route.py tests/test_rbac.py tests/test_untyped_link.py tests/test_unread_pages_evaluation.py tests/test_send_unknown.py -q -rf --basetemp=orchestrator/runs/V3/pytest-tmp
+
+## Context
+A verify_only task: no model, one command, the output in `orchestrator/runs/V3/attempt_1.log` (section TESTS, with a `FAILED` line for every failing test because of -rf). Run it after N03d1. A failing command is a finding here, not a defect of the task: the Master reads the list and plans the migration of those tests. It reruns on every invocation.
+<!-- TASK_END -->
+
+<!-- TASK_START: V4 -->
+## Meta
+- title: Full backend suite at the current working tree
+- verify_only: true
+- test_commands:
+  - python -m pytest tests/ -q -rf --basetemp=%CD%\orchestrator\runs\V4\pytest-tmp
+- timeout_sec: 900
+
+## Context
+A verify_only task: no model, the whole backend suite, the output in `orchestrator/runs/V4/attempt_1.log` (a `FAILED` line per failing test). Baseline in CLAUDE.md section 7 was 1486 passed and 16 skipped at commit 85685a2; the suite has grown since, so compare failures, not totals. A failing command is a finding, not a defect of the task.
+<!-- TASK_END -->
+
+<!-- TASK_START: V5 -->
+## Meta
+- title: Operating curve test with a basetemp outside the repository
+- verify_only: true
+- test_commands:
+  - python -m pytest tests/test_operating_curve.py -q -rf --basetemp=%TEMP%\vf_curve_tmp
+
+## Context
+V4 had one failure, tests/test_operating_curve.py::test_the_script_runs_end_to_end. scripts/operating_curve.py prints `wrote <path>` relative to the repository when the output file is inside it (lines 169-173), and the test expects the absolute path; pytest's --basetemp inside the repository (the test-gate convention) puts it there. This task runs the same test with a basetemp outside the repository, to show the failure is that artefact and not a regression. A failing command is a finding.
+<!-- TASK_END -->
+
+<!-- TASK_START: VGIT -->
+## Meta
+- title: Git state before the commit
+- verify_only: true
+- test_commands:
+  - git status --porcelain
+  - git diff --stat
+  - git log --oneline -3
+
+## Context
+A verify_only task: read-only git commands, the output in `orchestrator/runs/VGIT/attempt_1.log`. It gives the exact list of changed and untracked files for the human's commit.
+<!-- TASK_END -->
+
+<!-- TASK_START: VFULL -->
+## Meta
+- title: Full verification at the current working tree (CLAUDE.md section 7)
+- verify_only: true
+- test_commands:
+  - python -m pytest tests/ -q -rf --basetemp=%TEMP%\vf_full_tmp
+  - python -c "import subprocess,sys,re; o=subprocess.run('python -m mypy src/vf_logistics/ --ignore-missing-imports', shell=True, capture_output=True, text=True).stdout; m=re.search(r'Found (\d+) error', o); n=int(m.group(1)) if m else (0 if 'Success' in o else 9999); print('mypy errors', n); sys.exit(0 if n <= 123 else 1)"
+  - python -m mypy src/vf_logistics/verifier.py src/vf_logistics/observability.py src/vf_logistics/evaluation.py --ignore-missing-imports --follow-imports=silent
+  - python -m ruff check src/ tests/ scripts/ --select E,F,W --ignore E501,E402,W291,W293
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+  - [frontend] npm test
+- timeout_sec: 900
+
+## Context
+The deploy gate of CLAUDE.md section 7, as one verify_only task: backend suite, mypy ratchet (CI ceiling 123) and the strict-clean modules, ruff, then the frontend (tsc, lint, vitest). Commands stop at the first failure, so the log names the first thing to fix. The pytest basetemp is outside the repository on purpose: inside it, tests/test_operating_curve.py fails because the script prints a relative path.
+<!-- TASK_END -->
+
+<!-- TASK_START: N03e -->
+## Meta
+- title: The verification eval script uploads through the typed link of each document (N03 regression)
+- depends_on:
+  - N03d1c
+- target_files:
+  - scripts/run_verification_eval.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/run_verification_eval.py', encoding='utf-8').read()); print('syntax ok')"
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Found by V2 (runs/V2/attempt_1.log, check E01-a): after N03d1c, scripts/run_verification_eval.py uploads every document of a multi-document request through the request-level link `out["token"]`, which is now refused, and evaluate_case swallows the error and reports "ERROR" for the case. No test covers the script; the red proof is the V2 log (E01-a FAIL, decision ERROR / ERROR) and the green proof will be the next V2 log. The script uses `doc_types` (the keys of the evidence) as the requested documents, so `out["links"]` has one typed link per document it uploads.
+
+## Prompt
+``````text
+TASK N03e. Two small edits in scripts/run_verification_eval.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/run_verification_eval.py. It may use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given. Never use a multi-line old_string. Never use Write on this file.
+
+EDIT 1 (collect the typed links right after the request). old_string, ONE line (12 leading spaces; occurs once):
+```python
+            out = run(evidence.request_evidence(case_id, REVIEWER, documents=doc_types))
+```
+new_string, two lines (the first is the old line again):
+```python
+            out = run(evidence.request_evidence(case_id, REVIEWER, documents=doc_types))
+            links = {link["doc_type"]: link["token"] for link in out["links"]}
+```
+
+EDIT 2 (upload each document through its own link). old_string, ONE line WITHOUT its leading spaces (occurs once):
+```python
+run(evidence.receive_evidence(out["token"], tiny_pdf(), f"{dt}.pdf", "application/pdf"))
+```
+new_string, ONE line (also without leading spaces; the spaces in front of the old text stay as they are):
+```python
+run(evidence.receive_evidence(links[dt], tiny_pdf(), f"{dt}.pdf", "application/pdf"))
+```
+
+DONE WHEN: only this file changed, by one added line and one changed line.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08f -->
+## Meta
+- title: The review VI check N08-e looks for the Release-then-Cancel test
+- depends_on:
+  - N08e
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+N08e added the frontend test "sends nothing when the reviewer cancels the confirmation (Release, then Cancel)", but check N08-e of scripts/verify_review_vi.py was written as a fixed "NO TEST" row. It becomes a normal frontend check that looks for that test title. The next V2 log shows the row as PASS or FAIL.
+
+## Prompt
+``````text
+TASK N08f. Two one-line edits in scripts/verify_review_vi.py (the N08-e entry of CHECKS). Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file.
+
+EDIT 1. old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("N08-e", "N08", "nothing is sent before the reviewer confirms (Release, then Cancel)", "none",
+```
+new_string, ONE line:
+```python
+    ("N08-e", "N08", "nothing is sent before the reviewer confirms (Release, then Cancel)", "js",
+```
+
+EDIT 2. old_string, ONE line (5 leading spaces; occurs once):
+```python
+     (NO_TEST, "no frontend test found that clicks Release then Cancel and checks that approve and execute were not called")),
+```
+new_string, ONE line:
+```python
+     ["sends nothing when the reviewer cancels the confirmation"]),
+```
+
+DONE WHEN: only this file changed, by those two lines.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found.
+``````
+<!-- TASK_END -->
+
 ## Parked
 
 <!-- PARKED_TASK_START: C3 -->
@@ -4659,5 +5225,186 @@ Everything else in the function and in the file stays unchanged. Do not remove o
 
 DONE WHEN: the list in claude_command ends with "--max-turns", str(max_turns), then the comment line, then "--disable-slash-commands", then the closing ].
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the function does not match the excerpt above.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RM2t -->
+## Meta
+- title: Test that every attempt writes a diff of its target files (must fail before RM2c)
+- target_files:
+  - tests/test_automation_runner_diff.py
+- test_commands:
+  - python -c "import subprocess,sys; r=subprocess.call('python -m pytest tests/test_automation_runner_diff.py -q --basetemp=orchestrator/runs/RM2t/pytest-tmp', shell=True); print('pytest exit', r); sys.exit(0 if r == 1 else 1)"
+  - python -m ruff check tests/test_automation_runner_diff.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+The Master only plans and reviews; it runs no git command. It reviews what the sub-agent changed
+from a file the runner writes: `orchestrator/runs/<ID>/attempt_N.diff`, a unified diff of each target
+file against the task's snapshot. It covers untracked files (no `git diff` for them) and is written
+before a failed attempt is restored. RM2c adds `write_diff` and calls it in `run_task`. This task only
+adds the tests; they MUST fail now (pass only when pytest exits with 1). Do not touch the runner.
+
+## Prompt
+``````text
+RM2t. Create ONE new file with exactly the content below. Change nothing else.
+FILES YOU MAY EDIT (only these): tests/test_automation_runner_diff.py (new file; it does not exist yet)
+
+You cannot run commands. The runner runs the tests after you finish. These tests are EXPECTED to
+fail today (write_diff does not exist yet); do not try to make them pass and do not edit
+orchestrator/automation_runner.py.
+
+Names you may use, all already exist in orchestrator/automation_runner.py:
+- `main(argv)`, `snapshot(repo, targets)`, `find_claude()`, `run_with_timeout(cmd, stdin_text, cwd, env, timeout)`
+- `write_diff` does NOT exist yet; RM2c adds it. Use it exactly as written below.
+
+Write this file with the Write tool, exactly:
+
+# NEW FILE tests/test_automation_runner_diff.py
+"""
+Every attempt writes runs/<ID>/attempt_N.diff: each target file against the task's snapshot. The
+Master reviews from this file and runs no git itself, so it must cover untracked files and keep what
+a failed attempt wrote, which the runner restores afterwards.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "orchestrator"))
+import automation_runner as runner  # noqa: E402
+
+
+def _plan(command: str) -> str:
+    # The markers are joined from parts so that this file, when it is quoted inside a plan,
+    # does not read as a task of that plan.
+    return (
+        "<!-- TASK" + "_START: E -->\n## Meta\n- title: an edit\n- target_files:\n  - a.py\n"
+        f"- test_commands:\n  - {command}\n- max_retries: 0\n\n## Prompt\nSet x to 2.\n"
+        + "<!-- TASK" + "_END -->\n"
+    )
+
+
+def _fake_sub_agent(cmd, stdin_text, cwd, env, timeout):
+    (Path(cwd) / "a.py").write_text("x = 2\n", encoding="utf-8")
+    return 0, "a.py: x is 2", "", False
+
+
+def _run(tmp_path: Path, monkeypatch, command: str) -> int:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    plan = tmp_path / "plan.md"
+    plan.write_text(_plan(command), encoding="utf-8")
+    monkeypatch.setattr(runner, "find_claude", lambda: "claude")
+    monkeypatch.setattr(runner, "run_with_timeout", _fake_sub_agent)
+    return runner.main(["--repo", str(tmp_path), "--plan", str(plan)])
+
+
+def _diff(tmp_path: Path) -> str:
+    return (tmp_path / "orchestrator" / "runs" / "E" / "attempt_1.diff").read_text(encoding="utf-8")
+
+
+def test_a_passing_attempt_writes_the_diff_of_its_target_file(tmp_path, monkeypatch):
+    assert _run(tmp_path, monkeypatch, 'python -c "print(1)"') == 0
+    diff = _diff(tmp_path)
+    assert "--- a/a.py" in diff and "+++ b/a.py" in diff
+    assert "-x = 1" in diff
+    assert "+x = 2" in diff
+
+
+def test_a_failed_attempt_keeps_its_diff_after_the_files_are_restored(tmp_path, monkeypatch):
+    assert _run(tmp_path, monkeypatch, 'python -c "raise SystemExit(3)"') == 1
+    assert "+x = 2" in _diff(tmp_path)
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x = 1\n"
+
+
+def test_a_new_file_is_shown_as_added_lines(tmp_path):
+    snap = runner.snapshot(tmp_path, ["new.py"])
+    (tmp_path / "new.py").write_text("print(1)\n", encoding="utf-8")
+    runner.write_diff(tmp_path, snap, tmp_path / "out.diff")
+    diff = (tmp_path / "out.diff").read_text(encoding="utf-8")
+    assert "+++ b/new.py" in diff
+    assert "+print(1)" in diff
+# END OF FILE (do not write this line)
+
+DONE WHEN: the file exists with exactly that content (without the two marker lines starting with "# NEW FILE" and "# END OF FILE").
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if tests/test_automation_runner_diff.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RM2c -->
+## Meta
+- title: run_task writes runs/<ID>/attempt_N.diff of the target files before any restore
+- depends_on:
+  - RM2t
+- target_files:
+  - orchestrator/automation_runner.py
+- test_commands:
+  - python -m pytest tests/test_automation_runner_diff.py tests/test_automation_runner_cli_args.py tests/test_automation_runner_verify_plan.py tests/test_automation_runner_verify_run.py -q --basetemp=orchestrator/runs/RM2c/pytest-tmp
+  - python -m ruff check orchestrator/ --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Makes the RM2t tests pass. Three additive edits in one file: an import, a new function after
+`restore`, and one call in `run_task` right before the existing `cp.update(..., attempts=attempt, ...)`
+line, which is before any `restore(opts.repo, snap)`. Nothing existing is removed or changed:
+scope enforcement, restore, retries and the log format stay as they are (runner-maintainer R3-R5, R8).
+Standard library only (R10).
+
+## Prompt
+``````text
+RM2c. Add a write_diff function to the runner and call it once per attempt.
+FILES YOU MAY EDIT (only these): orchestrator/automation_runner.py
+
+You cannot run commands. The runner runs the tests after you finish. Make exactly THREE edits with
+the Edit tool. Each anchor below is ONE line that appears once in the file. Do not change or remove
+anything else.
+
+EDIT 1. Anchor (line 33):
+import fnmatch
+Replace it with these two lines:
+import difflib
+import fnmatch
+
+EDIT 2. Anchor (the first line of the function after `restore`):
+def enforce_scope(repo: Path, before: dict[str, str | None], after: dict[str, str | None],
+Replace that ONE line with the new function, two blank lines, then the same anchor line unchanged:
+
+def write_diff(repo: Path, snap: dict[str, bytes | None], path: Path) -> None:
+    """Unified diff of each target file against the task's snapshot, written to `path`.
+
+    The Master reviews from this file and runs no git: it must cover untracked files and keep what
+    a failed attempt wrote, because the runner restores the files right after.
+    """
+    chunks: list[str] = []
+    for rel, old in snap.items():
+        current = repo / rel
+        new = current.read_bytes() if current.is_file() else None
+        if new == old:
+            continue
+        a = (old or b"").decode("utf-8", errors="replace").splitlines(keepends=True)
+        b = (new or b"").decode("utf-8", errors="replace").splitlines(keepends=True)
+        chunks.extend(difflib.unified_diff(a, b, f"a/{rel}", f"b/{rel}"))
+    path.write_text("".join(chunks), encoding="utf-8", newline="")
+
+
+def enforce_scope(repo: Path, before: dict[str, str | None], after: dict[str, str | None],
+
+EDIT 3. Anchor (inside run_task, 8 spaces of indent):
+        cp.update(task.id, attempts=attempt, last_error=error, last_attempt_at=utc_now())
+Replace it with these two lines (8 spaces of indent each; the second line stays exactly as it is):
+        write_diff(opts.repo, snap, run_dir / f"attempt_{attempt}.diff")
+        cp.update(task.id, attempts=attempt, last_error=error, last_attempt_at=utc_now())
+
+The names `snap`, `run_dir`, `attempt`, `opts` already exist in run_task. `Path` is already imported.
+The line `restore(opts.repo, snap)` further down must stay where it is.
+
+DONE WHEN: `import difflib` is above `import fnmatch`; `write_diff` is defined right above `enforce_scope`;
+the write_diff call is directly above that cp.update line in run_task.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if any anchor is not found exactly once.
 ``````
 <!-- TASK_END -->

@@ -30,6 +30,7 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import difflib
 import fnmatch
 import hashlib
 import json
@@ -323,6 +324,24 @@ def restore(repo: Path, snap: dict[str, bytes | None]) -> None:
             path.write_bytes(content)
 
 
+def write_diff(repo: Path, snap: dict[str, bytes | None], path: Path) -> None:
+    """Unified diff of each target file against the task's snapshot, written to `path`.
+
+    The Master reviews from this file and runs no git: it must cover untracked files and keep what
+    a failed attempt wrote, because the runner restores the files right after.
+    """
+    chunks: list[str] = []
+    for rel, old in snap.items():
+        current = repo / rel
+        new = current.read_bytes() if current.is_file() else None
+        if new == old:
+            continue
+        a = (old or b"").decode("utf-8", errors="replace").splitlines(keepends=True)
+        b = (new or b"").decode("utf-8", errors="replace").splitlines(keepends=True)
+        chunks.extend(difflib.unified_diff(a, b, f"a/{rel}", f"b/{rel}"))
+    path.write_text("".join(chunks), encoding="utf-8", newline="")
+
+
 def enforce_scope(repo: Path, before: dict[str, str | None], after: dict[str, str | None],
                   targets: list[str], revert: bool) -> list[str]:
     """Return paths the sub-agent changed outside its targets. Revert them when allowed."""
@@ -575,6 +594,7 @@ def run_task(task: Task, opts: Options, cp: Checkpoint) -> bool:
             f"=== TESTS ===\n{test_log}\n\n=== RESULT ===\n{error or 'OK'}\n",
             encoding="utf-8",
         )
+        write_diff(opts.repo, snap, run_dir / f"attempt_{attempt}.diff")
         cp.update(task.id, attempts=attempt, last_error=error, last_attempt_at=utc_now())
 
         if error is None:

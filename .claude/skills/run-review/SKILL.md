@@ -1,18 +1,19 @@
 ---
 name: run-review
-description: Review what an automation_runner.py run and the sub-agent did, from logs and git diff, against the Floorline business checklist. Use after a runner run ends, when the user asks whether a task passed, why a task failed or timed out, or whether a phase is ready to commit.
+description: Review what an automation_runner.py run and the sub-agent did, from the runner's logs and diffs, against the Floorline business checklist. Use after a runner run ends, when the user asks whether a task passed, why a task failed or timed out, or whether a phase is ready to commit.
 ---
 
 # run-review: judge the run from evidence, not from the sub-agent's words
 
-Reply in Vietnamese, in the fewest lines that are complete. Read only; the Master runs no test here. Checklist: `.claude/skills/master-planner/business-checklist.md`.
+Reply in Vietnamese, in the fewest lines that are complete. Read only, with `Read`/`Grep`: the Master runs no command here, not even git. Checklist: `.claude/skills/master-planner/business-checklist.md`.
 
 ## Evidence, in this order
 
 1. `orchestrator/runs/report.md`: status, attempts, tests, files changed, first error line per task.
 2. `orchestrator/checkpoint.json` only for the task under review (`Grep -n '"<ID>"' -A 15`).
 3. `orchestrator/runs/<ID>/attempt_N.log`, with N = the `Attempts` column of the report (a rerun overwrites `attempt_1.log` and leaves older higher-numbered logs behind): `Grep -n "=== SCOPE ===\|=== TESTS ===\|=== RESULT ==="`, then a ranged `Read` of those sections. Skip `=== PROMPT ===` (the Master wrote it). For `read_only` tasks read `runs/<ID>/answer.md` and check every claim against the repo before relying on it.
-4. `git status --porcelain` and `git diff -- <target files>`; for new files `git diff --no-index /dev/null <file>`.
+4. `orchestrator/runs/<ID>/attempt_N.diff`: the change to every target file, new and untracked files included, as the sub-agent left it (also for a failed attempt, before the restore). Then a ranged `Read` of the changed lines in the real file to see the context.
+5. When the git state itself is the question (I6: nothing committed), or the task changed the runner itself (the running process has the old code, so it may write no diff): plan a `verify_only` task with `git status --porcelain`, `git log --oneline -3` and `git diff -- <tracked target files>` as its commands, run it, and read its `attempt_1.log`.
 
 ## Checks
 
@@ -44,6 +45,5 @@ Reply in Vietnamese, in the fewest lines that are complete. Read only; the Maste
 | `PermissionError` on `checkpoint.tmp` | Windows file lock, transient | rerun the same command |
 | tests all pass, then `PermissionError ... pytest-current` in `pytest_sessionfinish` | sandboxed session cannot update the `%TEMP%` symlink for `tmp_path` | add `--basetemp=orchestrator/runs/<ID>/pytest-tmp` to that pytest command, rerun |
 
-The log after a failed attempt shows restored files. To see what the sub-agent wrote, rerun with `--keep-failed` and compare with `git diff`.
-
+A failed attempt's files are restored, but `attempt_N.diff` keeps what the sub-agent wrote.
 Report: what was read, what was not, the verdict, the next command or task id. Two failures of the same task: stop re-planning it (plan-task, "After a task failed twice").

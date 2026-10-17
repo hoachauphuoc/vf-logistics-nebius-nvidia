@@ -32,6 +32,8 @@ Reply in Vietnamese, in the fewest lines that are complete. The runner is code: 
 6. After the code task: `python orchestrator/automation_runner.py --check` and `--dry-run` (runner-autorun) must still pass on the real plan.
 7. Update the docstring usage block at the top of the runner and the flag table in the runner-autorun skill in the same change.
 
+A task that edits the runner runs on the old code, so a new runner output (a log section, `attempt_N.diff`) does not exist for that task itself: review it by ranged `Read` of the changed functions, and check the line count against the planned additions.
+
 ## Known gaps worth a task (check they are still open before planning)
 
 - A rerun overwrites `attempt_1.log` but leaves a higher-numbered log from an earlier run; the log header has no run timestamp, so a stale log can be read as current.

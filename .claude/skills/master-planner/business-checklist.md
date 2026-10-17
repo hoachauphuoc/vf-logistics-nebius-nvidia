@@ -11,7 +11,7 @@ Source of truth: CLAUDE.md sections 4 and 6. This file is the checklist form; wh
 | I3 | Authentication not weakened: release password, one-click guest limits, session checks, tenant scoping (`tenants/<id>/`, owner checks in `store.py`) | diff of `app.py`, `store.py`, auth helpers |
 | I4 | A guest session never releases or approves; a person decides every disputed case | role checks on new routes |
 | I5 | No secret read, printed, logged or committed (`.env*`, `secrets/`, passwords, API keys) | diff, test fixtures, log lines |
-| I6 | Nothing committed or pushed by the runner or the sub-agent | `git log` unchanged after a run |
+| I6 | Nothing committed or pushed by the runner or the sub-agent | a `verify_only` task's `git log --oneline -3` log, before and after |
 
 ## Standards: a "no" fails the task's review; plan a fix task
 

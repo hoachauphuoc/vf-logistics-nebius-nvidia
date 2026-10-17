@@ -70,6 +70,10 @@ Parser facts that bite:
 - A verbatim copy of a long file: first `test_command` is a hash check, under about 100 lines per task.
 - Never plan a change that fails a row I1-I6 of the business checklist. If the request needs one, stop and ask the human.
 
+## Fix rounds
+
+A fix for a reviewed task is a new task `<ID>f1` (round 2: `<ID>f2`; tests-first: `<ID>f1t` / `<ID>f1c`) with `depends_on` the original. A RERUN round edits only the failing task's own Meta or Prompt. Log each round as one line under the order table (runner-autorun, auto-run loop); never more than 2 rounds per problem.
+
 ## After a task failed twice
 
 Stop re-planning the same prompt. Decide which it was: prompt too big, excerpt wrong, or design unclear. Then split the task, fix the excerpt from the real file, or ask the human for the design decision and park the task.
