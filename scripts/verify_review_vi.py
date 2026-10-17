@@ -123,6 +123,15 @@ CHECKS = [
       "reads the case again when Execute is refused because the case has moved on",
       "reads the case again when Release's execute step is refused with 409",
       "does not read the case again when execute is refused for another reason"]),
+    ("N01-i", "N01", "a publish record that fails to save twice keeps the accepted message id; without one the error goes on", "py",
+     [("test_resume_after_publish.py", "test_the_execution_is_recorded_as_sent_with_the_message_id"),
+      ("test_resume_after_publish.py", "test_a_record_that_cannot_be_saved_for_a_message_that_never_went_out_still_raises")]),
+    ("N01-j", "N01", "a cancellation around the publish leaves a record a Resume can read and still reaches the caller", "py",
+     [("test_resume_after_publish.py", "test_a_cancellation_after_the_broker_accepted_keeps_the_message_id_for_the_resume"),
+      ("test_resume_after_publish.py", "test_a_cancellation_before_the_broker_answered_is_recorded_as_unknown"),
+      ("test_resume_after_publish.py", "test_the_cancellation_still_reaches_the_caller_when_the_store_is_down_too")]),
+    ("N08-i", "N08", "the review page reads an EXECUTING case again every 15 seconds and stops when it ends", "js",
+     ["reads an executing case again after 15 seconds and stops once it has finished"]),
     ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
      "probe_e01_label"),
     ("E01-b", "E01", "the output says cost and time are mocked, not measured", "probe",
@@ -155,7 +164,7 @@ def run_vitest() -> dict[str, str] | None:
     if not (front / "node_modules").exists():
         return None
     outfile = Path(tempfile.mkdtemp(prefix="vf_verify_")) / "vitest.json"
-    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts src/lib/operations.test.ts '
+    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts src/lib/operations.test.ts src/app/review/page.test.tsx '
            f'--reporter=json --outputFile="{outfile}"')
     try:
         subprocess.run(cmd, shell=True, cwd=front, capture_output=True, text=True,

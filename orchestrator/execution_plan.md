@@ -111,6 +111,7 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 43t | N08kt | Test for the review page: polls an EXECUTING case, stops when it ends (N08) |
 | 43v | N08kv | verify_only: that test fails on the page before N08i (red proof) |
 | 41f | N01mcf1 | Fix round 1 of N01mc: remove the blank line inside the signature of publish_decision_direct |
+| 44 | VR4 | Review VI table: rows N01-i, N01-j, N08-i and the review page test in its vitest run |
 
 N01mc round 1: FIX, behaviour passed (40 tests, ruff clean) but EDIT 1 left a blank line inside the signature of publish_decision_direct; log runs/N01mc/attempt_1.log, diff runs/N01mc/attempt_1.diff.
 N01mcf1 (round 1 of N01mc): PASS, blank line removed, 40 tests and ruff green; log runs/N01mcf1/attempt_1.log.
@@ -7063,5 +7064,60 @@ async def publish_decision_direct(
 
 DONE WHEN: `async def publish_decision_direct(` is directly followed by its `case_id: str, ...` line, and nothing else in the file changed.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the three lines are not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: VR4 -->
+## Meta
+- title: The review VI table checks the N01 cancellation and second-save fixes and the review page test
+- depends_on:
+  - N08kv
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python scripts/verify_review_vi.py
+- timeout_sec: 1500
+- max_retries: 1
+
+## Context
+N01mt/N01mc, N01kt/N01kc and N08kt added tests that the review VI table does not list, so the fix report had to say "the added tests are not in the table yet". This task adds the review page test file to the script's vitest command and three rows directly above the E01-a row: N01-i (second save fails), N01-j (cancellation around the publish), N08-i (review page polling). A title that is not found is reported as FAIL ("test not found").
+Master review (from the log): the table has three more rows, each PASS, and the total is 36 of 36 counted (N01-e still not counted).
+
+## Prompt
+``````text
+TASK VR4. Two edits in scripts/verify_review_vi.py: the vitest command and three new rows. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not touch any existing row, any function or any import.
+
+EDIT 1 (the vitest command, so the review page test is run too). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts src/lib/operations.test.ts '
+```
+new_string, ONE line (only ` src/app/review/page.test.tsx` is new, before the closing quote):
+```python
+    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts src/lib/operations.test.ts src/app/review/page.test.tsx '
+```
+
+EDIT 2 (three rows). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+new_string is the three rows below, and then that same line again:
+```python
+    ("N01-i", "N01", "a publish record that fails to save twice keeps the accepted message id; without one the error goes on", "py",
+     [("test_resume_after_publish.py", "test_the_execution_is_recorded_as_sent_with_the_message_id"),
+      ("test_resume_after_publish.py", "test_a_record_that_cannot_be_saved_for_a_message_that_never_went_out_still_raises")]),
+    ("N01-j", "N01", "a cancellation around the publish leaves a record a Resume can read and still reaches the caller", "py",
+     [("test_resume_after_publish.py", "test_a_cancellation_after_the_broker_accepted_keeps_the_message_id_for_the_resume"),
+      ("test_resume_after_publish.py", "test_a_cancellation_before_the_broker_answered_is_recorded_as_unknown"),
+      ("test_resume_after_publish.py", "test_the_cancellation_still_reaches_the_caller_when_the_store_is_down_too")]),
+    ("N08-i", "N08", "the review page reads an EXECUTING case again every 15 seconds and stops when it ends", "js",
+     ["reads an executing case again after 15 seconds and stops once it has finished"]),
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+
+DONE WHEN: only this file changed; the vitest command names a fourth test file; three rows sit directly above the E01-a row.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->
