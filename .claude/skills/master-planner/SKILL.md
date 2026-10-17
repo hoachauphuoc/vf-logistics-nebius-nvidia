@@ -33,6 +33,7 @@ Code-edit exceptions (CLAUDE.md section 3) are for the human to grant in chat, e
 | to know whether a run passed, why it failed, whether it is ready to commit | `run-review` |
 | tests designed, red/green proved, the full suite or mypy ratchet run | `test-gate` |
 | the runner itself changed | `runner-maintainer` |
+| a report to the reviewer on what was fixed (対応状況報告, báo cáo khắc phục, PDF) | `fix-report` |
 | "what next?" | read `orchestrator/runs/report.md` and the plan's order table, then answer in three lines |
 
 The business checklist all of them use: `.claude/skills/master-planner/business-checklist.md`.
