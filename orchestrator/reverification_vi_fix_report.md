@@ -6,7 +6,7 @@
 
 ## 1. Kết luận
 
-Ba hạng mục còn mở trong báo cáo tái kiểm chứng (N06, N01, N08) đã được sửa trong repository bằng 5 task nhỏ. Cả 5 task qua kiểm tra của runner; bộ kiểm tra đầy đủ chạy lại trên cây đã commit đều xanh. Phần ngoài repository (bên nhận, Firestore thật, Pub/Sub thật, trình duyệt thật, CI trên commit mới) **chưa được kiểm chứng**; xem mục 5.
+Ba hạng mục còn mở trong báo cáo tái kiểm chứng (N06, N01, N08) đã được sửa trong repository bằng 5 task nhỏ (commit `83826f6`). Kiểm tra lại sau đó thấy N08 còn hai chỗ hở so với tiêu chí đạt của báo cáo (trang `/review` không đọc lại hồ sơ EXECUTING; Resume bị từ chối 409 không tải lại), đã sửa bằng 3 task nữa (N08i, N08jt, N08jc; chưa commit). Cả 8 task qua kiểm tra của runner; bộ kiểm tra đầy đủ chạy lại trên cây làm việc đều xanh. Phần ngoài repository (bên nhận, Firestore thật, Pub/Sub thật, trình duyệt thật, CI trên commit mới) **chưa được kiểm chứng**; xem mục 5.
 
 ## 2. Đã sửa gì
 
@@ -17,25 +17,29 @@ Ba hạng mục còn mở trong báo cáo tái kiểm chứng (N06, N01, N08) đ
 | N01e2 | N01 (P1) | Broker đã nhận tin nhưng lưu bản ghi lỗi một lần: mất ID tiếp nhận, hồ sơ thành EXECUTION_FAILED, Retry publish lại lần hai. | Biến `accepted` ghi nhớ tin đã được nhận. Nếu lưu bản ghi lỗi thì bản ghi được lưu lại, kèm `message_id`, trạng thái "done"; bên gọi đọc là đã gửi. | `tools.py`, `tests/test_resume_after_publish.py` |
 | N08g | N08 (P2) | Sau lỗi mạng ở bước approve/execute, màn hình không tải lại hồ sơ, vẫn ở trạng thái trước phê duyệt. | Lỗi kết nối (`ApiError` loại "unreachable") gọi `onDecided()` để tải lại hồ sơ. Từ chối do máy chủ trả lời (409) không tải lại. | `ReviewPanel.tsx`, `ReviewPanel.test.tsx` |
 | N08h | N08 (P2) | Trang hồ sơ đọc một lần; hồ sơ đã hoàn tất vẫn hiện "gián đoạn, claim hết hạn" kèm nút Resume. | Hàm `caseRefetchMs`: hồ sơ ở trạng thái EXECUTING được đọc lại mỗi 15 giây, các trạng thái khác không. Trang hồ sơ dùng làm `refetchInterval`. | `operations.ts`, `operations.test.ts`, `cases/[id]/page.tsx` |
+| N08i | N08 (P2), chỗ hở sau commit `83826f6` | N08h chỉ sửa trang `cases/[id]`. Trang `/review` dùng cùng `ReviewPanel` và cùng đồng hồ claim nhưng truy vấn chi tiết không đọc lại, nên có cùng lỗi "hồ sơ hoàn tất hiện là gián đoạn". | Truy vấn chi tiết của trang `/review` dùng `caseRefetchMs` làm `refetchInterval`. | `review/page.tsx` |
+| N08j | N08 (P2), chỗ hở sau commit `83826f6` | Tiêu chí của báo cáo: tải lại hồ sơ khi "Resume bị từ chối". Mã chỉ tải lại khi mất kết nối; execute trả 409 (claim còn sống, hoặc hồ sơ đã chuyển trạng thái) chỉ hiện lỗi, nút Resume/Execute giữ nguyên. | Hàm `executeReloadingOnConflict`: 409 từ execute gọi `onDecided()` rồi vẫn ném lỗi để thông báo hiện. 409 từ approve và các mã khác (403) không tải lại. **Quyết định của người dùng:** một assertion của test cũ "shows the backend's refusal when the claim is still live there" đổi từ `not.toHaveBeenCalled()` sang `toHaveBeenCalledTimes(1)`. | `ReviewPanel.tsx`, `ReviewPanel.test.tsx` |
 
 Task N01e2 cần một vòng RERUN: lệnh mypy trong `test_commands` do tôi viết yêu cầu `tools.py` sạch, trong khi 2 lỗi `no-any-return` ở dòng 200 và 290 có từ trước và nằm ngoài phần sửa. Mã và test đã pass ngay lần đầu; tôi thay lệnh đó bằng ruff rồi chạy lại. Hai lần chạy cho cùng một diff.
 
-## 3. Kết quả kiểm tra (cây đã commit `83826f6`)
+## 3. Kết quả kiểm tra (cây làm việc sau N08i/N08j, chưa commit; chạy VFULL và VR3 ngày 17/10/2026)
+
+Số của cột giữa là lần chạy mới. Số ở báo cáo trước (cây đã commit `83826f6`): backend 1574/16, frontend 355, mypy 120, bảng 32/32.
 
 | Hạng mục | Kết quả | Mốc so sánh (CLAUDE.md, `85685a2`) |
 |---|---|---|
 | Backend `pytest tests/` | **1574 passed, 16 skipped** (187 s) | 1486/16 ở `85685a2`; 1564/16 ở báo cáo trước (+10 test của đợt này) |
-| Frontend `npm test` (vitest) | **355 passed**, 26 file | 350 ở báo cáo trước (+5) |
+| Frontend `npm test` (vitest) | **358 passed**, 26 file | 350 ở báo cáo trước (+8 so với đó, +3 trong N08j) |
 | `mypy src/vf_logistics/` (cổng VFULL đã sửa: `mypy exit 1 errors 120 stopped early False`) | **120 lỗi** | 122 (trần CI 123) |
 | mypy nghiêm ngặt `verifier.py`, `observability.py`, `evaluation.py` | sạch | sạch |
 | `ruff check` | sạch | |
 | `tsc --noEmit` | sạch | |
 | `npm run lint` | sạch | |
-| `scripts/verify_review_vi.py` (chạy trong VR1/VR2) | **32/32 mục đếm được đạt**, 9/9 hạng mục "fixed", 1 mục ngoài phạm vi (N01-e) | 27/27 trước khi thêm 5 hàng mới |
+| `scripts/verify_review_vi.py` (chạy trong VR3) | **33/33 mục đếm được đạt**, 9/9 hạng mục "fixed", 1 mục ngoài phạm vi (N01-e) | 27/27 trước khi thêm 6 hàng mới (5 ở VR1/VR2, N08-h ở VR3) |
 
 16 test bị bỏ qua cần Firestore emulator; số này không đổi.
 
-Các test mới (7 + 2 + 1 trường hợp backend; 3 + 2 frontend) đều được chạy xanh. Việc "test mới fail trên mã cũ" **chưa đo bằng runner** (không có lượt chạy đỏ trước khi sửa); đó là suy luận từ việc đọc mã, ví dụ N06e: bản cũ bỏ qua danh sách nên cả 6 trường hợp tham số hóa sẽ fail. Nếu cần bằng chứng đo được, chia mỗi task thành cặp test-trước/mã-sau như N03d1t/N03d1c.
+Các test mới (7 + 2 + 1 trường hợp backend; 3 + 2 frontend) đều được chạy xanh. Việc "test mới fail trên mã cũ": với 5 task của `83826f6` **runner không đo** (không có lượt chạy đỏ trước khi sửa). Sau đó đã đo riêng, ngoài runner: chạy 3 file test backend của `83826f6` trên mã của `83826f6~1` cho **8 fail** (6 test N06, 1 test N01-g, 1 test N01-h), trên mã mới 182 pass; dựng lại kịch bản của báo cáo tái kiểm chứng (chứng nhận và hóa đơn với `["not stated","China"]` và `["China","PRC"]`, qua `reevaluate` rồi `approve` không lý do) cho 4/4 trường hợp fail trên mã cũ (đã thấy trạng thái `provided`, 0 mâu thuẫn ở trường hợp chứng nhận; test dừng ở bước kiểm trạng thái nên chưa chạy tới `approve` cho cả 4) và 4/4 pass trên mã mới (trạng thái `contradicted`, `approve` không lý do trả HTTP 400). Các test frontend của N08g/N08h chưa có lượt đỏ đo được. N08jt/N08jc làm đúng cặp test-trước/mã-sau: N08jt cho đúng 3 test fail ("spy called 0 times"), 54 test khác pass; sau N08jc 102/102 pass.
 
 ## 4. Hai điều đã phát hiện trong lúc kiểm tra, và đã xử lý
 
@@ -57,10 +61,12 @@ Ghi chú về runner: `attempt_N.diff` không liệt kê file có `[id]` trong �
 ## 6. Việc cần làm tiếp
 
 1. Đọc `git diff 83826f6~1 83826f6`, rồi push nhánh và mở PR (con người thực hiện).
-2. Commit các thay đổi sau `83826f6`: `scripts/verify_review_vi.py` (bản sửa dở của bạn cùng 5 hàng mới) và `orchestrator/execution_plan.md` (lệnh mypy mới của `VFULL`, task `VMYPY`, `VR1`, `VR2`).
+2. Commit các thay đổi sau `cfd18f8`: `review/page.tsx` (N08i), `ReviewPanel.tsx` và `ReviewPanel.test.tsx` (N08j; đọc kỹ dòng assertion đã đổi), `scripts/verify_review_vi.py` (hàng N08-h) và `orchestrator/execution_plan.md` (task N08i, N08jt, N08jc, VR3).
 4. Sau khi push: chạy `PDCI` để xác nhận CI xanh trên đúng commit.
 5. Với phần "chưa kiểm chứng" ở mục 5, lập kế hoạch kiểm thử riêng trên môi trường đã triển khai thử.
 
 ## 7. Thay đổi trong cây làm việc không thuộc đợt này (không nằm trong commit)
 
-`docs/architecture.html`, `eval.json`, `orchestrator/archive/`. Còn `scripts/verify_review_vi.py` và `orchestrator/execution_plan.md` có thay đổi sau commit `83826f6` (xem mục 6, bước 2); `orchestrator/reverification_vi_fix_report.md` là file mới.
+`docs/architecture.html`, `eval.json`, `orchestrator/archive/`. Các file của N08i/N08j, `scripts/verify_review_vi.py`, `orchestrator/execution_plan.md` và báo cáo này có thay đổi sau commit `cfd18f8` (xem mục 6, bước 2).
+
+Điều chưa kiểm cho N08i/N08j: không có test nào mount trang `/review`, nên việc trang dùng `refetchInterval` chỉ được xác nhận qua `git diff` (hàm `caseRefetchMs` đã có test). Tất cả chạy trên React/jsdom với API giả, chưa qua trình duyệt thật.

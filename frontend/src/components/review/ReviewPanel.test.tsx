@@ -477,7 +477,7 @@ describe("ReviewPanel: resuming an interrupted execution (N08-B)", () => {
     const onDecided = renderPanel(executing(inSeconds(-60)));
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     expect((await screen.findByRole("alert")).textContent).toContain(refusal);
-    expect(onDecided).not.toHaveBeenCalled();
+    expect(onDecided).toHaveBeenCalledTimes(1);
     // The reviewer can try again later: the button is not left disabled.
     expect((screen.getByRole("button", { name: "Resume" }) as HTMLButtonElement).disabled).toBe(false);
   });
@@ -521,6 +521,37 @@ describe("ReviewPanel: resuming an interrupted execution (N08-B)", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Re-evaluate first.");
     expect(onDecided).not.toHaveBeenCalled();
     expect(executeApproval).not.toHaveBeenCalled();
+  });
+
+  it("reads the case again when Execute is refused because the case has moved on", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(
+      new ApiError("Approval evapr-1 is not executable: case is RELEASED_BY_HUMAN, not APPROVED or EXECUTION_FAILED", 409, "http"),
+    );
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("APPROVED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Execute" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("not executable");
+    expect(onDecided).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the case again when Release's execute step is refused with 409", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(
+      new ApiError("Another execution of this approval is in progress.", 409, "http"),
+    );
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("in progress");
+    expect(onDecided).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not read the case again when execute is refused for another reason than a moved case", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(new ApiError("Releasing needs a password sign-in.", 403, "http"));
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("APPROVED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Execute" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("password sign-in");
+    expect(onDecided).not.toHaveBeenCalled();
   });
 
   it("keeps Execute for an approved case, with no Resume beside it", () => {

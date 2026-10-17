@@ -364,6 +364,18 @@ export function ReviewPanel({
   const evaluation = latestEvaluation(c);
   const contradicted = isContradicted(evaluation);
 
+  // Execute answers 409 when the case is no longer in the state this page shows: another
+  // execution of the approval is still running, or it has finished (N08). The refusal is
+  // still shown; the case is read again so the buttons match what the server holds.
+  const executeReloadingOnConflict = async (approvalId: string) => {
+    try {
+      return await executeApproval(c.case_id, approvalId);
+    } catch (error) {
+      if (error instanceof ApiError && error.kind === "http" && error.status === 409) onDecided();
+      throw error;
+    }
+  };
+
   // N08: For cases in the verification loop, route decisions through the new API.
   const verificationApprove = useMutation({
     onSettled: (_data, error) => {
@@ -373,7 +385,7 @@ export function ReviewPanel({
       const res = await approveCase(c.case_id, action, note);
       if ((res as Record<string, unknown>).approval) {
         const approval = res.approval as Record<string, string>;
-        return executeApproval(c.case_id, approval.approval_id);
+        return executeReloadingOnConflict(approval.approval_id);
       }
       return res;
     },
@@ -471,7 +483,7 @@ export function ReviewPanel({
     mutationFn: () => {
       const approval = resumable ?? validApproval;
       if (!approval) throw new Error("No valid approval to execute");
-      return executeApproval(c.case_id, approval.approval_id);
+      return executeReloadingOnConflict(approval.approval_id);
     },
     onSuccess: (result) => {
       if ((result as Record<string, unknown>)?.state === "EXECUTION_FAILED") {

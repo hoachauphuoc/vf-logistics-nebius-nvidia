@@ -11,6 +11,7 @@ import { ReviewPanel } from "@/components/review/ReviewPanel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchCase, fetchReviewQueue, queryKeys } from "@/lib/api";
+import { caseRefetchMs } from "@/lib/operations";
 import { useTenant } from "@/lib/tenant-context";
 import { CaseParamListener, writeCaseParam } from "@/lib/url-state";
 
@@ -63,6 +64,8 @@ export default function ReviewQueuePage() {
   const detail = useQuery({
     queryKey: queryKeys.case(tenant.id, selectedId ?? ""),
     queryFn: () => fetchCase(selectedId as string),
+    // The panel shows this document, and an execution ends on the server without anyone asking this page (N08).
+    refetchInterval: (query) => caseRefetchMs(query.state.data?.state),
     enabled: selectedId !== null,
     retry: false,
   });

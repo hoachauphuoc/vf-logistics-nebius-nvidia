@@ -27,6 +27,7 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
       the new code). Every task here is verify_only except PD1.
   16. REVERIFICATION VI of 2026-10-17 (commit 76e6b01), one id per run, in this order, reading `git diff` after each: `--only N06e` (P1: a country field read like a bare string), `--only N01e1`, then `--only N01e2` (P1: DeadlineExceeded/RetryError are unknown; an accepted publish keeps its message id when its record fails to save), `--only N08g`, then `--only N08h` (P2: reload after a lost connection; poll an EXECUTING case). Then `--only VFULL`. Not fixable in this repository, listed in the report: the receiving side must drop a repeat by the idempotency_key attribute; a process that dies between the broker's accept and any save; a real Firestore/Pub/Sub/browser run; the "27 checks" figure in the fix report against the 25 in scripts/verify_review_vi.py.
   17. FOLLOW-UP of the reverification: the mypy command of VFULL was fixed in the plan (it now passes --python-version of the running Python and fails when mypy stops early; before, mypy exited 2 on a numpy stub, the parsed count was 1 and the gate passed vacuously). Then `--only VR1`, then `--only VR2` (one at a time; each runs the whole table), then `--only VFULL` to prove the new command, and `--only VMYPY` shows the raw mypy output.
+  18. N08 GAPS found by the Master check of 83826f6: `--only N08i` (the review page did not poll an EXECUTING case), then `--only N08jt` (red: 3 named tests fail), then `--only N08jc` (a 409 from execute reads the case again; human decision: the Resume-refusal test now expects one reload). Then `--only VFULL`.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -98,6 +99,10 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 35 | N08h | The case page reads an EXECUTING case again every 15 seconds (N08) |
 | 36 | VR1 | Review VI table: rows N06-f, N01-g, N01-h for the backend fixes |
 | 37 | VR2 | Review VI table: rows N08-f, N08-g and operations.test.ts in its vitest run |
+| 38 | N08i | The review queue page reads an EXECUTING case again every 15 seconds (N08) |
+| 39t | N08jt | Tests first: a 409 from execute (Resume, Execute, Release) reads the case again (N08) |
+| 39c | N08jc | Code for N08jt |
+| 40 | VR3 | Review VI table: row N08-h for the 409-reloads-the-case tests |
 
 N01e2 round 1: RERUN, its mypy test_command wanted tools.py clean but 2 no-any-return errors exist outside the change (lines 200 and 290; tools.py is not in the strict list); replaced by a ruff check; code and tests passed (38 + 105), log runs/N01e2/attempt_2.log
 
@@ -6305,5 +6310,251 @@ new_string is the two rows below, and then that same line again:
 
 DONE WHEN: only this file changed; the vitest command names a third test file; two rows sit directly above the E01-a row.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08i -->
+## Meta
+- title: The review queue page reads an EXECUTING case again every 15 seconds (N08, frontend)
+- depends_on: []
+- target_files:
+  - frontend/src/app/review/page.tsx
+- test_commands:
+  - [frontend] npx vitest run src/lib/operations.test.ts src/components/review/ReviewPanel.test.tsx
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Master check of commit 83826f6 against reverification VI, N08 part B. N08h made the CASE page (`cases/[id]/page.tsx`) read an EXECUTING case again every 15 seconds. The REVIEW page (`review/page.tsx`) renders the same ReviewPanel, which shows `detail ?? summary` (ReviewPanel.tsx line 244) and runs the same 15-second clock on the claim lease; its `detail` query (page.tsx lines 63-68) has no refetchInterval, so a case read once as EXECUTING that finishes on the server is shown as "Execution interrupted - claim expired" with a Resume button once the lease runs out. The reverification's criterion: a finished case is never shown as interrupted.
+Fix: the same `caseRefetchMs` (frontend/src/lib/operations.ts, tested in operations.test.ts by N08h) as `refetchInterval` on the review page's detail query. Only the detail query: the panel reads `detail` first, and the queue's own refresh is not part of this finding.
+No page test mounts the review page (it needs the tenant, identity and router providers); the rule itself is the tested pure function. Master review: read `git diff` (one import line, a comment and one option); the test commands prove nothing else broke.
+
+## Prompt
+``````text
+TASK N08i. The review page reads an EXECUTING case again every 15 seconds. Two small edits in one file.
+
+FILE YOU MAY EDIT (only this one): frontend/src/app/review/page.tsx. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. `caseRefetchMs` already exists: it is exported from frontend/src/lib/operations.ts. Do not edit operations.ts.
+
+EDIT 1 (import). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+import { useTenant } from "@/lib/tenant-context";
+```
+new_string is these two lines (the second is the old line, kept):
+```tsx
+import { caseRefetchMs } from "@/lib/operations";
+import { useTenant } from "@/lib/tenant-context";
+```
+
+EDIT 2 (the detail query). old_string, ONE line (4 leading spaces; occurs once):
+```tsx
+    enabled: selectedId !== null,
+```
+new_string is these three lines (the last is the old line, kept):
+```tsx
+    // The panel shows this document, and an execution ends on the server without anyone asking this page (N08).
+    refetchInterval: (query) => caseRefetchMs(query.state.data?.state),
+    enabled: selectedId !== null,
+```
+Change nothing else: not the queue query, not the invalidate function, not the JSX.
+
+DONE WHEN: only frontend/src/app/review/page.tsx changed: one new import line, and one comment line plus one refetchInterval line in the detail query.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08jt -->
+## Meta
+- title: Tests first - a 409 from execute (Resume, Execute, Release) reads the case again (N08, frontend)
+- depends_on:
+  - N08i
+- target_files:
+  - frontend/src/components/review/ReviewPanel.test.tsx
+- test_commands:
+  - [frontend] python -c "import subprocess,sys; r=subprocess.call('npx vitest run src/components/review/ReviewPanel.test.tsx', shell=True); print('vitest exit', r); sys.exit(0 if r == 1 else 1)"
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Master check of commit 83826f6 against reverification VI, N08. The criterion asks to reload the case "khi ... Resume bị từ chối". Today a 409 from execute only shows the message: the page keeps the buttons of a state the server has left (Resume on a case whose execution finished, Execute on an approval already executed).
+HUMAN DECISION (17/10/2026, in chat): the existing test "shows the backend's refusal when the claim is still live there" asserted `expect(onDecided).not.toHaveBeenCalled();`. The human asked for a reload on a refused Resume, so that ONE assertion becomes `toHaveBeenCalledTimes(1)`; the rest of the test (refusal shown, Resume not left disabled) stays. The N08g test "does not reload for a refusal the server sent" is about a 409 from APPROVE ("Re-evaluate first.") and stays: approve's refusal is an answer about the evaluation, not about a moved case.
+This task writes the tests only. Expected on the old code: 3 failures (the changed Resume test, the Execute 409 test, the Release 409 test); the 403 test passes on both (it fences the change to 409 only). The test command passes when vitest exits 1.
+Edit 1 uses a TWO-line old_string on purpose: the line `expect(onDecided).not.toHaveBeenCalled();` occurs twice in the file, so one line cannot be unique. The Master checked on 17/10/2026 that the Edit tool matches a two-line old_string on a CRLF file and keeps CRLF.
+Master review: in the log, exactly the 3 named tests fail, every other test passes; `git diff` shows one changed assertion and three new tests.
+
+## Prompt
+``````text
+TASK N08jt. Tests only: a 409 from execute reads the case again. One changed assertion and three new tests in ReviewPanel.test.tsx. Do not edit ReviewPanel.tsx: these tests are meant to fail until the next task.
+
+FILE YOU MAY EDIT (only this one): frontend/src/components/review/ReviewPanel.test.tsx. It uses Windows line endings (CRLF). Use the Edit tool. Never use Write on this file. Do not change any mock or any other test. ApiError, executeApproval, renderPanel, makeCase, executing, inSeconds, fireEvent, screen and vi already exist in the file.
+
+EDIT 1 (the existing test "shows the backend's refusal when the claim is still live there"). This is the ONLY edit with a TWO-line old_string (4 leading spaces on each line; the pair occurs once):
+```tsx
+    expect((await screen.findByRole("alert")).textContent).toContain(refusal);
+    expect(onDecided).not.toHaveBeenCalled();
+```
+new_string, two lines (only `.not.toHaveBeenCalled()` becomes `.toHaveBeenCalledTimes(1)`):
+```tsx
+    expect((await screen.findByRole("alert")).textContent).toContain(refusal);
+    expect(onDecided).toHaveBeenCalledTimes(1);
+```
+The lines after it in that test (the comment and the `disabled).toBe(false)` check) stay exactly as they are.
+
+EDIT 2 (three new tests in the same describe, before its last test). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  it("keeps Execute for an approved case, with no Resume beside it", () => {
+```
+new_string is the three tests below, a blank line, and then that same line again:
+```tsx
+  it("reads the case again when Execute is refused because the case has moved on", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(
+      new ApiError("Approval evapr-1 is not executable: case is RELEASED_BY_HUMAN, not APPROVED or EXECUTION_FAILED", 409, "http"),
+    );
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("APPROVED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Execute" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("not executable");
+    expect(onDecided).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the case again when Release's execute step is refused with 409", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(
+      new ApiError("Another execution of this approval is in progress.", 409, "http"),
+    );
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("in progress");
+    expect(onDecided).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not read the case again when execute is refused for another reason than a moved case", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(new ApiError("Releasing needs a password sign-in.", 403, "http"));
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("APPROVED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Execute" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("password sign-in");
+    expect(onDecided).not.toHaveBeenCalled();
+  });
+
+  it("keeps Execute for an approved case, with no Resume beside it", () => {
+```
+(The line `  it("keeps Execute ...` at the end of new_string is the old line, kept.)
+
+DONE WHEN: only ReviewPanel.test.tsx changed: one assertion changed in the "claim is still live there" test, three new tests before "keeps Execute for an approved case".
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N08jc -->
+## Meta
+- title: Code for N08jt - a 409 from execute reads the case again, the refusal is still shown (N08, frontend)
+- depends_on:
+  - N08jt
+- target_files:
+  - frontend/src/components/review/ReviewPanel.tsx
+- test_commands:
+  - [frontend] npx vitest run src/components/review/ReviewPanel.test.tsx src/lib/operations.test.ts
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Code for the tests of N08jt. Execute answers 409 when the case is not in the state the page shows: another execution of the approval is still running, or it has finished (evidence.py line 1097: "case is {state}, not APPROVED or EXECUTION_FAILED"). Both executeApproval call sites (the verificationApprove mutation after a successful approve, line 376, and the verificationExecute mutation behind Execute / Retry / Resume, line 474) go through one helper that calls onDecided() on a 409 and rethrows, so onError still shows the refusal. A 409 from approveCase is not touched (the N08g test "does not reload for a refusal the server sent" stays green). A lost connection is still handled by the existing onSettled/outcomeUnknown (no double reload: a 409 has kind "http").
+Edit order matters: the 8-space `return executeApproval(...)` line (approve path) is edited first; after it, the 6-space line in verificationExecute is unique (before, it is a substring of the 8-space line).
+Master review: the N08jt tests pass, all other ReviewPanel tests pass, tsc and lint pass; `git diff` shows one helper and two call sites changed.
+
+## Prompt
+``````text
+TASK N08jc. A 409 from execute reads the case again. Three edits in ReviewPanel.tsx, in this order: EDIT 1, EDIT 2, EDIT 3.
+
+FILE YOU MAY EDIT (only this one): frontend/src/components/review/ReviewPanel.tsx. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not edit the test file. ApiError, executeApproval, c and onDecided already exist in this component. Do not change outcomeUnknown, any onSettled, onSuccess or onError block.
+
+EDIT 1 (a helper inside the component, before the verification-loop mutations). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  // N08: For cases in the verification loop, route decisions through the new API.
+```
+new_string is the helper below, a blank line, and then that same line again:
+```tsx
+  // Execute answers 409 when the case is no longer in the state this page shows: another
+  // execution of the approval is still running, or it has finished (N08). The refusal is
+  // still shown; the case is read again so the buttons match what the server holds.
+  const executeReloadingOnConflict = async (approvalId: string) => {
+    try {
+      return await executeApproval(c.case_id, approvalId);
+    } catch (error) {
+      if (error instanceof ApiError && error.kind === "http" && error.status === 409) onDecided();
+      throw error;
+    }
+  };
+
+  // N08: For cases in the verification loop, route decisions through the new API.
+```
+
+EDIT 2 (approve path; do this BEFORE EDIT 3). old_string, ONE line (8 leading spaces; occurs once):
+```tsx
+        return executeApproval(c.case_id, approval.approval_id);
+```
+new_string, ONE line (8 leading spaces):
+```tsx
+        return executeReloadingOnConflict(approval.approval_id);
+```
+
+EDIT 3 (the verificationExecute mutation; after EDIT 2 this line occurs once). old_string, ONE line (6 leading spaces):
+```tsx
+      return executeApproval(c.case_id, approval.approval_id);
+```
+new_string, ONE line (6 leading spaces):
+```tsx
+      return executeReloadingOnConflict(approval.approval_id);
+```
+The line above it, `if (!approval) throw new Error("No valid approval to execute");`, stays.
+
+DONE WHEN: only ReviewPanel.tsx changed: one new helper (EDIT 1) and two `return executeApproval(...)` lines now call executeReloadingOnConflict.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once at the moment of its edit.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: VR3 -->
+## Meta
+- title: The review VI table checks that a refused execute (409) reads the case again (N08)
+- depends_on:
+  - N08jc
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python scripts/verify_review_vi.py
+- timeout_sec: 1500
+- max_retries: 1
+
+## Context
+N08jt and N08jc made a 409 from execute read the case again. This task adds one "js" row for those tests, directly above the E01-a row, in the same shape as N08-f. A row whose title is not found is reported as FAIL ("test not found"), not as a pass. No row for N08i (the review page polls an EXECUTING case): no test mounts that page, and its rule (caseRefetchMs) is already the N08-g row.
+Master review (from the log): the table has one more row, N08-h, PASS; none shows FAIL or NO TEST.
+
+## Prompt
+``````text
+TASK VR3. One edit in scripts/verify_review_vi.py: one new row. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not touch any existing row, any function or any import.
+
+EDIT 1 (one row). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+new_string is the row below, and then that same line again:
+```python
+    ("N08-h", "N08", "a refused execute (409) makes the review panel read the case again, other refusals do not", "js",
+     ["shows the backend's refusal when the claim is still live there",
+      "reads the case again when Execute is refused because the case has moved on",
+      "reads the case again when Release's execute step is refused with 409",
+      "does not read the case again when execute is refused for another reason"]),
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+
+DONE WHEN: only this file changed; one row sits directly above the E01-a row.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->
