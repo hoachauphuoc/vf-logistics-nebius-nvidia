@@ -26,6 +26,7 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
       human checklist in task PDCI's context is done. After the human deploys: `PDPOST` (the live service answers and runs
       the new code). Every task here is verify_only except PD1.
   16. REVERIFICATION VI of 2026-10-17 (commit 76e6b01), one id per run, in this order, reading `git diff` after each: `--only N06e` (P1: a country field read like a bare string), `--only N01e1`, then `--only N01e2` (P1: DeadlineExceeded/RetryError are unknown; an accepted publish keeps its message id when its record fails to save), `--only N08g`, then `--only N08h` (P2: reload after a lost connection; poll an EXECUTING case). Then `--only VFULL`. Not fixable in this repository, listed in the report: the receiving side must drop a repeat by the idempotency_key attribute; a process that dies between the broker's accept and any save; a real Firestore/Pub/Sub/browser run; the "27 checks" figure in the fix report against the 25 in scripts/verify_review_vi.py.
+  17. FOLLOW-UP of the reverification: the mypy command of VFULL was fixed in the plan (it now passes --python-version of the running Python and fails when mypy stops early; before, mypy exited 2 on a numpy stub, the parsed count was 1 and the gate passed vacuously). Then `--only VR1`, then `--only VR2` (one at a time; each runs the whole table), then `--only VFULL` to prove the new command, and `--only VMYPY` shows the raw mypy output.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -95,6 +96,8 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 33 | N01e2 | An accepted publish keeps its message id when its record fails to save (N01) |
 | 34 | N08g | ReviewPanel reloads the case after a lost connection on approve or execute (N08) |
 | 35 | N08h | The case page reads an EXECUTING case again every 15 seconds (N08) |
+| 36 | VR1 | Review VI table: rows N06-f, N01-g, N01-h for the backend fixes |
+| 37 | VR2 | Review VI table: rows N08-f, N08-g and operations.test.ts in its vitest run |
 
 N01e2 round 1: RERUN, its mypy test_command wanted tools.py clean but 2 no-any-return errors exist outside the change (lines 200 and 290; tools.py is not in the strict list); replaced by a ruff check; code and tests passed (38 + 105), log runs/N01e2/attempt_2.log
 
@@ -4653,7 +4656,7 @@ A verify_only task: read-only git commands, the output in `orchestrator/runs/VGI
 - verify_only: true
 - test_commands:
   - python -m pytest tests/ -q -rf --basetemp=%TEMP%\vf_full_tmp
-  - python -c "import subprocess,sys,re; o=subprocess.run('python -m mypy src/vf_logistics/ --ignore-missing-imports', shell=True, capture_output=True, text=True).stdout; m=re.search(r'Found (\d+) error', o); n=int(m.group(1)) if m else (0 if 'Success' in o else 9999); print('mypy errors', n); sys.exit(0 if n <= 123 else 1)"
+  - python -c "import subprocess,sys,re; v=str(sys.version_info[0])+'.'+str(sys.version_info[1]); r=subprocess.run('python -m mypy src/vf_logistics/ --ignore-missing-imports --python-version '+v, shell=True, capture_output=True, text=True); o=r.stdout; m=re.search(r'Found (\d+) error', o); n=int(m.group(1)) if m else (0 if 'Success' in o else 9999); stopped=r.returncode>1 or 'prevented further checking' in o; print('mypy exit', r.returncode, 'errors', n, 'stopped early', stopped); sys.exit(1 if stopped or n>123 else 0)"
   - python -m mypy src/vf_logistics/verifier.py src/vf_logistics/observability.py src/vf_logistics/evaluation.py --ignore-missing-imports --follow-imports=silent
   - python -m ruff check src/ tests/ scripts/ --select E,F,W --ignore E501,E402,W291,W293
   - [frontend] npx tsc --noEmit
@@ -6194,6 +6197,113 @@ new_string is these three lines (the first is the old line):
 ```
 
 DONE WHEN: only these three files changed; operations.ts gained one function; operations.test.ts gained one import word and one describe; page.tsx gained one import word and two lines.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: VMYPY -->
+## Meta
+- title: Raw mypy result for src/vf_logistics (the count VFULL parses looks too low)
+- verify_only: true
+- test_commands:
+  - python -c "import subprocess; o=subprocess.run('python -m mypy src/vf_logistics/ --ignore-missing-imports --python-version 3.13', shell=True, capture_output=True, text=True); l=(o.stdout or '').splitlines(); print('exit', o.returncode); print('lines', len(l)); print(chr(10).join(l[-6:])); print('stderr:', (o.stderr or '')[-400:])"
+- timeout_sec: 600
+
+## Context
+VFULL printed "mypy errors 1" while the baseline in CLAUDE.md section 7 is 122. This task prints the exit code, the number of output lines and the last lines of mypy, so the log shows whether mypy checked everything or stopped early.
+<!-- TASK_END -->
+
+<!-- TASK_START: VR1 -->
+## Meta
+- title: The review VI table checks the three backend fixes of the reverification (N06, N01)
+- depends_on: []
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python scripts/verify_review_vi.py
+- timeout_sec: 1500
+- max_retries: 1
+
+## Context
+Reverification of 2026-10-17: N06e, N01e1 and N01e2 fixed three findings, but the table printed by scripts/verify_review_vi.py had no row for them. This task adds three "py" rows to CHECKS (same shape as N06-b): one per fix, each naming the new test (a name prefix matches its parametrized cases too). The script runs the whole backend suite and always exits 0, so the second test command only produces the table in the log; the Master reads the three new rows there. The file already holds uncommitted edits of the human (rows N01-f, N03-c, N06-e): leave them as they are.
+Master review (from the log): the table has three more rows, N06-f, N01-g and N01-h, each PASS; the percentage line counts them.
+
+## Prompt
+``````text
+TASK VR1. Add three rows to the CHECKS list of scripts/verify_review_vi.py. One insertion, nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not touch any existing row, any function or any import.
+
+EDIT 1. old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+new_string is the three rows below, and then that same line again:
+```python
+    ("N06-f", "N06", "a country field that states one country, twice or beside an unstated entry, is compared with the declaration", "py",
+     [("test_origin_inputs.py", "test_a_certificate_for_china_contradicts_a_vietnam_declaration"),
+      ("test_origin_inputs.py", "test_an_invoice_for_china_goods_contradicts_however_the_field_is_written")]),
+    ("N01-g", "N01", "a Google SDK deadline error is an unknown send result, not a failed one", "py",
+     [("test_publish_dedupe.py", "test_an_sdk_deadline_error_is_unknown_not_failed")]),
+    ("N01-h", "N01", "a publish the broker accepted keeps its message id when its record fails to save", "py",
+     [("test_resume_after_publish.py", "test_the_message_id_is_kept_and_the_decision_is_sent_once")]),
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+
+DONE WHEN: only this file changed, by the three rows above, placed directly above the E01-a row.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: VR2 -->
+## Meta
+- title: The review VI table checks the two frontend fixes of the reverification (N08)
+- depends_on:
+  - VR1
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python scripts/verify_review_vi.py
+- timeout_sec: 1500
+- max_retries: 1
+
+## Context
+Reverification of 2026-10-17: N08g (the panel reloads the case after a lost connection) and N08h (the case page reads an EXECUTING case again every 15 seconds) have frontend tests, but the script's vitest call runs only ReviewPanel.test.tsx and route.test.ts, so the N08h test in src/lib/operations.test.ts would never be seen. This task adds that file to the vitest command and adds two "js" rows (same shape as N08-e) that look for the new test titles. A row whose title is not found is reported as NO TEST, not as a pass.
+Master review (from the log): the table has two more rows, N08-f and N08-g, each PASS; none shows NO TEST.
+
+## Prompt
+``````text
+TASK VR2. Two edits in scripts/verify_review_vi.py: the vitest command and two new rows. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not touch any existing row, any function or any import.
+
+EDIT 1 (the vitest command, so operations.test.ts is run too). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts '
+```
+new_string, ONE line (only ` src/lib/operations.test.ts` is new, before the closing quote):
+```python
+    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts src/lib/operations.test.ts '
+```
+
+EDIT 2 (two rows). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+new_string is the two rows below, and then that same line again:
+```python
+    ("N08-f", "N08", "after a lost connection on approve or execute the review panel reloads the case", "js",
+     ["reloads the case when Release's execute step loses the connection",
+      "reloads the case when Retry loses the connection",
+      "does not reload for a refusal the server sent"]),
+    ("N08-g", "N08", "the case page reads an EXECUTING case again every 15 seconds", "js",
+     ["reads an executing case again every 15 seconds"]),
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+
+DONE WHEN: only this file changed; the vitest command names a third test file; two rows sit directly above the E01-a row.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->

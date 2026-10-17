@@ -97,6 +97,27 @@ CHECKS = [
      ["lets a shipper with no console session reach the API"]),
     ("N08-e", "N08", "nothing is sent before the reviewer confirms (Release, then Cancel)", "js",
      ["sends nothing when the reviewer cancels the confirmation"]),
+    ("N01-f", "N01", "a timed-out send is recorded as send_unknown and the retry sends with the same key", "py",
+     [("test_send_unknown.py", "test_a_timeout_is_recorded_as_unknown_and_keeps_the_key"),
+      ("test_send_unknown.py", "test_a_timed_out_send_is_unknown_and_the_retry_sends_with_the_same_key")]),
+    ("N03-c", "N03", "a link without a document type is refused when several documents were requested", "py",
+     [("test_untyped_link.py", "test_with_several_documents_requested_it_is_refused"),
+      ("test_untyped_link.py", "test_with_one_document_requested_the_request_level_link_still_works")]),
+    ("N06-e", "N06", "the evaluation record names the papers that were read only in part", "py",
+     [("test_unread_pages_evaluation.py", "test_a_received_paper_read_in_part_is_unresolved_and_says_why")]),
+    ("N06-f", "N06", "a country field that states one country, twice or beside an unstated entry, is compared with the declaration", "py",
+     [("test_origin_inputs.py", "test_a_certificate_for_china_contradicts_a_vietnam_declaration"),
+      ("test_origin_inputs.py", "test_an_invoice_for_china_goods_contradicts_however_the_field_is_written")]),
+    ("N01-g", "N01", "a Google SDK deadline error is an unknown send result, not a failed one", "py",
+     [("test_publish_dedupe.py", "test_an_sdk_deadline_error_is_unknown_not_failed")]),
+    ("N01-h", "N01", "a publish the broker accepted keeps its message id when its record fails to save", "py",
+     [("test_resume_after_publish.py", "test_the_message_id_is_kept_and_the_decision_is_sent_once")]),
+    ("N08-f", "N08", "after a lost connection on approve or execute the review panel reloads the case", "js",
+     ["reloads the case when Release's execute step loses the connection",
+      "reloads the case when Retry loses the connection",
+      "does not reload for a refusal the server sent"]),
+    ("N08-g", "N08", "the case page reads an EXECUTING case again every 15 seconds", "js",
+     ["reads an executing case again every 15 seconds"]),
     ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
      "probe_e01_label"),
     ("E01-b", "E01", "the output says cost and time are mocked, not measured", "probe",
@@ -129,7 +150,7 @@ def run_vitest() -> dict[str, str] | None:
     if not (front / "node_modules").exists():
         return None
     outfile = Path(tempfile.mkdtemp(prefix="vf_verify_")) / "vitest.json"
-    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts '
+    cmd = (f'npx vitest run src/components/review/ReviewPanel.test.tsx route.test.ts src/lib/operations.test.ts '
            f'--reporter=json --outputFile="{outfile}"')
     try:
         subprocess.run(cmd, shell=True, cwd=front, capture_output=True, text=True,
