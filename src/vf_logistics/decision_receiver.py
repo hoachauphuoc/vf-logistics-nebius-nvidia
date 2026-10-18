@@ -1,0 +1,92 @@
+"""
+The receiving side of the case-decisions topic, as part of Floorline (N01).
+
+Floorline publishes every executed human decision at least once: a retry after an
+unknown outcome reuses the approval's idempotency key, and Pub/Sub itself redelivers
+a message whose acknowledgement was lost. This receiver turns that into once. It is
+a Pub/Sub push endpoint (POST /api/v1/receiver/decision) that records each decision
+in the store under its key, and the record IS the application: the create that
+claims the key and the write that applies it are one transaction, so a repeat is
+counted (deliveries) and never applied twice. Systems downstream read the applied
+record instead of the topic.
+
+Only a push Google signed for the configured service account and audience is
+accepted; without that configuration nothing is (fail closed). A message that cannot
+be deduplicated (no key, no case, no tenant where one is required) is refused with
+422 and never applied: Pub/Sub keeps it, redelivers it or dead-letters it, for a
+person to see. docs/RECEIVER_CONTRACT.md is the contract this implements.
+"""
+
+from __future__ import annotations
+
+import base64
+import importlib
+import json
+import os
+from typing import Any
+
+from vf_logistics.store import get_store
+from vf_logistics.tenant import multi_tenant_enabled
+
+
+def verify_push_token(authorization: str | None) -> str | None:
+    """
+    The service account a Pub/Sub push came from, when Google signed its OIDC token
+    for the configured account and audience; otherwise None.
+
+    Read at call time so a deployment can change the account without a rebuild.
+    """
+    account = os.getenv("RECEIVER_PUSH_SA", "").strip()
+    audience = os.getenv("RECEIVER_PUSH_AUDIENCE", "").strip()
+    if not account or not audience:
+        return None
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        # By name, not `from google.oauth2 import id_token`: CI's mypy resolves the
+        # google namespace differently from a local run, and its error count is at
+        # the ratchet ceiling.
+        id_token: Any = importlib.import_module("google.oauth2.id_token")
+        google_requests: Any = importlib.import_module("google.auth.transport.requests")
+        claims = dict(id_token.verify_oauth2_token(
+            authorization[len("Bearer "):], google_requests.Request(), audience=audience,
+        ))
+    except Exception:  # noqa: BLE001 - any verification failure is a refusal
+        return None
+    if claims.get("email") != account or claims.get("email_verified") is not True:
+        return None
+    return account
+
+
+async def receive(envelope: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """
+    Apply one pushed decision unless its key was applied before.
+
+    Returns the HTTP status and body for Pub/Sub: 200 acknowledges ("applied" or
+    "duplicate"); 422 leaves a message that cannot be deduplicated with Pub/Sub.
+    """
+    message = envelope.get("message")
+    if not isinstance(message, dict):
+        return 422, {"outcome": "rejected", "reason": "no Pub/Sub message in the request"}
+    attributes = message.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {}
+    key = str(attributes.get("idempotency_key") or "")
+    owner = attributes.get("tenant_id") or None
+    try:
+        body = json.loads(base64.b64decode(message.get("data") or ""))
+    except ValueError:
+        body = None
+    case_id = body.get("case_id") if isinstance(body, dict) else None
+    if not key or not case_id:
+        return 422, {"outcome": "rejected", "reason": "a decision needs an idempotency_key attribute and a case_id"}
+    if owner is None and multi_tenant_enabled():
+        return 422, {"outcome": "rejected", "reason": "a multi-tenant decision needs a tenant_id attribute"}
+    record = {
+        "case_id": str(case_id),
+        "outcome": body.get("outcome"),
+        "approval_id": body.get("approval_id"),
+        "first_message_id": str(message.get("messageId") or message.get("message_id") or ""),
+    }
+    result = await get_store().apply_decision_once(key, record, tenant_id=owner)
+    return 200, {"outcome": "applied" if result["applied"] else "duplicate", "deliveries": result["deliveries"]}

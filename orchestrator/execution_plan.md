@@ -32,6 +32,7 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
   20. SIMULATION ON THE EMULATORS (the human starts both emulators and installs google-cloud-firestore==2.31.0 and google-cloud-pubsub==2.41.0 into the runner's Python; agents run no gcloud command): `--only SIMPREP`, `--only FEMU`, `--only RCVt` (red: module missing), `--only RCVc`, `--only HKILL`, then `--only VFULL`. The simulation proves the protocol (at least once + a receiver that claims the key = applied once) and measures the hard-kill duplicate; it does not prove the real receiver.
   22. N04 STEP 2 (human decision 2026-10-18; approved migrating the tests that approve a release over open evidence; the probe found 47 failing tests in 7 files, not 39): `--only N04H1`, `--only N04M1`, `--only N04M2`, `--only N04M3` (emulators must be up), `--only N04T` (red: exactly 7 failed), `--only N04C`, then `--only VFULL`. Then the table row N04-b of scripts/verify_review_vi.py (VR5) and step 3 (console). N04T: the old tests that asserted "a note is enough" are rewritten to assert 403 + the exception operation.
   23. N04 STEP 3 (console): `--only N04F1`, `--only N04F2`, `--only N04F3t` (red: exactly 4 failed), `--only N04F3c`, then `--only VFULL`. The console calls POST review/<id>/approve-exception for a release over unresolved or contradicting evidence (reason + every waived item; operator role and password sign-in, both enforced by the API); a block and a release over clean evidence keep POST approve. A reviewer without the operator role can no longer release over open evidence: that is the policy of step 1, now visible.
+  24. RECEIVER IN FLOORLINE (human decision 2026-10-18: close 'N01 receiver-side deduplication' by shipping the receiver): `--only RX1t` (red), `--only RX1c` (Firestore emulator up), `--only RX2t` (red: module missing), `--only RX2c`, then `--only VFULL`. After deploy (human: push subscription with OIDC, RECEIVER_PUSH_SA and RECEIVER_PUSH_AUDIENCE, two test publishes of one key): read GET /api/v1/receiver/applied/<key>, expect deliveries 2 and applied_once.
   21. SENT LEDGER (human decision 2026-10-18: close the hard-kill gap on the sender side, fail closed; N04 not now): `--only LEDt` (red: 8 tests), `--only LEDc`, `--only HKILL2` (emulators running: must show ONE message), then `--only VFULL`. Deployment needs a subscription on case-decisions created before use and SENT_LEDGER_SUBSCRIPTION set (human step); docs/RECEIVER_CONTRACT.md describes both sides.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
@@ -138,7 +139,13 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 53 | VR5 | Review VI table: row N04-b follows the renamed test; rows N04-d and N04-e |
 | 54t | HLTHt | Tests first: /health says which revision serves and whether the sent ledger is configured: 4 red |
 | 54c | HLTHc | Code for HLTHt: revision and sent_ledger in /health |
+| 55t | RX1t | Tests first: the store applies a decision once per key and tenant, counts every delivery (N01 receiver) |
+| 55c | RX1c | Code for RX1t: apply_decision_once / get_applied_decision in both stores |
+| 56t | RX2t | Tests first: the Pub/Sub push receiver (OIDC only) applies each decision once |
+| 56c | RX2c | Code for RX2t: decision_receiver.py and the two receiver routes |
 
+RX2c round 1: RERUN, the receiver tests passed (10) but two route-policy tests failed: the push route declared no role; it now declares operator like evidence_respond; logs runs/RX2c/attempt_1.log, attempt_2.log.
+RX1c round 1: RERUN, the tests passed (memory 3, emulator 4 incl. 8 concurrent deliveries applied once) but my mypy gate said <=120; HEAD itself measures 123 fresh (= CI), and a worktree probe showed 123 before and after the change with identical errors; gate now <=123 in RX1c and RX2c; logs runs/RX1c/attempt_1.log, attempt_2.log.
 N04F3t round 2: RERUN, the same command then failed printing a non-ASCII vitest character to a cp1252 console (UnicodeEncodeError); it now prints ASCII only and was tried on the unchanged tree first. Rounds were spent on my command, not on the sub-agent: its edits are what the runner restored each time.
 N04F3t round 1: RERUN, my test command decoded vitest's UTF-8 output as cp1252 (UnicodeDecodeError, no output to count); it now passes encoding='utf-8'; logs runs/N04F3t/attempt_1.log, attempt_2.log.
 N04F1 round 1: RERUN, my prompt named the new function waivedItems, which operations.ts already has as a private function; both attempts failed on the duplicate declaration; renamed evidenceToWaive; logs runs/N04F1/attempt_1.log, attempt_2.log.
@@ -9275,5 +9282,582 @@ new_string, four lines:
 
 DONE WHEN: only app.py changed; health() imports tools and returns two new keys, revision and sent_ledger.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RX1t -->
+## Meta
+- title: Tests first - the store applies a delivered decision once per idempotency key and tenant, and counts every delivery (N01 receiver)
+- depends_on:
+  - HLTHc
+- target_files:
+  - tests/test_applied_decisions.py
+- test_commands:
+  - python -c "import subprocess,sys; p=subprocess.run('python -m pytest tests/test_applied_decisions.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace'); o=p.stdout+p.stderr; print(o[-2000:].encode('ascii','replace').decode()); sys.exit(0 if p.returncode == 1 and '3 failed' in o else 1)"
+  - python -m ruff check tests/test_applied_decisions.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Human decision (2026-10-18): close the open item "N01 receiver-side deduplication" by making the receiver a component of Floorline (no ERP reads case-decisions in this deployment). Part 1 is the store: `apply_decision_once(key, record, tenant_id)` records a delivered decision under its idempotency key and tenant; the record IS the application, so claiming the key and applying are one step; a repeat only increments `deliveries`. `get_applied_decision(key, tenant_id)` reads it back. Both backends (MemoryStore, FirestoreStore) get them; on Firestore one transaction with CREATE.
+This task writes the tests only, as a NEW file. Expected now: 3 failed (AttributeError: MemoryStore has no apply_decision_once), the Firestore class skipped (no emulator variable here; RX1c runs it with the emulator). The command passes on exactly "3 failed".
+Master review: the 3 memory tests fail on AttributeError; ruff passes.
+
+## Prompt
+``````text
+TASK RX1t. Create ONE new file: tests/test_applied_decisions.py, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): tests/test_applied_decisions.py. It does not exist yet: create it with the Write tool. Do not edit any source file: these tests are meant to fail until the next task.
+
+Content (copy exactly):
+```python
+"""
+The receiver's record of applied decisions (N01): one application per idempotency key
+and tenant, every delivery counted. The last class runs the same on FirestoreStore
+against the emulator, with concurrent deliveries, and is skipped without it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from vf_logistics import store as store_mod  # noqa: E402
+
+FIRESTORE = os.getenv("FIRESTORE_EMULATOR_HOST", "")
+PROJECT = "vf-applied-test"
+RECORD = {"case_id": "CASE-1", "outcome": "RELEASED_BY_HUMAN", "approval_id": "apr-1", "first_message_id": "m-1"}
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+class TestOnMemoryStore:
+    def setup_method(self):
+        self.store = store_mod.MemoryStore()
+
+    def test_the_first_delivery_applies_and_a_repeat_only_counts(self):
+        first = run(self.store.apply_decision_once("exec-apr-1", RECORD))
+        second = run(self.store.apply_decision_once("exec-apr-1", {**RECORD, "first_message_id": "m-2"}))
+        assert (first["applied"], first["deliveries"]) == (True, 1)
+        assert (second["applied"], second["deliveries"]) == (False, 2)
+        assert second["first_message_id"] == "m-1"
+
+    def test_the_applied_record_can_be_read_back(self):
+        run(self.store.apply_decision_once("exec-apr-1", RECORD))
+        run(self.store.apply_decision_once("exec-apr-1", RECORD))
+        doc = run(self.store.get_applied_decision("exec-apr-1"))
+        assert doc["case_id"] == "CASE-1" and doc["deliveries"] == 2
+        assert run(self.store.get_applied_decision("exec-apr-2")) is None
+
+    def test_the_same_key_in_another_tenant_is_its_own_decision(self):
+        run(self.store.apply_decision_once("exec-apr-1", RECORD, tenant_id="acme"))
+        other = run(self.store.apply_decision_once("exec-apr-1", RECORD, tenant_id="globex"))
+        assert other["applied"] is True
+        assert run(self.store.get_applied_decision("exec-apr-1", tenant_id="acme"))["deliveries"] == 1
+        assert run(self.store.get_applied_decision("exec-apr-1")) is None
+
+
+@pytest.mark.skipif(not FIRESTORE, reason="FIRESTORE_EMULATOR_HOST is not set")
+class TestOnFirestoreStore:
+    def setup_method(self):
+        request = urllib.request.Request(
+            f"http://{FIRESTORE}/emulator/v1/projects/{PROJECT}/databases/(default)/documents",
+            method="DELETE",
+        )
+        urllib.request.urlopen(request, timeout=10).close()  # noqa: S310 - local emulator
+        self.store = store_mod.FirestoreStore(PROJECT)
+
+    def test_concurrent_deliveries_of_one_key_apply_it_once(self):
+        def deliver(_):
+            return run(self.store.apply_decision_once("exec-apr-1", RECORD))
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(deliver, range(8)))
+        assert [r["applied"] for r in results].count(True) == 1
+        assert run(self.store.get_applied_decision("exec-apr-1"))["deliveries"] == 8
+        assert run(self.store.get_applied_decision("exec-apr-1", tenant_id="other")) is None
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if tests/test_applied_decisions.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RX1c -->
+## Meta
+- title: Code for RX1t - apply_decision_once and get_applied_decision in MemoryStore and FirestoreStore
+- depends_on:
+  - RX1t
+- target_files:
+  - src/vf_logistics/store.py
+- test_commands:
+  - python -m pytest tests/test_applied_decisions.py -q -p no:cacheprovider
+  - python -c "import os,subprocess,sys; os.environ['FIRESTORE_EMULATOR_HOST']='127.0.0.1:8681'; p=subprocess.run('python -m pytest tests/test_applied_decisions.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace'); o=p.stdout+p.stderr; print(o[-2000:].encode('ascii','replace').decode()); sys.exit(1 if p.returncode or 'skipped' in o else 0)"
+  - python -m ruff check src/vf_logistics/store.py --select E,F,W --ignore E501,E402,W291,W293
+  - python -c "import subprocess,sys,re; v=str(sys.version_info[0])+'.'+str(sys.version_info[1]); r=subprocess.run('python -m mypy src/vf_logistics/ --ignore-missing-imports --python-version '+v, shell=True, capture_output=True, text=True); m=re.search(r'Found (\d+) error', r.stdout); n=int(m.group(1)) if m else (0 if 'Success' in r.stdout else 9999); print('mypy errors', n); sys.exit(0 if n <= 123 else 1)"
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+Code for the tests of RX1t. MemoryStore: a dict keyed by (tenant, key) under the existing lock. FirestoreStore: collection `applied_decisions`, document id `<tenant>__<key>`, one transaction that reads the document and either CREATEs it (first delivery) or updates `deliveries` (a repeat); concurrent deliveries contend on that document and the losers are retried by `_run_transaction` and see it. Same shape as publish_boundary.
+Emulator: the second test command needs the Firestore emulator on 127.0.0.1:8681 (the Master starts it with firebase-tools before this run). The mypy command refuses a count above 123, CI's ceiling and the count of HEAD measured fresh on this machine (round 1: a gate of 120 failed although the change adds no error; a worktree probe gave 123 before and after, with the same error list).
+Master review: memory tests pass, the emulator run shows 4 passed and nothing skipped, ruff passes, mypy stays at 120.
+
+## Prompt
+``````text
+TASK RX1c. Three insertions in src/vf_logistics/store.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/store.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not edit any test. `tenant`, `utcnow`, `_stamp_tenant`, `TENANT_FIELD`, `asyncio` and `Any` already exist in this module; MemoryStore has `self._lock`, FirestoreStore has `self._db`, `self._fs` and `self._run_transaction`.
+
+EDIT 1 (MemoryStore: the dict and the two methods). old_string, ONE line (8 leading spaces; occurs once, at the end of MemoryStore.__init__):
+```python
+        self._lock = threading.Lock()
+```
+new_string is the block below (the first line is the old line, kept):
+```python
+        self._lock = threading.Lock()
+        # The receiver's applied decisions, by (tenant, idempotency key) (N01).
+        self._applied: dict[tuple[str, str], dict[str, Any]] = {}
+
+    # -- applied decisions (the receiving side of case-decisions, N01) ---------
+
+    async def apply_decision_once(
+        self, key: str, record: dict[str, Any], tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Apply a delivered decision unless its key was applied before in this tenant.
+
+        The stored record is the application, so claiming the key and applying the
+        decision are one step: a repeat only counts a delivery. Returns the record
+        with `applied` (whether this delivery applied it) and `deliveries`.
+        """
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            existing = self._applied.get((scope, key))
+            if existing is not None:
+                existing["deliveries"] = int(existing.get("deliveries") or 0) + 1
+                existing["last_delivery_at"] = utcnow()
+                return {**existing, "applied": False}
+            doc = {**record, "idempotency_key": key, "deliveries": 1, "applied_at": utcnow()}
+            _stamp_tenant(doc, scope)
+            self._applied[(scope, key)] = doc
+            return {**doc, "applied": True}
+
+    async def get_applied_decision(
+        self, key: str, tenant_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """The applied record for this key in this tenant, or None."""
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            doc = self._applied.get((scope, key))
+            return dict(doc) if doc is not None else None
+```
+
+EDIT 2 (FirestoreStore: the collection). old_string, ONE line (8 leading spaces; occurs once):
+```python
+        self._activity = self._db.collection("operator_activity")
+```
+new_string is these two lines (the first kept):
+```python
+        self._activity = self._db.collection("operator_activity")
+        self._applied = self._db.collection("applied_decisions")
+```
+
+EDIT 3 (FirestoreStore: the two methods, directly above _scoped). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    def _scoped(self, collection, scope: str):
+```
+new_string is the block below, a blank line, and then that same line again:
+```python
+    # -- applied decisions (the receiving side of case-decisions, N01) ---------
+
+    async def apply_decision_once(
+        self, key: str, record: dict[str, Any], tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        MemoryStore.apply_decision_once, inside one Firestore transaction.
+
+        The document id is the tenant and the key, so the CREATE that applies the
+        decision fails for a second delivery of the same key; concurrent deliveries
+        contend on that document and the losers are retried from the read, where
+        they see it and only count themselves.
+        """
+        scope = tenant.resolve(tenant_id)
+        ref = self._applied.document(f"{scope}__{key}")
+
+        def _txn() -> dict[str, Any]:
+            @self._fs.transactional
+            def _do(t: Any) -> dict[str, Any]:
+                snap = ref.get(transaction=t)
+                now = utcnow()
+                if snap.exists:
+                    doc = snap.to_dict() or {}
+                    deliveries = int(doc.get("deliveries") or 0) + 1
+                    t.update(ref, {"deliveries": deliveries, "last_delivery_at": now})
+                    return {**doc, "deliveries": deliveries, "last_delivery_at": now, "applied": False}
+                doc = {**record, "idempotency_key": key, "deliveries": 1, "applied_at": now}
+                _stamp_tenant(doc, scope)
+                t.create(ref, doc)
+                return {**doc, "applied": True}
+
+            result: dict[str, Any] = self._run_transaction(_do)
+            return result
+
+        return await asyncio.to_thread(_txn)
+
+    async def get_applied_decision(
+        self, key: str, tenant_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """The applied record for this key in this tenant, or None."""
+        scope = tenant.resolve(tenant_id)
+        snap = await asyncio.to_thread(self._applied.document(f"{scope}__{key}").get)
+        if not snap.exists:
+            return None
+        doc: dict[str, Any] = snap.to_dict() or {}
+        return doc if doc.get(TENANT_FIELD) == scope else None
+
+    def _scoped(self, collection, scope: str):
+```
+
+DONE WHEN: only store.py changed, with exactly these three insertions.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RX2t -->
+## Meta
+- title: Tests first - the Pub/Sub push receiver accepts only Google-signed pushes and applies each decision once (N01 receiver)
+- depends_on:
+  - RX1c
+- target_files:
+  - tests/test_decision_receiver.py
+- test_commands:
+  - python -c "import subprocess,sys; p=subprocess.run('python -m pytest tests/test_decision_receiver.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace'); o=p.stdout+p.stderr; print(o[-1500:].encode('ascii','replace').decode()); sys.exit(0 if p.returncode != 0 and 'decision_receiver' in o and ('ImportError' in o or 'ModuleNotFoundError' in o) else 1)"
+  - python -m ruff check tests/test_decision_receiver.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Part 2 of the receiver: a module `vf_logistics.decision_receiver` (verify_push_token, receive) and two routes, POST /api/v1/receiver/decision (Pub/Sub push; authenticated only by the OIDC token Google signs for the configured service account and audience, RECEIVER_PUSH_SA and RECEIVER_PUSH_AUDIENCE; without them nothing is accepted) and GET /api/v1/receiver/applied/<key> (viewer). A message without a key or a case is refused with 422 and never applied.
+The existing route walk in tests/test_network_defence.py requires every write route to answer an anonymous caller with 401 or 403: this route answers 403 without an accepted token.
+This task writes the tests only, as a NEW file. Expected now: collection fails because `vf_logistics.decision_receiver` does not exist; the command passes exactly then.
+Master review: the log shows the import error for decision_receiver and nothing else; ruff passes.
+
+## Prompt
+``````text
+TASK RX2t. Create ONE new file: tests/test_decision_receiver.py, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): tests/test_decision_receiver.py. It does not exist yet: create it with the Write tool. Do not create the module or edit app.py: these tests are meant to fail until the next task.
+
+Content (copy exactly):
+```python
+"""
+The receiving side of case-decisions, as part of Floorline (N01).
+
+POST /api/v1/receiver/decision is a Pub/Sub push endpoint. It accepts only a push
+whose OIDC token Google signed for the configured service account and audience (no
+configuration: nothing is accepted), and applies each idempotency key once: a repeat
+is counted, not applied again. A message that cannot be deduplicated is refused
+(422) and never applied. GET /api/v1/receiver/applied/<key> reads the result.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import sys
+from unittest.mock import patch
+
+sys.path.insert(0, os.path.dirname(__file__))
+from test_console_session import TEST_KEY  # noqa: E402
+from test_evidence_eval_approve import Base  # noqa: E402
+from vf_logistics import decision_receiver  # noqa: E402
+from vf_logistics.app import app  # noqa: E402
+
+SA = "push@vf-test.iam.gserviceaccount.com"
+AUDIENCE = "https://vf-test.example/api/v1/receiver/decision"
+PUSH_ENV = {"RECEIVER_PUSH_SA": SA, "RECEIVER_PUSH_AUDIENCE": AUDIENCE}
+KEYED = {"X-VF-API-Key": TEST_KEY}
+
+
+def envelope(key="exec-apr-1", message_id="m-1", data=None):
+    body = data if data is not None else {
+        "case_id": "CASE-1", "outcome": "RELEASED_BY_HUMAN", "approval_id": "apr-1", "idempotency_key": key,
+    }
+    message = {
+        "data": base64.b64encode(json.dumps(body).encode()).decode(),
+        "attributes": {"idempotency_key": key} if key else {},
+        "messageId": message_id,
+    }
+    return {"message": message, "subscription": "projects/p/subscriptions/case-decisions-receiver"}
+
+
+class TestTheReceiverRoute(Base):
+    def setup_method(self):
+        super().setup_method()
+        self.client = app.test_client()
+
+    def _push(self, payload):
+        with patch.object(decision_receiver, "verify_push_token", return_value=SA):
+            return self.client.post("/api/v1/receiver/decision", json=payload, headers={"Authorization": "Bearer t"})
+
+    def _read(self, key):
+        return self.client.get(f"/api/v1/receiver/applied/{key}", headers=KEYED)
+
+    def test_a_decision_is_applied_once_and_a_redelivery_is_only_counted(self):
+        first = self._push(envelope(message_id="m-1"))
+        second = self._push(envelope(message_id="m-2"))
+        assert (first.status_code, first.get_json()["outcome"]) == (200, "applied")
+        assert (second.status_code, second.get_json()["outcome"]) == (200, "duplicate")
+        read = self._read("exec-apr-1")
+        assert read.status_code == 200
+        assert read.get_json()["deliveries"] == 2
+        assert read.get_json()["applied_once"] is True
+        assert read.get_json()["first_message_id"] == "m-1"
+
+    def test_a_push_without_an_accepted_token_is_refused_and_nothing_is_applied(self):
+        r = self.client.post("/api/v1/receiver/decision", json=envelope(), headers={"Authorization": "Bearer forged"})
+        assert r.status_code == 403
+        assert "token" in r.get_json()["error"]
+        assert self._read("exec-apr-1").status_code == 404
+
+    def test_a_decision_without_a_key_is_refused_not_applied(self):
+        r = self._push(envelope(key=""))
+        assert r.status_code == 422
+        assert r.get_json()["outcome"] == "rejected"
+
+    def test_a_message_whose_data_is_not_a_decision_is_refused(self):
+        payload = envelope()
+        payload["message"]["data"] = base64.b64encode(b"not json").decode()
+        r = self._push(payload)
+        assert r.status_code == 422
+        assert self._read("exec-apr-1").status_code == 404
+
+    def test_an_unknown_key_reads_as_not_applied(self):
+        assert self._read("exec-apr-404").status_code == 404
+
+
+class TestThePushToken:
+    def test_nothing_is_accepted_without_configuration(self):
+        with patch.dict(os.environ, {"RECEIVER_PUSH_SA": "", "RECEIVER_PUSH_AUDIENCE": ""}):
+            assert decision_receiver.verify_push_token("Bearer anything") is None
+
+    def test_a_token_google_signed_for_the_configured_account_is_accepted(self):
+        claims = {"email": SA, "email_verified": True, "aud": AUDIENCE}
+        with patch.dict(os.environ, PUSH_ENV), \
+                patch("google.oauth2.id_token.verify_oauth2_token", return_value=claims) as verify:
+            assert decision_receiver.verify_push_token("Bearer signed") == SA
+        assert verify.call_args.kwargs["audience"] == AUDIENCE
+
+    def test_a_token_for_another_account_is_refused(self):
+        claims = {"email": "someone-else@x.iam.gserviceaccount.com", "email_verified": True}
+        with patch.dict(os.environ, PUSH_ENV), \
+                patch("google.oauth2.id_token.verify_oauth2_token", return_value=claims):
+            assert decision_receiver.verify_push_token("Bearer signed") is None
+
+    def test_a_token_that_does_not_verify_is_refused(self):
+        with patch.dict(os.environ, PUSH_ENV), \
+                patch("google.oauth2.id_token.verify_oauth2_token", side_effect=ValueError("bad signature")):
+            assert decision_receiver.verify_push_token("Bearer forged") is None
+
+    def test_a_header_that_is_not_a_bearer_token_is_refused(self):
+        with patch.dict(os.environ, PUSH_ENV):
+            assert decision_receiver.verify_push_token(None) is None
+            assert decision_receiver.verify_push_token("Basic abc") is None
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if tests/test_decision_receiver.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RX2c -->
+## Meta
+- title: Code for RX2t - vf_logistics/decision_receiver.py and the two receiver routes
+- depends_on:
+  - RX2t
+- target_files:
+  - src/vf_logistics/decision_receiver.py
+  - src/vf_logistics/app.py
+- test_commands:
+  - python -m pytest tests/test_decision_receiver.py tests/test_applied_decisions.py tests/test_network_defence.py tests/test_tenant_isolation.py tests/test_routes.py tests/test_rbac.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/decision_receiver.py src/vf_logistics/app.py --select E,F,W --ignore E501,E402,W291,W293
+  - python -c "import subprocess,sys,re; v=str(sys.version_info[0])+'.'+str(sys.version_info[1]); r=subprocess.run('python -m mypy src/vf_logistics/ --ignore-missing-imports --python-version '+v, shell=True, capture_output=True, text=True); m=re.search(r'Found (\d+) error', r.stdout); n=int(m.group(1)) if m else (0 if 'Success' in r.stdout else 9999); print('mypy errors', n); sys.exit(0 if n <= 123 else 1)"
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+Code for the tests of RX2t. The new module is created with Write; app.py gets the two routes directly above /internal/execute. The Google modules are loaded by name (importlib), not with `from google.oauth2 import id_token`: CI's mypy resolves the google namespace differently from this machine (LEDcf1), CI measured exactly its ceiling of 123, and a name-loaded module is typed Any in every environment. Tests that patch `google.oauth2.id_token.verify_oauth2_token` still reach the patched function, because import_module returns the same module object.
+The push route has no API-key or session decorator on purpose: Pub/Sub can only present its OIDC token, which the route checks itself; without configuration or with any other token it answers 403 (so the anonymous route walk in test_network_defence.py still passes). Next.js passes the Authorization header through to Flask (lib/upstream.ts drops only hop-by-hop headers and cookies).
+Round 1 (RERUN): the first prompt left the push route without a declared role, and two policy tests in test_rbac.py (every route declares a role; every write needs more than viewer) failed; the route now declares `_required_role = "operator"` exactly like evidence_respond, a route that is also authenticated by its own token (runs/RX2c/attempt_1.log, attempt_2.log).
+Master review: all tests in the six files pass; ruff passes; mypy stays at 123; `git diff` shows one new module and one block of two routes in app.py.
+
+## Prompt
+``````text
+TASK RX2c. Create ONE new file and make ONE insertion in app.py. Nothing else.
+
+FILES YOU MAY TOUCH (only these two): src/vf_logistics/decision_receiver.py (NEW: create it with the Write tool) and src/vf_logistics/app.py (EDIT: Windows line endings, Edit tool, ONE-LINE old_string, never Write). Do not edit any test.
+
+FILE 1: src/vf_logistics/decision_receiver.py (copy exactly):
+```python
+"""
+The receiving side of the case-decisions topic, as part of Floorline (N01).
+
+Floorline publishes every executed human decision at least once: a retry after an
+unknown outcome reuses the approval's idempotency key, and Pub/Sub itself redelivers
+a message whose acknowledgement was lost. This receiver turns that into once. It is
+a Pub/Sub push endpoint (POST /api/v1/receiver/decision) that records each decision
+in the store under its key, and the record IS the application: the create that
+claims the key and the write that applies it are one transaction, so a repeat is
+counted (deliveries) and never applied twice. Systems downstream read the applied
+record instead of the topic.
+
+Only a push Google signed for the configured service account and audience is
+accepted; without that configuration nothing is (fail closed). A message that cannot
+be deduplicated (no key, no case, no tenant where one is required) is refused with
+422 and never applied: Pub/Sub keeps it, redelivers it or dead-letters it, for a
+person to see. docs/RECEIVER_CONTRACT.md is the contract this implements.
+"""
+
+from __future__ import annotations
+
+import base64
+import importlib
+import json
+import os
+from typing import Any
+
+from vf_logistics.store import get_store
+from vf_logistics.tenant import multi_tenant_enabled
+
+
+def verify_push_token(authorization: str | None) -> str | None:
+    """
+    The service account a Pub/Sub push came from, when Google signed its OIDC token
+    for the configured account and audience; otherwise None.
+
+    Read at call time so a deployment can change the account without a rebuild.
+    """
+    account = os.getenv("RECEIVER_PUSH_SA", "").strip()
+    audience = os.getenv("RECEIVER_PUSH_AUDIENCE", "").strip()
+    if not account or not audience:
+        return None
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        # By name, not `from google.oauth2 import id_token`: CI's mypy resolves the
+        # google namespace differently from a local run, and its error count is at
+        # the ratchet ceiling.
+        id_token: Any = importlib.import_module("google.oauth2.id_token")
+        google_requests: Any = importlib.import_module("google.auth.transport.requests")
+        claims = dict(id_token.verify_oauth2_token(
+            authorization[len("Bearer "):], google_requests.Request(), audience=audience,
+        ))
+    except Exception:  # noqa: BLE001 - any verification failure is a refusal
+        return None
+    if claims.get("email") != account or claims.get("email_verified") is not True:
+        return None
+    return account
+
+
+async def receive(envelope: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """
+    Apply one pushed decision unless its key was applied before.
+
+    Returns the HTTP status and body for Pub/Sub: 200 acknowledges ("applied" or
+    "duplicate"); 422 leaves a message that cannot be deduplicated with Pub/Sub.
+    """
+    message = envelope.get("message")
+    if not isinstance(message, dict):
+        return 422, {"outcome": "rejected", "reason": "no Pub/Sub message in the request"}
+    attributes = message.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {}
+    key = str(attributes.get("idempotency_key") or "")
+    owner = attributes.get("tenant_id") or None
+    try:
+        body = json.loads(base64.b64decode(message.get("data") or ""))
+    except ValueError:
+        body = None
+    case_id = body.get("case_id") if isinstance(body, dict) else None
+    if not key or not case_id:
+        return 422, {"outcome": "rejected", "reason": "a decision needs an idempotency_key attribute and a case_id"}
+    if owner is None and multi_tenant_enabled():
+        return 422, {"outcome": "rejected", "reason": "a multi-tenant decision needs a tenant_id attribute"}
+    record = {
+        "case_id": str(case_id),
+        "outcome": body.get("outcome"),
+        "approval_id": body.get("approval_id"),
+        "first_message_id": str(message.get("messageId") or message.get("message_id") or ""),
+    }
+    result = await get_store().apply_decision_once(key, record, tenant_id=owner)
+    return 200, {"outcome": "applied" if result["applied"] else "duplicate", "deliveries": result["deliveries"]}
+```
+
+FILE 2: src/vf_logistics/app.py
+EDIT 1 (two routes, directly above /internal/execute). old_string, ONE line (no leading spaces; occurs once):
+```python
+@app.route("/internal/execute", methods=["POST"])
+```
+new_string is the block below, two blank lines, and then that same line again:
+```python
+@app.route("/api/v1/receiver/decision", methods=["POST"])
+@limiter.limit("120 per minute")
+def receiver_decision() -> Any:
+    """
+    Pub/Sub push endpoint for case-decisions: apply each decision once (N01).
+
+    Authenticated by the push's Google-signed OIDC token, not by an API key or a
+    session: see decision_receiver.verify_push_token. Without one, 403.
+    """
+    from vf_logistics import decision_receiver
+
+    if decision_receiver.verify_push_token(request.headers.get("Authorization")) is None:
+        return jsonify({"error": "push token missing or not accepted"}), 403
+    status, body = _on_worker(decision_receiver.receive(request.get_json(silent=True) or {}))
+    return jsonify(body), status
+
+
+# Not behind require_operator: Pub/Sub can present only its OIDC token, which
+# decision_receiver.verify_push_token checks. Declared operator, the role this write
+# carries, so route_policy() and the Access Control screen do not call it public
+# (the same arrangement as evidence_respond).
+receiver_decision._required_role = "operator"  # type: ignore[attr-defined]
+
+
+@app.route("/api/v1/receiver/applied/<key>", methods=["GET"])
+@require_viewer
+def receiver_applied(key: str) -> Any:
+    """Whether the decision with this idempotency key was applied, and how often it was delivered."""
+    from vf_logistics.store import get_store
+
+    doc = _on_worker(get_store().get_applied_decision(key, tenant_id=_tenant()))
+    if doc is None:
+        return jsonify({"error": "no decision with this key has been applied"}), 404
+    return jsonify({
+        "idempotency_key": key,
+        "applied_once": True,
+        "deliveries": doc.get("deliveries"),
+        "case_id": doc.get("case_id"),
+        "outcome": doc.get("outcome"),
+        "applied_at": doc.get("applied_at"),
+        "first_message_id": doc.get("first_message_id"),
+    })
+
+
+@app.route("/internal/execute", methods=["POST"])
+```
+
+DONE WHEN: the new module exists with exactly this content, and app.py gained exactly these two routes and the one `_required_role` line above /internal/execute.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once, or if decision_receiver.py already exists.
 ``````
 <!-- TASK_END -->

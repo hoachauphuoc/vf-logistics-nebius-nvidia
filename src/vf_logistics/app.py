@@ -2083,7 +2083,52 @@ def internal_login_throttle() -> Any:
         return _safe_error(e)
 
 
+@app.route("/api/v1/receiver/decision", methods=["POST"])
+@limiter.limit("120 per minute")
+def receiver_decision() -> Any:
+    """
+    Pub/Sub push endpoint for case-decisions: apply each decision once (N01).
+
+    Authenticated by the push's Google-signed OIDC token, not by an API key or a
+    session: see decision_receiver.verify_push_token. Without one, 403.
+    """
+    from vf_logistics import decision_receiver
+
+    if decision_receiver.verify_push_token(request.headers.get("Authorization")) is None:
+        return jsonify({"error": "push token missing or not accepted"}), 403
+    status, body = _on_worker(decision_receiver.receive(request.get_json(silent=True) or {}))
+    return jsonify(body), status
+
+
+# Not behind require_operator: Pub/Sub can present only its OIDC token, which
+# decision_receiver.verify_push_token checks. Declared operator, the role this write
+# carries, so route_policy() and the Access Control screen do not call it public
+# (the same arrangement as evidence_respond).
+receiver_decision._required_role = "operator"  # type: ignore[attr-defined]
+
+
+@app.route("/api/v1/receiver/applied/<key>", methods=["GET"])
+@require_viewer
+def receiver_applied(key: str) -> Any:
+    """Whether the decision with this idempotency key was applied, and how often it was delivered."""
+    from vf_logistics.store import get_store
+
+    doc = _on_worker(get_store().get_applied_decision(key, tenant_id=_tenant()))
+    if doc is None:
+        return jsonify({"error": "no decision with this key has been applied"}), 404
+    return jsonify({
+        "idempotency_key": key,
+        "applied_once": True,
+        "deliveries": doc.get("deliveries"),
+        "case_id": doc.get("case_id"),
+        "outcome": doc.get("outcome"),
+        "applied_at": doc.get("applied_at"),
+        "first_message_id": doc.get("first_message_id"),
+    })
+
+
 @app.route("/internal/execute", methods=["POST"])
+
 @require_operator
 @limiter.limit("60 per minute")
 def internal_execute():

@@ -4,6 +4,11 @@ Who this is for: the team whose system subscribes to Floorline's decisions (ERP,
 billing). It says what Floorline sends, what it guarantees, and the one thing the
 receiver must do so that an approved release or block takes effect exactly once.
 
+Floorline now ships that receiver itself (see *The receiver Floorline ships* below):
+a downstream system can read the applied record instead of subscribing to the topic,
+and then this contract is already met. A system that subscribes to the topic directly
+must meet it on its own.
+
 ## What is published
 
 One Pub/Sub message per executed human decision, on the topic named by `DECISIONS_TOPIC`
@@ -58,6 +63,35 @@ required.
 
 These prove the protocol. They do not prove that a given receiver implements it: each
 receiving system has to show its own claim-and-apply transaction.
+
+## The receiver Floorline ships
+
+`src/vf_logistics/decision_receiver.py`, served by the same `vf-app` service:
+
+- `POST /api/v1/receiver/decision` is a Pub/Sub **push** endpoint. It accepts only a
+  push whose OIDC token Google signed for the service account in `RECEIVER_PUSH_SA` and
+  the audience in `RECEIVER_PUSH_AUDIENCE`; without both settings it accepts nothing
+  (403). It records the decision under its `idempotency_key` and tenant in the store
+  (`applied_decisions` in Firestore). The record is the application, and the create
+  that claims the key is the same transaction, so a repeat only increments
+  `deliveries`. A message without a key or a case is refused (422) and never applied;
+  Pub/Sub keeps it, redelivers it, or moves it to a dead-letter topic if one is set.
+- `GET /api/v1/receiver/applied/<key>` (viewer) returns `applied_once`, `deliveries`,
+  the case, the outcome and the first message id.
+
+Evidence: `tests/test_applied_decisions.py` (memory store, and the Firestore emulator
+with 8 concurrent deliveries of one key: applied once, 8 deliveries counted) and
+`tests/test_decision_receiver.py` (the token check, applied then duplicate, refusals).
+
+Set-up (a deployment step, done by a person with project rights; PowerShell, one
+line each, replace `<SA>` with the service account the push presents, for example the
+default compute account `<project-number>-compute@developer.gserviceaccount.com`):
+
+1. `gcloud pubsub subscriptions create case-decisions-receiver --topic=case-decisions --push-endpoint=https://<service-url>/api/v1/receiver/decision --push-auth-service-account=<SA> --push-auth-token-audience=https://<service-url>/api/v1/receiver/decision`
+2. `gcloud run services update vf-app --region <region> --update-env-vars RECEIVER_PUSH_SA=<SA>,RECEIVER_PUSH_AUDIENCE=https://<service-url>/api/v1/receiver/decision`
+
+Check: publish the same decision twice under one key, then read
+`GET /api/v1/receiver/applied/<key>`: `deliveries` is 2 and `applied_once` is true.
 
 ## Sent ledger (sender side, operations)
 

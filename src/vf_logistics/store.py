@@ -318,6 +318,41 @@ class MemoryStore:
         self._throttle: dict[str, list[float]] = {}
         self._activity: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
+        # The receiver's applied decisions, by (tenant, idempotency key) (N01).
+        self._applied: dict[tuple[str, str], dict[str, Any]] = {}
+
+    # -- applied decisions (the receiving side of case-decisions, N01) ---------
+
+    async def apply_decision_once(
+        self, key: str, record: dict[str, Any], tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Apply a delivered decision unless its key was applied before in this tenant.
+
+        The stored record is the application, so claiming the key and applying the
+        decision are one step: a repeat only counts a delivery. Returns the record
+        with `applied` (whether this delivery applied it) and `deliveries`.
+        """
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            existing = self._applied.get((scope, key))
+            if existing is not None:
+                existing["deliveries"] = int(existing.get("deliveries") or 0) + 1
+                existing["last_delivery_at"] = utcnow()
+                return {**existing, "applied": False}
+            doc = {**record, "idempotency_key": key, "deliveries": 1, "applied_at": utcnow()}
+            _stamp_tenant(doc, scope)
+            self._applied[(scope, key)] = doc
+            return {**doc, "applied": True}
+
+    async def get_applied_decision(
+        self, key: str, tenant_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """The applied record for this key in this tenant, or None."""
+        scope = tenant.resolve(tenant_id)
+        with self._lock:
+            doc = self._applied.get((scope, key))
+            return dict(doc) if doc is not None else None
 
     # -- pre-filter rules --------------------------------------------------
     #
@@ -993,6 +1028,7 @@ class FirestoreStore:
         self._prefilter = self._db.collection("prefilter_rules")
         self._throttle = self._db.collection("login_throttle")
         self._activity = self._db.collection("operator_activity")
+        self._applied = self._db.collection("applied_decisions")
 
     # -- delegation boundaries --------------------------------------------
 
@@ -1016,6 +1052,53 @@ class FirestoreStore:
                     raise
                 time.sleep(random.uniform(0.05, 0.25) * (round_ + 1))
         raise AssertionError("unreachable")
+
+    # -- applied decisions (the receiving side of case-decisions, N01) ---------
+
+    async def apply_decision_once(
+        self, key: str, record: dict[str, Any], tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        MemoryStore.apply_decision_once, inside one Firestore transaction.
+
+        The document id is the tenant and the key, so the CREATE that applies the
+        decision fails for a second delivery of the same key; concurrent deliveries
+        contend on that document and the losers are retried from the read, where
+        they see it and only count themselves.
+        """
+        scope = tenant.resolve(tenant_id)
+        ref = self._applied.document(f"{scope}__{key}")
+
+        def _txn() -> dict[str, Any]:
+            @self._fs.transactional
+            def _do(t: Any) -> dict[str, Any]:
+                snap = ref.get(transaction=t)
+                now = utcnow()
+                if snap.exists:
+                    doc = snap.to_dict() or {}
+                    deliveries = int(doc.get("deliveries") or 0) + 1
+                    t.update(ref, {"deliveries": deliveries, "last_delivery_at": now})
+                    return {**doc, "deliveries": deliveries, "last_delivery_at": now, "applied": False}
+                doc = {**record, "idempotency_key": key, "deliveries": 1, "applied_at": now}
+                _stamp_tenant(doc, scope)
+                t.create(ref, doc)
+                return {**doc, "applied": True}
+
+            result: dict[str, Any] = self._run_transaction(_do)
+            return result
+
+        return await asyncio.to_thread(_txn)
+
+    async def get_applied_decision(
+        self, key: str, tenant_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """The applied record for this key in this tenant, or None."""
+        scope = tenant.resolve(tenant_id)
+        snap = await asyncio.to_thread(self._applied.document(f"{scope}__{key}").get)
+        if not snap.exists:
+            return None
+        doc: dict[str, Any] = snap.to_dict() or {}
+        return doc if doc.get(TENANT_FIELD) == scope else None
 
     def _scoped(self, collection, scope: str):
         return collection.where(
