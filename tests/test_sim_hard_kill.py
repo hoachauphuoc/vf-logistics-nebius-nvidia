@@ -129,3 +129,29 @@ class TestAHardKillAfterTheBrokerAccepted(Base):
         outcomes = [apply_once(m.attributes, claim, lambda m=m: applied.append(m.message_id)) for m in messages]
         assert sorted(outcomes) == ["applied", "duplicate"]
         assert len(applied) == 1
+
+    def test_with_the_sent_ledger_the_resume_publishes_nothing_more(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        subscriber, subscription = _fresh_subscription()
+        # The sent ledger: created before anything is published, read only by this service.
+        _, ledger = _fresh_subscription()
+
+        child = subprocess.run([sys.executable, CHILD, "CASE-1", approval_id, REVIEWER], timeout=120)
+        assert child.returncode != 0
+        assert self.stored()["state"] == "EXECUTING"
+
+        case = self.stored()
+        case["verification"]["executions"][0]["claim_expires_epoch"] = time.time() - 1
+        run(self.store.put_case(case))
+        with patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", ledger.rsplit("/", 1)[-1]):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"
+
+        messages = _pull_all(subscriber, subscription, expected=2)
+        assert [m.attributes["idempotency_key"] for m in messages] == [f"exec-{approval_id}"]
+        assert result["message_id"] == messages[0].message_id

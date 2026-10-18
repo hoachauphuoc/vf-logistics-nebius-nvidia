@@ -1261,6 +1261,7 @@ async def execute_approval(
                 # interrupted claim is deduplicated downstream.
                 "idempotency_key": f"exec-{approval_id}",
             },
+            after_attempt=state_before != APPROVED,
             tenant_id=tenant_id,
         )
         message_id = published_message_id(pub_receipt)

@@ -29,6 +29,11 @@ NOTIFY_WEBHOOK_URL = os.getenv("NOTIFY_WEBHOOK_URL", "").strip()
 # Optional Pub/Sub topic that downstream systems subscribe to for decisions.
 DECISIONS_TOPIC = os.getenv("DECISIONS_TOPIC", "case-decisions").strip()
 
+# Optional pull subscription on DECISIONS_TOPIC that only this service reads: the "sent
+# ledger". The broker puts every decision it accepted there, so a retry can find one whose
+# own record was never saved because the process died first (N01). Empty: never read.
+SENT_LEDGER_SUBSCRIPTION = os.getenv("SENT_LEDGER_SUBSCRIPTION", "").strip()
+
 
 async def _audit(
     case_id: str, action: str, detail: dict[str, Any], status: str = "done",
@@ -203,6 +208,7 @@ async def _earlier_publish(
 
 async def publish_decision(
     case_id: str, decision: dict[str, Any], tenant_id: str | None = None,
+    *, after_attempt: bool = False,
 ) -> dict[str, Any]:
     """
     Emit the final decision to Pub/Sub so ERP / WMS / billing can react.
@@ -223,6 +229,21 @@ async def publish_decision(
         earlier = await _earlier_publish(case_id, str(key), tenant_id)
         if earlier is not None:
             return earlier
+        if after_attempt and SENT_LEDGER_SUBSCRIPTION:
+            # An earlier attempt may have been accepted with no record saved (N01). The
+            # ledger is read before sending again; an unreadable ledger leaves the outcome
+            # unknown, so nothing is sent (fail closed) and the retry can come later.
+            try:
+                await _settle_from_ledger()
+            except Exception as exc:  # noqa: BLE001
+                return await _audit(
+                    case_id, "publish_decision",
+                    {"case_id": case_id, **decision, "error": f"sent ledger unreadable: {type(exc).__name__}: {exc}"},
+                    status="unknown", tenant_id=tenant_id,
+                )
+            earlier = await _earlier_publish(case_id, str(key), tenant_id)
+            if earlier is not None:
+                return earlier
 
     body = {"case_id": case_id, **decision, "at": utcnow()}
 
@@ -239,6 +260,56 @@ async def publish_decision(
         )
 
     return await publish_decision_direct(case_id, body, tenant_id=tenant_id)
+
+
+async def _settle_from_ledger() -> int:
+    """
+    Drain the sent ledger: save a publish record for every accepted decision that has none.
+
+    A process killed between the broker's accept and the save of the record left the
+    decision sent but unrecorded, and the retry published it a second time (N01). Each
+    message is recorded in the tenant its `tenant_id` attribute names and acknowledged
+    only after its batch is saved, so a failed save leaves it for the next read. In a
+    multi-tenant deployment a message without that attribute names no tenant and is not
+    recorded. Raises when the ledger cannot be read: the caller must not publish then.
+    Returns how many records it saved.
+    """
+    import asyncio
+
+    from google.api_core.exceptions import DeadlineExceeded
+    from google.cloud import pubsub_v1
+
+    from vf_logistics.tenant import multi_tenant_enabled
+
+    subscriber = pubsub_v1.SubscriberClient()
+    path = subscriber.subscription_path(gcp_project(), SENT_LEDGER_SUBSCRIPTION)
+    saved = 0
+    while True:
+        try:
+            response = await asyncio.to_thread(subscriber.pull, subscription=path, max_messages=100, timeout=10)
+        except DeadlineExceeded:
+            return saved
+        if not response.received_messages:
+            return saved
+        for received in response.received_messages:
+            message = received.message
+            key = message.attributes.get("idempotency_key", "")
+            owner = message.attributes.get("tenant_id") or None
+            body = json.loads(message.data)
+            case_id = body.get("case_id")
+            if not key or not case_id or (owner is None and multi_tenant_enabled()):
+                continue
+            if await _earlier_publish(case_id, key, owner) is None:
+                await _audit(
+                    case_id, "publish_decision",
+                    {**body, "message_id": message.message_id, "via": "sent ledger"},
+                    tenant_id=owner,
+                )
+                saved += 1
+        await asyncio.to_thread(
+            subscriber.acknowledge, subscription=path,
+            ack_ids=[r.ack_id for r in response.received_messages],
+        )
 
 
 def _may_have_been_accepted(exc: BaseException) -> bool:
@@ -306,6 +377,10 @@ async def publish_decision_direct(
             attributes = {}
             if body.get("idempotency_key"):
                 attributes["idempotency_key"] = str(body["idempotency_key"])
+            # The tenant travels with the message so the sent ledger records it in the
+            # right tenant (N01). Single-tenant messages carry none.
+            if tenant_id:
+                attributes["tenant_id"] = str(tenant_id)
             future = publisher.publish(topic, json.dumps(body).encode("utf-8"), **attributes)
             return future.result(timeout=15)
 

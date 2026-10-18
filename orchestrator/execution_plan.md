@@ -30,6 +30,7 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
   18. N08 GAPS found by the Master check of 83826f6: `--only N08i` (the review page did not poll an EXECUTING case), then `--only N08jt` (red: 3 named tests fail), then `--only N08jc` (a 409 from execute reads the case again; human decision: the Resume-refusal test now expects one reload). Then `--only VFULL`.
   19. OPEN ITEMS OF THE FIX REPORT that the repository can close, one id per run: `--only N01mt` (red), `--only N01mc`, `--only N01kt` (red: 2 named tests), `--only N01kc`, `--only N08kt`, `--only N08kv` (red on the old page), then `--only VFULL`. Still open after these, by design: a process killed outright between the broker's accept and the save (needs a human decision: duplicates for the receiver to drop, or no automatic resend), the receiving side, the real environment.
   20. SIMULATION ON THE EMULATORS (the human starts both emulators and installs google-cloud-firestore==2.31.0 and google-cloud-pubsub==2.41.0 into the runner's Python; agents run no gcloud command): `--only SIMPREP`, `--only FEMU`, `--only RCVt` (red: module missing), `--only RCVc`, `--only HKILL`, then `--only VFULL`. The simulation proves the protocol (at least once + a receiver that claims the key = applied once) and measures the hard-kill duplicate; it does not prove the real receiver.
+  21. SENT LEDGER (human decision 2026-10-18: close the hard-kill gap on the sender side, fail closed; N04 not now): `--only LEDt` (red: 8 tests), `--only LEDc`, `--only HKILL2` (emulators running: must show ONE message), then `--only VFULL`. Deployment needs a subscription on case-decisions created before use and SENT_LEDGER_SUBSCRIPTION set (human step); docs/RECEIVER_CONTRACT.md describes both sides.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -118,6 +119,9 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 47t | RCVt | Tests first: a reference receiver applies each decision once per idempotency key (N01) |
 | 47c | RCVc | Code for RCVt: scripts/reference_receiver.py |
 | 48 | HKILL | Simulation: a hard kill after the broker accepted publishes twice; the receiver applies once (N01) |
+| 49t | LEDt | Tests first: a retry reads the sent ledger; an unreadable ledger sends nothing (N01) |
+| 49c | LEDc | Code for LEDt: SENT_LEDGER_SUBSCRIPTION, `_settle_from_ledger`, `after_attempt`, tenant attribute |
+| 50 | HKILL2 | Simulation: with the sent ledger the resume after a hard kill publishes nothing more (1 message) |
 
 N01mc round 1: FIX, behaviour passed (40 tests, ruff clean) but EDIT 1 left a blank line inside the signature of publish_decision_direct; log runs/N01mc/attempt_1.log, diff runs/N01mc/attempt_1.diff.
 N01mcf1 (round 1 of N01mc): PASS, blank line removed, 40 tests and ruff green; log runs/N01mcf1/attempt_1.log.
@@ -7551,5 +7555,426 @@ class TestAHardKillAfterTheBrokerAccepted(Base):
 
 DONE WHEN: both new files exist with exactly these contents and no other file changed.
 STOP AND REPLY WITHOUT WRITING (at most 3 lines) if either file already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: LEDt -->
+## Meta
+- title: Tests first - a retry reads the sent ledger before publishing again; an unreadable ledger sends nothing (N01)
+- depends_on:
+  - HKILL
+- target_files:
+  - tests/test_sent_ledger.py
+- test_commands:
+  - python -c "import subprocess,sys; r=subprocess.call('python -m pytest tests/test_sent_ledger.py -q -p no:cacheprovider', shell=True); print('pytest exit', r); sys.exit(0 if r == 1 else 1)"
+  - python -m ruff check tests/test_sent_ledger.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+HKILL measured the last N01 gap: a process killed after the broker accepted leaves no record, and the Resume publishes again (2 messages). Human decision (2026-10-18): close it on the sender side with a "sent ledger", a pull subscription on DECISIONS_TOPIC that only this service reads. Every message the broker accepted is in it, so a retry (Resume or Retry, never the first attempt) drains it before sending: each message whose key has no record gets one, in the tenant its `tenant_id` attribute names, and is acknowledged after its batch is saved. If the ledger cannot be read, nothing is sent and the receipt is "unknown" (fail closed); the execution becomes EXECUTION_FAILED / send_unknown and can be retried.
+The publisher adds a `tenant_id` attribute only when a tenant is given, so tests/test_publish_attribute.py (single tenant: attributes exactly {"idempotency_key": ...}) stays as it is.
+This task writes the tests only, as a NEW file. Expected on the current code: all 8 tests fail (publish_decision has no `after_attempt`, tools has no SENT_LEDGER_SUBSCRIPTION, no tenant attribute). The test command passes when pytest exits 1.
+Master review: in the log every test of the file fails, and nothing else is run.
+
+## Prompt
+``````text
+TASK LEDt. Create ONE new file: tests/test_sent_ledger.py, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): tests/test_sent_ledger.py. It does not exist yet: create it with the Write tool. Do not edit any source file: these tests are meant to fail until the next task.
+
+Content (copy exactly):
+```python
+"""
+The sent ledger (N01): a retry reads the decisions the broker accepted before it sends
+again, so a decision whose own record was never saved is not published a second time.
+An unreadable ledger sends nothing: the outcome stays unknown and the retry can come
+later (fail closed). The first attempt never reads it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+import time
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(__file__))
+from test_evidence_eval_approve import REVIEWER, Base  # noqa: E402
+from test_evidence_execution import _fake_pubsub, _with_pubsub  # noqa: E402
+from vf_logistics import evidence, tools  # noqa: E402
+
+KEY = "exec-apr-1"
+DECISION = {"outcome": "RELEASED_BY_HUMAN", "idempotency_key": KEY}
+ENV = {"PROJECT_ID": "test-project"}
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def _ledger(module, batches):
+    """Give the fake pubsub module a SubscriberClient whose pull() answers `batches` in turn, then nothing."""
+    acked: list[str] = []
+    queue = list(batches)
+
+    def pull(subscription, max_messages, timeout):
+        if queue:
+            outcome = queue.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return SimpleNamespace(received_messages=outcome)
+        return SimpleNamespace(received_messages=[])
+
+    client = MagicMock()
+    client.subscription_path.side_effect = lambda project, name: f"projects/{project}/subscriptions/{name}"
+    client.pull.side_effect = pull
+    client.acknowledge.side_effect = lambda subscription, ack_ids: acked.extend(ack_ids)
+    module.SubscriberClient.return_value = client
+    return acked
+
+
+def _received(case_id, key, message_id, tenant="", ack_id="ack-1"):
+    body = {"case_id": case_id, "outcome": "RELEASED_BY_HUMAN", "idempotency_key": key, "at": "2026-10-18T00:00:00Z"}
+    attributes = {"idempotency_key": key, **({"tenant_id": tenant} if tenant else {})}
+    message = SimpleNamespace(data=json.dumps(body).encode(), attributes=attributes, message_id=message_id)
+    return SimpleNamespace(ack_id=ack_id, message=message)
+
+
+class TestARetryReadsTheSentLedger(Base):
+    def _publish(self, pubsub, after_attempt=True):
+        with patch.dict(os.environ, ENV), _with_pubsub(pubsub), \
+                patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", "decisions-sent"):
+            return run(tools.publish_decision("CASE-1", dict(DECISION), after_attempt=after_attempt))
+
+    def test_a_decision_found_in_the_ledger_is_not_sent_again(self):
+        pubsub, published = _fake_pubsub(["msg-2"])
+        acked = _ledger(pubsub, [[_received("CASE-1", KEY, "msg-1")]])
+        receipt = self._publish(pubsub)
+        assert published == []
+        assert receipt["status"] == "done"
+        assert receipt["detail"]["message_id"] == "msg-1"
+        assert receipt["detail"]["via"] == "sent ledger"
+        assert acked == ["ack-1"]
+
+    def test_a_decision_not_in_the_ledger_is_sent(self):
+        pubsub, published = _fake_pubsub(["msg-2"])
+        _ledger(pubsub, [])
+        receipt = self._publish(pubsub)
+        assert len(published) == 1
+        assert receipt["detail"]["message_id"] == "msg-2"
+
+    def test_an_unreadable_ledger_sends_nothing_and_leaves_the_outcome_unknown(self):
+        pubsub, published = _fake_pubsub(["msg-2"])
+        _ledger(pubsub, [RuntimeError("503 the ledger did not answer")])
+        receipt = self._publish(pubsub)
+        assert published == []
+        assert receipt["status"] == "unknown"
+        assert "sent ledger unreadable" in receipt["detail"]["error"]
+
+    def test_a_first_attempt_does_not_read_the_ledger(self):
+        pubsub, published = _fake_pubsub(["msg-2"])
+        _ledger(pubsub, [RuntimeError("must not be read")])
+        receipt = self._publish(pubsub, after_attempt=False)
+        assert receipt["detail"]["message_id"] == "msg-2"
+        assert pubsub.SubscriberClient.return_value.pull.call_count == 0
+
+    def test_another_decision_in_the_ledger_is_recorded_in_its_own_tenant(self):
+        pubsub, published = _fake_pubsub(["msg-2"])
+        acked = _ledger(pubsub, [[_received("CASE-9", "exec-apr-9", "msg-9", tenant="acme", ack_id="ack-9")]])
+        receipt = self._publish(pubsub)
+        assert receipt["detail"]["message_id"] == "msg-2"  # ours was not in the ledger: sent
+        assert run(tools._earlier_publish("CASE-9", "exec-apr-9", "acme"))["detail"]["message_id"] == "msg-9"
+        assert run(tools._earlier_publish("CASE-9", "exec-apr-9", None)) is None
+        assert acked == ["ack-9"]
+
+    def test_the_tenant_travels_as_a_message_attribute(self):
+        pubsub, published = _fake_pubsub(["msg-1"])
+        with patch.dict(os.environ, ENV), _with_pubsub(pubsub):
+            run(tools.publish_decision("CASE-1", dict(DECISION), tenant_id="acme", after_attempt=False))
+        assert published[0]["attributes"] == {"idempotency_key": KEY, "tenant_id": "acme"}
+
+
+class TestAResumeAfterAHardKill(Base):
+    def _interrupted(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+
+        async def killed(*args, **kwargs):
+            # Stands in for a process killed after the broker accepted: nothing is recorded.
+            raise asyncio.CancelledError
+
+        with patch("vf_logistics.tools.publish_decision", new=killed), pytest.raises(asyncio.CancelledError):
+            run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        case = self.stored()
+        case["verification"]["executions"][0]["claim_expires_epoch"] = time.time() - 1
+        run(self.store.put_case(case))
+        return approval_id
+
+    def _resume(self, pubsub, approval_id):
+        with patch.dict(os.environ, ENV), _with_pubsub(pubsub), \
+                patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", "decisions-sent"):
+            return run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+
+    def test_the_resume_is_settled_from_the_ledger_and_sends_nothing(self):
+        approval_id = self._interrupted()
+        pubsub, published = _fake_pubsub(["msg-2"])
+        _ledger(pubsub, [[_received("CASE-1", f"exec-{approval_id}", "msg-1")]])
+        result = self._resume(pubsub, approval_id)
+        assert result["state"] == "RELEASED_BY_HUMAN"
+        assert result["message_id"] == "msg-1"
+        assert published == []
+
+    def test_a_resume_with_an_unreadable_ledger_sends_nothing_and_can_be_retried(self):
+        approval_id = self._interrupted()
+        pubsub, published = _fake_pubsub(["msg-2"])
+        _ledger(pubsub, [RuntimeError("503 the ledger did not answer")])
+        result = self._resume(pubsub, approval_id)
+        assert result["state"] == "EXECUTION_FAILED"
+        assert published == []
+        assert self.stored()["verification"]["executions"][0]["status"] == "send_unknown"
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if tests/test_sent_ledger.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: LEDc -->
+## Meta
+- title: Code for LEDt - the sent ledger is read on a retry, fail closed; the tenant travels as an attribute (N01)
+- depends_on:
+  - LEDt
+- target_files:
+  - src/vf_logistics/tools.py
+  - src/vf_logistics/evidence.py
+- test_commands:
+  - python -m pytest tests/test_sent_ledger.py tests/test_resume_after_publish.py tests/test_publish_dedupe.py tests/test_publish_attribute.py tests/test_evidence_execution.py tests/test_evidence_eval_approve.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/tools.py src/vf_logistics/evidence.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+Code for the tests of LEDt. tools.py: a SENT_LEDGER_SUBSCRIPTION setting (empty: never read, today's behaviour); `_settle_from_ledger()` drains the ledger subscription and saves a "publish_decision" record (via "sent ledger") for every message whose key has none, in the tenant of its `tenant_id` attribute (a message with no tenant in a multi-tenant deployment names no tenant and is not recorded), acknowledging each batch only after it is saved; `publish_decision` gets keyword-only `after_attempt` and, on a retry with a ledger configured, settles from the ledger, looks for its own record again, and returns an "unknown" receipt without publishing when the ledger cannot be read; the publisher adds a `tenant_id` attribute when a tenant is given. evidence.py: the one caller passes `after_attempt=state_before != APPROVED` (APPROVED is the first attempt; EXECUTION_FAILED and EXECUTING are a retry and a resume).
+The ledger must be a subscription that exists before the decisions are published (a deployment step for the human: create it and set SENT_LEDGER_SUBSCRIPTION). A Pub/Sub pull may return fewer messages than the backlog; then a decision the ledger did not hand over is sent again under the same key and the receiver's deduplication remains the backstop (docs/RECEIVER_CONTRACT.md).
+Two edits use TWO-line old_strings on purpose (the single lines occur elsewhere). The Edit tool matches them on CRLF files (N08jt, N01kc).
+Master review: all LEDt tests pass; test_publish_attribute.py, the N01 suites and the evidence suites stay green; ruff passes; `git diff` shows exactly the six edits.
+
+## Prompt
+``````text
+TASK LEDc. Six edits: five in src/vf_logistics/tools.py, one in src/vf_logistics/evidence.py, in this order. Nothing else.
+
+FILES YOU MAY EDIT (only these two): src/vf_logistics/tools.py and src/vf_logistics/evidence.py. Both use Windows line endings (CRLF). Use the Edit tool. Never use Write on these files. Do not edit any test. Do not touch `_audit`, `_earlier_publish`, `_save_publish_record`, `_may_have_been_accepted` or any except clause. `json`, `Any`, `gcp_project`, `_audit` and `_earlier_publish` already exist in tools.py; `state_before` and `APPROVED` already exist in evidence.py.
+
+EDIT 1 (tools.py, the setting). old_string, ONE line (no leading spaces; occurs once):
+```python
+DECISIONS_TOPIC = os.getenv("DECISIONS_TOPIC", "case-decisions").strip()
+```
+new_string is that same line, a blank line, then these lines:
+```python
+DECISIONS_TOPIC = os.getenv("DECISIONS_TOPIC", "case-decisions").strip()
+
+# Optional pull subscription on DECISIONS_TOPIC that only this service reads: the "sent
+# ledger". The broker puts every decision it accepted there, so a retry can find one whose
+# own record was never saved because the process died first (N01). Empty: never read.
+SENT_LEDGER_SUBSCRIPTION = os.getenv("SENT_LEDGER_SUBSCRIPTION", "").strip()
+```
+
+EDIT 2 (tools.py, the signature of publish_decision). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    case_id: str, decision: dict[str, Any], tenant_id: str | None = None,
+```
+new_string is these two lines (the first is the old line, kept):
+```python
+    case_id: str, decision: dict[str, Any], tenant_id: str | None = None,
+    *, after_attempt: bool = False,
+```
+
+EDIT 3 (tools.py, read the ledger on a retry). This edit uses a TWO-line old_string (8 and 12 leading spaces; the pair occurs once):
+```python
+        if earlier is not None:
+            return earlier
+```
+new_string is those two lines first, then the block below:
+```python
+        if earlier is not None:
+            return earlier
+        if after_attempt and SENT_LEDGER_SUBSCRIPTION:
+            # An earlier attempt may have been accepted with no record saved (N01). The
+            # ledger is read before sending again; an unreadable ledger leaves the outcome
+            # unknown, so nothing is sent (fail closed) and the retry can come later.
+            try:
+                await _settle_from_ledger()
+            except Exception as exc:  # noqa: BLE001
+                return await _audit(
+                    case_id, "publish_decision",
+                    {"case_id": case_id, **decision, "error": f"sent ledger unreadable: {type(exc).__name__}: {exc}"},
+                    status="unknown", tenant_id=tenant_id,
+                )
+            earlier = await _earlier_publish(case_id, str(key), tenant_id)
+            if earlier is not None:
+                return earlier
+```
+
+EDIT 4 (tools.py, the helper, directly above _may_have_been_accepted). old_string, ONE line (no leading spaces; occurs once):
+```python
+def _may_have_been_accepted(exc: BaseException) -> bool:
+```
+new_string is the function below, two blank lines, and then that same line again:
+```python
+async def _settle_from_ledger() -> int:
+    """
+    Drain the sent ledger: save a publish record for every accepted decision that has none.
+
+    A process killed between the broker's accept and the save of the record left the
+    decision sent but unrecorded, and the retry published it a second time (N01). Each
+    message is recorded in the tenant its `tenant_id` attribute names and acknowledged
+    only after its batch is saved, so a failed save leaves it for the next read. In a
+    multi-tenant deployment a message without that attribute names no tenant and is not
+    recorded. Raises when the ledger cannot be read: the caller must not publish then.
+    Returns how many records it saved.
+    """
+    import asyncio
+
+    from google.api_core.exceptions import DeadlineExceeded
+    from google.cloud import pubsub_v1
+
+    from vf_logistics.tenant import multi_tenant_enabled
+
+    subscriber = pubsub_v1.SubscriberClient()
+    path = subscriber.subscription_path(gcp_project(), SENT_LEDGER_SUBSCRIPTION)
+    saved = 0
+    while True:
+        try:
+            response = await asyncio.to_thread(subscriber.pull, subscription=path, max_messages=100, timeout=10)
+        except DeadlineExceeded:
+            return saved
+        if not response.received_messages:
+            return saved
+        for received in response.received_messages:
+            message = received.message
+            key = message.attributes.get("idempotency_key", "")
+            owner = message.attributes.get("tenant_id") or None
+            body = json.loads(message.data)
+            case_id = body.get("case_id")
+            if not key or not case_id or (owner is None and multi_tenant_enabled()):
+                continue
+            if await _earlier_publish(case_id, key, owner) is None:
+                await _audit(
+                    case_id, "publish_decision",
+                    {**body, "message_id": message.message_id, "via": "sent ledger"},
+                    tenant_id=owner,
+                )
+                saved += 1
+        await asyncio.to_thread(
+            subscriber.acknowledge, subscription=path,
+            ack_ids=[r.ack_id for r in response.received_messages],
+        )
+
+
+def _may_have_been_accepted(exc: BaseException) -> bool:
+```
+
+EDIT 5 (tools.py, the tenant attribute). old_string, ONE line (16 leading spaces; occurs once):
+```python
+                attributes["idempotency_key"] = str(body["idempotency_key"])
+```
+new_string is that same line, then these lines (12 leading spaces on the comment and the `if`, 16 on the assignment):
+```python
+                attributes["idempotency_key"] = str(body["idempotency_key"])
+            # The tenant travels with the message so the sent ledger records it in the
+            # right tenant (N01). Single-tenant messages carry none.
+            if tenant_id:
+                attributes["tenant_id"] = str(tenant_id)
+```
+
+EDIT 6 (evidence.py, the one caller). This edit uses a TWO-line old_string (16 and 12 leading spaces; the pair occurs once):
+```python
+                "idempotency_key": f"exec-{approval_id}",
+            },
+```
+new_string is those two lines, then one more line (12 leading spaces):
+```python
+                "idempotency_key": f"exec-{approval_id}",
+            },
+            after_attempt=state_before != APPROVED,
+```
+The line `            tenant_id=tenant_id,` that follows stays as it is.
+
+DONE WHEN: only tools.py and evidence.py changed, with exactly these six edits.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: HKILL2 -->
+## Meta
+- title: Simulation - with the sent ledger, a resume after a hard kill publishes nothing more: one message (N01)
+- depends_on:
+  - LEDc
+- target_files:
+  - tests/test_sim_hard_kill.py
+- test_commands:
+  - python -c "import os,subprocess,sys; os.environ.update(FIRESTORE_EMULATOR_HOST='127.0.0.1:8681', PUBSUB_EMULATOR_HOST='127.0.0.1:8085'); p=subprocess.run('python -m pytest tests/test_sim_hard_kill.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-4000:]); sys.exit(1 if p.returncode or 'skipped' in o else 0)"
+  - python -m ruff check tests/test_sim_hard_kill.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+The proof the human asked for: the same hard kill as HKILL, but with a sent-ledger subscription created before the child publishes and SENT_LEDGER_SUBSCRIPTION set for the resume. Expected: exactly ONE message on the observer subscription, and the resumed execution carries that message's id. The first test (no ledger: 2 messages, applied once by the reference receiver) stays: it shows what the ledger closes.
+tests/test_sim_hard_kill.py uses LF line endings (it was created by HKILL with Write); a one-line anchor is unaffected.
+Master review: 2 passed and nothing skipped; ruff passes.
+
+## Prompt
+``````text
+TASK HKILL2. One new test at the END of tests/test_sim_hard_kill.py, inside the existing class. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_sim_hard_kill.py. Use the Edit tool with a ONE-LINE old_string, exactly as given. Never use Write on this file. Do not change the existing test or any helper. patch, subprocess, sys, time, evidence, tools, run, REVIEWER, CHILD, _fresh_subscription and _pull_all already exist in the file.
+
+EDIT 1 (add at the END of the file, never at the top). old_string, ONE line (8 leading spaces; it is the last line of the file and occurs once):
+```python
+        assert len(applied) == 1
+```
+new_string is that same line first, then a blank line, then the test below (4 leading spaces on the `def` line):
+```python
+        assert len(applied) == 1
+
+    def test_with_the_sent_ledger_the_resume_publishes_nothing_more(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        subscriber, subscription = _fresh_subscription()
+        # The sent ledger: created before anything is published, read only by this service.
+        _, ledger = _fresh_subscription()
+
+        child = subprocess.run([sys.executable, CHILD, "CASE-1", approval_id, REVIEWER], timeout=120)
+        assert child.returncode != 0
+        assert self.stored()["state"] == "EXECUTING"
+
+        case = self.stored()
+        case["verification"]["executions"][0]["claim_expires_epoch"] = time.time() - 1
+        run(self.store.put_case(case))
+        with patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", ledger.rsplit("/", 1)[-1]):
+            result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"
+
+        messages = _pull_all(subscriber, subscription, expected=2)
+        assert [m.attributes["idempotency_key"] for m in messages] == [f"exec-{approval_id}"]
+        assert result["message_id"] == messages[0].message_id
+```
+
+DONE WHEN: only this file changed; the old last line is kept and the new test follows it inside the same class.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->
