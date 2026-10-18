@@ -410,10 +410,10 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **1,564 backend tests** passing at 85.9% line coverage (16 more skip without
-a Firestore emulator), 350 frontend tests, and a mutation check —
+**Now:** **1,600 backend tests** passing at 85.8% line coverage (20 more skip without
+the Firestore and Pub/Sub emulators), 365 frontend tests, and a mutation check —
 `scripts/check_test_sensitivity.py` breaks 112 lines of backend and console code on
-purpose and the suite catches all 112. The weak spot is `store.py` at 59%:
+purpose and the suite catches all 112. The weak spot is `store.py` at 58%:
 `FirestoreStore`, the production backend, is exercised mainly by the emulator tests, and
 CI has no emulator job. Five GitHub Actions jobs run on every push to `master`:
 lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
@@ -427,8 +427,8 @@ repository uses `master`, so it never executed until `9d683f6` fixed the trigger
 **Before:** a flat repository root — `main.py`, `orchestrator.py`, `agents/` and
 fifteen other modules at top level.
 
-**Now:** a `src/vf_logistics/` package with sixteen modules that did not exist at all:
-`auth.py`, `b2b.py`, `budget.py`, `dossier.py`, `evaluation.py`, `evidence.py`,
+**Now:** a `src/vf_logistics/` package with seventeen modules that did not exist at all:
+`auth.py`, `b2b.py`, `budget.py`, `decision_receiver.py`, `dossier.py`, `evaluation.py`, `evidence.py`,
 `hs_reference.py`, `lineage.py`, `membership.py`, `observability.py`, `openapi.py`,
 `sanctions.py`, `sanctions_sources.py`, `schemas.py`, `tenant.py`, `worklist.py`. That
 excludes `nebius_client.py` and `tavily_client.py`, which came with the first port step,
@@ -984,7 +984,7 @@ since: see *[Signing in](#signing-in)*.
 | Endpoint | Method | Description |
 |---|---|---|
 | `/` | GET | Flask's own root. In the container Next.js serves the console here; Flask run on its own redirects to `CONSOLE_URL` if set, or serves the retired static dashboard (also at `/legacy`) |
-| `/health` | GET | Health check, store backend, worker status |
+| `/health` | GET | Health check, store backend, worker status, the serving Cloud Run `revision` and whether the sent ledger is configured (`sent_ledger`) |
 | `/api/v1/agents` | GET | The four request/response agents (intake, fraud, compliance, investigation) with their capabilities and the model each runs on; the HS classifier, zero-day radar and debate show theirs on every hop of the case trace |
 | `/demo` | GET | Runs the fraud agent on a built-in sample shipment |
 | `/api/v1/fraud/analyze` | POST | Analyse one shipment |
@@ -996,7 +996,7 @@ since: see *[Signing in](#signing-in)*.
 
 ### Not listed above
 
-These three tables document 31 of the 70 registered routes (68 paths) — the ones a
+These three tables document 31 of the 73 registered routes (71 paths) — the ones a
 caller is likely to want. The most useful omissions:
 
 | Endpoint | Method | Description |
@@ -1007,6 +1007,8 @@ caller is likely to want. The most useful omissions:
 | `/api/v1/review/<case_id>/reevaluate` | POST | Re-run the deterministic origin checks against the evidence received so far (reviewer) |
 | `/api/v1/review/<case_id>/approve`, `.../execute` | POST | Approve a release or block bound to an evidence version, then execute it (reviewer, **password sign-in only**) |
 | `/api/v1/review/<case_id>/approve-exception` | POST | Release over unresolved or contradicting evidence, with a reason and the list of items waived (operator, **password sign-in only**) |
+| `/api/v1/receiver/decision` | POST | The Pub/Sub push endpoint of the decisions receiver. Accepts only a push whose OIDC token Google signed for `RECEIVER_PUSH_SA` and `RECEIVER_PUSH_AUDIENCE` (otherwise 403) and applies each decision once per idempotency key and tenant |
+| `/api/v1/receiver/applied/<key>` | GET | What the receiver applied under a key: `applied_once`, `deliveries`, case and outcome (viewer; 404 when nothing was applied) |
 | `/api/v1/evidence/respond` | POST | The shipper's upload through a signed link. The shipper has no account; the link's token, in `X-VF-Evidence-Token`, is the only credential |
 | `/api/v1/billing/usage` | GET | Windowed spend, including `tavily_searches` / `tavily_cached` / `tavily_billable` |
 | `/api/v1/cases` | GET | Case list, slim shape, filterable by state |
@@ -1582,10 +1584,16 @@ collecting and evaluating the missing evidence.
    facts. Good evidence is reported as clarified; contradictions raise the floor. The AI
    never lowers the floor.
 5. **Approve** -- A reviewer with a password session approves a release or block, binding
-   the decision to the evidence version. New evidence after approval supersedes it.
-6. **Execute** -- `execute_approval` claims the approval atomically before calling Pub/Sub.
-   A publish failure records `EXECUTION_FAILED` (not `RELEASED`); the approval reverts to
-   VALID for retry.
+   the decision to the evidence version. New evidence after approval supersedes it. A release
+   over unresolved or contradicting evidence is refused by `approve` (403) and goes through
+   `approve-exception` instead: operator role, password sign-in, a reason and every waived
+   item named, all stored on the approval.
+6. **Execute** -- `execute_approval` claims the approval atomically before calling Pub/Sub,
+   under one key (`exec-<approval_id>`) for every send. A publish failure records
+   `EXECUTION_FAILED` (not `RELEASED`); the approval reverts to VALID for retry. A send whose
+   outcome is unknown is recorded as such, and a retry first reads the sent ledger and does
+   not publish again when the broker already accepted the decision. The receiver
+   (`docs/RECEIVER_CONTRACT.md`) applies each key once.
 
 **Measured on a 7-case evaluation corpus** (`scripts/run_verification_eval.py`, report in
 `data/eval_results/verification_eval.json`):
@@ -1611,8 +1619,9 @@ end to end, not what a real run costs or how long a person takes.
 # The test tools are not in requirements.txt; install them first.
 pip install -r requirements.txt "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-cov>=4.1.0" "pytest-mock>=3.12.0"
 
-# Unit + integration tests: 1564 pass and 16 skip (the Firestore emulator tests, unless
-# FIRESTORE_EMULATOR_HOST is set), at 85.9% line coverage. CI fails below 75%.
+# Unit + integration tests: 1600 pass and 20 skip (the Firestore and Pub/Sub emulator tests,
+# unless FIRESTORE_EMULATOR_HOST and PUBSUB_EMULATOR_HOST are set), at 85.8% line coverage.
+# CI fails below 75%.
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 
 # The mutation check: breaks 112 lines on purpose, one at a time, and requires the
@@ -1620,7 +1629,7 @@ python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: install, typecheck, lint, 350 unit tests in 26 files, production build
+# Frontend: install, typecheck, lint, 365 unit tests in 27 files, production build
 (cd frontend && npm ci && npx tsc --noEmit && npm run lint && npm test && npm run build)
 
 # Counterparty book, offline. The script imports shipper_registry as a top-level
@@ -1712,8 +1721,9 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Unknown send | 5 | A publish that timed out is recorded as `unknown`, not `failed`, so the retry is read as "result unknown, same key" |
 | Unread pages | 7 | A paper the reader only partly read is not provided as read, and the evaluation says why a received paper is unresolved |
 | Untyped links | 3 | A request-level link carries no document type, so with several documents requested it cannot say which slot an upload fills |
-| Automation runner | 11 | The sub-agent's CLI flags, the per-attempt diff, and `verify_only` tasks that run their tests without a model (development tooling, not the product) |
-| **Total** | **1,580** | 1,564 pass and 16 skip here (the emulator tests); 70 files |
+| Decisions receiver | 19 | The Pub/Sub push endpoint accepts only a Google-signed push, applies each decision once per key and tenant (8 concurrent deliveries of one key apply it once on the emulator), and a message without a key is refused (`test_decision_receiver.py`, `test_applied_decisions.py`, `test_reference_receiver.py`) |
+| Sent ledger, hard kill and `/health` | 15 | A retry reads the sent ledger and does not publish again; an unreadable ledger sends nothing; a process killed right after the broker accepted leaves one message on the emulator; `/health` names the revision and the ledger (`test_sent_ledger.py`, `test_sim_hard_kill.py`, `test_health_deploy_info.py`) |
+| **Total** | **1,620** | 1,600 pass and 20 skip without the emulators; 72 files |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -1799,6 +1809,8 @@ collection.
 | `MODEL_ARMOR_LOCATION` | Model Armor region — availability is limited; `asia-southeast1` was rejected in testing, `us-central1` worked | `asia-southeast1` |
 | `EXECUTOR_URL` | Executor service URL | unset |
 | `DECISIONS_TOPIC` | Pub/Sub topic for published decisions | `case-decisions` |
+| `SENT_LEDGER_SUBSCRIPTION` | Name of a pull subscription on the decisions topic that only this service reads. A retry after an unknown send reads it and does not publish again when the key is there; unreadable, it sends nothing and records the outcome as unknown. Unset, the ledger is never read. Setup: `docs/RECEIVER_CONTRACT.md` | unset |
+| `RECEIVER_PUSH_SA` / `RECEIVER_PUSH_AUDIENCE` | The service account and audience a Pub/Sub push to `/api/v1/receiver/decision` must present in its OIDC token. With either unset the receiver accepts nothing (403). In PowerShell quote the list given to `--update-env-vars`, or the comma becomes a space. | unset |
 | `NOTIFY_WEBHOOK_URL` | Outbound alert webhook | unset |
 | `MAX_BULK_COUNT` | Cap on the volume-test endpoint | `10` |
 | `PORT` | Port the container listens on. In the deployed image Next.js binds it and gunicorn binds `127.0.0.1:9090` behind it (`entrypoint.sh`); when Flask runs on its own, gunicorn binds it directly. | `8080` |
@@ -2057,6 +2069,7 @@ collection effort.
 │   ├── config.py                 Model registry, per-token pricing, runtime switch
 │   ├── governance.py             Delegation Boundary + fail-closed execution gate
 │   ├── evidence.py               Verification loop: evidence requests, the signed link, approval, execution
+│   ├── decision_receiver.py      The receiving side of the decisions topic: Pub/Sub push, OIDC check, applies each key once
 │   ├── verifier.py               Deterministic risk floor (no model consulted)
 │   ├── untrusted.py              Schema whitelist for document-sourced fields
 │   ├── shipper_registry.py       Counterparty book: verifies a claimed shipper identity
@@ -2096,7 +2109,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        70 files, 1,580 tests
+├── tests/                        72 files, 1,620 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
@@ -2120,6 +2133,7 @@ collection effort.
 │   ├── architecture.html         The architecture diagram as a standalone page
 │   ├── DEMO_SCRIPT.md            Eleven scenes, timed to the narration track
 │   ├── PROJECT_STORY.md          What was built and what it cost to learn
+│   ├── RECEIVER_CONTRACT.md      What Floorline publishes, what a receiver must do, the sent ledger and the receiver it ships
 │   ├── swagger.json              Generated by scripts/build_docs.py — do not hand-edit
 │   └── diagrams/                 Mermaid flows
 ├── .github/workflows/ci.yml      ruff, mypy ratchet, tests (75% floor), frontend, container smoke

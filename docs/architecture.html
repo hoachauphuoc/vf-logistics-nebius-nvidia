@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VF Logistics &mdash; Architecture Diagram</title>
+<title>Floorline &mdash; Architecture Diagram</title>
 <style>
   body {
     margin: 0; padding: 0;
@@ -20,14 +20,15 @@
 </head>
 <body>
 <div id="shot">
-  <h1>VF Logistics &mdash; Fraud Detection That an Operator Can Delegate To</h1>
+  <h1>Floorline &mdash; Fraud Detection That an Operator Can Delegate To</h1>
   <div class="sub">
     <b>NVIDIA Nemotron on Nebius Token Factory</b> &middot; OpenAI-compatible transport &middot;
     <b>Cloud Run</b> asia-southeast1 &middot; Google Cloud for infrastructure only &middot;
+    VF Logistics is the operator in the demo &middot;
     an agent finding is a <b>claim</b> until something deterministic agrees with it
   </div>
 
-  <svg width="1460" height="940" viewBox="0 0 1460 940" xmlns="http://www.w3.org/2000/svg">
+  <svg width="1460" height="1086" viewBox="0 0 1460 1086" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="gRun" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#1b2750"/><stop offset="1" stop-color="#141d3a"/>
@@ -78,16 +79,21 @@
     <text x="38" y="293" fill="#8f9dbd" font-size="11.5">HMAC session &middot; writes need one</text>
     <text x="38" y="308" fill="#8496b5" font-size="11">anonymous is a viewer, for the demo only</text>
 
-    <rect x="16" y="330" width="260" height="180" rx="13"
+    <rect x="16" y="330" width="260" height="116" rx="13"
           fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="357" fill="#96a2c0" font-size="11" letter-spacing="1.4">IDENTITY &middot; vf-app</text>
-    <text x="38" y="383" fill="#c3ccdf" font-size="12">roles/datastore.user</text>
-    <text x="38" y="405" fill="#c3ccdf" font-size="12">roles/storage.objectAdmin</text>
-    <text x="38" y="427" fill="#c3ccdf" font-size="12">roles/pubsub.publisher</text>
-    <text x="38" y="449" fill="#8f9dbd" font-size="11">one identity reasons and publishes;</text>
-    <text x="38" y="465" fill="#8f9dbd" font-size="11">EXECUTOR_URL can split the two</text>
-    <text x="38" y="487" fill="#c3ccdf" font-size="11">the key authorises &middot; a session</text>
-    <text x="38" y="503" fill="#c3ccdf" font-size="11">narrows it to one role, never widens it</text>
+    <text x="38" y="355" fill="#96a2c0" font-size="11" letter-spacing="1.4">IDENTITY &middot; vf-app</text>
+    <text x="38" y="377" fill="#c3ccdf" font-size="11.5">datastore.user &middot; storage.objectAdmin</text>
+    <text x="38" y="394" fill="#c3ccdf" font-size="11.5">pubsub.publisher &middot; one identity</text>
+    <text x="38" y="410" fill="#8f9dbd" font-size="11">EXECUTOR_URL can split publishing out</text>
+    <text x="38" y="428" fill="#c3ccdf" font-size="11">the key authorises &middot; a session narrows</text>
+    <text x="38" y="441" fill="#c3ccdf" font-size="11">it to one role, never widens it</text>
+
+    <rect x="16" y="456" width="260" height="54" rx="13"
+          fill="#141d3a" stroke="#4fc3f7" stroke-width="1.5"/>
+    <text x="38" y="474" fill="#4fc3f7" font-size="11" letter-spacing="1.4">TAVILY &middot; LIVE WEB SEARCH</text>
+    <text x="38" y="490" fill="#c3ccdf" font-size="11">6 call sites; debate &amp; radar choose queries</text>
+    <text x="38" y="504" fill="#8f9dbd" font-size="11">a failed search is reported, not hidden</text>
+    <path d="M324,483 L278,483" stroke="#4fc3f7" stroke-width="1.8" stroke-dasharray="4 3" fill="none" marker-end="url(#arw)"/>
 
     <path d="M276,111 L324,111" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
     <path d="M276,268 L300,268 L300,145 L324,145" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
@@ -136,7 +142,7 @@
     <rect x="362" y="408" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
     <rect x="362" y="408" width="4" height="28" rx="2" fill="#fbbc05"/>
     <text x="376" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">compliance</text>
-    <text x="482" y="426" fill="#93a1c1" font-size="10">Nano &middot; OFAC / UN / EU</text>
+    <text x="482" y="426" fill="#93a1c1" font-size="10">Nano &middot; OFAC SDN / UN</text>
 
     <rect x="362" y="442" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
     <rect x="362" y="442" width="4" height="28" rx="2" fill="#4285f4"/>
@@ -239,10 +245,11 @@
 
     <rect x="478" y="574" width="400" height="112" rx="10" fill="#191a2c" stroke="#4a4530" stroke-width="1.2"/>
     <text x="498" y="597" fill="#e8edf9" font-size="13" font-weight="700">Execution Gate &mdash; fail closed</text>
-    <text x="498" y="617" fill="#93a1c1" font-size="11.5">no active boundary &rArr; every protected action refused</text>
-    <text x="498" y="636" fill="#93a1c1" font-size="11.5">a denial turns the whole outcome into a proposal, and breaks</text>
-    <text x="498" y="655" fill="#93a1c1" font-size="11.5">injection_detected and forbidden_field are never waivable</text>
-    <text x="498" y="676" fill="#c9a227" font-size="11">draft_sar may draft and may never file</text>
+    <text x="498" y="615" fill="#93a1c1" font-size="11.5">no active boundary &rArr; every protected action refused</text>
+    <text x="498" y="631" fill="#93a1c1" font-size="11">auto-release needs CLEARED, a floor, a finding count, a value</text>
+    <text x="498" y="647" fill="#93a1c1" font-size="11.5">a denial turns the whole outcome into a proposal, and breaks</text>
+    <text x="498" y="663" fill="#93a1c1" font-size="11.5">injection_detected and forbidden_field are never waivable</text>
+    <text x="498" y="679" fill="#c9a227" font-size="11">draft_sar may draft and may never file</text>
 
     <!-- ==================== EXECUTION IDENTITY ==================== -->
     <path d="M900,604 L940,604" stroke="#34a853" stroke-width="2.2" fill="none" marker-end="url(#arwG)"/>
@@ -290,24 +297,69 @@
     <path d="M700,704 L700,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
     <path d="M1180,704 L1180,724" stroke="#34a853" stroke-width="1.8" fill="none" marker-end="url(#arwG)"/>
 
-    <!-- ==================== HUMAN ==================== -->
-    <rect x="16" y="850" width="700" height="84" rx="12"
-          fill="#1a2340" stroke="#4285f4" stroke-width="1.6"/>
-    <text x="38" y="876" fill="#8fb4ff" font-size="11" letter-spacing="1.3">HUMAN &mdash; EVERY CASE THE AGENT DOES NOT CLEAR</text>
-    <text x="38" y="899" fill="#e8edf9" font-size="13" font-weight="600">The review queue shows the original document beside the findings</text>
-    <text x="38" y="920" fill="#93a1c1" font-size="11.5">release &middot; block &middot; request information &mdash; the signed session names the reviewer on the case</text>
+    <!-- ==================== VERIFICATION LOOP ==================== -->
+    <rect x="16" y="850" width="1428" height="124" rx="14"
+          fill="#141d3a" stroke="#4285f4" stroke-width="1.6"/>
+    <text x="38" y="873" fill="#8fb4ff" font-size="11" letter-spacing="1.3">VERIFICATION LOOP &middot; evidence.py &mdash; WHEN BOOKING DATA ALONE CANNOT SEPARATE HONEST FROM FRAUDULENT</text>
 
-    <rect x="736" y="850" width="708" height="84" rx="12"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="758" y="876" fill="#96a2c0" font-size="11" letter-spacing="1.3">WHY THIS IS STILL AUTONOMY</text>
-    <text x="758" y="899" fill="#e8edf9" font-size="13" font-weight="600">The human approves a policy once, not a shipment at a time</text>
-    <text x="758" y="920" fill="#93a1c1" font-size="11.5">an agent that asked permission per case would be a slow human process with extra steps</text>
+    <rect x="36" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
+    <text x="48" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">1 &middot; Request</text>
+    <text x="48" y="920" fill="#93a1c1" font-size="10.5">HMAC link, one per document type</text>
+    <text x="48" y="935" fill="#93a1c1" font-size="10.5">cancelling needs a reason</text>
+
+    <rect x="272" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
+    <text x="284" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">2 &middot; Receive</text>
+    <text x="284" y="920" fill="#93a1c1" font-size="10.5">public /respond page, no sign-in</text>
+    <text x="284" y="935" fill="#93a1c1" font-size="10.5">only a usable copy fills a slot</text>
+
+    <rect x="508" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
+    <text x="520" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">3 &middot; Re-evaluate</text>
+    <text x="520" y="920" fill="#93a1c1" font-size="10.5">deterministic origin checks on what</text>
+    <text x="520" y="935" fill="#93a1c1" font-size="10.5">arrived; unread pages stay unverified</text>
+
+    <rect x="744" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
+    <text x="756" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">4 &middot; Approve</text>
+    <text x="756" y="920" fill="#93a1c1" font-size="10.5">open evidence: exception operation,</text>
+    <text x="756" y="935" fill="#93a1c1" font-size="10.5">operator + password, who and why</text>
+
+    <rect x="980" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
+    <text x="992" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">5 &middot; Execute</text>
+    <text x="992" y="920" fill="#93a1c1" font-size="10.5">claim before send; one key per</text>
+    <text x="992" y="935" fill="#93a1c1" font-size="10.5">approval; retry reads sent ledger</text>
+
+    <rect x="1216" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
+    <text x="1228" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">6 &middot; Outcome</text>
+    <text x="1228" y="920" fill="#93a1c1" font-size="10.5">/today shows what waits,</text>
+    <text x="1228" y="935" fill="#93a1c1" font-size="10.5">/outcomes what resolved</text>
+
+    <path d="M246,918 L270,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+    <path d="M482,918 L506,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+    <path d="M718,918 L742,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+    <path d="M954,918 L978,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+    <path d="M1190,918 L1214,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+
+    <text x="38" y="966" fill="#c9a227" font-size="11">only a password sign-in can approve or execute &middot; a one-click guest session never can &middot; a failed send is retried, not assumed done &middot; the receiver applies each key once</text>
 
     <path d="M300,826 L300,850" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+    <path d="M300,974 L300,996" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
+
+    <!-- ==================== HUMAN ==================== -->
+    <rect x="16" y="996" width="700" height="84" rx="12"
+          fill="#1a2340" stroke="#4285f4" stroke-width="1.6"/>
+    <text x="38" y="1022" fill="#8fb4ff" font-size="11" letter-spacing="1.3">HUMAN &mdash; EVERY CASE THE AGENT DOES NOT CLEAR</text>
+    <text x="38" y="1045" fill="#e8edf9" font-size="13" font-weight="600">The review queue shows the original document beside the findings</text>
+    <text x="38" y="1066" fill="#93a1c1" font-size="11.5">release &middot; block &middot; request information &mdash; the signed session names the reviewer on the case</text>
+
+    <rect x="736" y="996" width="708" height="84" rx="12"
+          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
+    <text x="758" y="1022" fill="#96a2c0" font-size="11" letter-spacing="1.3">WHY THIS IS STILL AUTONOMY</text>
+    <text x="758" y="1045" fill="#e8edf9" font-size="13" font-weight="600">The human approves a policy once, not a shipment at a time</text>
+    <text x="758" y="1066" fill="#93a1c1" font-size="11.5">an agent that asked permission per case would be a slow human process with extra steps</text>
   </svg>
 
   <div class="hint">
-    Drawn from the code &mdash; fraud and compliance run concurrently into <b>SPECIALISTS_DONE</b>.
+    Drawn from the code &mdash; fraud and compliance run concurrently into <b>SPECIALISTS_DONE</b>;
+    a case held for missing evidence goes through the <b>verification loop</b> before a person decides.
     <b>The load-bearing idea:</b> the agent decides what is true, the verifier decides what is
     proven, and a published boundary decides what may be done about it.
   </div>

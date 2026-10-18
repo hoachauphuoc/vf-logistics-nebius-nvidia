@@ -33,7 +33,7 @@ required in production, where a missing one takes the console offline), `VF_OPER
 ```bash
 npx tsc --noEmit    # typecheck
 npm run lint
-npm test            # 328 unit tests in 26 files (vitest)
+npm test            # 365 unit tests in 27 files (vitest)
 npm run build
 ```
 

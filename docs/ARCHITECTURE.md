@@ -572,7 +572,7 @@ stateDiagram-v2
     AWAITING_EVIDENCE --> AWAITING_EVIDENCE: shipper uploads via /respond
     AWAITING_EVIDENCE --> HELD_FOR_REVIEW: reevaluate (floor less than 70)
     AWAITING_EVIDENCE --> ESCALATED: reevaluate (floor gte 70)
-    HELD_FOR_REVIEW --> APPROVED: reviewer approves (password required for release)
+    HELD_FOR_REVIEW --> APPROVED: reviewer approves (password required for release; open evidence needs approve-exception)
     ESCALATED --> APPROVED: reviewer approves
     APPROVED --> EXECUTING: claim via optimistic lock
     EXECUTING --> RELEASED_BY_HUMAN: Pub/Sub succeeds
@@ -607,7 +607,15 @@ subscriber can drop a repeat without parsing the body. Before it sends, `publish
 looks for an earlier audit row with the same key whose publish was accepted (it carries a
 message id) and returns that row instead of publishing again. A publish that times out is
 recorded as `unknown`, not `failed`: the broker may have accepted it, and the retry carries
-the same key.
+the same key. A retry after an unknown outcome also reads the **sent ledger** when
+`SENT_LEDGER_SUBSCRIPTION` is set: a pull subscription on the decisions topic that only this
+service reads, so every message the broker accepted is in it. If the key is there the retry
+records that receipt and publishes nothing; if the ledger cannot be read the retry sends nothing
+and records `send_unknown`, so an unreadable ledger fails closed. A cancellation after the broker
+accepted saves the record under `asyncio.shield` before it re-raises, and a record that fails to
+save twice still keeps the accepted message id, so a Resume does not publish again. Pull does not
+promise every backlogged message, so the receiver's deduplication stays the last layer
+(*The decisions receiver*, below).
 
 **Publish failure (N02):** a publish that raises, or whose receipt carries no `message_id`,
 records `send_failed` (`send_unknown` when it timed out) and moves the case to
@@ -655,31 +663,48 @@ completeness AND for every contradiction read, so a paper that states nothing co
 nothing. A producer declaration counts only when it names the producer AND states at least one
 input origin: the declaration exists to say where the inputs came from.
 
-**Releasing against contradicting papers:** when the latest evaluation is `contradicted`,
-`approve(release)` needs a note, and the approval's `exception` records the contradictions that
-were waived next to the reason and the approver, as a release with unresolved evidence does.
-Block is unaffected. The console shows the contradictions (evidence check block, timeline) and
-asks for the reason before it opens the confirmation.
+**Releasing over open evidence (N04):** `approve(release)` over unresolved or contradicting
+evidence is refused with 403, and the message points to the exception operation. There is no
+other way to release over it: the console uses that operation too. A block is unaffected.
 
-**Exception route:** a release over unresolved or contradicting evidence can also be sent to
-`POST /api/v1/review/<case_id>/approve-exception`, which takes a reason and a list of every item
-it waives (the unresolved document types, and `contradiction:<kind>` for each contradiction). It
-needs the operator role and a password sign-in, refuses an empty reason or an empty list with a 400,
-and then goes through the same `approve(release)` path, so the approval records the same exception.
+**Exception route:** `POST /api/v1/review/<case_id>/approve-exception` takes a reason and a list
+of every item it waives (the unresolved document types, and `contradiction:<kind>` for each
+contradiction). It needs the operator role and a password sign-in, refuses an empty reason or an
+empty list with a 400, and then goes through the same `approve(release)` path. The approval
+stores `{unresolved, reason, approved_by}` and the contradictions, so the audit trail shows what
+was waived, by whom and why. The console shows the contradictions and asks for the reason
+before it opens the confirmation.
+
+### The decisions receiver (N01)
+
+Floorline publishes each executed decision **at least once**: a retry after an unknown outcome
+reuses the key, and Pub/Sub redelivers a message whose acknowledgement was lost.
+`decision_receiver.py` turns that into once. `POST /api/v1/receiver/decision` is a Pub/Sub push
+endpoint that accepts only a push whose OIDC token Google signed for `RECEIVER_PUSH_SA` and
+`RECEIVER_PUSH_AUDIENCE` (without both, nothing is accepted). It records the decision in the
+`applied_decisions` collection under the idempotency key and tenant; the create that claims the
+key and the write that applies it are one transaction, so a repeat only increments `deliveries`.
+A message without a key or a case is refused with 422 and never applied. `GET
+/api/v1/receiver/applied/<key>` shows `applied_once` and `deliveries`. Systems downstream read
+that record; a system that subscribes to the topic directly must meet the contract in
+`docs/RECEIVER_CONTRACT.md` itself. On the live service a decision delivered twice shows
+`deliveries: 2` and `applied_once: true`.
 
 ---
 
 ## Persistence
 
-Eight Firestore collections:
+Nine Firestore collections:
 
 ```
 cases   events   audit_log   delegation_boundaries   prefilter_rules
-boundary_counters   login_throttle   operator_activity
+boundary_counters   login_throttle   operator_activity   applied_decisions
 ```
 
-The docstring at the top of `store.py` lists six of them; `login_throttle` and
-`operator_activity` are missing from it. `boundary_counters` holds each tenant's
+The docstring at the top of `store.py` lists six of them; `login_throttle`,
+`operator_activity` and `applied_decisions` are missing from it. `applied_decisions` holds one
+document per idempotency key and tenant: the decision the receiver applied and how many times it
+arrived. `boundary_counters` holds each tenant's
 boundary version counter for publish and revoke, `login_throttle` the console's shared
 sign-in ledger, and `operator_activity` one running total per case and person of the
 time the case was in front of them.
@@ -923,9 +948,10 @@ An architecture document that omits these is marketing.
   it makes. Membership resolution itself is
   backend-independent and is tested end to end (`tests/test_membership.py`). The
   Firestore transactions behind boundary publish/revoke, `put_case` and the sign-in ledger are
-  exercised against the emulator in `tests/test_firestore_emulator.py`, which is skipped
-  unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so `store.py`, which
-  holds the production backend, sits at 59% line coverage while the package is at 85.9%.
+  exercised against the emulator in `tests/test_firestore_emulator.py` and the receiver's
+  tests, which are skipped unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so
+  `store.py`, which holds the production backend, sits at 58% line coverage while the package
+  is at 85.8%.
 - **Concurrent publishes in one tenant queue.** Publish and revoke are one Firestore
   transaction on the tenant's `boundary_counters` document, retried as a whole on
   contention. Against the emulator six simultaneous publishes all succeeded with distinct
@@ -937,6 +963,14 @@ An architecture document that omits these is marketing.
   operator role is checked; a body `tenant_id` must repeat it (409 otherwise), and the
   `case_id` must be a case of that organisation (404 otherwise). This route is the
   only place `case_id` ownership is checked before egress.
+- **Delivery is at least once, and the sent ledger is best effort.** The ledger is a pull
+  subscription, and a pull does not promise to return every backlogged message, so a retry
+  can still send a decision the broker already holds, under the same key. Floorline's own
+  receiver applies each key once, but a system that reads the topic directly has to do the
+  same (`docs/RECEIVER_CONTRACT.md`); Floorline cannot prove that for a system it does not run.
+  The hard-kill result (one message left on the topic) was measured on the Pub/Sub and
+  Firestore emulators; on the live service the sent ledger is configured and the receiver has
+  applied a decision delivered twice once, but a process was not killed there.
 - **The general rate limiter keys on email or IP, never on a tenant**, and its storage
   is `memory://`, so limits are per-instance and reset on deploy. Console password
   sign-in is the exception: it is counted on a shared Firestore ledger
@@ -956,6 +990,7 @@ An architecture document that omits these is marketing.
 | Service | `vf-app` — https://vf-app-350828852747.asia-southeast1.run.app, console and API in one container, 1 GiB, 1 CPU, 0–2 instances |
 | Store | Firestore native, `STORE_BACKEND=firestore` |
 | Worker | `WORKER_MODE=ondemand` |
+| Decisions topic | `case-decisions`, with two subscriptions: `case-decisions-sent-ledger` (pull, 7-day retention, read by the service on a retry; `SENT_LEDGER_SUBSCRIPTION`) and `case-decisions-receiver` (push with OIDC to `/api/v1/receiver/decision`; `RECEIVER_PUSH_SA`, `RECEIVER_PUSH_AUDIENCE`) |
 | Text model | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` — fraud, compliance, HS, zero-day |
 | Investigation | `nvidia/nemotron-3-super-120b-a12b` |
 | Debate | `nvidia/Nemotron-3-Ultra-550b-a55b` |

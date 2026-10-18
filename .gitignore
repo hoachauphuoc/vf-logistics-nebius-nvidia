@@ -63,5 +63,9 @@ tests/evidence/
 artifacts/
 benchmark_report*.json
 
-orchestrator/runs/
-orchestrator/checkpoint*
+# Personal agent tooling (plans, runner, skills, operating rules) and its tests: kept on
+# the author's machine, not part of the product.
+orchestrator/
+.claude/
+CLAUDE.md
+tests/test_automation_runner_*.py
