@@ -123,9 +123,13 @@ def check(
     )
 
     keyless = _post(url, envelope(None, f"{case_id}-NOKEY", tenant), headers, timeout)
+    # A 401 or 403, or a receiver that refused the first delivery too, says nothing about the key: the
+    # message was turned away for who sent it, so this would pass for the wrong reason.
+    right_reason = _acknowledged(first) and keyless not in (0, 401, 403) and not _acknowledged(keyless)
     verdict(
-        "refuses a message without an idempotency_key", keyless != 0 and not _acknowledged(keyless),
-        f"HTTP {keyless or 'no answer'}; a message that cannot be deduplicated must not be applied",
+        "refuses a message without an idempotency_key", right_reason,
+        f"HTTP {keyless or 'no answer'}; a message that cannot be deduplicated must not be applied"
+        + ("" if right_reason or _acknowledged(keyless) else "; not counted: the receiver turned away the sender, not the message"),
     )
 
     if not applied_url:

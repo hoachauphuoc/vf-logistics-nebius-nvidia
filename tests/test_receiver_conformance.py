@@ -128,6 +128,32 @@ class TestAReceiverThatBreaksIt:
         assert rc.exit_code(rows) == 1
 
 
+class TestARefusalForTheWrongReason:
+    def test_a_receiver_that_refuses_everything_for_lack_of_a_token_does_not_pass_the_keyless_check(self):
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                self.rfile.read(length)
+                self.send_response(401)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            rows = rc.check(f"http://127.0.0.1:{server.server_address[1]}/push")
+        finally:
+            server.shutdown()
+            server.server_close()
+        verdict = results(rows)
+        assert verdict["acknowledges a first delivery"] == "FAIL"
+        assert verdict["refuses a message without an idempotency_key"] == "FAIL"
+        assert rc.exit_code(rows) == 1
+
+
 class TestTheCommandLine:
     def test_main_prints_a_verdict_per_check_and_returns_the_exit_code(self, serve, capsys):
         receiver = serve(idempotent=True)
