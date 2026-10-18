@@ -77,9 +77,20 @@ class TestAnUnfaithfulExtraction:
         assert row["fields_checked"] == 7
         assert row["fields_grounded"] == 7
 
+    def test_a_placeholder_written_for_a_blank_field_is_not_a_hallucination(self):
+        row = ml.measure_case(case(shipper_tax_id="not stated"), SOURCE)
+        assert row["fields_checked"] == 7
+        assert row["ungrounded"] == []
+
     def test_an_identifier_in_the_source_that_was_not_extracted_is_missed(self):
         row = ml.measure_case(case(shipper_tax_id=None, hs_code=None), SOURCE)
         assert sorted(row["missed"]) == ["hs_code", "shipper_tax_id"]
+
+
+class TestABlockedDocument:
+    def test_a_case_blocked_at_intake_is_recognised_and_an_ordinary_one_is_not(self):
+        assert ml.blocked_at_intake({"case_id": "CASE-BLOCKED-feb82b50f3"}) is True
+        assert ml.blocked_at_intake({"case_id": "CASE-VFL-2026-88420"}) is False
 
 
 class TestTheSummary:

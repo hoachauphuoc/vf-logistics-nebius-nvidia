@@ -39,6 +39,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from vf_logistics.verifier import is_placeholder_text  # noqa: E402
+
 GROUNDED_FIELDS = (
     "shipper_company", "shipper_tax_id", "receiver_company", "cargo_description",
     "hs_code", "declared_value", "origin", "destination",
@@ -75,7 +77,7 @@ def measure_case(case: dict[str, Any], source_text: str) -> dict[str, Any]:
     checked, ungrounded = 0, []
     for name in GROUNDED_FIELDS:
         value = shipment.get(name)
-        if value in (None, ""):
+        if value in (None, "") or (isinstance(value, str) and is_placeholder_text(value)):
             continue
         checked += 1
         if not _grounded(value, source_text):
@@ -98,6 +100,11 @@ def measure_case(case: dict[str, Any], source_text: str) -> dict[str, Any]:
         "ungrounded": ungrounded,
         "missed": missed,
     }
+
+
+def blocked_at_intake(case: dict[str, Any]) -> bool:
+    """A document Model Armor stopped before any model read it: nothing was extracted to score."""
+    return str(case.get("case_id") or "").startswith("CASE-BLOCKED-")
 
 
 def summarise(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -185,6 +192,9 @@ def main(argv: list[str] | None = None) -> int:
         case = _get_case(base, answer["case_id"])
         if not case or not case.get("shipment"):
             print(f"[BLOCKED/NO CASE] {name}: no extracted shipment ({seconds:.1f}s)")
+            continue
+        if blocked_at_intake(case):
+            print(f"[BLOCKED AT INTAKE] {name}: stopped before any model read it, as intended (not scored)")
             continue
         text, _ = extract_pdf_text(path.read_bytes())
         row = {**measure_case(case, text), "file": name, "wall_seconds": round(seconds, 2)}
