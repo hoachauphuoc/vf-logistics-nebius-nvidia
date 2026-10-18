@@ -474,6 +474,7 @@ def legacy_dashboard():
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
+    from vf_logistics import tools
     return jsonify({
         "status": "healthy",
         "service": "VF Logistics Fraud Detection",
@@ -481,6 +482,8 @@ def health():
         "timestamp": utcnow(),
         "hackathon": "Nebius x NVIDIA Global AI Hackathon",
         "track": "Best Apps and Agents",
+        "revision": os.getenv("K_REVISION") or None,
+        "sent_ledger": bool(tools.SENT_LEDGER_SUBSCRIPTION),
         "store": store_status(),
         "worker": orchestrator.worker_status()
     })

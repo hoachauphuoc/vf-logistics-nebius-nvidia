@@ -136,6 +136,8 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 52t | N04F3t | Tests first: the review panel releases over open evidence through the exception operation: 4 tests red |
 | 52c | N04F3c | Code for N04F3t: ReviewPanel.tsx |
 | 53 | VR5 | Review VI table: row N04-b follows the renamed test; rows N04-d and N04-e |
+| 54t | HLTHt | Tests first: /health says which revision serves and whether the sent ledger is configured: 4 red |
+| 54c | HLTHc | Code for HLTHt: revision and sent_ledger in /health |
 
 N04F3t round 2: RERUN, the same command then failed printing a non-ASCII vitest character to a cp1252 console (UnicodeEncodeError); it now prints ASCII only and was tried on the unchanged tree first. Rounds were spent on my command, not on the sub-agent: its edits are what the runner restored each time.
 N04F3t round 1: RERUN, my test command decoded vitest's UTF-8 output as cp1252 (UnicodeDecodeError, no output to count); it now passes encoding='utf-8'; logs runs/N04F3t/attempt_1.log, attempt_2.log.
@@ -4985,10 +4987,10 @@ HUMAN CHECKLIST BEFORE DEPLOY (cannot be checked from this machine; the Master d
 - title: After deploy - the live service is healthy and serves the new code
 - verify_only: true
 - test_commands:
-  - python -c "import httpx; B='https://vf-app-350828852747.asia-southeast1.run.app'; h=httpx.get(B+'/health',timeout=30); print('health',h.status_code,h.text[:300]); p=httpx.get(B+'/api/v1/review/CASE-PROBE/approve-exception',timeout=30); print('approve-exception GET',p.status_code); ok=h.status_code==200 and p.status_code==405; print('NEW_CODE_LIVE' if ok else 'NOT_PROVEN'); raise SystemExit(0 if ok else 1)"
+  - python -c "import httpx; B='https://vf-app-350828852747.asia-southeast1.run.app'; h=httpx.get(B+'/health',timeout=30); d=h.json() if h.status_code==200 else {}; print('health',h.status_code,'revision',d.get('revision','MISSING'),'sent_ledger',d.get('sent_ledger','MISSING'),'store',(d.get('store') or {}).get('backend')); p=httpx.get(B+'/api/v1/review/CASE-PROBE/approve-exception',timeout=30); print('approve-exception GET',p.status_code); new=h.status_code==200 and 'revision' in d and 'sent_ledger' in d and p.status_code==405; print('NEW_CODE_LIVE' if new else 'NOT_PROVEN'); print('SENT_LEDGER_CONFIGURED' if d.get('sent_ledger') is True else 'SENT_LEDGER_NOT_CONFIGURED'); raise SystemExit(0 if new else 1)"
 
 ## Context
-Run ONLY after the human has deployed. Two read-only GET requests to the live service, no credentials: `/health` must answer 200, and the route added in this release (`/api/v1/review/<id>/approve-exception`, POST only) must answer 405 Method Not Allowed to a GET. 405 means the route exists, so the new code is serving; 404 means the old build is still live. Nothing is written on the service.
+Run ONLY after the human has deployed. Updated 2026-10-18 (task HLTHc): /health also carries `revision` (the Cloud Run revision serving) and `sent_ledger` (true when SENT_LEDGER_SUBSCRIPTION is set), so a build older than HLTHc fails this check (the keys are missing) instead of passing on the route alone, and the log says whether the ledger is configured. Compare the printed revision with `gcloud run services describe vf-app` (the human's step). Two read-only GET requests to the live service, no credentials: `/health` must answer 200, and the route added in this release (`/api/v1/review/<id>/approve-exception`, POST only) must answer 405 Method Not Allowed to a GET. 405 means the route exists, so the new code is serving; 404 means the old build is still live. Nothing is written on the service.
 <!-- TASK_END -->
 
 <!-- TASK_START: VPDF -->
@@ -9140,5 +9142,138 @@ new_string is the two rows below, and then that same line again:
 
 DONE WHEN: only this file changed; row N04-b has the new description and test name; two rows sit directly above the E01-a row.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: HLTHt -->
+## Meta
+- title: Tests first - /health says which revision serves and whether the sent ledger is configured
+- depends_on:
+  - VR5
+- target_files:
+  - tests/test_health_deploy_info.py
+- test_commands:
+  - python -c "import subprocess,sys; p=subprocess.run('python -m pytest tests/test_health_deploy_info.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace'); o=p.stdout+p.stderr; print(o[-1800:].encode('ascii','replace').decode()); sys.exit(0 if p.returncode == 1 and '4 failed' in o and '1 passed' in o else 1)"
+  - python -m ruff check tests/test_health_deploy_info.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+PDPOST could only prove the route approve-exception exists (N04b), not which build serves or whether the sent ledger is configured in production. /health is public and read-only; it gets two fields: `revision` (the Cloud Run revision name from K_REVISION, null when unset) and `sent_ledger` (true when SENT_LEDGER_SUBSCRIPTION is set; the subscription's name is NOT exposed).
+This task writes the tests only, as a NEW file. Expected now: 4 failed (KeyError on the missing fields) and 1 passed (the name is not leaked: nothing to leak yet). The test command passes on exactly that.
+Master review: in the log the 4 named tests fail on KeyError 'revision' / 'sent_ledger'.
+
+## Prompt
+``````text
+TASK HLTHt. Create ONE new file: tests/test_health_deploy_info.py, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): tests/test_health_deploy_info.py. It does not exist yet: create it with the Write tool. Do not edit any source file: four tests are meant to fail until the next task.
+
+Content (copy exactly):
+```python
+"""
+/health says which revision serves and whether the sent ledger is configured, so a
+person (or PDPOST) can prove what is live without credentials. It never exposes the
+subscription's name.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, os.path.dirname(__file__))
+from test_routes import FlaskTestBase  # noqa: E402
+from vf_logistics import tools  # noqa: E402
+
+
+class TestHealthSaysWhatIsDeployed(FlaskTestBase):
+    def _health(self) -> dict:
+        return json.loads(self.client.get("/health").data)
+
+    def test_the_revision_is_the_cloud_run_revision(self):
+        with patch.dict(os.environ, {"K_REVISION": "vf-app-00042-abc"}):
+            self.assertEqual(self._health()["revision"], "vf-app-00042-abc")
+
+    def test_the_revision_is_null_when_nothing_names_it(self):
+        with patch.dict(os.environ):
+            os.environ.pop("K_REVISION", None)
+            self.assertIsNone(self._health()["revision"])
+
+    def test_the_sent_ledger_is_reported_as_configured(self):
+        with patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", "case-decisions-sent-ledger"):
+            self.assertIs(self._health()["sent_ledger"], True)
+
+    def test_the_sent_ledger_is_reported_as_not_configured(self):
+        with patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", ""):
+            self.assertIs(self._health()["sent_ledger"], False)
+
+    def test_the_subscription_name_is_not_exposed(self):
+        with patch.object(tools, "SENT_LEDGER_SUBSCRIPTION", "very-private-ledger-name"):
+            body = self.client.get("/health").get_data(as_text=True)
+        self.assertNotIn("very-private-ledger-name", body)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if tests/test_health_deploy_info.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: HLTHc -->
+## Meta
+- title: Code for HLTHt - /health adds revision and sent_ledger
+- depends_on:
+  - HLTHt
+- target_files:
+  - src/vf_logistics/app.py
+- test_commands:
+  - python -m pytest tests/test_health_deploy_info.py tests/test_routes.py tests/test_network_defence.py tests/test_rbac.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/app.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Code for the tests of HLTHt. `tools` is imported inside the route (app.py has no top-level import of it, and a new one is not needed). Edit 2 uses a TWO-line old_string because `"store": store_status(),` occurs twice in app.py; the pair with the `"track"` line above is unique. The Edit tool matches two-line anchors on CRLF files.
+CI note: app.py has 100+ existing mypy errors; the ceiling is 123 and CI measured exactly 123, so any new mypy error fails CI. Both new lines are plain expressions (`os.getenv(...) or None`, `bool(...)`) and add none.
+Master review: the 5 tests pass with the three neighbouring suites; ruff passes; `git diff` shows one import line and two dict entries.
+
+## Prompt
+``````text
+TASK HLTHc. Two edits in src/vf_logistics/app.py, inside the function health(). Nothing else.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/app.py. It uses Windows line endings (CRLF). Use the Edit tool. Never use Write on this file. Do not edit any test. `os` is already imported at the top of the file.
+
+EDIT 1. old_string, ONE line (4 leading spaces; occurs once):
+```python
+    """Health check endpoint."""
+```
+new_string is these two lines (the first kept):
+```python
+    """Health check endpoint."""
+    from vf_logistics import tools
+```
+
+EDIT 2. old_string, TWO lines (8 leading spaces on each; the pair occurs once):
+```python
+        "track": "Best Apps and Agents",
+        "store": store_status(),
+```
+new_string, four lines:
+```python
+        "track": "Best Apps and Agents",
+        "revision": os.getenv("K_REVISION") or None,
+        "sent_ledger": bool(tools.SENT_LEDGER_SUBSCRIPTION),
+        "store": store_status(),
+```
+
+DONE WHEN: only app.py changed; health() imports tools and returns two new keys, revision and sent_ledger.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
 ``````
 <!-- TASK_END -->
