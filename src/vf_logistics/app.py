@@ -825,6 +825,27 @@ def list_cases():
         return _safe_error(e)
 
 
+@app.route("/api/v1/audit/unreconciled", methods=["GET"])
+@require_viewer
+def audit_unreconciled() -> Any:
+    """Executions whose publish_decision audit row is still missing (N01), with a count."""
+    from vf_logistics import evidence
+
+    gaps = _on_worker(evidence.unreconciled_publish_audits(tenant_id=_tenant()))
+    return jsonify({"count": len(gaps), "items": gaps})
+
+
+@app.route("/api/v1/audit/reconcile", methods=["POST"])
+@require_operator
+@limiter.limit("10 per minute")
+def audit_reconcile() -> Any:
+    """Write each missing publish_decision row once (N01), under the person who asked."""
+    from vf_logistics import evidence
+
+    person, _ = _acting_person(_json_object())
+    return _evidence_response(evidence.reconcile_publish_audits(person, tenant_id=_tenant()))
+
+
 @app.route("/api/v1/audit", methods=["GET"])
 @require_viewer
 def list_audit():
@@ -2083,7 +2104,20 @@ def internal_login_throttle() -> Any:
         return _safe_error(e)
 
 
+@app.route("/api/v1/ops/sent-ledger", methods=["GET"])
+@require_viewer
+def sent_ledger_check() -> Any:
+    """Whether the sent ledger is configured and this service may read it (N01); never its name."""
+    from vf_logistics import tools
+
+    return jsonify({
+        "configured": bool(tools.SENT_LEDGER_SUBSCRIPTION),
+        "readable": tools.sent_ledger_readable(),
+    })
+
+
 @app.route("/api/v1/receiver/decision", methods=["POST"])
+
 @limiter.limit("120 per minute")
 def receiver_decision() -> Any:
     """

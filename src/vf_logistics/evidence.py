@@ -1131,7 +1131,97 @@ def published_message_id(receipt: Any) -> str | None:
     return str(message_id) if message_id else None
 
 
+EXECUTED_STATES = ("RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN")
+
+
+async def unreconciled_publish_audits(tenant_id: str | None = None) -> list[dict[str, Any]]:
+    """
+    Executions whose decision the broker accepted but whose publish_decision audit row was
+    never saved (N01): the case says what was sent, the append-only trail does not yet.
+    """
+    store = get_store()
+    gaps: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        page, cursor = await store.query_cases(
+            states=EXECUTED_STATES, cursor=cursor, limit=200, tenant_id=tenant_id,
+        )
+        for case in page:
+            if not case.get("audit_pending"):
+                continue
+            for exe in verification_of(case).get("executions") or []:
+                if isinstance(exe, dict) and exe.get("audit_pending"):
+                    gaps.append({
+                        "case_id": case.get("case_id"),
+                        "approval_id": exe.get("approval_id"),
+                        "execution_id": exe.get("execution_id"),
+                        "message_id": exe.get("message_id"),
+                        "since": exe.get("at"),
+                    })
+        if not cursor:
+            return gaps
+
+
+async def reconcile_publish_audits(actor: str, tenant_id: str | None = None) -> dict[str, int]:
+    """
+    Write the publish_decision audit row each gap is missing, once, and clear the gap.
+
+    A row the trail already holds for the approval's key (the sent ledger may have saved
+    it) clears the gap without a second row. A row that still cannot be saved leaves the
+    gap in place: it is cleared only when the trail holds the row.
+    """
+    from vf_logistics import tools
+
+    if not actor:
+        raise EvidenceError(
+            "A reconciliation is recorded under a named person: sign in, or send reviewer.", 400,
+        )
+    store = get_store()
+    counts = {"reconciled": 0, "already_recorded": 0, "failed": 0}
+    for gap in await unreconciled_publish_audits(tenant_id):
+        stored = await store.get_case(gap["case_id"], tenant_id=tenant_id)
+        if not stored:
+            counts["failed"] += 1
+            continue
+        case = copy.deepcopy(stored)
+        exe = next(
+            (e for e in verification_of(case).get("executions") or []
+             if isinstance(e, dict) and e.get("execution_id") == gap["execution_id"]),
+            None,
+        )
+        if exe is None or not exe.get("audit_pending"):
+            continue
+        receipt = next(
+            (a for a in reversed(case.get("actions") or [])
+             if isinstance(a, dict) and a.get("action") == "publish_decision"
+             and (a.get("detail") or {}).get("message_id") == exe.get("message_id")),
+            None,
+        )
+        detail = dict((receipt or {}).get("detail") or {})
+        detail.setdefault("case_id", gap["case_id"])
+        detail.setdefault("approval_id", exe.get("approval_id"))
+        detail.setdefault("idempotency_key", f"exec-{exe.get('approval_id')}")
+        detail["message_id"] = exe.get("message_id")
+        try:
+            wrote = await tools.record_publish_audit(gap["case_id"], detail, actor, tenant_id=tenant_id)
+        except Exception:  # noqa: BLE001 - the gap stays until the trail holds the row
+            counts["failed"] += 1
+            continue
+        counts["reconciled" if wrote else "already_recorded"] += 1
+        exe.pop("audit_pending", None)
+        exe["audit_reconciled_at"] = utcnow()
+        exe["audit_reconciled_by"] = actor
+        if not any(
+            isinstance(e, dict) and e.get("audit_pending")
+            for e in verification_of(case).get("executions") or []
+        ):
+            case.pop("audit_pending", None)
+        await _write(case, stored.get("_version"), tenant_id)
+    return {**counts, "pending": len(await unreconciled_publish_audits(tenant_id))}
+
+
 async def execute_approval(
+
     case_id: str,
     approval_id: str,
     executor: str,
@@ -1313,6 +1403,12 @@ async def execute_approval(
         final_state = new_state
         exe2["status"] = "sent"
         exe2["message_id"] = message_id
+        if isinstance(pub_receipt, dict) and pub_receipt.get("audit_saved") is False:
+            # The broker accepted the message but its audit row could not be saved, twice
+            # (N01). The decision stands and is not sent again; the gap stays on the case
+            # until reconcile_publish_audits() writes the row.
+            exe2["audit_pending"] = True
+            case2["audit_pending"] = True
         apr2["status"] = "EXECUTED"
         case2["state"] = final_state
         case2["decision"] = {

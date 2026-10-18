@@ -262,7 +262,45 @@ async def publish_decision(
     return await publish_decision_direct(case_id, body, tenant_id=tenant_id)
 
 
+# The last answer of sent_ledger_readable() and when it was given (time.monotonic()).
+_LEDGER_CHECK: dict[str, Any] = {"at": 0.0, "readable": None}
+LEDGER_CHECK_TTL_S = 300
+
+
+def sent_ledger_readable() -> bool | None:
+    """
+    Whether this service may read the sent ledger, asked of Pub/Sub itself; None when no
+    ledger is configured.
+
+    A configured ledger that cannot be read makes every retry after an unknown send fail
+    closed (nothing is sent), so the permission is checked where an operator can see it
+    instead of being found out on the first retry. testIamPermissions needs no role of its
+    own and reads nothing from the subscription. The answer is kept for five minutes.
+    """
+    import importlib
+    import time
+
+    if not SENT_LEDGER_SUBSCRIPTION:
+        return None
+    now = time.monotonic()
+    if _LEDGER_CHECK["readable"] is not None and now - float(_LEDGER_CHECK["at"]) < LEDGER_CHECK_TTL_S:
+        return bool(_LEDGER_CHECK["readable"])
+    try:
+        pubsub_v1: Any = importlib.import_module("google.cloud.pubsub_v1")
+        subscriber = pubsub_v1.SubscriberClient()
+        path = subscriber.subscription_path(gcp_project(), SENT_LEDGER_SUBSCRIPTION)
+        answer = subscriber.test_iam_permissions(
+            request={"resource": path, "permissions": ["pubsub.subscriptions.consume"]}, timeout=5,
+        )
+        readable = "pubsub.subscriptions.consume" in list(answer.permissions)
+    except Exception:  # noqa: BLE001 - an unanswered check is "not readable", never "fine"
+        readable = False
+    _LEDGER_CHECK.update(at=now, readable=readable)
+    return readable
+
+
 async def _settle_from_ledger() -> int:
+
     """
     Drain the sent ledger: save a publish record for every accepted decision that has none.
 
@@ -316,6 +354,31 @@ async def _settle_from_ledger() -> int:
         )
 
 
+async def record_publish_audit(
+    case_id: str, detail: dict[str, Any], actor: str, tenant_id: str | None = None,
+) -> bool:
+    """
+    Save the publish_decision row of a decision the broker accepted, unless the trail
+    already holds one for its idempotency key. True when this call wrote it.
+
+    The execution kept the message id when the row could not be saved (N01); this brings
+    the append-only trail back in line once the store answers. A store that still refuses
+    raises, so the caller keeps the gap rather than clearing it.
+    """
+    key = str(detail.get("idempotency_key") or "")
+    if key and await _earlier_publish(case_id, key, tenant_id) is not None:
+        return False
+    row = {k: v for k, v in detail.items() if k != "error"}
+    if detail.get("error"):
+        row["save_error"] = detail["error"]
+    await _audit(
+        case_id, "publish_decision",
+        {**row, "via": "audit reconciliation", "reconciled_by": actor},
+        tenant_id=tenant_id,
+    )
+    return True
+
+
 def _may_have_been_accepted(exc: BaseException) -> bool:
     """
     True when the broker may have taken the message although the call raised.
@@ -346,7 +409,12 @@ async def _save_publish_record(
     except Exception:  # noqa: BLE001
         if not accepted:
             raise
-        return {"case_id": case_id, "action": action, "status": status, "detail": detail, "at": utcnow()}
+        # audit_saved=False keeps the gap visible: the execution marks it, and
+        # evidence.reconcile_publish_audits() writes the row once the store answers.
+        return {
+            "case_id": case_id, "action": action, "status": status, "detail": detail,
+            "at": utcnow(), "audit_saved": False,
+        }
 
 
 async def publish_decision_direct(

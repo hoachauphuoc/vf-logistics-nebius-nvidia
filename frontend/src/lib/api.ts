@@ -119,11 +119,19 @@ async function request(
       "unreachable",
     );
   }
-  return {
-    text: await response.text(),
-    status: response.status,
-    ok: response.ok,
-  };
+  // The server answered, then the connection dropped while its body was read: what it did
+  // is as unknown as for a request that never got an answer (N08).
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    throw new ApiError(
+      `The connection dropped while the answer was read: ${error instanceof Error ? error.message : String(error)}`,
+      response.status,
+      "unreachable",
+    );
+  }
+  return { text, status: response.status, ok: response.ok };
 }
 
 function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
@@ -161,7 +169,8 @@ function parseOrThrow<T>(text: string, status: number, ok: boolean): T {
     throw new ApiError(
       detail,
       status,
-      status === 502 ? "unreachable" : "http",
+      // 502 and 504 are the gateway's, not the API's: the API may have finished the job (N08).
+      status === 502 || status === 504 ? "unreachable" : "http",
       requiredRole,
       requiredAuth,
     );

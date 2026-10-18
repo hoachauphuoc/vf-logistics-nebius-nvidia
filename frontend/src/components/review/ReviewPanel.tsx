@@ -58,8 +58,10 @@ import { cn } from "@/lib/utils";
 // A dropped or timed-out connection says nothing about what the server did: the decision
 // may have been approved or executed before the answer was lost (N08). A refusal the
 // server sent (kind "http") is an answer, so there is nothing to reload.
+// A 2xx whose body could not be parsed ("parse") is the same: the server said yes and the
+// answer was lost on the way.
 function outcomeUnknown(error: unknown): boolean {
-  return error instanceof ApiError && error.kind === "unreachable";
+  return error instanceof ApiError && (error.kind === "unreachable" || error.kind === "parse");
 }
 
 const ACTION_LABEL: Record<HumanAction, string> = {

@@ -122,6 +122,70 @@ describe("client request timeout", () => {
   });
 });
 
+describe("answers that leave the outcome unknown (N08)", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = ORIGINAL_FETCH;
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("reads a gateway timeout (504) as unreachable, like a 502", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ error: "upstream request timeout" }, 504),
+    ) as unknown as typeof fetch;
+
+    const { executeApproval, ApiError } = await import("@/lib/api");
+    const failure = await executeApproval("CASE-1", "evapr-1").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as InstanceType<typeof ApiError>).kind).toBe("unreachable");
+    expect((failure as InstanceType<typeof ApiError>).status).toBe(504);
+  });
+
+  it("reads an answer whose body breaks off as unreachable, not as a raw error", async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => {
+        throw new TypeError("network error");
+      },
+    }) as unknown as Response) as unknown as typeof fetch;
+
+    const { approveCase, ApiError } = await import("@/lib/api");
+    const failure = await approveCase("CASE-1", "release", "Reviewed").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiError);
+    expect((failure as InstanceType<typeof ApiError>).kind).toBe("unreachable");
+    expect((failure as InstanceType<typeof ApiError>).message).toMatch(/dropped while the answer was read/);
+  });
+
+  it("keeps a refusal the server sent (403) as an answer", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse(
+        { error: "Releasing needs a password sign-in." }, 403,
+      ),
+    ) as unknown as typeof fetch;
+
+    const { executeApproval, ApiError } = await import("@/lib/api");
+    const failure = await executeApproval("CASE-1", "evapr-1").catch((error: unknown) => error);
+    expect((failure as InstanceType<typeof ApiError>).kind).toBe("http");
+  });
+
+  it("reads a 2xx whose body is not JSON as a parse failure", async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => "<html>gateway</html>",
+    }) as unknown as Response) as unknown as typeof fetch;
+
+    const { executeApproval, ApiError } = await import("@/lib/api");
+    const failure = await executeApproval("CASE-1", "evapr-1").catch((error: unknown) => error);
+    expect((failure as InstanceType<typeof ApiError>).kind).toBe("parse");
+  });
+});
+
 describe("writes that answer slowly or with a refusal", () => {
   beforeEach(() => {
     vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");

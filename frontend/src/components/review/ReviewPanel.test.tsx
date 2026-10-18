@@ -563,6 +563,25 @@ describe("ReviewPanel: resuming an interrupted execution (N08-B)", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
   });
 
+  it("reloads the case when Release's approve step answers with a body that is not JSON", async () => {
+    vi.mocked(approveCase).mockRejectedValueOnce(new ApiError("Response was not JSON", 200, "parse"));
+    const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/not JSON/);
+    expect(executeApproval).not.toHaveBeenCalled();
+  });
+
+  it("reloads the case when Execute answers with a body that is not JSON", async () => {
+    vi.mocked(executeApproval).mockRejectedValueOnce(new ApiError("Response was not JSON", 200, "parse"));
+    const approval = { approval_id: "evapr-1", action: "release", approver: "r", evidence_version: 1, status: "VALID", at: "" };
+    const onDecided = renderPanel(makeCase("APPROVED", { approvals: [approval] }));
+    fireEvent.click(screen.getByRole("button", { name: "Execute" }));
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/not JSON/);
+  });
+
   it("does not reload for a refusal the server sent, which is an answer and not a lost connection", async () => {
     vi.mocked(approveCase).mockRejectedValueOnce(new ApiError("Re-evaluate first.", 409, "http"));
     const onDecided = renderPanel(makeCase("HELD_FOR_REVIEW"));
