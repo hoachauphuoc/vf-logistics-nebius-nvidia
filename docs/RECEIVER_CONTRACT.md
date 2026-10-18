@@ -88,7 +88,8 @@ line each, replace `<SA>` with the service account the push presents, for exampl
 default compute account `<project-number>-compute@developer.gserviceaccount.com`):
 
 1. `gcloud pubsub subscriptions create case-decisions-receiver --topic=case-decisions --push-endpoint=https://<service-url>/api/v1/receiver/decision --push-auth-service-account=<SA> --push-auth-token-audience=https://<service-url>/api/v1/receiver/decision`
-2. `gcloud run services update vf-app --region <region> --update-env-vars RECEIVER_PUSH_SA=<SA>,RECEIVER_PUSH_AUDIENCE=https://<service-url>/api/v1/receiver/decision`
+2. `gcloud run services update vf-app --region <region> --update-env-vars "RECEIVER_PUSH_SA=<SA>,RECEIVER_PUSH_AUDIENCE=https://<service-url>/api/v1/receiver/decision"`
+   (keep the quotes: unquoted, PowerShell turns the comma into a space and both values land in `RECEIVER_PUSH_SA`)
 
 Check: publish the same decision twice under one key, then read
 `GET /api/v1/receiver/applied/<key>`: `deliveries` is 2 and `applied_once` is true.

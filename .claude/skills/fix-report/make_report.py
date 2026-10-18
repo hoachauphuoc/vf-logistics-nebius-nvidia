@@ -91,4 +91,5 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit(__doc__)
     build(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")), sys.argv[2])
+    sys.stdout.reconfigure(errors="replace")  # a Japanese file name must not fail a cp1252 console
     print("written", sys.argv[2])

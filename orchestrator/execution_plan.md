@@ -143,7 +143,10 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 55c | RX1c | Code for RX1t: apply_decision_once / get_applied_decision in both stores |
 | 56t | RX2t | Tests first: the Pub/Sub push receiver (OIDC only) applies each decision once |
 | 56c | RX2c | Code for RX2t: decision_receiver.py and the two receiver routes |
+| 57 | RXPOST | After deploy: the live receiver applied the test decision once although it was delivered twice |
+| 58 | VR6 | Review VI table: row N01-e reads the receiver tests instead of 'out of scope' |
 
+RXPOST round 1: NOT_PROVEN twice, both outside the code. First the human's `gcloud --%` publish never ran: gcloud is gcloud.ps1 here, so `--%` reached gcloud as an argument; the publish now goes through the Pub/Sub REST API. Then every push got 403: my deploy command left `--update-env-vars A=..,B=..` unquoted and PowerShell turned the comma into a space (reproduced through a copy of gcloud.ps1's argument forwarding), so RECEIVER_PUSH_AUDIENCE was never set; a quoted `services update` fixed it (revision vf-app-00034-8j4) and Pub/Sub redelivered the refused pushes. RECEIVER_CONTRACT.md step 2 now quotes the list.
 RX2c round 1: RERUN, the receiver tests passed (10) but two route-policy tests failed: the push route declared no role; it now declares operator like evidence_respond; logs runs/RX2c/attempt_1.log, attempt_2.log.
 RX1c round 1: RERUN, the tests passed (memory 3, emulator 4 incl. 8 concurrent deliveries applied once) but my mypy gate said <=120; HEAD itself measures 123 fresh (= CI), and a worktree probe showed 123 before and after the change with identical errors; gate now <=123 in RX1c and RX2c; logs runs/RX1c/attempt_1.log, attempt_2.log.
 N04F3t round 2: RERUN, the same command then failed printing a non-ASCII vitest character to a cp1252 console (UnicodeEncodeError); it now prints ASCII only and was tried on the unchanged tree first. Rounds were spent on my command, not on the sub-agent: its edits are what the runner restored each time.
@@ -9859,5 +9862,65 @@ def receiver_applied(key: str) -> Any:
 
 DONE WHEN: the new module exists with exactly this content, and app.py gained exactly these two routes and the one `_required_role` line above /internal/execute.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once, or if decision_receiver.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RXPOST -->
+## Meta
+- title: After deploy - the live receiver refuses a push without a token and applied the test decision once although it was delivered twice
+- verify_only: true
+- test_commands:
+  - python -c "import httpx; B='https://vf-app-350828852747.asia-southeast1.run.app'; K='exec-e2e-receiver-check'; p=httpx.post(B+'/api/v1/receiver/decision', json={'message': {}}, timeout=30); print('push without token', p.status_code); r=httpx.get(B+'/api/v1/receiver/applied/'+K, timeout=30); d=r.json() if r.status_code==200 else {}; print('applied', r.status_code, 'applied_once', d.get('applied_once'), 'deliveries', d.get('deliveries'), 'case', d.get('case_id')); ok=p.status_code==403 and r.status_code==200 and d.get('applied_once') is True and (d.get('deliveries') or 0) >= 2; print('RECEIVER_APPLIED_ONCE' if ok else 'NOT_PROVEN'); raise SystemExit(0 if ok else 1)"
+- timeout_sec: 120
+
+## Context
+Run ONLY after the human has deployed 8fa7974 or later, created the push subscription case-decisions-receiver with OIDC, set RECEIVER_PUSH_SA and RECEIVER_PUSH_AUDIENCE, and published the test decision with key exec-e2e-receiver-check TWICE. Two requests to the live service, no credentials: a push without a token must get 403 (nothing is written), and GET /api/v1/receiver/applied/exec-e2e-receiver-check must show applied_once true with at least 2 deliveries. The test decision names case E2E-RECEIVER-CHECK, which does not exist; the receiver records it and changes no case.
+<!-- TASK_END -->
+
+<!-- TASK_START: VR6 -->
+## Meta
+- title: The review VI table counts N01-e - the receiver Floorline ships is in this repository and tested
+- depends_on:
+  - RX2c
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python -c "import subprocess,sys; o=subprocess.run([sys.executable,'scripts/verify_review_vi.py'],capture_output=True,text=True,encoding='utf-8',errors='replace').stdout; print(chr(10).join(l for l in o.splitlines() if l.startswith('| N01') or l.startswith('Checks') or l.startswith('Not counted')).encode('ascii','replace').decode()); sys.exit(0 if 'Checks passed: 39 of 39' in o and 'Not counted: none.' in o else 1)"
+- timeout_sec: 1800
+- max_retries: 1
+
+## Context
+Row N01-e (deduplication at the receiving system) was "OUT OF SCOPE: the receiver is not in this repository". Since RX1c/RX2c the receiver is in this repository (decision_receiver.py, apply_decision_once) with tests, and RXPOST showed it on the live service. The row now names three of those tests: the route applies a redelivery once, the route refuses a push without an accepted token, and the store applies a repeat once (memory store, so the row does not depend on the emulator).
+Master review: only this file changed; row N01-e PASS with 3 tests; "Checks passed: 39 of 39" and "Not counted: none."; no row FAIL.
+
+## Prompt
+``````text
+TASK VR6. Two edits in scripts/verify_review_vi.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not touch any other row, any function, any import, or the OUT_OF_SCOPE constant.
+
+EDIT 1 (the description and kind of row N01-e). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("N01-e", "N01", "deduplication at the receiving system", "none",
+```
+new_string, ONE line:
+```python
+    ("N01-e", "N01", "the receiver Floorline ships applies a decision delivered twice once and refuses a push without an accepted token", "py",
+```
+
+EDIT 2 (the tests of row N01-e). old_string, ONE line (5 leading spaces; occurs once):
+```python
+     (OUT_OF_SCOPE, "the receiver is not in this repository")),
+```
+new_string, three lines (5 and 6 leading spaces):
+```python
+     [("test_decision_receiver.py", "test_a_decision_is_applied_once_and_a_redelivery_is_only_counted"),
+      ("test_decision_receiver.py", "test_a_push_without_an_accepted_token_is_refused_and_nothing_is_applied"),
+      ("test_applied_decisions.py", "test_the_first_delivery_applies_and_a_repeat_only_counts")]),
+```
+
+DONE WHEN: only this file changed; row N01-e has kind "py" and the three tests above.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->
