@@ -94,6 +94,46 @@ default compute account `<project-number>-compute@developer.gserviceaccount.com`
 Check: publish the same decision twice under one key, then read
 `GET /api/v1/receiver/applied/<key>`: `deliveries` is 2 and `applied_once` is true.
 
+## Checking a receiver: the conformance script
+
+Floorline cannot see what a system it does not run does with a decision, so the check is handed
+to that system. `scripts/receiver_conformance.py` is run by the receiving team against its own
+endpoint. It sends Pub/Sub push envelopes under a fresh key (case id starting `CONF-`, so the
+records are easy to discard) and reports PASS, FAIL or UNVERIFIED per obligation:
+
+1. a first delivery is acknowledged;
+2. a repeat of the same key is acknowledged;
+3. eight concurrent repeats are all acknowledged;
+4. a message without `idempotency_key` is refused and not applied;
+5. the key was applied once, read from a URL the receiver provides.
+
+```
+python scripts/receiver_conformance.py https://wms.example/push --header "Authorization: Bearer <token>" --applied-url "https://wms.example/applied/{key}" --count-field result.applied
+```
+
+Exit code 0 means every obligation passed, 1 that one failed, 2 that nothing failed but obligation 5
+could not be read (without `--applied-url` the script cannot see how often the key was applied, and
+says so rather than passing it). A pass shows the endpoint meets the contract on that run; it does
+not replace the receiving team's own tests of what its transaction does.
+
+## Killing a process against real Pub/Sub (operations)
+
+`tests/test_sim_hard_kill.py` also runs against the Pub/Sub of a real project, on a topic created for
+the run (`hardkill-<ns>`, deleted with its subscriptions afterwards). The store stays on the Firestore
+emulator, so nothing is written to a real database and no production decision is published. It
+needs Application Default Credentials that may create topics and subscriptions in the project, the
+Firestore emulator running, and no Pub/Sub emulator (PowerShell):
+
+```
+$env:FIRESTORE_EMULATOR_HOST = "127.0.0.1:8681"
+$env:HARD_KILL_REAL_PUBSUB_PROJECT = "<project-id>"
+python -m pytest tests/test_sim_hard_kill.py -v
+```
+
+What it shows is what an emulator cannot: whether the broker's own pull returns the message the sent
+ledger needs. If the sent-ledger test fails with two messages on the topic, the ledger missed one,
+which the receiver's deduplication then absorbs; the failure is a finding, not a flake.
+
 ## Sent ledger (sender side, operations)
 
 A pull subscription on the decisions topic that only Floorline reads. Every message the

@@ -1632,6 +1632,13 @@ python scripts/check_test_sensitivity.py
 # Frontend: install, typecheck, lint, 365 unit tests in 27 files, production build
 (cd frontend && npm ci && npx tsc --noEmit && npm run lint && npm test && npm run build)
 
+# Real-model run (spends tokens, needs the operator key): cost, model time and whether each
+# extracted field is in the document's own text
+python scripts/measure_live_run.py --base https://<service-url> --yes-upload --out measure.json
+
+# A receiving system checks itself against docs/RECEIVER_CONTRACT.md
+python scripts/receiver_conformance.py https://<receiver>/push --applied-url "https://<receiver>/applied/{key}"
+
 # Counterparty book, offline. The script imports shipper_registry as a top-level
 # module, so both directories go on the path.
 PYTHONPATH=src/vf_logistics:src python scripts/check_registry.py   # 11 checks

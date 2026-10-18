@@ -34,7 +34,13 @@ from vf_logistics import store as store_mod  # noqa: E402
 
 FIRESTORE = os.getenv("FIRESTORE_EMULATOR_HOST", "")
 PUBSUB = os.getenv("PUBSUB_EMULATOR_HOST", "")
-PROJECT = "vf-sim-hard-kill"
+# Real Pub/Sub: HARD_KILL_REAL_PUBSUB_PROJECT names a project whose Pub/Sub is used for real, on a
+# topic created for the run and deleted after it. The store stays on the Firestore emulator.
+REAL_PROJECT = os.getenv("HARD_KILL_REAL_PUBSUB_PROJECT", "").strip()
+PROJECT = REAL_PROJECT or "vf-sim-hard-kill"
+TOPIC = f"hardkill-{time.time_ns()}" if REAL_PROJECT else tools.DECISIONS_TOPIC
+# What a real run created, so teardown removes exactly that.
+_CREATED: dict = {"topic": None, "subscriptions": []}
 CHILD = os.path.join(os.path.dirname(__file__), "sim_hard_kill_child.py")
 
 
@@ -53,13 +59,15 @@ def _fresh_subscription():
 
     publisher = pubsub_v1.PublisherClient()
     subscriber = pubsub_v1.SubscriberClient()
-    topic = publisher.topic_path(PROJECT, tools.DECISIONS_TOPIC)
+    topic = publisher.topic_path(PROJECT, TOPIC)
     try:
         publisher.create_topic(name=topic)
+        _CREATED["topic"] = topic
     except AlreadyExists:
         pass
     subscription = subscriber.subscription_path(PROJECT, f"sim-{time.time_ns()}")
     subscriber.create_subscription(name=subscription, topic=topic)
+    _CREATED["subscriptions"].append(subscription)
     return subscriber, subscription
 
 
@@ -81,18 +89,44 @@ def _pull_all(subscriber, subscription: str, expected: int) -> list:
     return messages
 
 
-@pytest.mark.skipif(not (FIRESTORE and PUBSUB), reason="needs FIRESTORE_EMULATOR_HOST and PUBSUB_EMULATOR_HOST")
+def _delete_created() -> None:
+    """Remove what a real-Pub/Sub run created: its subscriptions, then its temporary topic."""
+    if not REAL_PROJECT:
+        return
+    from google.cloud import pubsub_v1
+
+    subscriber = pubsub_v1.SubscriberClient()
+    for subscription in _CREATED["subscriptions"]:
+        subscriber.delete_subscription(subscription=subscription)
+    if _CREATED["topic"]:
+        pubsub_v1.PublisherClient().delete_topic(topic=_CREATED["topic"])
+    _CREATED["subscriptions"].clear()
+    _CREATED["topic"] = None
+
+
+# Exactly one Pub/Sub: the emulator, or a real project. The store is always the Firestore emulator,
+# so a run can never write to a real database.
+@pytest.mark.skipif(
+    not (FIRESTORE and (bool(PUBSUB) != bool(REAL_PROJECT))),
+    reason="needs FIRESTORE_EMULATOR_HOST and exactly one of PUBSUB_EMULATOR_HOST or HARD_KILL_REAL_PUBSUB_PROJECT",
+)
 class TestAHardKillAfterTheBrokerAccepted(Base):
     def setup_method(self):
         super().setup_method()
         _wipe_firestore()
-        self.emulators = patch.dict(os.environ, {"STORE_BACKEND": "firestore", "PROJECT_ID": PROJECT})
+        self.emulators = patch.dict(
+            os.environ, {"STORE_BACKEND": "firestore", "PROJECT_ID": PROJECT, "DECISIONS_TOPIC": TOPIC},
+        )
         self.emulators.start()
+        self.topic = patch.object(tools, "DECISIONS_TOPIC", TOPIC)
+        self.topic.start()
         self.store = store_mod.FirestoreStore(PROJECT)
         store_mod._store = self.store
 
     def teardown_method(self):
+        self.topic.stop()
         self.emulators.stop()
+        _delete_created()
         super().teardown_method()
 
     def test_the_decision_is_published_twice_and_applied_once(self):
