@@ -85,6 +85,11 @@ async def seed_case(case_id: str) -> dict[str, Any]:
     return {"state": result["state"], "unresolved": list(result["evaluation"]["unresolved"])}
 
 
+def count_publish_rows(items: list[dict[str, Any]]) -> int:
+    """Publish records among a case's audit rows: the audit route filters by case OR action, never both."""
+    return sum(1 for row in items if row.get("action") == "publish_decision")
+
+
 def kill_verdict(after_kill: str, publish_rows: int, final: str, keys: list[str], key: str) -> list[tuple[str, bool, str]]:
     count = keys.count(key)
     return [
@@ -107,6 +112,11 @@ def gateway_verdict(execute_status: int, final: str, retry_status: int, keys: li
 
 def exit_code(rows: list[tuple[str, bool, str]]) -> int:
     return 0 if all(ok for _, ok, _ in rows) else 1
+
+
+def apply_session_secret(secret: str) -> None:
+    """The seed signs the shipper links here, on the operator's machine: it needs the service's secret."""
+    os.environ["VF_SESSION_SECRET"] = secret
 
 
 def _secrets(folder: str) -> tuple[str, str]:
@@ -176,6 +186,7 @@ def _prepare(args: argparse.Namespace, prefix: str) -> tuple[dict[str, str], str
     import asyncio
 
     api_key, secret = _secrets(args.secrets)
+    apply_session_secret(secret)
     headers = {"X-VF-API-Key": api_key, "X-VF-Session": mint_session(OPERATOR, secret), "X-VF-Tenant": TENANT}
     case_id = f"{prefix}-{int(time.time())}"
     seeded = asyncio.run(seed_case(case_id))
@@ -190,8 +201,8 @@ def run_kill(args: argparse.Namespace) -> list[tuple[str, bool, str]]:
     status, _ = _api(args.base, "POST", f"/api/v1/review/{case_id}/execute", headers, {"approval_id": approval_id})
     print(f"execute answered HTTP {status} (the worker is meant to die)")
     case = _case(args.base, headers, case_id)
-    rows_status, rows = _api(args.base, "GET", f"/api/v1/audit?case_id={case_id}&action=publish_decision", headers)
-    publish_rows = len((rows or {}).get("items") or []) if rows_status == 200 else -1
+    rows_status, rows = _api(args.base, "GET", f"/api/v1/audit?case_id={case_id}&limit=100", headers)
+    publish_rows = count_publish_rows((rows or {}).get("items") or []) if rows_status == 200 else -1
     after_kill = str(case.get("state"))
     executions = (case.get("verification") or {}).get("executions") or [{}]
     lease_ends = float(executions[-1].get("claim_expires_epoch") or 0)

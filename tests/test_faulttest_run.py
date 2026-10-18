@@ -32,6 +32,18 @@ class TestTheSeed(Base):
         assert asyncio.run(self.store.get_case("FT-TEST-1")) is None
 
 
+def test_the_seed_is_signed_with_the_service_secret(monkeypatch):
+    monkeypatch.delenv("VF_SESSION_SECRET", raising=False)
+    ft.apply_session_secret("x" * 40)
+    assert os.environ["VF_SESSION_SECRET"] == "x" * 40
+
+
+def test_only_publish_records_are_counted_among_a_cases_audit_rows():
+    rows = [{"action": "release_shipment"}, {"action": "evidence_approval_release"}, {"action": "publish_decision"}]
+    assert ft.count_publish_rows(rows) == 1
+    assert ft.count_publish_rows(rows[:2]) == 0
+
+
 def results(rows):
     return [ok for _, ok, _ in rows]
 

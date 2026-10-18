@@ -9,7 +9,7 @@ wraps the real app and installs one fault, chosen by FAULT:
   kill_after_publish   the gunicorn worker ends with os._exit at the record of a publish the broker
                        accepted, once (FAULT_MARKER), so a Resume after the lease meets what a crash
                        leaves: the decision on the topic and no record of it
-  slow_after_execute   a finished POST .../execute is held back FAULT_SLOW_SECONDS before its answer,
+  slow_after_execute   a successful POST .../execute is held back FAULT_SLOW_SECONDS before its answer,
                        so a service --timeout shorter than that makes Cloud Run's own frontend answer
                        504 although the work is done
 
@@ -78,9 +78,12 @@ class SlowAfterExecute:
             close = getattr(result, "close", None)
             if close is not None:
                 close()
-        if environ.get("REQUEST_METHOD") == "POST" and str(environ.get("PATH_INFO", "")).endswith("/execute"):
-            time.sleep(self.seconds)
         status, headers, exc_info = captured[0]
+        # Only an Execute that succeeded is held back: a refusal (a retry answered 409) stays fast, so
+        # the test can see that a retry after a gateway 504 is refused and not sent again.
+        if (environ.get("REQUEST_METHOD") == "POST" and str(environ.get("PATH_INFO", "")).endswith("/execute")
+                and str(status).startswith("2")):
+            time.sleep(self.seconds)
         start_response(status, headers, exc_info)
         return [body]
 

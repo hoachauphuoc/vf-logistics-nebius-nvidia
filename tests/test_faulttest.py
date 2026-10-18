@@ -106,11 +106,29 @@ class TestSlowAfterExecute:
         monkeypatch.setattr(module.time, "sleep", slept.append)
         return module, slept
 
-    def test_a_finished_execute_is_held_back(self, fault):
-        module, slept = fault
-        response = Client(module.app).post("/api/v1/review/CASE-1/execute", json={})
-        assert response.status_code >= 200
+    def test_a_successful_execute_is_held_back(self, fault):
+        from vf_logistics.faulttest import SlowAfterExecute
+
+        def succeeding(environ, start_response):
+            start_response("200 OK", [("Content-Type", "application/json")])
+            return [b"{}"]
+
+        _, slept = fault
+        response = Client(SlowAfterExecute(succeeding, 7.0)).post("/api/v1/review/CASE-1/execute", json={})
+        assert response.status_code == 200
         assert slept == [7.0]
+
+    def test_a_refused_execute_is_not_held_back(self, fault):
+        module, slept = fault
+        from vf_logistics.faulttest import SlowAfterExecute
+
+        def refusing(environ, start_response):
+            start_response("409 CONFLICT", [("Content-Type", "application/json")])
+            return [b"{}"]
+
+        response = Client(SlowAfterExecute(refusing, 7.0)).post("/api/v1/review/CASE-1/execute", json={})
+        assert response.status_code == 409
+        assert slept == []
 
     def test_other_requests_are_not(self, fault):
         module, slept = fault
