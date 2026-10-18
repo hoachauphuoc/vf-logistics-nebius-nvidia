@@ -55,7 +55,7 @@ echo "[entrypoint] starting gunicorn on 127.0.0.1:${FLASK_PORT}"
   --access-logfile - \
   --error-logfile - \
   --capture-output \
-  vf_logistics.app:app &
+  "${FLASK_APP_MODULE:-vf_logistics.app:app}" &
 GUNICORN_PID=$!
 
 echo "[entrypoint] waiting up to ${READY_TIMEOUT}s for Flask /health"
