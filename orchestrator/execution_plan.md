@@ -29,6 +29,7 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
   17. FOLLOW-UP of the reverification: the mypy command of VFULL was fixed in the plan (it now passes --python-version of the running Python and fails when mypy stops early; before, mypy exited 2 on a numpy stub, the parsed count was 1 and the gate passed vacuously). Then `--only VR1`, then `--only VR2` (one at a time; each runs the whole table), then `--only VFULL` to prove the new command, and `--only VMYPY` shows the raw mypy output.
   18. N08 GAPS found by the Master check of 83826f6: `--only N08i` (the review page did not poll an EXECUTING case), then `--only N08jt` (red: 3 named tests fail), then `--only N08jc` (a 409 from execute reads the case again; human decision: the Resume-refusal test now expects one reload). Then `--only VFULL`.
   19. OPEN ITEMS OF THE FIX REPORT that the repository can close, one id per run: `--only N01mt` (red), `--only N01mc`, `--only N01kt` (red: 2 named tests), `--only N01kc`, `--only N08kt`, `--only N08kv` (red on the old page), then `--only VFULL`. Still open after these, by design: a process killed outright between the broker's accept and the save (needs a human decision: duplicates for the receiver to drop, or no automatic resend), the receiving side, the real environment.
+  20. SIMULATION ON THE EMULATORS (the human starts both emulators and installs google-cloud-firestore==2.31.0 and google-cloud-pubsub==2.41.0 into the runner's Python; agents run no gcloud command): `--only SIMPREP`, `--only FEMU`, `--only RCVt` (red: module missing), `--only RCVc`, `--only HKILL`, then `--only VFULL`. The simulation proves the protocol (at least once + a receiver that claims the key = applied once) and measures the hard-kill duplicate; it does not prove the real receiver.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
 - B3a, B3b and D2b contain design decisions: read B2/D1 answers (`runs/<id>/answer.md`) before running them.
@@ -112,6 +113,11 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 43v | N08kv | verify_only: that test fails on the page before N08i (red proof) |
 | 41f | N01mcf1 | Fix round 1 of N01mc: remove the blank line inside the signature of publish_decision_direct |
 | 44 | VR4 | Review VI table: rows N01-i, N01-j, N08-i and the review page test in its vitest run |
+| 45 | SIMPREP | verify_only gate: both emulators answer, the runner's Python has the Google client libraries |
+| 46 | FEMU | verify_only: the 16 Firestore tests CI skips, on the Firestore emulator |
+| 47t | RCVt | Tests first: a reference receiver applies each decision once per idempotency key (N01) |
+| 47c | RCVc | Code for RCVt: scripts/reference_receiver.py |
+| 48 | HKILL | Simulation: a hard kill after the broker accepted publishes twice; the receiver applies once (N01) |
 
 N01mc round 1: FIX, behaviour passed (40 tests, ruff clean) but EDIT 1 left a blank line inside the signature of publish_decision_direct; log runs/N01mc/attempt_1.log, diff runs/N01mc/attempt_1.diff.
 N01mcf1 (round 1 of N01mc): PASS, blank line removed, 40 tests and ruff green; log runs/N01mcf1/attempt_1.log.
@@ -7119,5 +7125,431 @@ new_string is the three rows below, and then that same line again:
 
 DONE WHEN: only this file changed; the vitest command names a fourth test file; three rows sit directly above the E01-a row.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: SIMPREP -->
+## Meta
+- title: verify_only - both emulators answer and the runner's Python has the Google client libraries
+- verify_only: true
+- test_commands:
+  - python -c "import urllib.request; [urllib.request.urlopen('http://127.0.0.1:'+p, timeout=5).close() for p in ('8681','8085')]; print('Firestore emulator 8681 and Pub/Sub emulator 8085 answer')"
+  - python -c "import google.cloud.firestore, google.cloud.pubsub_v1; print('google-cloud-firestore and google-cloud-pubsub import')"
+- timeout_sec: 120
+
+## Context
+Gate for the simulation tasks. The human starts the emulators (CLAUDE.md: agents run no gcloud command) with `gcloud beta emulators firestore start --host-port=127.0.0.1:8681` and `gcloud beta emulators pubsub start --host-port=127.0.0.1:8085`, and installs the two client libraries pinned in requirements.lock into the Python the runner uses (`python -m pip install google-cloud-firestore==2.31.0 google-cloud-pubsub==2.41.0`): on 2026-10-18 that Python had neither, and venv/ has them but no pytest. Every later simulation task fails without this gate.
+<!-- TASK_END -->
+
+<!-- TASK_START: FEMU -->
+## Meta
+- title: verify_only - the 16 Firestore tests that CI skips, run against the Firestore emulator
+- verify_only: true
+- depends_on:
+  - SIMPREP
+- test_commands:
+  - python -c "import os,subprocess,sys; os.environ['FIRESTORE_EMULATOR_HOST']='127.0.0.1:8681'; p=subprocess.run('python -m pytest tests/test_firestore_emulator.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-3000:]); sys.exit(1 if p.returncode or 'skipped' in o else 0)"
+- timeout_sec: 600
+
+## Context
+Open item of the fix report: "Firestore (16 tests skipped)". tests/test_firestore_emulator.py runs the real FirestoreStore (transactions, owner checks, sign-in ledger) against the emulator and is skipped unless FIRESTORE_EMULATOR_HOST is set. The command sets it, and fails if pytest fails OR if anything was skipped, so a run that silently skipped cannot pass.
+Master review: the log shows 16 passed and no "skipped".
+<!-- TASK_END -->
+
+<!-- TASK_START: RCVt -->
+## Meta
+- title: Tests first - a reference receiver applies each decision once per idempotency key (N01)
+- depends_on:
+  - SIMPREP
+- target_files:
+  - tests/test_reference_receiver.py
+- test_commands:
+  - python -c "import subprocess,sys; p=subprocess.run('python -m pytest tests/test_reference_receiver.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-1500:]); sys.exit(0 if p.returncode != 0 and 'No module named' in o and 'reference_receiver' in o else 1)"
+  - python -m ruff check tests/test_reference_receiver.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 300
+- max_retries: 1
+
+## Context
+Open item of the fix report: "N01 receiver-side deduplication not verified" (the receiver of case-decisions is outside this repository). The sender publishes at least once; a receiver that claims the idempotency_key before applying turns that into once. This pair writes that contract as a reference receiver (scripts/reference_receiver.py, next task) that the downstream team can adopt, and that the hard-kill simulation (HKILL) runs. It proves the protocol, not the real receiver: the report must keep saying the real receiver has to confirm it applies the contract.
+This task writes the tests only, as a NEW file. Expected now: collection fails with "No module named 'reference_receiver'"; the test command passes exactly then. The Firestore class is skipped here (no emulator variable); RCVc runs it with the emulator.
+Master review: the log shows the ModuleNotFoundError for reference_receiver and nothing else; ruff passes.
+
+## Prompt
+``````text
+TASK RCVt. Create ONE new file: tests/test_reference_receiver.py, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): tests/test_reference_receiver.py. It does not exist yet: create it with the Write tool. Do not create scripts/reference_receiver.py: these tests are meant to fail until the next task.
+
+Content (copy exactly):
+```python
+"""
+The reference receiver applies a decision once per idempotency key (N01).
+
+The sender publishes at least once: a process killed after the broker accepted a
+decision cannot know it went out, and its Resume publishes it again under the same
+key. The receiver turns that into once. The last class runs the Firestore claim
+against the emulator and is skipped without it.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+from reference_receiver import apply_once, firestore_claim  # noqa: E402
+
+FIRESTORE = os.getenv("FIRESTORE_EMULATOR_HOST", "")
+PROJECT = "vf-receiver-test"
+
+
+def _memory_claim():
+    seen: set[str] = set()
+
+    def claim(key: str) -> bool:
+        if key in seen:
+            return False
+        seen.add(key)
+        return True
+
+    return claim
+
+
+class TestApplyOnce:
+    def test_a_repeat_of_the_same_key_is_not_applied_again(self):
+        applied: list[str] = []
+        claim = _memory_claim()
+        first = apply_once({"idempotency_key": "exec-apr-1"}, claim, lambda: applied.append("a"))
+        second = apply_once({"idempotency_key": "exec-apr-1"}, claim, lambda: applied.append("b"))
+        assert (first, second) == ("applied", "duplicate")
+        assert applied == ["a"]
+
+    def test_another_key_is_applied(self):
+        applied: list[str] = []
+        claim = _memory_claim()
+        apply_once({"idempotency_key": "exec-apr-1"}, claim, lambda: applied.append("1"))
+        apply_once({"idempotency_key": "exec-apr-2"}, claim, lambda: applied.append("2"))
+        assert applied == ["1", "2"]
+
+    @pytest.mark.parametrize("attributes", [{}, {"idempotency_key": ""}])
+    def test_a_decision_without_a_key_is_rejected_not_applied(self, attributes):
+        # It cannot be deduplicated, so it is left for a person rather than applied.
+        applied: list[str] = []
+        assert apply_once(attributes, _memory_claim(), lambda: applied.append("x")) == "rejected"
+        assert applied == []
+
+
+@pytest.mark.skipif(not FIRESTORE, reason="FIRESTORE_EMULATOR_HOST is not set")
+class TestTheFirestoreClaim:
+    def setup_method(self):
+        request = urllib.request.Request(
+            f"http://{FIRESTORE}/emulator/v1/projects/{PROJECT}/databases/(default)/documents",
+            method="DELETE",
+        )
+        urllib.request.urlopen(request, timeout=10).close()  # noqa: S310 - local emulator
+        from google.cloud import firestore
+
+        self.db = firestore.Client(project=PROJECT)
+
+    def test_only_one_of_many_concurrent_claims_of_a_key_wins(self):
+        claim = firestore_claim(self.db)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(claim, ["exec-apr-1"] * 8))
+        assert results.count(True) == 1
+        assert claim("exec-apr-2") is True
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if tests/test_reference_receiver.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: RCVc -->
+## Meta
+- title: Code for RCVt - scripts/reference_receiver.py, apply_once and a Firestore create() claim (N01)
+- depends_on:
+  - RCVt
+- target_files:
+  - scripts/reference_receiver.py
+- test_commands:
+  - python -m pytest tests/test_reference_receiver.py -q -p no:cacheprovider
+  - python -c "import os,subprocess,sys; os.environ['FIRESTORE_EMULATOR_HOST']='127.0.0.1:8681'; p=subprocess.run('python -m pytest tests/test_reference_receiver.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-2000:]); sys.exit(1 if p.returncode or 'skipped' in o else 0)"
+  - python -m ruff check scripts/reference_receiver.py tests/test_reference_receiver.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 420
+- max_retries: 1
+
+## Context
+Code for the tests of RCVt, as a NEW file in scripts/ (a contract and a simulation tool, not part of the deployed service). `apply_once` claims the key before it applies and rejects a decision without a key (fail closed: it cannot be deduplicated). `firestore_claim` uses Firestore `create()`, which fails with AlreadyExists for every caller but the first, so concurrent deliveries of one key apply once. google.api_core is imported inside `firestore_claim`, so the unit tests run without the Google libraries.
+Master review: unit tests pass without the emulator; with it, 5 passed and nothing skipped (the concurrent-claim test included); ruff passes.
+
+## Prompt
+``````text
+TASK RCVc. Create ONE new file: scripts/reference_receiver.py, with exactly the content below. Nothing else.
+
+FILE YOU MAY CREATE (only this one): scripts/reference_receiver.py. It does not exist yet: create it with the Write tool. Do not edit the test file or any other file.
+
+Content (copy exactly):
+```python
+"""
+Reference receiver for the case-decisions topic: each approval is applied at most once.
+
+The sender publishes at least once. A process killed after the broker accepted a
+decision but before the sender saved that fact cannot know the decision went out, so
+its Resume publishes it again with the same idempotency_key attribute (N01). The
+repeat is harmless only if the receiver claims the key before it applies the decision.
+This module is that contract, as code the hard-kill simulation
+(tests/test_sim_hard_kill.py) runs against the Pub/Sub and Firestore emulators.
+
+A real receiver must claim and apply in one transaction: a claim followed by a crash
+before the apply would lose the decision. Here the apply is a callable so the
+contract can be tested on its own.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from typing import Any
+
+
+def apply_once(
+    attributes: Mapping[str, str], claim: Callable[[str], bool], apply: Callable[[], None],
+) -> str:
+    """
+    Apply one delivered decision unless its key was claimed before.
+
+    Returns "applied", "duplicate", or "rejected" for a message without a key: such a
+    message cannot be deduplicated, so it is left for a person rather than applied.
+    """
+    key = attributes.get("idempotency_key", "")
+    if not key:
+        return "rejected"
+    if not claim(key):
+        return "duplicate"
+    apply()
+    return "applied"
+
+
+def firestore_claim(db: Any, collection: str = "applied_decisions") -> Callable[[str], bool]:
+    """A claim backed by Firestore create(): only the first caller for a key succeeds."""
+    from google.api_core.exceptions import AlreadyExists
+
+    def claim(key: str) -> bool:
+        try:
+            db.collection(collection).document(key).create({"key": key})
+        except AlreadyExists:
+            return False
+        return True
+
+    return claim
+```
+
+DONE WHEN: the new file exists with exactly this content and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if scripts/reference_receiver.py already exists.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: HKILL -->
+## Meta
+- title: Simulation - a hard kill after the broker accepted publishes twice; the reference receiver applies once (N01)
+- depends_on:
+  - RCVc
+  - FEMU
+- target_files:
+  - tests/test_sim_hard_kill.py
+  - tests/sim_hard_kill_child.py
+- test_commands:
+  - python -c "import os,subprocess,sys; os.environ.update(FIRESTORE_EMULATOR_HOST='127.0.0.1:8681', PUBSUB_EMULATOR_HOST='127.0.0.1:8085'); p=subprocess.run('python -m pytest tests/test_sim_hard_kill.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-4000:]); sys.exit(1 if p.returncode or 'skipped' in o else 0)"
+  - python -m pytest tests/test_sim_hard_kill.py -q -p no:cacheprovider -rs
+  - python -m ruff check tests/test_sim_hard_kill.py tests/sim_hard_kill_child.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Open item of the fix report: "N01 process killed outright after the broker accepted: not handled". The sender cannot close it (it cannot ask Pub/Sub whether a key was received); this simulation MEASURES it instead of asserting it. A child process (tests/sim_hard_kill_child.py, not collected by pytest) executes the approval against the Firestore and Pub/Sub emulators and is killed outright (TerminateProcess on Windows, SIGKILL elsewhere) at the first save of the publish record, i.e. after the broker returned the message id: no except clause, finally or shield runs. The test then checks: the case is EXECUTING with no publish record; after the lease a Resume in this process publishes again under the same key (2 messages on a fresh subscription); the reference receiver with the Firestore claim applies the decision once.
+No source file changes. Without the emulator variables the test is skipped, so CI is unaffected (the second test command shows that skip reason locally).
+Master review: first command 1 passed and nothing skipped; second command 1 skipped with the emulator reason; ruff passes.
+
+## Prompt
+``````text
+TASK HKILL. Create TWO new files with exactly the contents below. Nothing else.
+
+FILES YOU MAY CREATE (only these two): tests/sim_hard_kill_child.py and tests/test_sim_hard_kill.py. Neither exists yet: create each with the Write tool. Do not edit any existing file.
+
+FILE 1: tests/sim_hard_kill_child.py (copy exactly):
+```python
+"""
+Child process of tests/test_sim_hard_kill.py: executes one approval and is killed
+outright the moment the broker has accepted the decision, before any record of the
+publish is saved. Nothing after the kill runs: no except clause, no finally, no shield.
+
+Usage: python sim_hard_kill_child.py CASE_ID APPROVAL_ID EXECUTOR
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import signal
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from vf_logistics import evidence, tools  # noqa: E402
+
+real_audit = tools._audit
+
+
+async def killed_before_the_record(case_id, action, detail, status="done", tenant_id=None):
+    if action == "publish_decision":
+        # The broker has the message. TerminateProcess on Windows, SIGKILL elsewhere.
+        os.kill(os.getpid(), getattr(signal, "SIGKILL", signal.SIGTERM))
+    return await real_audit(case_id, action, detail, status, tenant_id)
+
+
+tools._audit = killed_before_the_record
+case_id, approval_id, executor = sys.argv[1:4]
+asyncio.run(evidence.execute_approval(case_id, approval_id, executor, actor_auth="password"))
+```
+
+FILE 2: tests/test_sim_hard_kill.py (copy exactly):
+```python
+"""
+Simulation of the one N01 case the sender cannot close: the process is killed outright
+after the broker accepted the decision and before anything was saved.
+
+Runs against the Pub/Sub and Firestore emulators and is skipped without them:
+
+    gcloud beta emulators firestore start --host-port=127.0.0.1:8681
+    gcloud beta emulators pubsub start --host-port=127.0.0.1:8085
+    FIRESTORE_EMULATOR_HOST=127.0.0.1:8681 PUBSUB_EMULATOR_HOST=127.0.0.1:8085 python -m pytest tests/test_sim_hard_kill.py
+
+A child process executes the approval and is killed the moment the broker has the
+message, so no handler runs. A Resume after the lease publishes again: the sender
+cannot know the first one went out. The reference receiver
+(scripts/reference_receiver.py) then applies the decision once.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+from unittest.mock import patch
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+from reference_receiver import apply_once, firestore_claim  # noqa: E402
+from test_evidence_eval_approve import REVIEWER, Base, run  # noqa: E402
+from vf_logistics import evidence, tools  # noqa: E402
+from vf_logistics import store as store_mod  # noqa: E402
+
+FIRESTORE = os.getenv("FIRESTORE_EMULATOR_HOST", "")
+PUBSUB = os.getenv("PUBSUB_EMULATOR_HOST", "")
+PROJECT = "vf-sim-hard-kill"
+CHILD = os.path.join(os.path.dirname(__file__), "sim_hard_kill_child.py")
+
+
+def _wipe_firestore() -> None:
+    request = urllib.request.Request(
+        f"http://{FIRESTORE}/emulator/v1/projects/{PROJECT}/databases/(default)/documents",
+        method="DELETE",
+    )
+    urllib.request.urlopen(request, timeout=10).close()  # noqa: S310 - local emulator
+
+
+def _fresh_subscription():
+    """A subscription created now on the decisions topic, so it holds only this test's messages."""
+    from google.api_core.exceptions import AlreadyExists
+    from google.cloud import pubsub_v1
+
+    publisher = pubsub_v1.PublisherClient()
+    subscriber = pubsub_v1.SubscriberClient()
+    topic = publisher.topic_path(PROJECT, tools.DECISIONS_TOPIC)
+    try:
+        publisher.create_topic(name=topic)
+    except AlreadyExists:
+        pass
+    subscription = subscriber.subscription_path(PROJECT, f"sim-{time.time_ns()}")
+    subscriber.create_subscription(name=subscription, topic=topic)
+    return subscriber, subscription
+
+
+def _pull_all(subscriber, subscription: str, expected: int) -> list:
+    from google.api_core.exceptions import DeadlineExceeded
+
+    messages: list = []
+    deadline = time.time() + 30
+    while len(messages) < expected and time.time() < deadline:
+        try:
+            response = subscriber.pull(subscription=subscription, max_messages=10, timeout=5)
+        except DeadlineExceeded:
+            continue
+        if response.received_messages:
+            messages += [m.message for m in response.received_messages]
+            subscriber.acknowledge(
+                subscription=subscription, ack_ids=[m.ack_id for m in response.received_messages],
+            )
+    return messages
+
+
+@pytest.mark.skipif(not (FIRESTORE and PUBSUB), reason="needs FIRESTORE_EMULATOR_HOST and PUBSUB_EMULATOR_HOST")
+class TestAHardKillAfterTheBrokerAccepted(Base):
+    def setup_method(self):
+        super().setup_method()
+        _wipe_firestore()
+        self.emulators = patch.dict(os.environ, {"STORE_BACKEND": "firestore", "PROJECT_ID": PROJECT})
+        self.emulators.start()
+        self.store = store_mod.FirestoreStore(PROJECT)
+        store_mod._store = self.store
+
+    def teardown_method(self):
+        self.emulators.stop()
+        super().teardown_method()
+
+    def test_the_decision_is_published_twice_and_applied_once(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+        approval_id = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
+        ))["approval"]["approval_id"]
+        subscriber, subscription = _fresh_subscription()
+
+        # 1. The child executes the approval and is killed once the broker has the message.
+        child = subprocess.run([sys.executable, CHILD, "CASE-1", approval_id, REVIEWER], timeout=120)
+        assert child.returncode != 0
+        assert self.stored()["state"] == "EXECUTING"
+        rows = [r for r in run(self.store.list_audit(limit=500)) if r.get("action") == "publish_decision"]
+        assert rows == []  # nothing was saved: the sender cannot know the decision went out
+
+        # 2. After the lease, a Resume publishes again under the same key.
+        case = self.stored()
+        case["verification"]["executions"][0]["claim_expires_epoch"] = time.time() - 1
+        run(self.store.put_case(case))
+        result = run(evidence.execute_approval("CASE-1", approval_id, REVIEWER, actor_auth="password"))
+        assert result["state"] == "RELEASED_BY_HUMAN"
+
+        messages = _pull_all(subscriber, subscription, expected=2)
+        assert [m.attributes["idempotency_key"] for m in messages] == [f"exec-{approval_id}"] * 2
+
+        # 3. The reference receiver applies it once.
+        from google.cloud import firestore
+
+        claim = firestore_claim(firestore.Client(project=PROJECT))
+        applied: list[str] = []
+        outcomes = [apply_once(m.attributes, claim, lambda m=m: applied.append(m.message_id)) for m in messages]
+        assert sorted(outcomes) == ["applied", "duplicate"]
+        assert len(applied) == 1
+```
+
+DONE WHEN: both new files exist with exactly these contents and no other file changed.
+STOP AND REPLY WITHOUT WRITING (at most 3 lines) if either file already exists.
 ``````
 <!-- TASK_END -->
