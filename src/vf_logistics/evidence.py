@@ -1003,6 +1003,12 @@ async def approve(
             if contradicted:
                 what.append("papers that contradict the declared origin")
             needed = unresolved + [f"contradiction:{c['kind']}" for c in contradictions]
+            if waived is None:
+                raise EvidenceError(
+                    f"Release with {' and '.join(what)} is an exception: use the exception "
+                    "operation (approve-exception), name every waived item and give a reason.",
+                    403,
+                )
             if waived is not None and sorted(set(waived)) != sorted(set(needed)):
                 raise EvidenceError(
                     "An exception must name every waived item: " + ", ".join(needed) + ".", 400,

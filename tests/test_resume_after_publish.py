@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from test_evidence_eval_approve import Base  # noqa: E402
+from test_evidence_eval_approve import Base, approve_open  # noqa: E402
 from test_evidence_execution import _fake_pubsub, _with_pubsub  # noqa: E402
 from vf_logistics import evidence, tools  # noqa: E402
 
@@ -30,7 +30,7 @@ class TestAResumeAfterAnAcceptedPublish(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
@@ -70,7 +70,7 @@ class TestARecordThatFailsToSaveAfterTheBrokerAccepted(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
@@ -103,7 +103,7 @@ class TestARecordThatFailsToSaveTwiceAfterTheBrokerAccepted(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         pubsub, published = _fake_pubsub(["msg-1", "msg-2"])
@@ -148,7 +148,7 @@ class TestACancellationAroundThePublish(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         pubsub, published = _fake_pubsub(["msg-1", "msg-2"])

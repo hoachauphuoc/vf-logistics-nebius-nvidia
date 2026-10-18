@@ -92,11 +92,11 @@ class TestTheExceptionOperation(Base):
         assert "nothing to waive" in raised.value.message
         assert self.stored()["verification"]["approvals"] == []
 
-    def test_the_normal_approval_still_takes_a_note_in_this_step(self):
-        """Pinned only until the step that makes approve() refuse an exception."""
+    def test_the_normal_approval_refuses_an_exception_and_points_to_the_operation(self):
         self._contradicted()
-        result = run(evidence.approve(
-            "CASE-1", "release", REVIEWER, note=REASON, actor_auth="password",
-        ))
-        assert result["state"] == "APPROVED"
-        assert "operation" not in result["approval"]["exception"]
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note=REASON, actor_auth="password"))
+        assert raised.value.status == 403
+        assert "exception operation" in raised.value.message
+        assert self.stored()["state"] != "APPROVED"
+        assert self.stored()["verification"]["approvals"] == []

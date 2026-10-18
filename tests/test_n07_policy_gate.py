@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from test_console_session import TEST_KEY  # noqa: E402
-from test_evidence_eval_approve import Base as EvidenceBase  # noqa: E402
+from test_evidence_eval_approve import Base as EvidenceBase, approve_open  # noqa: E402
 from test_rbac import ADMIN, REVIEWER, ROLE_ENV, _session  # noqa: E402
 from vf_logistics import evidence, orchestrator  # noqa: E402
 
@@ -66,7 +66,7 @@ class TestApproveAndExecuteNeedAPassword(RouteBase):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        return run(evidence.approve(
+        return run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
 

@@ -93,6 +93,7 @@ export const ALLOWED_POST = new Set([
   "review/decide",
   "review/deep-review",
   // Verification loop: request, evaluate, approve, execute, cancel, re-link.
+  "review/approve-exception",
   "review/request-evidence",
   "review/reevaluate",
   "review/approve",
@@ -147,6 +148,7 @@ export const PASSWORD_ONLY_POST = new Set([
   "governance/revoke",
   "governance/publish",
   // Verification loop: approve and execute change downstream state.
+  "review/approve-exception",
   "review/approve",
   "review/execute",
 ]);
@@ -173,7 +175,7 @@ export function matchWrite(joined: string, allowed: Set<string>): boolean {
   const parts = joined.split("/");
   if (parts.length === 3 && parts[0] === "review" && CASE_ID.test(parts[1])) {
     const action = parts[2];
-    if (["decide", "deep-review", "request-evidence", "reevaluate", "approve", "execute"].includes(action)) {
+    if (["decide", "deep-review", "request-evidence", "reevaluate", "approve", "approve-exception", "execute"].includes(action)) {
       return allowed.has(`review/${action}`);
     }
     return false;
@@ -191,7 +193,7 @@ export function matchWrite(joined: string, allowed: Set<string>): boolean {
   // Flask has none of them without an id.
   if (joined === "review/decide" || joined === "review/deep-review" || joined === "cases/activity"
       || joined === "review/request-evidence" || joined === "review/reevaluate"
-      || joined === "review/approve" || joined === "review/execute"
+      || joined === "review/approve" || joined === "review/approve-exception" || joined === "review/execute"
       || joined === "review/evidence/link" || joined === "review/evidence/cancel") {
     return false;
   }

@@ -30,6 +30,34 @@ def run(coro):
     return asyncio.run(coro)
 
 
+async def approve_open(case_id, action, approver, *, note="", actor_auth=None, tenant_id=None):
+    """
+    evidence.approve for a test whose evidence is not clean.
+
+    A release over unresolved or contradicting evidence is an exception (N04): it goes
+    through approve_exception and names every waived item, as the console does. Every
+    other approval is passed on to approve() unchanged.
+    """
+    if action == "release":
+        case = await store_mod.get_store().get_case(case_id, tenant_id=tenant_id)
+        record = (case or {}).get("verification") or {}
+        version = record.get("evidence_version") or 0
+        latest = next(
+            (e for e in reversed(record.get("evaluations") or []) if e.get("evidence_version") == version),
+            None,
+        )
+        waived = [str(u) for u in (latest or {}).get("unresolved") or []] + [
+            f"contradiction:{c['kind']}" for c in (latest or {}).get("contradictions") or []
+        ]
+        if waived:
+            return await evidence.approve_exception(
+                case_id, approver, note, waived, actor_auth=actor_auth, tenant_id=tenant_id,
+            )
+    return await evidence.approve(
+        case_id, action, approver, note=note, actor_auth=actor_auth, tenant_id=tenant_id,
+    )
+
+
 def tiny_pdf():
     try:
         from fpdf import FPDF
@@ -131,7 +159,7 @@ class TestApproval(Base):
 
     def test_a_release_approval_is_valid_and_moves_the_case(self):
         self._prepare()
-        result = run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
+        result = run(approve_open("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
         assert result["state"] == "APPROVED"
         case = self.stored()
         assert case["state"] == "APPROVED"
@@ -178,7 +206,7 @@ class TestApproval(Base):
     def test_a_stale_approval_is_superseded_by_new_evidence(self):
         """Approve, then new evidence arrives: the approval is no longer valid."""
         self._prepare()
-        run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
+        run(approve_open("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
         # Submit more evidence
         out2 = run(evidence.request_evidence("CASE-1", REVIEWER, documents=["producer_declaration"]))
         mock = {
@@ -206,16 +234,17 @@ class TestApproval(Base):
         case["verification"]["evaluations"][-1] = ev
         run(self.store.put_case(case))
 
-    def test_n04_release_with_unresolved_evidence_needs_a_note(self):
+    def test_n04_release_with_unresolved_evidence_is_refused_and_points_to_the_exception_operation(self):
         self._prepare_unresolved()
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
-        assert raised.value.status == 400
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Verified by phone", actor_auth="password"))
+        assert raised.value.status == 403
+        assert "exception operation" in raised.value.message
         assert self.stored()["state"] != "APPROVED"
 
     def test_n04_release_with_unresolved_evidence_and_a_note_is_allowed(self):
         self._prepare_unresolved()
-        result = run(evidence.approve(
+        result = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Verified by phone", actor_auth="password",
         ))
         assert result["state"] == "APPROVED"
@@ -227,7 +256,7 @@ class TestApproval(Base):
 
     def test_the_review_entry_is_appended(self):
         self._prepare()
-        run(evidence.approve("CASE-1", "release", REVIEWER, note="All clear", actor_auth="password"))
+        run(approve_open("CASE-1", "release", REVIEWER, note="All clear", actor_auth="password"))
         case = self.stored()
         review = case["reviews"][-1]
         assert review["action"] == "release"
@@ -271,9 +300,9 @@ class TestN06NotStated(Base):
     def test_n04_release_of_that_case_is_an_exception_with_a_recorded_reason(self):
         self._thin_evidence()
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
-        assert raised.value.status == 400
-        result = run(evidence.approve(
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Confirmed by phone", actor_auth="password"))
+        assert raised.value.status == 403
+        result = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Confirmed by phone", actor_auth="password",
         ))
         exc = result["approval"]["exception"]
@@ -482,10 +511,10 @@ class TestN04WhenARequestIsClosed(Base):
         run(evidence.cancel_request("CASE-1", self.request_id, REVIEWER,
                                     "Shipper cannot find the invoice", actor_auth="password"))
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
-        assert raised.value.status == 400  # the missing invoice is an exception that needs a note
-        result = run(evidence.approve("CASE-1", "release", REVIEWER,
-                                      note="Invoice seen on site", actor_auth="password"))
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Invoice seen on site", actor_auth="password"))
+        assert raised.value.status == 403  # a release over a missing invoice is an exception
+        result = run(approve_open("CASE-1", "release", REVIEWER,
+                                  note="Invoice seen on site", actor_auth="password"))
         assert result["approval"]["exception"]["unresolved"] == ["input_purchase_invoices"]
 
     def test_the_last_document_after_a_partial_re_evaluate_needs_a_fresh_one(self):
@@ -521,18 +550,17 @@ class TestReleasingAgainstContradictingPapers(Base):
         assert result["evaluation"]["unresolved"] == []
         return result
 
-    def test_a_release_needs_a_note(self):
+    def test_a_release_with_a_note_is_still_refused_by_approve(self):
         self._contradicted()
-        for empty in ("", "   "):
-            with pytest.raises(evidence.EvidenceError) as raised:
-                run(evidence.approve("CASE-1", "release", REVIEWER, note=empty, actor_auth="password"))
-            assert raised.value.status == 400
-            assert "contradict" in raised.value.message.lower()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Seen the original", actor_auth="password"))
+        assert raised.value.status == 403
+        assert "contradict" in raised.value.message.lower() and "exception operation" in raised.value.message
         assert self.stored()["state"] == "ESCALATED"
 
     def test_a_release_with_a_note_is_recorded_as_an_exception_naming_the_contradiction(self):
         self._contradicted()
-        result = run(evidence.approve(
+        result = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Certificate misread; checked the original", actor_auth="password",
         ))
         exc = result["approval"]["exception"]
@@ -555,9 +583,9 @@ class TestReleasingAgainstContradictingPapers(Base):
         run(evidence.cancel_request("CASE-1", out["request"]["request_id"], REVIEWER, "no answer", actor_auth="password"))
         run(evidence.reevaluate("CASE-1"))
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Seen on site", actor_auth="password"))
         message = raised.value.message.lower()
-        assert raised.value.status == 400 and "unresolved" in message and "contradict" in message
+        assert raised.value.status == 403 and "unresolved" in message and "contradict" in message
 
     def test_good_papers_still_release_without_a_note(self):
         assert self._full_set()["evaluation"]["status"] == "provided"
@@ -698,9 +726,9 @@ class TestN04ReleaseNeedsAnEvaluation(Base):
         # Nothing was received, so every paper is unresolved: the release is an
         # exception and needs its reason, exactly as after a partial set.
         with pytest.raises(evidence.EvidenceError) as raised:
-            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
-        assert raised.value.status == 400
-        approved = run(evidence.approve(
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Papers seen on site", actor_auth="password"))
+        assert raised.value.status == 403
+        approved = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Papers seen on site", actor_auth="password",
         ))
         approval = approved["approval"]
@@ -768,3 +796,24 @@ class TestN04ReleaseNeedsAnEvaluation(Base):
             "CASE-1", "release", REVIEWER, "reviewed", actor_auth="password",
         ))
         assert decided["ok"] is True
+
+
+class TestApproveOpen(Base):
+    def _evaluated(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+
+    def test_a_release_over_open_evidence_goes_through_the_exception_operation(self):
+        self._evaluated()
+        result = run(approve_open("CASE-1", "release", REVIEWER, note="Seen on site", actor_auth="password"))
+        exception = result["approval"]["exception"]
+        assert exception["operation"] == "exception"
+        assert exception["reason"] == "Seen on site"
+        assert exception["waived"] and exception["waived"] == sorted(set(exception["unresolved"]))
+
+    def test_a_block_is_passed_on_to_approve_unchanged(self):
+        self._evaluated()
+        result = run(approve_open("CASE-1", "block", REVIEWER, actor_auth="password"))
+        assert result["state"] == "APPROVED"
+        assert "exception" not in result["approval"]

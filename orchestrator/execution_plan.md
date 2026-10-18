@@ -30,6 +30,8 @@ Written by the Master, executed by `orchestrator/automation_runner.py` through t
   18. N08 GAPS found by the Master check of 83826f6: `--only N08i` (the review page did not poll an EXECUTING case), then `--only N08jt` (red: 3 named tests fail), then `--only N08jc` (a 409 from execute reads the case again; human decision: the Resume-refusal test now expects one reload). Then `--only VFULL`.
   19. OPEN ITEMS OF THE FIX REPORT that the repository can close, one id per run: `--only N01mt` (red), `--only N01mc`, `--only N01kt` (red: 2 named tests), `--only N01kc`, `--only N08kt`, `--only N08kv` (red on the old page), then `--only VFULL`. Still open after these, by design: a process killed outright between the broker's accept and the save (needs a human decision: duplicates for the receiver to drop, or no automatic resend), the receiving side, the real environment.
   20. SIMULATION ON THE EMULATORS (the human starts both emulators and installs google-cloud-firestore==2.31.0 and google-cloud-pubsub==2.41.0 into the runner's Python; agents run no gcloud command): `--only SIMPREP`, `--only FEMU`, `--only RCVt` (red: module missing), `--only RCVc`, `--only HKILL`, then `--only VFULL`. The simulation proves the protocol (at least once + a receiver that claims the key = applied once) and measures the hard-kill duplicate; it does not prove the real receiver.
+  22. N04 STEP 2 (human decision 2026-10-18; approved migrating the tests that approve a release over open evidence; the probe found 47 failing tests in 7 files, not 39): `--only N04H1`, `--only N04M1`, `--only N04M2`, `--only N04M3` (emulators must be up), `--only N04T` (red: exactly 7 failed), `--only N04C`, then `--only VFULL`. Then the table row N04-b of scripts/verify_review_vi.py (VR5) and step 3 (console). N04T: the old tests that asserted "a note is enough" are rewritten to assert 403 + the exception operation.
+  23. N04 STEP 3 (console): `--only N04F1`, `--only N04F2`, `--only N04F3t` (red: exactly 4 failed), `--only N04F3c`, then `--only VFULL`. The console calls POST review/<id>/approve-exception for a release over unresolved or contradicting evidence (reason + every waived item; operator role and password sign-in, both enforced by the API); a block and a release over clean evidence keep POST approve. A reviewer without the operator role can no longer release over open evidence: that is the policy of step 1, now visible.
   21. SENT LEDGER (human decision 2026-10-18: close the hard-kill gap on the sender side, fail closed; N04 not now): `--only LEDt` (red: 8 tests), `--only LEDc`, `--only HKILL2` (emulators running: must show ONE message), then `--only VFULL`. Deployment needs a subscription on case-decisions created before use and SENT_LEDGER_SUBSCRIPTION set (human step); docs/RECEIVER_CONTRACT.md describes both sides.
 - Task C3 is PARKED (not parsed): it needs a human decision on multi-page PDF behaviour. To enable it,
   rename its PARKED_TASK_START / PARKED_TASK_END markers to TASK_START / TASK_END.
@@ -123,7 +125,21 @@ N03d1c round 2: FIX, V4 (full suite) shows 2 failures: the tenant upload test st
 | 49c | LEDc | Code for LEDt: SENT_LEDGER_SUBSCRIPTION, `_settle_from_ledger`, `after_attempt`, tenant attribute |
 | 50 | HKILL2 | Simulation: with the sent ledger the resume after a hard kill publishes nothing more (1 message) |
 | 49f | LEDcf1 | Fix round 1 of LEDc: import pubsub_v1 by name (CI mypy 124 > 123) |
+| 51a | N04H1 | N04 step 2: test helper approve_open (a release over open evidence goes through the exception operation) |
+| 51b | N04M1 | N04 step 2: test_evidence_execution.py approves through approve_open |
+| 51c | N04M2 | N04 step 2: test_n07_policy_gate, test_send_unknown, test_sent_ledger approve through approve_open |
+| 51d | N04M3 | N04 step 2: test_resume_after_publish and test_sim_hard_kill approve through approve_open |
+| 51t | N04T | Tests first: approve() refuses a release over open evidence (403) and points to the exception operation: 7 tests red |
+| 51c | N04C | Code for N04T: one `if waived is None` refusal in approve() |
+| 52a | N04F1 | N04 step 3: waivedItems (what a release over this evidence waives) |
+| 52b | N04F2 | N04 step 3: approveException in api.ts and the proxy allow-list for approve-exception |
+| 52t | N04F3t | Tests first: the review panel releases over open evidence through the exception operation: 4 tests red |
+| 52c | N04F3c | Code for N04F3t: ReviewPanel.tsx |
+| 53 | VR5 | Review VI table: row N04-b follows the renamed test; rows N04-d and N04-e |
 
+N04F3t round 2: RERUN, the same command then failed printing a non-ASCII vitest character to a cp1252 console (UnicodeEncodeError); it now prints ASCII only and was tried on the unchanged tree first. Rounds were spent on my command, not on the sub-agent: its edits are what the runner restored each time.
+N04F3t round 1: RERUN, my test command decoded vitest's UTF-8 output as cp1252 (UnicodeDecodeError, no output to count); it now passes encoding='utf-8'; logs runs/N04F3t/attempt_1.log, attempt_2.log.
+N04F1 round 1: RERUN, my prompt named the new function waivedItems, which operations.ts already has as a private function; both attempts failed on the duplicate declaration; renamed evidenceToWaive; logs runs/N04F1/attempt_1.log, attempt_2.log.
 LEDcf1 (round 2 of LEDc): RERUN, the edit was right (runs/LEDcf1/attempt_2.diff) but its first test command counted the new comment's text as a second import; the command now counts import lines only. One extra run in between reran the unchanged task by an operator mistake and is not counted.
 LEDc round 1: FIX, CI typecheck on 4f99b7f failed (mypy 124 > ceiling 123, new attr-defined at tools.py:280); the local VFULL gate showed 120 because this machine resolves google.cloud differently from CI's Python 3.11; CI run 39086204646.
 
@@ -8030,5 +8046,1099 @@ The lines after it (the empty line and `    from vf_logistics.tenant import mult
 
 DONE WHEN: only tools.py changed; _settle_from_ledger imports importlib and loads pubsub_v1 by name; publish_decision_direct still has its own `from google.cloud import pubsub_v1`.
 STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the four lines are not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04H1 -->
+## Meta
+- title: N04 step 2, part 1 - a test helper for approving a release over open evidence through the exception operation
+- depends_on:
+  - LEDcf1
+- target_files:
+  - tests/test_evidence_eval_approve.py
+- test_commands:
+  - python -m pytest tests/test_evidence_eval_approve.py -q -p no:cacheprovider
+  - python -m ruff check tests/test_evidence_eval_approve.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+Human decision (2026-10-18): do N04 steps 2 and 3, migrating the existing tests that approve a release over unresolved or contradicting evidence. A probe (approve() refusing a release without `waived`, in a scratch worktree) failed 47 tests in 7 files. They do two kinds of thing: set up an approved case over open evidence (most), or assert the old rule that a note is enough (7 tests, rewritten in N04T).
+This part adds the helper the setups will use, `approve_open`, in the module the other test files already import from: it behaves like evidence.approve, except that a release over unresolved or contradicting evidence goes through evidence.approve_exception and names every waived item (what the console will do in step 3). It changes no behaviour, so the whole file stays green, and two new tests pin the helper.
+Master review: the file passes with 2 more tests; `git diff` shows one helper after `run` and one class at the end.
+
+## Prompt
+``````text
+TASK N04H1. Two edits in tests/test_evidence_eval_approve.py: a helper after `run` and a test class at the end of the file. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_evidence_eval_approve.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not change any existing test. `evidence`, `store_mod`, `REVIEWER`, `Base` and `run` already exist in this file.
+
+EDIT 1 (the helper, directly after `run`). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    return asyncio.run(coro)
+```
+new_string is that same line first, then two blank lines, then the function below:
+```python
+    return asyncio.run(coro)
+
+
+async def approve_open(case_id, action, approver, *, note="", actor_auth=None, tenant_id=None):
+    """
+    evidence.approve for a test whose evidence is not clean.
+
+    A release over unresolved or contradicting evidence is an exception (N04): it goes
+    through approve_exception and names every waived item, as the console does. Every
+    other approval is passed on to approve() unchanged.
+    """
+    if action == "release":
+        case = await store_mod.get_store().get_case(case_id, tenant_id=tenant_id)
+        record = (case or {}).get("verification") or {}
+        version = record.get("evidence_version") or 0
+        latest = next(
+            (e for e in reversed(record.get("evaluations") or []) if e.get("evidence_version") == version),
+            None,
+        )
+        waived = [str(u) for u in (latest or {}).get("unresolved") or []] + [
+            f"contradiction:{c['kind']}" for c in (latest or {}).get("contradictions") or []
+        ]
+        if waived:
+            return await evidence.approve_exception(
+                case_id, approver, note, waived, actor_auth=actor_auth, tenant_id=tenant_id,
+            )
+    return await evidence.approve(
+        case_id, action, approver, note=note, actor_auth=actor_auth, tenant_id=tenant_id,
+    )
+```
+
+EDIT 2 (a test class at the END of the file, never at the top). old_string, ONE line (8 leading spaces; it is the last line of the file and occurs once):
+```python
+        assert decided["ok"] is True
+```
+new_string is that same line first, then two blank lines, then the class below:
+```python
+        assert decided["ok"] is True
+
+
+class TestApproveOpen(Base):
+    def _evaluated(self):
+        self.put()
+        self.request_and_submit()
+        run(evidence.reevaluate("CASE-1"))
+
+    def test_a_release_over_open_evidence_goes_through_the_exception_operation(self):
+        self._evaluated()
+        result = run(approve_open("CASE-1", "release", REVIEWER, note="Seen on site", actor_auth="password"))
+        exception = result["approval"]["exception"]
+        assert exception["operation"] == "exception"
+        assert exception["reason"] == "Seen on site"
+        assert exception["waived"] and exception["waived"] == sorted(set(exception["unresolved"]))
+
+    def test_a_block_is_passed_on_to_approve_unchanged(self):
+        self._evaluated()
+        result = run(approve_open("CASE-1", "block", REVIEWER, actor_auth="password"))
+        assert result["state"] == "APPROVED"
+        assert "exception" not in result["approval"]
+```
+
+DONE WHEN: only this file changed; `approve_open` sits after `run`, the new class is the last thing in the file, the old last line is kept.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04M1 -->
+## Meta
+- title: N04 step 2, part 2 - test_evidence_execution.py approves through approve_open
+- depends_on:
+  - N04H1
+- target_files:
+  - tests/test_evidence_execution.py
+- test_commands:
+  - python -m pytest tests/test_evidence_execution.py -q -p no:cacheprovider
+  - python -m ruff check tests/test_evidence_execution.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+Every `evidence.approve(` in this file is a setup that needs an approval to exist (8 call sites; 26 tests fail under the probe). They now call approve_open (N04H1). approve_open passes a block and an approval over clean evidence on to approve() unchanged, so the file stays green before and after the backend change. No test here asserts the old note rule.
+Master review: the file passes; `git diff` shows the import line and 8 renamed calls, nothing else.
+
+## Prompt
+``````text
+TASK N04M1. Two edits in tests/test_evidence_execution.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): tests/test_evidence_execution.py. It uses Windows line endings (CRLF). Use the Edit tool. Never use Write on this file. Do not change anything but what the two edits say.
+
+EDIT 1 (the import). old_string, ONE line (no leading spaces; occurs once):
+```python
+from test_evidence_eval_approve import Base, tiny_pdf  # noqa: E402
+```
+new_string, ONE line:
+```python
+from test_evidence_eval_approve import Base, approve_open, tiny_pdf  # noqa: E402
+```
+
+EDIT 2 (every call). Use replace_all. old_string, one short fragment (it occurs 8 times, inside `run(...)` calls):
+```python
+evidence.approve(
+```
+new_string:
+```python
+approve_open(
+```
+Do this with replace_all set to true. The arguments of every call stay exactly as they are. `evidence.approve_exception(` does not contain that fragment and must not appear in the result.
+
+DONE WHEN: only this file changed; the import names approve_open; no `evidence.approve(` is left in the file; 8 calls now say `approve_open(`.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the import line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04M2 -->
+## Meta
+- title: N04 step 2, part 3 - three more test files approve through approve_open
+- depends_on:
+  - N04M1
+- target_files:
+  - tests/test_n07_policy_gate.py
+  - tests/test_send_unknown.py
+  - tests/test_sent_ledger.py
+- test_commands:
+  - python -m pytest tests/test_n07_policy_gate.py tests/test_send_unknown.py tests/test_sent_ledger.py -q -p no:cacheprovider
+  - python -m ruff check tests/test_n07_policy_gate.py tests/test_send_unknown.py tests/test_sent_ledger.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+One `evidence.approve(` setup in each of the three files. test_n07_policy_gate.py and test_send_unknown.py use CRLF line endings; test_sent_ledger.py uses LF (created with Write); every edit below is a one-line or one-fragment edit, so both work. In test_n07_policy_gate.py the module imports the base class as `Base as EvidenceBase`.
+Master review: the three files pass; `git diff` shows three import lines and three renamed calls.
+
+## Prompt
+``````text
+TASK N04M2. Six edits, two in each of three files. Nothing else.
+
+FILES YOU MAY EDIT (only these three): tests/test_n07_policy_gate.py, tests/test_send_unknown.py, tests/test_sent_ledger.py. Use the Edit tool. Never use Write on these files. Change nothing but what the edits say.
+
+FILE 1: tests/test_n07_policy_gate.py
+EDIT 1. old_string, ONE line (no leading spaces; occurs once):
+```python
+from test_evidence_eval_approve import Base as EvidenceBase  # noqa: E402
+```
+new_string, ONE line:
+```python
+from test_evidence_eval_approve import Base as EvidenceBase, approve_open  # noqa: E402
+```
+EDIT 2. old_string, one fragment (occurs once):
+```python
+evidence.approve(
+```
+new_string:
+```python
+approve_open(
+```
+
+FILE 2: tests/test_send_unknown.py
+EDIT 3. old_string, ONE line (no leading spaces; occurs once):
+```python
+from test_evidence_eval_approve import Base  # noqa: E402
+```
+new_string, ONE line:
+```python
+from test_evidence_eval_approve import Base, approve_open  # noqa: E402
+```
+EDIT 4. old_string, one fragment (occurs once):
+```python
+evidence.approve(
+```
+new_string:
+```python
+approve_open(
+```
+
+FILE 3: tests/test_sent_ledger.py
+EDIT 5. old_string, ONE line (no leading spaces; occurs once):
+```python
+from test_evidence_eval_approve import REVIEWER, Base  # noqa: E402
+```
+new_string, ONE line:
+```python
+from test_evidence_eval_approve import REVIEWER, Base, approve_open  # noqa: E402
+```
+EDIT 6. old_string, one fragment (occurs once):
+```python
+evidence.approve(
+```
+new_string:
+```python
+approve_open(
+```
+
+DONE WHEN: only these three files changed; each imports approve_open and its one `evidence.approve(` now says `approve_open(`.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an import line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04M3 -->
+## Meta
+- title: N04 step 2, part 4 - the resume and hard-kill tests approve through approve_open
+- depends_on:
+  - N04M2
+- target_files:
+  - tests/test_resume_after_publish.py
+  - tests/test_sim_hard_kill.py
+- test_commands:
+  - python -c "import os,subprocess,sys; os.environ.update(FIRESTORE_EMULATOR_HOST='127.0.0.1:8681', PUBSUB_EMULATOR_HOST='127.0.0.1:8085'); p=subprocess.run('python -m pytest tests/test_resume_after_publish.py tests/test_sim_hard_kill.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-3000:]); sys.exit(1 if p.returncode or 'skipped' in o else 0)"
+  - python -m ruff check tests/test_resume_after_publish.py tests/test_sim_hard_kill.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+test_resume_after_publish.py (CRLF, 4 call sites) and test_sim_hard_kill.py (LF, 2 call sites; its tests need the Pub/Sub and Firestore emulators, which the test command points at; with the emulators down the command fails on its "skipped" check, so start them first). Every site in both files is an `approval_id = run(evidence.approve(` setup: replace_all of the fragment is safe.
+Master review: all tests pass with nothing skipped; `git diff` shows two import lines and six renamed calls.
+
+## Prompt
+``````text
+TASK N04M3. Four edits, two in each of two files. Nothing else.
+
+FILES YOU MAY EDIT (only these two): tests/test_resume_after_publish.py and tests/test_sim_hard_kill.py. Use the Edit tool. Never use Write on these files. Change nothing but what the edits say.
+
+FILE 1: tests/test_resume_after_publish.py
+EDIT 1. old_string, ONE line (no leading spaces; occurs once):
+```python
+from test_evidence_eval_approve import Base  # noqa: E402
+```
+new_string, ONE line:
+```python
+from test_evidence_eval_approve import Base, approve_open  # noqa: E402
+```
+EDIT 2. Use replace_all. old_string, one fragment (occurs 4 times):
+```python
+evidence.approve(
+```
+new_string:
+```python
+approve_open(
+```
+
+FILE 2: tests/test_sim_hard_kill.py
+EDIT 3. old_string, ONE line (no leading spaces; occurs once):
+```python
+from test_evidence_eval_approve import REVIEWER, Base, run  # noqa: E402
+```
+new_string, ONE line:
+```python
+from test_evidence_eval_approve import REVIEWER, Base, approve_open, run  # noqa: E402
+```
+EDIT 4. Use replace_all. old_string, one fragment (occurs 2 times):
+```python
+evidence.approve(
+```
+new_string:
+```python
+approve_open(
+```
+For both replace_all edits set replace_all to true. The arguments of every call stay exactly as they are.
+
+DONE WHEN: only these two files changed; both import approve_open; no `evidence.approve(` is left in either file.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an import line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04T -->
+## Meta
+- title: Tests first - approve() refuses a release over unresolved or contradicting evidence and points to the exception operation (N04)
+- depends_on:
+  - N04M3
+- target_files:
+  - tests/test_evidence_eval_approve.py
+  - tests/test_exception_approval.py
+- test_commands:
+  - python -c "import subprocess,sys; p=subprocess.run('python -m pytest tests/test_evidence_eval_approve.py tests/test_exception_approval.py -q -p no:cacheprovider', shell=True, capture_output=True, text=True); o=p.stdout+p.stderr; print(o[-2500:]); sys.exit(0 if p.returncode == 1 and ' 7 failed' in o else 1)"
+  - python -m ruff check tests/test_evidence_eval_approve.py tests/test_exception_approval.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+Step 2 of N04 (human decision 2026-10-18): approve() refuses a release over unresolved or contradicting evidence with 403 and points to the exception operation; N04H1 to N04M3 moved the setups to approve_open. This task rewrites the 7 tests that asserted the old rule ("a note is enough") to assert the new one, and moves 5 more call sites to approve_open (they set up an approval over open evidence). The rewritten tests are RED on the current code: approve() still takes a note. Expected: exactly 7 failed, in these tests: test_n04_release_with_unresolved_evidence_is_refused_and_points_to_the_exception_operation, test_n04_release_of_that_case_is_an_exception_with_a_recorded_reason, test_cancelling_the_request_is_the_way_out_and_a_release_then_needs_a_reason, test_a_release_with_a_note_is_still_refused_by_approve, test_a_note_is_also_needed_when_unresolved_and_contradicted_together, test_the_case_is_not_stranded_re_evaluate_then_release_with_a_reason, and test_the_normal_approval_refuses_an_exception_and_points_to_the_operation. The test command passes when pytest exits 1 with " 7 failed".
+Human instruction on tests (2026-10-18): migrating these tests to the exception operation is approved; each migrated test keeps checking the same behaviour (the exception record, its reason, what it waived).
+The scripts/verify_review_vi.py row N04-b names the old test `test_n04_release_with_unresolved_evidence_needs_a_note`; VR5 updates it after this step.
+Every old_string below was checked unique in the file on 2026-10-18. The multi-line ones are 3 to 7 lines: they match on these CRLF files (N08jt, N01kc).
+Master review: in the log exactly those 7 tests fail, each at its `status == 403` assertion (the current code lets the release through, so `pytest.raises` reports "DID NOT RAISE"); everything else in both files passes.
+
+## Prompt
+``````text
+TASK N04T. Edits in tests/test_evidence_eval_approve.py (11 edits) and tests/test_exception_approval.py (2 edits). Nothing else. Do not edit any source file: seven tests are meant to fail until the next task.
+
+FILES YOU MAY EDIT (only these two): tests/test_evidence_eval_approve.py and tests/test_exception_approval.py. Both use Windows line endings (CRLF). Use the Edit tool. Never use Write on these files. Copy each old_string exactly, leading spaces included. `approve_open`, `evidence`, `pytest`, `REVIEWER`, `run` already exist in the first file; in tests/test_exception_approval.py `pytest`, `evidence`, `REVIEWER`, `REASON` and `run` exist, and `approve_open` does not need to be imported there.
+
+FILE 1: tests/test_evidence_eval_approve.py
+
+EDIT 1. old_string, ONE line (8 leading spaces; occurs once):
+```python
+        result = run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
+```
+new_string, ONE line:
+```python
+        result = run(approve_open("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
+```
+
+EDIT 2. old_string, TWO lines (8 spaces on each; the pair occurs once):
+```python
+        self._prepare()
+        run(evidence.approve("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
+```
+new_string, two lines:
+```python
+        self._prepare()
+        run(approve_open("CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password"))
+```
+
+EDIT 3 (a rewritten test). old_string, FIVE lines (the first has 4 leading spaces, the next two 8, the fourth 12, the fifth 8; the block occurs once):
+```python
+    def test_n04_release_with_unresolved_evidence_needs_a_note(self):
+        self._prepare_unresolved()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400
+```
+new_string, SIX lines:
+```python
+    def test_n04_release_with_unresolved_evidence_is_refused_and_points_to_the_exception_operation(self):
+        self._prepare_unresolved()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Verified by phone", actor_auth="password"))
+        assert raised.value.status == 403
+        assert "exception operation" in raised.value.message
+```
+The line after it (`        assert self.stored()["state"] != "APPROVED"`) stays.
+
+EDIT 4. old_string, TWO lines (8 and 12 spaces; the pair occurs once):
+```python
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Verified by phone", actor_auth="password",
+```
+new_string, two lines:
+```python
+        result = run(approve_open(
+            "CASE-1", "release", REVIEWER, note="Verified by phone", actor_auth="password",
+```
+
+EDIT 5. old_string, ONE line (8 leading spaces; occurs once):
+```python
+        run(evidence.approve("CASE-1", "release", REVIEWER, note="All clear", actor_auth="password"))
+```
+new_string, ONE line:
+```python
+        run(approve_open("CASE-1", "release", REVIEWER, note="All clear", actor_auth="password"))
+```
+
+EDIT 6 (a rewritten test). old_string, FIVE lines (8 spaces, 12, 8, 8, 12; the block occurs once):
+```python
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Confirmed by phone", actor_auth="password",
+```
+The `        ))` line that follows these five lines in the file is NOT part of old_string and stays.
+new_string, five lines:
+```python
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Confirmed by phone", actor_auth="password"))
+        assert raised.value.status == 403
+        result = run(approve_open(
+            "CASE-1", "release", REVIEWER, note="Confirmed by phone", actor_auth="password",
+```
+
+EDIT 7 (a rewritten test). old_string, FOUR lines (copy them exactly, the last one has 38 leading spaces; the block occurs once):
+```python
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400  # the missing invoice is an exception that needs a note
+        result = run(evidence.approve("CASE-1", "release", REVIEWER,
+                                      note="Invoice seen on site", actor_auth="password"))
+```
+new_string, four lines:
+```python
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Invoice seen on site", actor_auth="password"))
+        assert raised.value.status == 403  # a release over a missing invoice is an exception
+        result = run(approve_open("CASE-1", "release", REVIEWER,
+                                  note="Invoice seen on site", actor_auth="password"))
+```
+
+EDIT 8 (a rewritten test). old_string, SEVEN lines (4 spaces, 8, 8, 8, 12, 16, 12; the block occurs once):
+```python
+    def test_a_release_needs_a_note(self):
+        self._contradicted()
+        for empty in ("", "   "):
+            with pytest.raises(evidence.EvidenceError) as raised:
+                run(evidence.approve("CASE-1", "release", REVIEWER, note=empty, actor_auth="password"))
+            assert raised.value.status == 400
+            assert "contradict" in raised.value.message.lower()
+```
+new_string, SIX lines:
+```python
+    def test_a_release_with_a_note_is_still_refused_by_approve(self):
+        self._contradicted()
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Seen the original", actor_auth="password"))
+        assert raised.value.status == 403
+        assert "contradict" in raised.value.message.lower() and "exception operation" in raised.value.message
+```
+The line after it (`        assert self.stored()["state"] == "ESCALATED"`) stays.
+
+EDIT 9. old_string, TWO lines (8 and 12 spaces; the pair occurs once):
+```python
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Certificate misread; checked the original", actor_auth="password",
+```
+new_string, two lines:
+```python
+        result = run(approve_open(
+            "CASE-1", "release", REVIEWER, note="Certificate misread; checked the original", actor_auth="password",
+```
+
+EDIT 10 (a rewritten test). old_string, THREE lines (12 spaces, 8, 8; the block occurs once):
+```python
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        message = raised.value.message.lower()
+        assert raised.value.status == 400 and "unresolved" in message and "contradict" in message
+```
+new_string, three lines:
+```python
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Seen on site", actor_auth="password"))
+        message = raised.value.message.lower()
+        assert raised.value.status == 403 and "unresolved" in message and "contradict" in message
+```
+
+EDIT 11 (a rewritten test). old_string, FOUR lines (12 spaces, 8, 8, 12; the block occurs once):
+```python
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="", actor_auth="password"))
+        assert raised.value.status == 400
+        approved = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note="Papers seen on site", actor_auth="password",
+```
+new_string, four lines:
+```python
+            run(evidence.approve("CASE-1", "release", REVIEWER, note="Papers seen on site", actor_auth="password"))
+        assert raised.value.status == 403
+        approved = run(approve_open(
+            "CASE-1", "release", REVIEWER, note="Papers seen on site", actor_auth="password",
+```
+
+FILE 2: tests/test_exception_approval.py
+
+EDIT 12. old_string, TWO lines (4 and 8 spaces; the pair occurs once):
+```python
+    def test_the_normal_approval_still_takes_a_note_in_this_step(self):
+        """Pinned only until the step that makes approve() refuse an exception."""
+```
+new_string, ONE line:
+```python
+    def test_the_normal_approval_refuses_an_exception_and_points_to_the_operation(self):
+```
+
+EDIT 13. old_string, FIVE lines (8, 12, 8, 8, 8 spaces; the block occurs once):
+```python
+        result = run(evidence.approve(
+            "CASE-1", "release", REVIEWER, note=REASON, actor_auth="password",
+        ))
+        assert result["state"] == "APPROVED"
+        assert "operation" not in result["approval"]["exception"]
+```
+new_string, six lines:
+```python
+        with pytest.raises(evidence.EvidenceError) as raised:
+            run(evidence.approve("CASE-1", "release", REVIEWER, note=REASON, actor_auth="password"))
+        assert raised.value.status == 403
+        assert "exception operation" in raised.value.message
+        assert self.stored()["state"] != "APPROVED"
+        assert self.stored()["verification"]["approvals"] == []
+```
+
+DONE WHEN: only these two files changed, with exactly these 13 edits.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once at the moment of its edit.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04C -->
+## Meta
+- title: Code for N04T - approve() refuses a release over unresolved or contradicting evidence (403) and points to the exception operation
+- depends_on:
+  - N04T
+- target_files:
+  - src/vf_logistics/evidence.py
+- test_commands:
+  - python -m pytest tests/test_evidence_eval_approve.py tests/test_exception_approval.py tests/test_exception_route.py tests/test_evidence_execution.py tests/test_n07_policy_gate.py tests/test_send_unknown.py tests/test_resume_after_publish.py tests/test_sent_ledger.py -q -p no:cacheprovider
+  - python -m ruff check src/vf_logistics/evidence.py --select E,F,W --ignore E501,E402,W291,W293
+- timeout_sec: 1200
+- max_retries: 1
+
+## Context
+Code for the tests of N04T (human decision 2026-10-18, N04 step 2). Inside approve(), after `needed` is computed for a release over unresolved or contradicting evidence: without `waived` (the plain approval) the release is refused with 403 and a message that names what is open and points to the exception operation. approve_exception passes `waived`, so it is untouched, and so is every approval over clean evidence and every block. The two conditions `waived is not None and ...` and `if waived is not None:` further down stay: they are now always true on that path, and changing them is not part of this step.
+Master review: the 7 tests of N04T pass with the rest of both files; the 6 other files (setups through approve_open) stay green; ruff passes; `git diff` shows one added block of 6 lines.
+
+## Prompt
+``````text
+TASK N04C. One insertion in src/vf_logistics/evidence.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): src/vf_logistics/evidence.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not edit any test. Do not touch `approve_exception`, the `waived` conditions below the insertion, or anything else in approve().
+
+EDIT 1. old_string, ONE line (12 leading spaces; occurs once):
+```python
+            needed = unresolved + [f"contradiction:{c['kind']}" for c in contradictions]
+```
+new_string is that same line first, then the block below (12 leading spaces on `if`, 16 on `raise`, 20 on the arguments):
+```python
+            needed = unresolved + [f"contradiction:{c['kind']}" for c in contradictions]
+            if waived is None:
+                raise EvidenceError(
+                    f"Release with {' and '.join(what)} is an exception: use the exception "
+                    "operation (approve-exception), name every waived item and give a reason.",
+                    403,
+                )
+```
+The line that follows in the file (`            if waived is not None and sorted(set(waived)) != sorted(set(needed)):`) stays as it is.
+
+DONE WHEN: only evidence.py changed; approve() has one new `if waived is None:` block directly after the `needed = ...` line.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if the old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04F1 -->
+## Meta
+- title: N04 step 3, part 1 - evidenceToWaive: what a release over this evidence waives (frontend)
+- depends_on:
+  - N04C
+- target_files:
+  - frontend/src/lib/operations.ts
+  - frontend/src/lib/operations.test.ts
+- test_commands:
+  - [frontend] npx vitest run src/lib/operations.test.ts
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+N04 step 3 (human decision 2026-10-18): the console releases over unresolved or contradicting evidence through the exception operation (POST review/<id>/approve-exception: reason + every waived item; operator role, password sign-in), because approve() now refuses it (N04C). The waived items are what approve_exception checks against: each unresolved paper, and "contradiction:<kind>" for each contradiction (evidence.py `needed`). This part adds the pure function that computes them from the latest evaluation, with its tests.
+Round 1 (RERUN): the first prompt named the function waivedItems, but operations.ts already has a private function of that name (line 132, the label of an approval's exception); both attempts failed on the duplicate declaration (runs/N04F1/attempt_1.log, attempt_2.log). The new function is evidenceToWaive.
+Master review: operations.test.ts shows 2 more passing tests; tsc and lint pass.
+
+## Prompt
+``````text
+TASK N04F1. One new function with two tests. Three edits in two files.
+
+FILES YOU MAY EDIT (only these two): frontend/src/lib/operations.ts and frontend/src/lib/operations.test.ts. Both use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on these files. Change nothing else.
+
+EDIT 1 (operations.ts, the function). old_string, ONE line (no leading spaces; occurs once):
+```ts
+/** What each kind of contradiction is about, for a label next to its sentence. */
+```
+new_string is the function below, a blank line, and then that same line again:
+```ts
+/**
+ * What a release over this evidence waives: each unresolved paper, and
+ * "contradiction:<kind>" for each contradiction. The exception operation must name
+ * every one of them (N04); nothing to waive means a plain approval.
+ */
+export function evidenceToWaive(evaluation: EvidenceEvaluation | null | undefined): string[] {
+  if (!evaluation) return [];
+  return [
+    ...(evaluation.unresolved ?? []),
+    ...(evaluation.contradictions ?? []).map((c) => `contradiction:${c.kind}`),
+  ];
+}
+```
+
+EDIT 2 (operations.test.ts, the import). old_string, ONE line (2 leading spaces; occurs once):
+```ts
+  riskLabel,
+```
+new_string is these two lines:
+```ts
+  riskLabel,
+  evidenceToWaive,
+```
+
+EDIT 3 (operations.test.ts, the tests). old_string, ONE line (no leading spaces; occurs once):
+```ts
+describe("riskLabel", () => {
+```
+new_string is the block below, a blank line, and then that same line again:
+```ts
+describe("evidenceToWaive", () => {
+  it("names each unresolved paper and each contradiction by its kind", () => {
+    const evaluation = {
+      unresolved: ["producer_declaration"],
+      contradictions: [{ kind: "certificate_country", detail: "The certificate says China." }],
+    };
+    expect(evidenceToWaive(evaluation as never)).toEqual(["producer_declaration", "contradiction:certificate_country"]);
+  });
+
+  it("names nothing for clean evidence, and for no evaluation at all", () => {
+    expect(evidenceToWaive({ unresolved: [], contradictions: [] } as never)).toEqual([]);
+    expect(evidenceToWaive(null)).toEqual([]);
+    expect(evidenceToWaive(undefined)).toEqual([]);
+  });
+});
+```
+
+DONE WHEN: only these two files changed; operations.ts gained one function; operations.test.ts gained one import word and one describe.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04F2 -->
+## Meta
+- title: N04 step 3, part 2 - the console API function and the proxy allow-list for approve-exception (frontend)
+- depends_on:
+  - N04F1
+- target_files:
+  - frontend/src/lib/api.ts
+  - frontend/src/lib/proxy-policy.ts
+  - frontend/src/lib/proxy-policy.test.ts
+- test_commands:
+  - [frontend] npx vitest run src/lib/proxy-policy.test.ts "src/app/api/proxy/[...path]/route.test.ts"
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 600
+- max_retries: 1
+
+## Context
+The route POST review/<id>/approve-exception exists since N04b (operator role, password). The browser reaches Flask only through the proxy, which forwards a write only if matchWrite accepts it and, for password-only writes, only after a password sign-in (policyKey maps `review/CASE-1/approve-exception` to `review/approve-exception`). This part allows and password-gates the new route in proxy-policy.ts, adds `approveException` to api.ts, and extends the policy tests. The existing pin test that lists PASSWORD_ONLY_POST changes by one entry, on purpose.
+Master review: proxy-policy.test.ts and route.test.ts pass; `git diff` shows one function in api.ts, four small edits in proxy-policy.ts and five in its test.
+
+## Prompt
+``````text
+TASK N04F2. Ten edits in three files. Nothing else.
+
+FILES YOU MAY EDIT (only these three): frontend/src/lib/api.ts, frontend/src/lib/proxy-policy.ts and frontend/src/lib/proxy-policy.test.ts. All use Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included), except where an edit says TWO lines. Never use Write on these files. Change nothing else.
+
+FILE 1: frontend/src/lib/api.ts
+EDIT 1. old_string, ONE line (no leading spaces; occurs once):
+```ts
+export async function executeApproval(
+```
+new_string is the function below, a blank line, and then that same line again:
+```ts
+/**
+ * Release over unresolved or contradicting evidence: the exception operation (N04).
+ * The API wants the reason and every item the release waives, the operator role and a
+ * password sign-in.
+ */
+export async function approveException(
+  caseId: string,
+  reason: string,
+  waived: string[],
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Approving an exception");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/approve-exception`,
+    { reason, waived },
+  );
+}
+```
+
+FILE 2: frontend/src/lib/proxy-policy.ts
+EDIT 2. old_string, ONE line (4 leading spaces; occurs once):
+```ts
+    if (["decide", "deep-review", "request-evidence", "reevaluate", "approve", "execute"].includes(action)) {
+```
+new_string, ONE line (only `"approve-exception", ` is new):
+```ts
+    if (["decide", "deep-review", "request-evidence", "reevaluate", "approve", "approve-exception", "execute"].includes(action)) {
+```
+EDIT 3. old_string, ONE line (2 leading spaces; occurs once):
+```ts
+  // Verification loop: request, evaluate, approve, execute, cancel, re-link.
+```
+new_string is these two lines (the comment first, kept):
+```ts
+  // Verification loop: request, evaluate, approve, execute, cancel, re-link.
+  "review/approve-exception",
+```
+EDIT 4. old_string, ONE line (2 leading spaces; occurs once):
+```ts
+  // Verification loop: approve and execute change downstream state.
+```
+new_string is these two lines (the comment first, kept):
+```ts
+  // Verification loop: approve and execute change downstream state.
+  "review/approve-exception",
+```
+EDIT 5. old_string, ONE line (6 leading spaces; occurs once):
+```ts
+      || joined === "review/approve" || joined === "review/execute"
+```
+new_string, ONE line:
+```ts
+      || joined === "review/approve" || joined === "review/approve-exception" || joined === "review/execute"
+```
+
+FILE 3: frontend/src/lib/proxy-policy.test.ts
+EDIT 6. old_string, ONE line (4 leading spaces; occurs once):
+```ts
+    expect(matchWrite("review/CASE-1/approve", ALLOWED_POST)).toBe(true);
+```
+new_string is these two lines (the first kept):
+```ts
+    expect(matchWrite("review/CASE-1/approve", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/approve-exception", ALLOWED_POST)).toBe(true);
+```
+EDIT 7. old_string, ONE line (4 leading spaces; occurs once):
+```ts
+    expect(matchWrite("review/approve", ALLOWED_POST)).toBe(false);
+```
+new_string is these two lines (the first kept):
+```ts
+    expect(matchWrite("review/approve", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/approve-exception", ALLOWED_POST)).toBe(false);
+```
+EDIT 8. old_string, TWO lines (6 leading spaces on each; the pair occurs once):
+```ts
+      "review/approve",
+      "review/execute",
+```
+new_string, three lines:
+```ts
+      "review/approve",
+      "review/approve-exception",
+      "review/execute",
+```
+EDIT 9. old_string, ONE line (4 leading spaces; occurs once):
+```ts
+    expect(policyKey("review/CASE-1/execute")).toBe("review/execute");
+```
+new_string is these two lines (the first kept):
+```ts
+    expect(policyKey("review/CASE-1/execute")).toBe("review/execute");
+    expect(policyKey("review/CASE-1/approve-exception")).toBe("review/approve-exception");
+```
+EDIT 10. old_string, ONE line (4 leading spaces; occurs once):
+```ts
+    expect(shown).toContain("POST review/<id>/execute");
+```
+new_string is these two lines (the first kept):
+```ts
+    expect(shown).toContain("POST review/<id>/execute");
+    expect(shown).toContain("POST review/<id>/approve-exception");
+```
+
+DONE WHEN: only these three files changed, with exactly these ten edits.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04F3t -->
+## Meta
+- title: Tests first - the review panel releases over open evidence through the exception operation (N04, frontend)
+- depends_on:
+  - N04F2
+- target_files:
+  - frontend/src/components/review/ReviewPanel.test.tsx
+- test_commands:
+  - python -c "import os,subprocess,sys; p=subprocess.run('npx vitest run src/components/review/ReviewPanel.test.tsx', shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd='frontend', env={**os.environ, 'FORCE_COLOR': '0', 'NO_COLOR': '1'}); o=p.stdout+p.stderr; print(o[-3500:].encode('ascii', 'replace').decode()); sys.exit(0 if p.returncode == 1 and '4 failed' in o else 1)"
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+N04 step 3. The panel still calls approveCase for every release, which approve() now refuses over unresolved or contradicting evidence. This task writes the panel's expected behaviour as tests; they are RED on the current ReviewPanel.tsx. Expected: exactly 4 failed, in these tests: "releases with a reason, after a confirmation that says it is an exception" (now expects approveException with the waived items), "releases over an unresolved paper through the exception operation, naming it", "will not open the release confirmation over an unresolved paper without a reason", "tells a reviewer without the operator role that an exception needs it, and sends nothing". A fourth new test, "a block over contradicting papers still goes through approveCase", passes on both (a fence). The test command passes when vitest exits 1 with "4 failed".
+The identity mock gets a mutable grants list (default viewer, reviewer, operator) so one test can drop the operator role. tsc must stay clean: approveException exists after N04F2.
+Master review: in the log exactly those 4 tests fail; everything else passes; tsc and lint pass.
+
+## Prompt
+``````text
+TASK N04F3t. Six edits in frontend/src/components/review/ReviewPanel.test.tsx. Nothing else. Do not edit ReviewPanel.tsx: four tests are meant to fail until the next task.
+
+FILE YOU MAY EDIT (only this one): frontend/src/components/review/ReviewPanel.test.tsx. It uses Windows line endings (CRLF). Use the Edit tool. Copy each old_string exactly, leading spaces included; use only the number of lines each edit says. Never use Write on this file. Do not change any other test or mock. `renderPanel`, `evaluated`, `CONTRADICTED`, `fireEvent`, `screen`, `waitFor`, `vi`, `approveCase`, `executeApproval` and `ApiError` already exist in the file.
+
+EDIT 1 (a mutable grants list for the identity mock). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+vi.mock("@/lib/identity", async (importOriginal) => ({
+```
+new_string is the line below, then the original line again:
+```tsx
+const identityGrants = vi.hoisted(() => ({ list: ["viewer", "reviewer", "operator"] }));
+vi.mock("@/lib/identity", async (importOriginal) => ({
+```
+
+EDIT 2. old_string, ONE line (6 leading spaces; occurs once):
+```tsx
+      grants: ["viewer", "reviewer"],
+```
+new_string, ONE line:
+```tsx
+      grants: identityGrants.list,
+```
+
+EDIT 3 (the api mock). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  approveCase: vi.fn(async () => ({ approval: { approval_id: "evapr-9" }, state: "APPROVED" })),
+```
+new_string is these two lines (the first kept):
+```tsx
+  approveCase: vi.fn(async () => ({ approval: { approval_id: "evapr-9" }, state: "APPROVED" })),
+  approveException: vi.fn(async () => ({ approval: { approval_id: "evapr-9" }, state: "APPROVED" })),
+```
+
+EDIT 4 (the import). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+import { ApiError, approveCase, cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
+```
+new_string, ONE line (only `approveException, ` is new):
+```tsx
+import { ApiError, approveCase, approveException, cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
+```
+
+EDIT 5 (an existing test now expects the exception operation). old_string, FIVE lines (4 spaces on lines 1 and 2, 4 on line 3, 6 on line 4, 4 on line 5; the block occurs once):
+```tsx
+    expect(approveCase).not.toHaveBeenCalled(); // nothing is sent before Confirm
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(approveCase).toHaveBeenCalledWith("CASE-1", "release", "Certificate misread; checked the original"),
+    );
+```
+new_string, SIX lines:
+```tsx
+    expect(approveException).not.toHaveBeenCalled(); // nothing is sent before Confirm
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(approveException).toHaveBeenCalledWith("CASE-1", "Certificate misread; checked the original", ["contradiction:input_origin"]),
+    );
+    expect(approveCase).not.toHaveBeenCalled();
+```
+
+EDIT 6 (four new tests). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  it("sends nothing when the reviewer cancels the confirmation (Release, then Cancel)", async () => {
+```
+new_string is the four tests below, a blank line, and then that same line again:
+```tsx
+  it("releases over an unresolved paper through the exception operation, naming it", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "missing", unresolved: ["producer_declaration"], clarified: [] }));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Verified by phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    expect((await screen.findByTestId("exception-confirm")).textContent).toMatch(/recorded as an exception/);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(approveException).toHaveBeenCalledWith("CASE-1", "Verified by phone", ["producer_declaration"]),
+    );
+    expect(approveCase).not.toHaveBeenCalled();
+  });
+
+  it("will not open the release confirmation over an unresolved paper without a reason", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "missing", unresolved: ["producer_declaration"], clarified: [] }));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/reason is required to release over unresolved or contradicting evidence/i);
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(approveException).not.toHaveBeenCalled();
+    expect(approveCase).not.toHaveBeenCalled();
+  });
+
+  it("tells a reviewer without the operator role that an exception needs it, and sends nothing", async () => {
+    identityGrants.list = ["viewer", "reviewer"];
+    try {
+      renderPanel(evaluated("ESCALATED", CONTRADICTED));
+      fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Certificate misread; checked the original" } });
+      fireEvent.click(screen.getByRole("button", { name: "Release" }));
+      expect((await screen.findByRole("alert")).textContent).toMatch(/Needs the Operator role/);
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+      expect(approveException).not.toHaveBeenCalled();
+      expect(approveCase).not.toHaveBeenCalled();
+    } finally {
+      identityGrants.list = ["viewer", "reviewer", "operator"];
+    }
+  });
+
+  it("a block over contradicting papers still goes through approveCase", async () => {
+    renderPanel(evaluated("ESCALATED", CONTRADICTED));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Papers contradict the declaration" } });
+    fireEvent.click(screen.getByRole("button", { name: "Block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(approveCase).toHaveBeenCalledWith("CASE-1", "block", "Papers contradict the declaration"),
+    );
+    expect(approveException).not.toHaveBeenCalled();
+  });
+```
+DONE WHEN: only this file changed; the identity mock reads identityGrants.list; the api mock and the import name approveException; one existing test expects approveException; four new tests sit directly before the "sends nothing when the reviewer cancels" test.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: N04F3c -->
+## Meta
+- title: Code for N04F3t - the review panel releases over open evidence through the exception operation (N04, frontend)
+- depends_on:
+  - N04F3t
+- target_files:
+  - frontend/src/components/review/ReviewPanel.tsx
+- test_commands:
+  - [frontend] npx vitest run src/components/review/ReviewPanel.test.tsx src/lib/operations.test.ts src/lib/proxy-policy.test.ts
+  - [frontend] npx tsc --noEmit
+  - [frontend] npm run lint
+- timeout_sec: 900
+- max_retries: 1
+
+## Context
+Code for the tests of N04F3t. In ReviewPanel.tsx: the verificationApprove mutation calls approveException(case, note, waived) for a release when evidenceToWaive(evaluation) is not empty, and approveCase otherwise (blocks and releases over clean evidence unchanged); submit() asks for a reason over unresolved evidence (the contradicted case keeps its own earlier message) and, for any release over open evidence, shows the operator-role lock before opening the confirmation; the confirmation dialog says an unresolved-only release is recorded as an exception (data-testid exception-confirm). The API enforces the same (403 operator role, 403 password); the panel only says it before a round trip.
+Master review: the 4 red tests of N04F3t pass, with the rest of the three files; tsc and lint pass; `git diff` shows 2 import edits, one new constant, the changed mutation call, one new block in submit() and one JSX block.
+
+## Prompt
+``````text
+TASK N04F3c. Six edits in frontend/src/components/review/ReviewPanel.tsx, in this order. Nothing else.
+
+FILE YOU MAY EDIT (only this one): frontend/src/components/review/ReviewPanel.tsx. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included), except where an edit says TWO lines. Never use Write on this file. Do not edit any test. `evaluation`, `contradicted`, `note`, `identity`, `setFormError`, `setPending`, `c` and `pending` already exist in this component.
+
+EDIT 1 (the api import). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+import { ApiError, approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+```
+new_string, ONE line (only `approveException, ` is new):
+```tsx
+import { ApiError, approveCase, approveException, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+```
+
+EDIT 2 (the operations import). old_string, ONE line (no leading spaces; occurs once):
+```tsx
+import { CONTRADICTION_KIND_LABEL, executionClaim, isContradicted, latestEvaluation } from "@/lib/operations";
+```
+new_string, ONE line (only `, evidenceToWaive` is new):
+```tsx
+import { CONTRADICTION_KIND_LABEL, executionClaim, isContradicted, latestEvaluation, evidenceToWaive } from "@/lib/operations";
+```
+
+EDIT 3 (the operator lock). old_string, ONE line (2 leading spaces; occurs once):
+```tsx
+  const decideLock = lockReason(identity, "reviewer");
+```
+new_string is these two lines (the first kept):
+```tsx
+  const decideLock = lockReason(identity, "reviewer");
+  const exceptionLock = lockReason(identity, "operator");
+```
+
+EDIT 4 (the mutation). old_string, ONE line (6 leading spaces; occurs once):
+```tsx
+      const res = await approveCase(c.case_id, action, note);
+```
+new_string is the block below (6 leading spaces on the comment and the const lines, 8 on the continuation lines):
+```tsx
+      // A release over unresolved or contradicting evidence is an exception (N04): its own
+      // operation, carrying the reason and every waived item. Anything else is a plain approval.
+      const waived = action === "release" ? evidenceToWaive(evaluation) : [];
+      const res = waived.length > 0
+        ? await approveException(c.case_id, note, waived)
+        : await approveCase(c.case_id, action, note);
+```
+
+EDIT 5 (submit asks before opening the confirmation). old_string, TWO lines (4 spaces on each; the pair occurs once):
+```tsx
+    setFormError(null);
+    // Only opens the confirmation. Nothing is sent until Confirm, which routes it.
+```
+new_string is the block below, then those same two lines again (4 leading spaces on every line shown at that depth, 6 and 8 inside the ifs):
+```tsx
+    // The same for papers that are still unresolved (N04): the release is an exception, so
+    // it needs a reason and the operator role. The API enforces both; this says it first.
+    if (action === "release" && evidenceToWaive(evaluation).length > 0) {
+      if (!note.trim()) {
+        setFormError("A reason is required to release over unresolved or contradicting evidence. It is recorded as an exception.");
+        return;
+      }
+      if (exceptionLock) {
+        setFormError(`A release over open evidence is an exception. ${exceptionLock}`);
+        return;
+      }
+    }
+    setFormError(null);
+    // Only opens the confirmation. Nothing is sent until Confirm, which routes it.
+```
+
+EDIT 6 (the confirmation says it for unresolved papers). old_string, ONE line (14 leading spaces; occurs once):
+```tsx
+              {pending === "release" && contradicted && (
+```
+new_string is the block below, and then that same line again (14 leading spaces on `{pending`, 16 on `<>`, 18 on the lines inside, 16 on `</>`, 14 on `)}`):
+```tsx
+              {pending === "release" && !contradicted && evidenceToWaive(evaluation).length > 0 && (
+                <>
+                  {" "}
+                  <span className="text-risk-warn" data-testid="exception-confirm">
+                    Documents are still unresolved, so this release is recorded as an exception
+                    with your reason.
+                  </span>
+                </>
+              )}
+              {pending === "release" && contradicted && (
+```
+Everything after the original line stays as it is.
+
+DONE WHEN: only ReviewPanel.tsx changed, with exactly these six edits.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string is not found exactly once.
+``````
+<!-- TASK_END -->
+
+<!-- TASK_START: VR5 -->
+## Meta
+- title: The review VI table follows N04 step 2 and 3 - the renamed test of row N04-b and two new rows
+- depends_on:
+  - N04F3c
+- target_files:
+  - scripts/verify_review_vi.py
+- test_commands:
+  - python -c "import ast; ast.parse(open('scripts/verify_review_vi.py', encoding='utf-8').read()); print('syntax ok')"
+  - python scripts/verify_review_vi.py
+- timeout_sec: 1800
+- max_retries: 1
+
+## Context
+N04T renamed the test that row N04-b looks for: `test_n04_release_with_unresolved_evidence_needs_a_note` is now `test_n04_release_with_unresolved_evidence_is_refused_and_points_to_the_exception_operation`; with the old name the row would fail ("test not found"). This task fixes that row and adds the rows for step 2 (N04-d: approve() refuses a release over open evidence and points to the exception operation) and step 3 (N04-e: the console uses the exception operation, and tells a reviewer without the operator role first). A title that is not found is reported as FAIL.
+Master review: row N04-b PASS with the new name, rows N04-d and N04-e PASS, the total is 38 of 38 counted (N01-e still not counted); no row shows FAIL.
+
+## Prompt
+``````text
+TASK VR5. Three edits in scripts/verify_review_vi.py. Nothing else.
+
+FILE YOU MAY EDIT (only this one): scripts/verify_review_vi.py. It uses Windows line endings (CRLF). Use the Edit tool with a ONE-LINE old_string, exactly as given (leading spaces included). Never use a multi-line old_string. Never use Write on this file. Do not touch any other row, any function or any import.
+
+EDIT 1 (the description of row N04-b). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("N04-b", "N04", "a release over missing evidence needs a reason and stores the exception", "py",
+```
+new_string, ONE line:
+```python
+    ("N04-b", "N04", "a release over missing evidence is refused by approve() and stored as an exception with its reason", "py",
+```
+
+EDIT 2 (the renamed test of row N04-b). old_string, ONE line (5 leading spaces; occurs once):
+```python
+     [("test_evidence_eval_approve.py", "test_n04_release_with_unresolved_evidence_needs_a_note"),
+```
+new_string, ONE line:
+```python
+     [("test_evidence_eval_approve.py", "test_n04_release_with_unresolved_evidence_is_refused_and_points_to_the_exception_operation"),
+```
+
+EDIT 3 (two new rows). old_string, ONE line (4 leading spaces; occurs once):
+```python
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+new_string is the two rows below, and then that same line again:
+```python
+    ("N04-d", "N04", "approve() refuses a release over unresolved or contradicting evidence and points to the exception operation", "py",
+     [("test_evidence_eval_approve.py", "test_a_release_with_a_note_is_still_refused_by_approve"),
+      ("test_evidence_eval_approve.py", "test_a_note_is_also_needed_when_unresolved_and_contradicted_together"),
+      ("test_exception_approval.py", "test_the_normal_approval_refuses_an_exception_and_points_to_the_operation")]),
+    ("N04-e", "N04", "the console releases over open evidence through the exception operation and tells a reviewer without the operator role first", "js",
+     ["releases with a reason, after a confirmation that says it is an exception",
+      "releases over an unresolved paper through the exception operation, naming it",
+      "will not open the release confirmation over an unresolved paper without a reason",
+      "tells a reviewer without the operator role that an exception needs it"]),
+    ("E01-a", "E01", "changing only the answer label changes the score, not the decision", "probe",
+```
+
+DONE WHEN: only this file changed; row N04-b has the new description and test name; two rows sit directly above the E01-a row.
+STOP AND REPLY WITHOUT EDITING (at most 3 lines) if an old_string line is not found exactly once.
 ``````
 <!-- TASK_END -->

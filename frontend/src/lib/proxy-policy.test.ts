@@ -43,6 +43,7 @@ describe("matchWrite", () => {
     expect(matchWrite("review/CASE-1/request-evidence", ALLOWED_POST)).toBe(true);
     expect(matchWrite("review/CASE-1/reevaluate", ALLOWED_POST)).toBe(true);
     expect(matchWrite("review/CASE-1/approve", ALLOWED_POST)).toBe(true);
+    expect(matchWrite("review/CASE-1/approve-exception", ALLOWED_POST)).toBe(true);
     expect(matchWrite("review/CASE-1/execute", ALLOWED_POST)).toBe(true);
   });
 
@@ -60,6 +61,7 @@ describe("matchWrite", () => {
     expect(matchWrite("review/request-evidence", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/reevaluate", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/approve", ALLOWED_POST)).toBe(false);
+    expect(matchWrite("review/approve-exception", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/execute", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/evidence/link", ALLOWED_POST)).toBe(false);
     expect(matchWrite("review/evidence/cancel", ALLOWED_POST)).toBe(false);
@@ -94,6 +96,7 @@ describe("matchWrite", () => {
       "governance/revoke",
       "orchestrator/reset",
       "review/approve",
+      "review/approve-exception",
       "review/execute",
     ]);
     expect([...PASSWORD_ONLY_PUT]).toEqual(["governance/prefilter-rules"]);
@@ -124,6 +127,7 @@ describe("the lists the Access Control screen shows", () => {
     expect(shown).toContain("POST review/<id>/request-evidence");
     expect(shown).toContain("POST review/<id>/approve");
     expect(shown).toContain("POST review/<id>/execute");
+    expect(shown).toContain("POST review/<id>/approve-exception");
     expect(shown).toContain("POST review/<id>/evidence/<id>/link");
     expect(shown).toContain("POST review/<id>/evidence/<id>/cancel");
     expect(shown).toContain("POST cases/<id>/activity");
@@ -137,6 +141,7 @@ describe("policyKey", () => {
   it("maps the id-carrying forms to the template the policy sets use", () => {
     expect(policyKey("review/CASE-1/approve")).toBe("review/approve");
     expect(policyKey("review/CASE-1/execute")).toBe("review/execute");
+    expect(policyKey("review/CASE-1/approve-exception")).toBe("review/approve-exception");
     expect(policyKey("review/CASE-1/evidence/evreq-9/cancel")).toBe("review/evidence/cancel");
     expect(policyKey("cases/CASE-1/activity")).toBe("cases/activity");
     expect(policyKey("orchestrator/reset")).toBe("orchestrator/reset");

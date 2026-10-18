@@ -28,7 +28,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from reference_receiver import apply_once, firestore_claim  # noqa: E402
-from test_evidence_eval_approve import REVIEWER, Base, run  # noqa: E402
+from test_evidence_eval_approve import REVIEWER, Base, approve_open, run  # noqa: E402
 from vf_logistics import evidence, tools  # noqa: E402
 from vf_logistics import store as store_mod  # noqa: E402
 
@@ -99,7 +99,7 @@ class TestAHardKillAfterTheBrokerAccepted(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         subscriber, subscription = _fresh_subscription()
@@ -134,7 +134,7 @@ class TestAHardKillAfterTheBrokerAccepted(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         subscriber, subscription = _fresh_subscription()

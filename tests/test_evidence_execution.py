@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from test_console_session import TEST_KEY  # noqa: E402
-from test_evidence_eval_approve import Base, tiny_pdf  # noqa: E402
+from test_evidence_eval_approve import Base, approve_open, tiny_pdf  # noqa: E402
 from test_origin_inputs import plywood  # noqa: E402
 from vf_logistics import evidence, orchestrator  # noqa: E402
 
@@ -32,7 +32,7 @@ class TestExecution(Base):
         self.put(case_id)
         self.request_and_submit(case_id)
         run(evidence.reevaluate(case_id))
-        result = run(evidence.approve(case_id, "release", REVIEWER, note="Reviewed", actor_auth="password"))
+        result = run(approve_open(case_id, "release", REVIEWER, note="Reviewed", actor_auth="password"))
         return result["approval"]["approval_id"]
 
     def test_a_valid_approval_is_executed(self):
@@ -55,7 +55,7 @@ class TestExecution(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        result = run(evidence.approve("CASE-1", "block", REVIEWER, actor_auth="password"))
+        result = run(approve_open("CASE-1", "block", REVIEWER, actor_auth="password"))
         aid = result["approval"]["approval_id"]
         with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value={"detail": {"message_id": "msg-2"}, "status": "done"})):
             result = run(evidence.execute_approval("CASE-1", aid, REVIEWER, actor_auth="password"))
@@ -211,7 +211,7 @@ class TestN01TwoExecutesAtOnce(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        return run(evidence.approve(
+        return run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
 
@@ -350,7 +350,7 @@ class TestN02APublishThatFails(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        return run(evidence.approve(
+        return run(approve_open(
             "CASE-1", action, REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
 
@@ -420,7 +420,7 @@ class TestN02bSplitIdentityReceipt(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        return run(evidence.approve(
+        return run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
 
@@ -473,7 +473,7 @@ class TestN02Route(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         headers = {"X-VF-API-Key": TEST_KEY, "X-VF-Session": mint(REVIEWER, amr="password")}
@@ -512,7 +512,7 @@ class TestN08BInterruptedExecutionOverHttp(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        approval_id = run(evidence.approve(
+        approval_id = run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
         boom = AsyncMock(side_effect=asyncio.CancelledError)
@@ -590,7 +590,7 @@ class TestExecutedDecisionsReachTheLearningLoop(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        aid = run(evidence.approve(
+        aid = run(approve_open(
             "CASE-1", "block", REVIEWER, actor_auth="password",
         ))["approval"]["approval_id"]
         with patch("vf_logistics.tools.publish_decision", new=AsyncMock(return_value=OK_RECEIPT)):

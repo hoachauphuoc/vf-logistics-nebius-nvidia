@@ -7,6 +7,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   reevaluateCase: vi.fn(async () => ({ state: "HELD_FOR_REVIEW" })),
   approveCase: vi.fn(async () => ({ approval: { approval_id: "evapr-9" }, state: "APPROVED" })),
+  approveException: vi.fn(async () => ({ approval: { approval_id: "evapr-9" }, state: "APPROVED" })),
   requestEvidence: vi.fn(async () => ({
     path: "/respond/request-level",
     links: [
@@ -18,6 +19,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   decideReview: vi.fn(async () => ({ ok: true, state: "PENDING_HUMAN" })),
   cancelEvidenceRequest: vi.fn(async () => ({ state: "HELD_FOR_REVIEW" })),
 }));
+const identityGrants = vi.hoisted(() => ({ list: ["viewer", "reviewer", "operator"] }));
 vi.mock("@/lib/identity", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/identity")>()),
   useIdentity: () => ({
@@ -27,7 +29,7 @@ vi.mock("@/lib/identity", async (importOriginal) => ({
       acts_for_a_person: true,
       role: "reviewer",
       roles: ["reviewer"],
-      grants: ["viewer", "reviewer"],
+      grants: identityGrants.list,
       role_source: "test",
       tenant_id: null,
       session_method: "password",
@@ -35,7 +37,7 @@ vi.mock("@/lib/identity", async (importOriginal) => ({
   }),
 }));
 
-import { ApiError, approveCase, cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
+import { ApiError, approveCase, approveException, cancelEvidenceRequest, decideReview, executeApproval, reevaluateCase, requestEvidence } from "@/lib/api";
 import { type Case, VERIFICATION_LOOP_STATES } from "@/lib/types";
 
 import { ReviewPanel } from "./ReviewPanel";
@@ -277,11 +279,59 @@ describe("ReviewPanel: releasing against contradicting papers (Rev2 C3)", () => 
     fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Certificate misread; checked the original" } });
     fireEvent.click(screen.getByRole("button", { name: "Release" }));
     expect((await screen.findByTestId("contradiction-confirm")).textContent).toMatch(/recorded as an exception/);
-    expect(approveCase).not.toHaveBeenCalled(); // nothing is sent before Confirm
+    expect(approveException).not.toHaveBeenCalled(); // nothing is sent before Confirm
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() =>
-      expect(approveCase).toHaveBeenCalledWith("CASE-1", "release", "Certificate misread; checked the original"),
+      expect(approveException).toHaveBeenCalledWith("CASE-1", "Certificate misread; checked the original", ["contradiction:input_origin"]),
     );
+    expect(approveCase).not.toHaveBeenCalled();
+  });
+
+  it("releases over an unresolved paper through the exception operation, naming it", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "missing", unresolved: ["producer_declaration"], clarified: [] }));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Verified by phone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    expect((await screen.findByTestId("exception-confirm")).textContent).toMatch(/recorded as an exception/);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(approveException).toHaveBeenCalledWith("CASE-1", "Verified by phone", ["producer_declaration"]),
+    );
+    expect(approveCase).not.toHaveBeenCalled();
+  });
+
+  it("will not open the release confirmation over an unresolved paper without a reason", async () => {
+    renderPanel(evaluated("HELD_FOR_REVIEW", { status: "missing", unresolved: ["producer_declaration"], clarified: [] }));
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/reason is required to release over unresolved or contradicting evidence/i);
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(approveException).not.toHaveBeenCalled();
+    expect(approveCase).not.toHaveBeenCalled();
+  });
+
+  it("tells a reviewer without the operator role that an exception needs it, and sends nothing", async () => {
+    identityGrants.list = ["viewer", "reviewer"];
+    try {
+      renderPanel(evaluated("ESCALATED", CONTRADICTED));
+      fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Certificate misread; checked the original" } });
+      fireEvent.click(screen.getByRole("button", { name: "Release" }));
+      expect((await screen.findByRole("alert")).textContent).toMatch(/Needs the Operator role/);
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+      expect(approveException).not.toHaveBeenCalled();
+      expect(approveCase).not.toHaveBeenCalled();
+    } finally {
+      identityGrants.list = ["viewer", "reviewer", "operator"];
+    }
+  });
+
+  it("a block over contradicting papers still goes through approveCase", async () => {
+    renderPanel(evaluated("ESCALATED", CONTRADICTED));
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: "Papers contradict the declaration" } });
+    fireEvent.click(screen.getByRole("button", { name: "Block" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(approveCase).toHaveBeenCalledWith("CASE-1", "block", "Papers contradict the declaration"),
+    );
+    expect(approveException).not.toHaveBeenCalled();
   });
 
   it("sends nothing when the reviewer cancels the confirmation (Release, then Cancel)", async () => {

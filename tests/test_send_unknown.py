@@ -12,7 +12,7 @@ import sys
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-from test_evidence_eval_approve import Base  # noqa: E402
+from test_evidence_eval_approve import Base, approve_open  # noqa: E402
 from test_evidence_execution import _fake_pubsub, _with_pubsub  # noqa: E402
 from vf_logistics import evidence, tools  # noqa: E402
 
@@ -56,7 +56,7 @@ class TestAnExecutionWhoseSendTimedOut(Base):
         self.put()
         self.request_and_submit()
         run(evidence.reevaluate("CASE-1"))
-        return run(evidence.approve(
+        return run(approve_open(
             "CASE-1", "release", REVIEWER, note="Reviewed", actor_auth="password",
         ))["approval"]["approval_id"]
 

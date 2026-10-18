@@ -423,6 +423,23 @@ export async function approveCase(
   );
 }
 
+/**
+ * Release over unresolved or contradicting evidence: the exception operation (N04).
+ * The API wants the reason and every item the release waives, the operator role and a
+ * password sign-in.
+ */
+export async function approveException(
+  caseId: string,
+  reason: string,
+  waived: string[],
+): Promise<Record<string, unknown>> {
+  if (DEMO_MODE) liveOnly("Approving an exception");
+  return postJson<Record<string, unknown>>(
+    `review/${encodeURIComponent(caseId)}/approve-exception`,
+    { reason, waived },
+  );
+}
+
 export async function executeApproval(
   caseId: string,
   approvalId: string,

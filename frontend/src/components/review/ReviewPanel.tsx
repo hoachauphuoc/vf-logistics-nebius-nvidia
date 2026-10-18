@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toaster";
-import { ApiError, approveCase, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
+import { ApiError, approveCase, approveException, cancelEvidenceRequest, caseDossierUrl, decideReview, executeApproval, requestDeepReview, reevaluateCase, requestEvidence, reviewDocumentUrl } from "@/lib/api";
 import { caseHref } from "@/lib/case-links";
 import {
   actionLabel,
@@ -33,7 +33,7 @@ import {
 } from "@/lib/format";
 import { helpFor } from "@/lib/help-content";
 import { type Identity, lockReason, roleLabel, useIdentity } from "@/lib/identity";
-import { CONTRADICTION_KIND_LABEL, executionClaim, isContradicted, latestEvaluation } from "@/lib/operations";
+import { CONTRADICTION_KIND_LABEL, executionClaim, isContradicted, latestEvaluation, evidenceToWaive } from "@/lib/operations";
 import {
   AWAITING_HUMAN,
   HUMAN_ACTION_RESULT,
@@ -271,6 +271,7 @@ export function ReviewPanel({
   const identityQuery = useIdentity();
   const identity = identityQuery.data;
   const decideLock = lockReason(identity, "reviewer");
+  const exceptionLock = lockReason(identity, "operator");
   const toast = useToast();
 
   const decide = useMutation({
@@ -382,7 +383,12 @@ export function ReviewPanel({
       if (outcomeUnknown(error)) onDecided();
     },
     mutationFn: async (action: "release" | "block") => {
-      const res = await approveCase(c.case_id, action, note);
+      // A release over unresolved or contradicting evidence is an exception (N04): its own
+      // operation, carrying the reason and every waived item. Anything else is a plain approval.
+      const waived = action === "release" ? evidenceToWaive(evaluation) : [];
+      const res = waived.length > 0
+        ? await approveException(c.case_id, note, waived)
+        : await approveCase(c.case_id, action, note);
       if ((res as Record<string, unknown>).approval) {
         const approval = res.approval as Record<string, string>;
         return executeReloadingOnConflict(approval.approval_id);
@@ -521,6 +527,18 @@ export function ReviewPanel({
         "A reason is required to release a case whose papers contradict the declared origin. Say what you checked that the model did not.",
       );
       return;
+    }
+    // The same for papers that are still unresolved (N04): the release is an exception, so
+    // it needs a reason and the operator role. The API enforces both; this says it first.
+    if (action === "release" && evidenceToWaive(evaluation).length > 0) {
+      if (!note.trim()) {
+        setFormError("A reason is required to release over unresolved or contradicting evidence. It is recorded as an exception.");
+        return;
+      }
+      if (exceptionLock) {
+        setFormError(`A release over open evidence is an exception. ${exceptionLock}`);
+        return;
+      }
     }
     setFormError(null);
     // Only opens the confirmation. Nothing is sent until Confirm, which routes it.
@@ -951,6 +969,15 @@ export function ReviewPanel({
               </span>{" "}
               against the case under your name, writes two audit records, and
               cannot be undone from this console.
+              {pending === "release" && !contradicted && evidenceToWaive(evaluation).length > 0 && (
+                <>
+                  {" "}
+                  <span className="text-risk-warn" data-testid="exception-confirm">
+                    Documents are still unresolved, so this release is recorded as an exception
+                    with your reason.
+                  </span>
+                </>
+              )}
               {pending === "release" && contradicted && (
                 <>
                   {" "}

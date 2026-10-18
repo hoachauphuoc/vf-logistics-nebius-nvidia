@@ -108,6 +108,19 @@ export function isContradicted(evaluation: EvidenceEvaluation | null | undefined
   return evaluation.status === "contradicted" || (evaluation.contradictions ?? []).length > 0;
 }
 
+/**
+ * What a release over this evidence waives: each unresolved paper, and
+ * "contradiction:<kind>" for each contradiction. The exception operation must name
+ * every one of them (N04); nothing to waive means a plain approval.
+ */
+export function evidenceToWaive(evaluation: EvidenceEvaluation | null | undefined): string[] {
+  if (!evaluation) return [];
+  return [
+    ...(evaluation.unresolved ?? []),
+    ...(evaluation.contradictions ?? []).map((c) => `contradiction:${c.kind}`),
+  ];
+}
+
 /** What each kind of contradiction is about, for a label next to its sentence. */
 export const CONTRADICTION_KIND_LABEL: Record<string, string> = {
   certificate_country: "Certificate of origin",

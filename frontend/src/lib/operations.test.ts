@@ -15,6 +15,7 @@ import {
   latestEvaluation,
   ownerLabel,
   riskLabel,
+  evidenceToWaive,
 } from "@/lib/operations";
 import { WORK_BUCKETS, type AuditRecord, type Case } from "@/lib/types";
 
@@ -355,6 +356,22 @@ describe("caseRefetchMs", () => {
     for (const state of ["HELD_FOR_REVIEW", "APPROVED", "EXECUTION_FAILED", "RELEASED_BY_HUMAN", "BLOCKED_BY_HUMAN", undefined]) {
       expect(caseRefetchMs(state)).toBe(false);
     }
+  });
+});
+
+describe("evidenceToWaive", () => {
+  it("names each unresolved paper and each contradiction by its kind", () => {
+    const evaluation = {
+      unresolved: ["producer_declaration"],
+      contradictions: [{ kind: "certificate_country", detail: "The certificate says China." }],
+    };
+    expect(evidenceToWaive(evaluation as never)).toEqual(["producer_declaration", "contradiction:certificate_country"]);
+  });
+
+  it("names nothing for clean evidence, and for no evaluation at all", () => {
+    expect(evidenceToWaive({ unresolved: [], contradictions: [] } as never)).toEqual([]);
+    expect(evidenceToWaive(null)).toEqual([]);
+    expect(evidenceToWaive(undefined)).toEqual([]);
   });
 });
 
