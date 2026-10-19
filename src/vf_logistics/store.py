@@ -1767,13 +1767,14 @@ class FirestoreStore:
     async def release_case(
         self, case_id: str, tenant_id: str | None = None
     ) -> None:
-        scope = tenant.normalise(tenant_id)
-        if scope:
-            # Read first so one tenant cannot un-claim another's case and
-            # interfere with their pipeline.
-            snap = await asyncio.to_thread(self._cases.document(case_id).get)
-            if not snap.exists or not _owned_by(snap.to_dict(), scope):
-                return
+        # resolve(), not normalise(): an absent tenant must raise under multi-tenancy, not skip the
+        # ownership check below (the hole MemoryStore.release_case closed).
+        scope = tenant.resolve(tenant_id)
+        # Read first so one tenant cannot un-claim another's case, and so a case that is gone (a
+        # board reset can delete one a worker still holds) is let go of quietly, as MemoryStore does.
+        snap = await asyncio.to_thread(self._cases.document(case_id).get)
+        if not snap.exists or not _owned_by(snap.to_dict(), scope):
+            return
         await asyncio.to_thread(
             self._cases.document(case_id).update, {"claimed": False}
         )
