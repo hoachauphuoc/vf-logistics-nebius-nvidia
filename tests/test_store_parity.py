@@ -206,6 +206,17 @@ class TestEventsAndAudit:
         assert len(page) == 2 and cursor == page[-1]["at"]
         assert len(run(store.query_audit(cursor=cursor, limit=10))[0]) == 2
 
+    def test_an_audit_row_with_a_fixed_id_is_written_once(self, store):
+        row = {"audit_id": "audit-publish-1", "case_id": "C1", "action": "publish_decision", "status": "done", "at": at(1)}
+        assert run(store.add_audit_once(dict(row))) is True
+        assert run(store.add_audit_once({**row, "detail": {"second": True}})) is False
+        rows, _ = run(store.query_audit(case_id="C1"))
+        assert len(rows) == 1 and "detail" not in rows[0]
+
+    def test_a_fixed_id_audit_row_needs_its_id(self, store):
+        with pytest.raises(ValueError):
+            run(store.add_audit_once({"case_id": "C1", "action": "publish_decision"}))
+
     def test_the_audit_trail_cannot_be_edited_or_deleted(self, store):
         run(store.add_audit({"audit_id": "A1", "case_id": "C", "action": "x", "at": at(1)}))
         with pytest.raises(store_mod.AuditImmutabilityError):

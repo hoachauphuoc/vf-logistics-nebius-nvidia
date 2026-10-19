@@ -910,6 +910,30 @@ class MemoryStore:
             # production audit trail past this cap.
             del self._audit[:-5000]
 
+    async def add_audit_once(
+        self, entry: dict[str, Any], tenant_id: str | None = None
+    ) -> bool:
+        """
+        Append the entry unless one with its audit_id is already there. True when this
+        call wrote it.
+
+        For a row two writers may both decide to create: the check and the write are one
+        step under the lock here, and one atomic create on Firestore, so the loser is told
+        "already there" instead of adding a second row. The caller picks an audit_id that
+        the same fact always maps to; without one there is nothing to be unique by.
+        """
+        if "audit_id" not in entry:
+            raise ValueError("add_audit_once needs an audit_id derived from what makes the row unique")
+        with self._lock:
+            if any(a.get("audit_id") == entry["audit_id"] for a in self._audit):
+                return False
+            _stamp_tenant(entry, tenant_id or entry.get(TENANT_FIELD))
+            entry["_immutable"] = True
+            entry["_created_at"] = utcnow()
+            self._audit.append(entry)
+            del self._audit[:-5000]
+            return True
+
     async def update_audit(
         self, audit_id: str, updates: dict[str, Any],
         tenant_id: str | None = None,
@@ -1832,6 +1856,26 @@ class FirestoreStore:
         entry["_immutable"] = True
         entry["_created_at"] = utcnow()
         await asyncio.to_thread(self._audit.document(entry["audit_id"]).set, entry)
+
+    async def add_audit_once(
+        self, entry: dict[str, Any], tenant_id: str | None = None
+    ) -> bool:
+        """
+        The same contract as MemoryStore.add_audit_once: one atomic create, so a second
+        writer of the same audit_id is refused by the database rather than adding a row.
+        """
+        if "audit_id" not in entry:
+            raise ValueError("add_audit_once needs an audit_id derived from what makes the row unique")
+        from google.api_core.exceptions import AlreadyExists
+
+        _stamp_tenant(entry, tenant_id or entry.get(TENANT_FIELD))
+        entry["_immutable"] = True
+        entry["_created_at"] = utcnow()
+        try:
+            await asyncio.to_thread(self._audit.document(entry["audit_id"]).create, entry)
+        except AlreadyExists:
+            return False
+        return True
 
     async def update_audit(
         self, audit_id: str, updates: dict[str, Any],

@@ -56,6 +56,31 @@ async def _audit(
     return entry
 
 
+def _publish_audit_id(case_id: str, key: str, tenant_id: str | None) -> str:
+    """
+    The audit id of the one publish_decision row a send can have, whoever writes it.
+
+    Derived from the tenant, the case and the idempotency key, so the reconciliation, the
+    sent-ledger settle and a retry all name the same row and the store can refuse the
+    second (N01): a random id per call let two writers that both found no row add two.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(f"{tenant_id or ''}\x00{case_id}\x00{key}".encode()).hexdigest()
+    return f"audit-publish-{digest[:32]}"
+
+
+async def _audit_once(
+    audit_id: str, case_id: str, action: str, detail: dict[str, Any], tenant_id: str | None = None,
+) -> bool:
+    """Save the audit row under a fixed id. True when this call wrote it, False when it was already there."""
+    entry = {
+        "audit_id": audit_id, "case_id": case_id, "action": action, "status": "done",
+        "detail": detail, "at": utcnow(),
+    }
+    return bool(await get_store().add_audit_once(entry, tenant_id=tenant_id))
+
+
 # --------------------------------------------------------------------------
 # Shipment disposition
 # --------------------------------------------------------------------------
@@ -341,12 +366,10 @@ async def _settle_from_ledger() -> int:
             case_id = body.get("case_id")
             if not key or not case_id or (owner is None and multi_tenant_enabled()):
                 continue
-            if await _earlier_publish(case_id, key, owner) is None:
-                await _audit(
-                    case_id, "publish_decision",
-                    {**body, "message_id": message.message_id, "via": "sent ledger"},
-                    tenant_id=owner,
-                )
+            if await _earlier_publish(case_id, key, owner) is None and await _audit_once(
+                _publish_audit_id(case_id, key, owner), case_id, "publish_decision",
+                {**body, "message_id": message.message_id, "via": "sent ledger"}, tenant_id=owner,
+            ):
                 saved += 1
         await asyncio.to_thread(
             subscriber.acknowledge, subscription=path,
@@ -371,12 +394,15 @@ async def record_publish_audit(
     row = {k: v for k, v in detail.items() if k != "error"}
     if detail.get("error"):
         row["save_error"] = detail["error"]
-    await _audit(
-        case_id, "publish_decision",
-        {**row, "via": "audit reconciliation", "reconciled_by": actor},
-        tenant_id=tenant_id,
+    row = {**row, "via": "audit reconciliation", "reconciled_by": actor}
+    if not key:
+        await _audit(case_id, "publish_decision", row, tenant_id=tenant_id)
+        return True
+    # The check above and this write are two steps; the fixed id makes the write itself the
+    # decider, so two reconciliations that both saw no row leave one.
+    return await _audit_once(
+        _publish_audit_id(case_id, key, tenant_id), case_id, "publish_decision", row, tenant_id=tenant_id,
     )
-    return True
 
 
 def _may_have_been_accepted(exc: BaseException) -> bool:

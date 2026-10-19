@@ -143,7 +143,7 @@ class TestReconciliation(AuditGapBase):
         async def store_down(*args, **kwargs):
             raise RuntimeError("the store did not answer")
 
-        with patch("vf_logistics.tools._audit", new=store_down):
+        with patch("vf_logistics.tools._audit_once", new=store_down):
             out = run(evidence.reconcile_publish_audits(OPERATOR))
         assert out == {"reconciled": 0, "already_recorded": 0, "failed": 1, "pending": 1}
         assert self.stored()["verification"]["executions"][0]["audit_pending"] is True
