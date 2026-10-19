@@ -158,14 +158,15 @@ class TestSignInLedgerOnFirestore(_EmulatorCase):
 
         At most the limit, not exactly: an attempt that loses on contention after
         every retry is counted as limited (fail closed), so a burst may admit
-        fewer. Admitting MORE would be the vulnerability; admitting none would
-        mean the ledger is broken, so at least one must get through.
+        fewer, even none: when every attempt increments before any reads, each
+        reads a count above the limit and all are refused. Admitting MORE would
+        be the vulnerability. That the ledger admits at all is asserted by the
+        sequential test above.
         """
         with ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(lambda _: self.hit(limit=5), range(12)))
         admitted = results.count(False)
         self.assertLessEqual(admitted, 5)
-        self.assertGreaterEqual(admitted, 1)
 
     def test_a_burst_is_answered_quickly(self):
         """
