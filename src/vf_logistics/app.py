@@ -2030,7 +2030,7 @@ def review_document(case_id: str):
             headers={
                 "Content-Disposition":
                     'inline; filename="{}"'.format(
-                        re.sub(r'[^\w\s\-.]', '_', provenance.get("filename", "document.pdf"))[:100]
+                        re.sub(r'[^\w \-.]', '_', provenance.get("filename", "document.pdf"))[:100]
                     )
             },
         )
