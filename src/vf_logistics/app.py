@@ -1014,7 +1014,10 @@ def orchestrator_drain():
     """
     try:
         body = request.get_json(silent=True) or {}
-        cases = int(body.get("cases") or request.args.get("cases") or 3)
+        try:
+            cases = int(body.get("cases") or request.args.get("cases") or 3)
+        except (TypeError, ValueError):
+            return jsonify({"error": "cases must be a whole number"}), 400
         return jsonify(_on_worker(orchestrator.drain(max_cases=max(1, min(cases, 10)), tenant_id=_tenant())))
     except Exception as e:
         return _safe_error(e)
