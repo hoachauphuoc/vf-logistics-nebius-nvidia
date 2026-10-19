@@ -143,7 +143,7 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run lint
-      - run: npm test
+      - run: npm run test:coverage
       # The production build, with demo mode off as the Dockerfile builds it: a page
       # that exports something Next forbids, or a route handler that fails to
       # compile, passes tsc and fails here.

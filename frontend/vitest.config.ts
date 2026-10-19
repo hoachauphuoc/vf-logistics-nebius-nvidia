@@ -27,6 +27,15 @@ export default defineConfig({
     // The Next build output and node_modules both contain files that match the include
     // glob once compiled; excluding them keeps a watch run from thrashing.
     exclude: ["node_modules", ".next", "dist"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}"],
+      reporter: ["text-summary", "json-summary"],
+      // A floor under the figure measured on 2026-10-19 (38% of lines: most screens have no
+      // test, by the scope decision above), so it can only go up, not quietly down.
+      thresholds: { lines: 35, statements: 35, functions: 60, branches: 75 },
+    },
   },
   esbuild: {
     jsx: "automatic",
