@@ -111,13 +111,13 @@ jobs:
       - run: npm install -g firebase-tools@14
       # One run for tests and coverage together. --cov-fail-under makes the figure a
       # gate rather than a number in an artefact nobody opens. It was 75 (below the 78%
-      # measured when it was introduced) and is 83 now: 87% measured with the emulators
-      # (2026-10-19), so a real drop is caught and noise is not.
+      # measured when it was introduced), was 83 at 87% and is 92 now: 95.9% measured with
+      # the emulators (2026-10-19), so a real drop is caught and noise is not.
       - run: >-
           firebase emulators:exec --only firestore,pubsub --project demo-floorline
           --config infra/emulators/firebase.json
           "python -m pytest tests/ --tb=short --junitxml=test-results.xml
-          --cov=vf_logistics --cov-report=term --cov-report=xml --cov-fail-under=83"
+          --cov=vf_logistics --cov-report=term --cov-report=xml --cov-fail-under=92"
         env:
           PYTHONPATH: src
       - uses: actions/upload-artifact@v4

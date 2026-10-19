@@ -1619,10 +1619,10 @@ end to end, not what a real run costs or how long a person takes.
 # The test tools are not in requirements.txt; install them first.
 pip install -r requirements.txt "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-cov>=4.1.0" "pytest-mock>=3.12.0"
 
-# Unit + integration tests: 1600 pass and 20 skip (the Firestore and Pub/Sub emulator tests,
-# unless FIRESTORE_EMULATOR_HOST and PUBSUB_EMULATOR_HOST are set), at 85.8% line coverage.
-# CI fails below 75%.
-python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=75
+# Unit + integration tests: 2051 pass with the Firestore and Pub/Sub emulators running (CI does:
+# firebase emulators:exec --only firestore,pubsub ...); without them the emulator tests skip.
+# Line coverage of vf_logistics is 95.9% with the emulators. CI fails below 92%.
+python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=92
 
 # The mutation check: breaks 112 lines on purpose, one at a time, and requires the
 # suite to fail on every one. It edits source in place and restores it, so it
