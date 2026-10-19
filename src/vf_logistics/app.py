@@ -1103,7 +1103,10 @@ def simulate_bulk():
     """
     try:
         body = request.get_json(silent=True) or {}
-        requested = int(body.get("count") or request.args.get("count") or 10)
+        try:
+            requested = int(body.get("count") or request.args.get("count") or 10)
+        except (TypeError, ValueError):
+            return jsonify({"error": "count must be a whole number"}), 400
         cap = int(os.getenv("MAX_BULK_COUNT", "10"))
         count = max(1, min(requested, cap))
 
