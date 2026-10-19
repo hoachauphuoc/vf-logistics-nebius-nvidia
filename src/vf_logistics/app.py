@@ -2328,7 +2328,10 @@ def bucket_sweep():
     try:
         body = request.get_json(silent=True) or {}
         prefix = str(body.get("prefix") or request.args.get("prefix") or "inbox/")
-        limit = int(body.get("limit") or request.args.get("limit") or 10)
+        try:
+            limit = int(body.get("limit") or request.args.get("limit") or 10)
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit must be a whole number"}), 400
         return jsonify(_on_worker(
             orchestrator.sweep_bucket(prefix, max(1, min(limit, 25)), tenant_id=_tenant())
         ))
