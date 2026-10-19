@@ -906,7 +906,10 @@ def main() -> int:
     print("Checking that each test actually fails when its subject is broken.\n")
     undetected = []
 
-    for label, rel_path, find, replace, selector in MUTATIONS:
+    # An optional first index resumes an interrupted run: python scripts/check_test_sensitivity.py 105
+    start = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+
+    for label, rel_path, find, replace, selector in MUTATIONS[start:]:
         path = ROOT / rel_path
         original = path.read_bytes()
         text = original.decode("utf-8")
