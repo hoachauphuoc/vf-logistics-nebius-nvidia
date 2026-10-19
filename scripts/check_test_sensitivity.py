@@ -725,17 +725,17 @@ MUTATIONS = [
         "tests/test_evidence_eval_approve.py::TestN05OnlyInsideTheVerificationLoop",
     ),
     (
-        "N06: a certificate that states no country contradicts the declared origin",
+        "N06: a country field that says not stated counts as a stated country",
         "src/vf_logistics/verifier.py",
-        "        if not _is_meaningful(raw_origin):\n            continue\n        stated = _canon_country(raw_origin)",
-        "        stated = _canon_country(raw_origin)",
+        "    names = {_canon_country(_scalar(v)) for v in values if _is_meaningful(v)}",
+        "    names = {_canon_country(_scalar(v)) for v in values if v}",
         "tests/test_origin_inputs.py::TestN06WhatCountsAsNothingStated",
     ),
     (
-        "N06: a placeholder goods origin shadows a stated supplier country",
+        "N06: a list with a placeholder entry counts as naming several countries",
         "src/vf_logistics/verifier.py",
-        "                    for v in (inv.get(\"goods_origin_country\"), inv.get(\"supplier_country\"))\n                    if _is_meaningful(v)",
-        "                    for v in (inv.get(\"goods_origin_country\"), inv.get(\"supplier_country\"))\n                    if v",
+        "    return len({_canon_country(_scalar(v)) for v in value if _is_meaningful(v)}) > 1",
+        "    return len({_canon_country(_scalar(v)) for v in value if v}) > 1",
         "tests/test_origin_inputs.py::TestN06WhatCountsAsNothingStated",
     ),
     (
