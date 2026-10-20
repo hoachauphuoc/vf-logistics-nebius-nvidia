@@ -62,7 +62,8 @@ def _fetch_id_token(audience: str) -> str | None:
         from google.auth.transport.requests import Request
         from google.oauth2 import id_token
 
-        return id_token.fetch_id_token(Request(), audience)
+        token: str | None = id_token.fetch_id_token(Request(), audience)
+        return token
     except Exception:  # noqa: BLE001
         return None
 

@@ -43,7 +43,8 @@ REFERENCE_FILE = pathlib.Path(__file__).resolve().parents[2] / "data" / "hs_refe
 @functools.lru_cache(maxsize=1)
 def load() -> dict[str, Any]:
     with open(REFERENCE_FILE, encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
+        reference: dict[str, Any] = yaml.safe_load(fh)
+        return reference
 
 
 @functools.lru_cache(maxsize=1)

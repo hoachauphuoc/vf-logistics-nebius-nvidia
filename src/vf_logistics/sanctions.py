@@ -296,12 +296,14 @@ def _read_gcs(bucket: str, obj: str) -> dict[str, Any]:
     raw = blob.download_as_bytes()
     if obj.endswith(".gz"):
         raw = gzip.decompress(raw)
-    return json.loads(raw.decode("utf-8"))
+    index: dict[str, Any] = json.loads(raw.decode("utf-8"))
+    return index
 
 
 def _read_bundled() -> dict[str, Any]:
     with open(BUNDLED_INDEX, encoding="utf-8") as fh:
-        return json.load(fh)
+        bundled: dict[str, Any] = json.load(fh)
+        return bundled
 
 
 def load(force: bool = False) -> SanctionsIndex | None:

@@ -81,10 +81,11 @@ def cost_usd(model: str | None, input_tokens: int, output_tokens: int) -> float:
     the bill in whichever direction the selection happened to point.
     """
     pricing = model_config.pricing_for(model)
-    return (
+    cost: float = (
         (input_tokens or 0) * pricing["input"]
         + (output_tokens or 0) * pricing["output"]
     ) / 1_000_000
+    return cost
 
 
 def step_lineage(case: dict[str, Any]) -> list[dict[str, Any]]:

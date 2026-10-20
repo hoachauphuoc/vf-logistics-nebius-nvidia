@@ -321,4 +321,5 @@ def build_exemplars(
 
 def load_pairs() -> dict[str, Any]:
     with open(PAIRS_FILE, encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
+        pairs: dict[str, Any] = yaml.safe_load(fh)
+        return pairs

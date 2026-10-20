@@ -227,7 +227,8 @@ async def _earlier_publish(
             delegated.get("message_id") if isinstance(delegated, dict) else None
         )
         if message_id:
-            return row
+            proof: dict[str, Any] = row
+            return proof
     return None
 
 
@@ -480,7 +481,8 @@ async def publish_decision_direct(
             if tenant_id:
                 attributes["tenant_id"] = str(tenant_id)
             future = publisher.publish(topic, json.dumps(body).encode("utf-8"), **attributes)
-            return future.result(timeout=15)
+            sent_id: str = future.result(timeout=15)
+            return sent_id
 
         message_id = await asyncio.to_thread(_publish)
         accepted["message_id"] = message_id

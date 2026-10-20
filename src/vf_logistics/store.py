@@ -1358,9 +1358,10 @@ class FirestoreStore:
             if not docs:
                 return None
             # Highest version wins if a partial publish ever left two ACTIVE.
-            return max(
+            newest: dict[str, Any] = max(
                 (d.to_dict() for d in docs), key=lambda b: b.get("version", 0)
             )
+            return newest
 
         return await asyncio.to_thread(_q)
 
@@ -1526,7 +1527,8 @@ class FirestoreStore:
                 .stream()
             )
             for d in docs:
-                return d.to_dict()
+                first: dict[str, Any] = d.to_dict()
+                return first
             return None
 
         return await asyncio.to_thread(_q)
@@ -1781,7 +1783,7 @@ class FirestoreStore:
                     cur["claimed_at"] = now
                     return cur
 
-                taken = _take(txn, doc.reference)
+                taken: dict[str, Any] | None = _take(txn, doc.reference)
                 if taken:
                     return taken
             return None

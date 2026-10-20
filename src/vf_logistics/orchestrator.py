@@ -193,7 +193,8 @@ async def global_metrics(tenant_id: str | None = None) -> dict[str, Any]:
     cache_key = tenant_id or ""
     cached = _metrics_cache.get(cache_key)
     if cached is not None and (now - cached["at"] < _METRICS_CACHE_TTL_SECONDS):
-        return cached["value"]
+        value: dict[str, Any] = cached["value"]
+        return value
 
     store = get_store()
     all_states = ACTIONABLE + TERMINAL
@@ -276,7 +277,8 @@ async def ingest_shipment(
     # silently discarding the shipment actually submitted.
     existing = await store.get_case(case_id, tenant_id=tenant_id)
     if existing:
-        return existing
+        found: dict[str, Any] = existing
+        return found
 
     # Supply the one fact the shipment is not allowed to assert about itself.
     # ingest_document already does this after sanitisation; event-sourced
@@ -2334,9 +2336,10 @@ async def review_queue(
     from the one place a human looks for it. See firestore.indexes.json for
     the composite index this relies on.
     """
-    return await get_store().query_cases(
+    page: tuple[list[dict[str, Any]], str | None] = await get_store().query_cases(
         states=AWAITING_HUMAN, cursor=cursor, limit=limit, tenant_id=tenant_id,
     )
+    return page
 
 
 # Fields a board card actually renders. A full case document runs ~13KB,
