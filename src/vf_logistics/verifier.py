@@ -319,7 +319,7 @@ HUB_ALIASES = {
 }
 
 
-def distinct_hubs(text: str, exclude: str = "") -> set[str]:
+def distinct_hubs(text: str, exclude: str | None = "") -> set[str]:
     """
     The set of distinct transhipment PLACES named in `text`.
 

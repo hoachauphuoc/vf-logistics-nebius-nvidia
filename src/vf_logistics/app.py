@@ -112,7 +112,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # X-Forwarded-For and gets an unlimited supply of fresh buckets. x_for=1 means
 # "take the single address Cloud Run's front end appended, ignore anything the
 # client claims before it".
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[method-assign]  # Werkzeug's documented way to add ProxyFix
 
 
 def _rate_limit_key() -> str:

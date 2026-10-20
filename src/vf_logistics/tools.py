@@ -460,7 +460,9 @@ async def publish_decision_direct(
         accepted: dict[str, Any] = {}
         import asyncio
 
-        from google.cloud import pubsub_v1
+        import importlib
+
+        pubsub_v1: Any = importlib.import_module("google.cloud.pubsub_v1")
 
         def _publish() -> str:
             # Resolved here, on the worker thread, because it can probe the metadata

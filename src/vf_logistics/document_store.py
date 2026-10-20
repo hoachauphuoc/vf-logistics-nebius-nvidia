@@ -47,7 +47,9 @@ def _get_client() -> Any:
     if _client is not None or _client_error is not None:
         return _client
     try:
-        from google.cloud import storage
+        import importlib
+
+        storage: Any = importlib.import_module("google.cloud.storage")
 
         # None is accepted: object reads and writes name the bucket and need no
         # project, so the archive still works where no project can be resolved.

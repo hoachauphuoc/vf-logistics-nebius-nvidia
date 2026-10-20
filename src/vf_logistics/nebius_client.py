@@ -205,7 +205,7 @@ def _note_truncation(label: str, response: Any, max_tokens: int | None) -> None:
     )
 
 
-def _ceiling(max_tokens: int | None) -> dict[str, int]:
+def _ceiling(max_tokens: int | None) -> dict[str, Any]:
     """
     Render `max_tokens` as kwargs, omitting it entirely when unset.
 
@@ -256,7 +256,7 @@ async def complete_json(
     not survive the constrained decoding: see investigation_agent.JSON_MODE.
     """
     client = get_client()
-    mode = {"response_format": {"type": "json_object"}} if json_mode else {}
+    mode: dict[str, Any] = {"response_format": {"type": "json_object"}} if json_mode else {}
 
     async def _call() -> Any:
         return await client.chat.completions.create(
@@ -281,7 +281,7 @@ async def complete_with_tools(
     *,
     model: str,
     messages: list[dict],
-    tools: list[dict],
+    tools: list[dict] | None,
     temperature: float = 0.3,
     max_tokens: int | None = None,
 ) -> Any:
@@ -296,12 +296,15 @@ async def complete_with_tools(
     tool_calls on the assistant message.
     """
     client = get_client()
+    # The SDK types these as its own TypedDict unions; callers build plain dicts, and None means no tools.
+    sdk_messages: Any = messages
+    sdk_tools: Any = tools
 
     async def _call() -> Any:
         return await client.chat.completions.create(
             model=model,
-            messages=messages,
-            tools=tools,
+            messages=sdk_messages,
+            tools=sdk_tools,
             temperature=temperature,
             **_ceiling(max_tokens),
         )

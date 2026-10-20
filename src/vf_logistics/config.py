@@ -16,6 +16,7 @@ calls; reach for Ultra when you need serious reasoning."
 
 import logging
 import os
+from typing import Any
 from functools import lru_cache
 from threading import Lock
 
@@ -27,7 +28,7 @@ _vision_model_id = os.getenv("VISION_MODEL", "openbmb/MiniCPM-V-4_5")
 
 # Model pricing per 1M tokens (USD)
 # Source: Nebius Token Factory model catalog
-PRICING = {
+PRICING: dict[str, dict[str, Any]] = {
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": {
         "input": 0.06,
         "output": 0.24,
@@ -137,7 +138,7 @@ def rate_multiple(model: str, against: str | None = None) -> float:
     if target is None:
         return float("inf")
     base = (baseline["input"] + baseline["output"]) or 1e-9
-    return (target["input"] + target["output"]) / base
+    return float((target["input"] + target["output"]) / base)
 
 
 def set_model(model: str, *, allow_costlier: bool = False) -> bool:

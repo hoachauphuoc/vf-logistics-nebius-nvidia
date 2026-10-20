@@ -527,7 +527,8 @@ class MemoryStore:
             ]
             if not active:
                 return None
-            return dict(max(active, key=lambda b: b.get("version", 0)))
+            newest = max(active, key=lambda b: b.get("version", 0))
+            return dict(newest)
 
     async def list_boundaries(
         self, limit: int = 20, tenant_id: str | None = None

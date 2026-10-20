@@ -37,6 +37,7 @@ from __future__ import annotations
 import math
 import os
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any, TypeGuard
 
 from vf_logistics import tools
@@ -829,7 +830,7 @@ async def simulate_boundary(
 # Agent gateway
 # --------------------------------------------------------------------------
 
-_ACTION_IMPLS = {
+_ACTION_IMPLS: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
     "release_shipment": tools.release_shipment,
     "hold_shipment": tools.hold_shipment,
     "assign_analyst": tools.assign_analyst,

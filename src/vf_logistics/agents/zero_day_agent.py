@@ -281,7 +281,8 @@ async def _run_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": f"unknown tool {name}"}
 
     query = str(args.get("query") or "").strip()
-    depth = args.get("search_depth") or "basic"
+    # Only these two depths exist; a value the model invents must not reach the search API.
+    depth: tavily_client.SearchDepth = "advanced" if args.get("search_depth") == "advanced" else "basic"
     if not query:
         return {"error": "empty query", "results": [], "searched": False}
 

@@ -276,7 +276,7 @@ async def conduct_debate(
     """
     context = _build_debate_context(case)
     
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": DEBATE_PROMPT},
         {"role": "user", "content": context},
     ]
@@ -566,12 +566,13 @@ async def _tavily_search(query: str, depth: str) -> dict[str, Any]:
     # translated the choice into a result count while the client hardcoded
     # "basic". A model told it has a control it does not have reasons on that
     # basis, so the schema and the request now agree.
-    depth = depth if depth in ("basic", "advanced") else "basic"
+    search_depth: tavily_client.SearchDepth = "advanced" if depth == "advanced" else "basic"
+    depth = search_depth
     max_results = 5 if depth == "advanced" else 3
 
     try:
         results, status = await tavily_client.search_with_status(
-            query, max_results=max_results, search_depth=depth,
+            query, max_results=max_results, search_depth=search_depth,
         )
         out = {
             "query": query,

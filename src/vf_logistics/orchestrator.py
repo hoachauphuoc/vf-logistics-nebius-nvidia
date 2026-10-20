@@ -289,7 +289,7 @@ async def ingest_shipment(
     # writes nothing and leaves the unverified-history floor standing.
     shipper_registry.enrich(shipment)
 
-    case = {
+    case: dict[str, Any] = {
         "case_id": case_id,
         "shipment_id": shipment_id,
         "shipment": shipment,
@@ -963,7 +963,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             auto_reject = bool(validation.get("auto_reject_by_rules"))
             action = "auto_reject" if auto_reject else "auto_clear"
             flag = "auto_reject_by_rules" if auto_reject else "auto_clear_by_rules"
-            primary = next((f for f in validation["findings"] if f.get(flag)), {})
+            primary: dict[str, Any] = next((f for f in validation["findings"] if f.get(flag)), {})
             other_findings = [f for f in validation["findings"] if f is not primary]
             reason = primary.get("detail", "Cleared by SQL pre-filter rules")
 
@@ -1697,10 +1697,10 @@ async def _apply_debate_verdict(
 def _investigation_payload(case: dict[str, Any]) -> dict[str, Any]:
     """Build the nested case envelope the investigation agent expects."""
     shipment = case.get("shipment", {})
-    fraud_step = next(
+    fraud_step: dict[str, Any] = next(
         (s for s in case.get("steps", []) if s["agent"] == "fraud_detection"), {}
     )
-    compliance_step = next(
+    compliance_step: dict[str, Any] = next(
         (s for s in case.get("steps", []) if s["agent"] == "compliance"), {}
     )
     fraud_result = fraud_step.get("result", {})

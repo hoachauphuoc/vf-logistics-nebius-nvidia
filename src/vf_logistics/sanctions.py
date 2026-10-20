@@ -289,7 +289,9 @@ def _entities_from_payload(payload: dict[str, Any]) -> list[SanctionedEntity]:
 
 
 def _read_gcs(bucket: str, obj: str) -> dict[str, Any]:
-    from google.cloud import storage
+    import importlib
+
+    storage: Any = importlib.import_module("google.cloud.storage")
 
     client = storage.Client()
     blob = client.bucket(bucket).blob(obj)
