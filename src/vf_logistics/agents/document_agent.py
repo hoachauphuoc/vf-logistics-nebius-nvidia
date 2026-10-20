@@ -57,7 +57,7 @@ class DocumentConversionError(RuntimeError):
     arrive as an opaque 500 with neither reason visible.
     """
 
-def get_model_id():
+def get_model_id() -> str:
     return model_config.get_vision_model()
 
 # Anything the pipeline reasons over has to come out of here, because a field

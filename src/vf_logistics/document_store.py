@@ -42,7 +42,7 @@ _client = None
 _client_error: str | None = None
 
 
-def _get_client():
+def _get_client() -> Any:
     global _client, _client_error
     if _client is not None or _client_error is not None:
         return _client

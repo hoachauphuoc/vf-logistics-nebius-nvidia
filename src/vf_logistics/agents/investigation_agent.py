@@ -46,7 +46,7 @@ JSON_MODE = False
 # rather than chased. Tokens of every attempt are billed to the step.
 MAX_ATTEMPTS = 2
 
-def get_model_id():
+def get_model_id() -> str:
     """Investigation agent is pinned via INVESTIGATION_MODEL, not the shared registry."""
     return MODEL_ID
 
@@ -322,7 +322,7 @@ async def generate_report(investigation_results: list[dict]) -> dict[str, Any]:
     return out
 
 
-def get_agent_info() -> dict[str, str]:
+def get_agent_info() -> dict[str, Any]:
     """Return agent metadata."""
     return {
         "name": "VF Logistics AI Investigation Agent",

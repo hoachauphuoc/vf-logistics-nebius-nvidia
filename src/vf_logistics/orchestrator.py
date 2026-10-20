@@ -1094,7 +1094,7 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
         )
 
         # Route validation: search for disruptions on this shipping lane
-        async def _route_search(shipment):
+        async def _route_search(shipment: dict[str, Any]) -> tuple[Any, Any, bool]:
             origin = shipment.get("origin_country") or shipment.get("origin", "")
             dest = shipment.get("destination_country") or shipment.get("destination", "")
             if not origin or not dest:

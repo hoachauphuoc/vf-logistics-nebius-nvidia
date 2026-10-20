@@ -1124,7 +1124,7 @@ class FirestoreStore:
         doc: dict[str, Any] = snap.to_dict() or {}
         return doc if doc.get(TENANT_FIELD) == scope else None
 
-    def _scoped(self, collection, scope: str):
+    def _scoped(self, collection: Any, scope: str) -> Any:
         return collection.where(
             filter=self._fs.FieldFilter(TENANT_FIELD, "==", scope)
         )
@@ -2084,7 +2084,7 @@ def store_backend() -> str:
     return os.getenv("STORE_BACKEND", "firestore").strip().lower()
 
 
-def get_store():
+def get_store() -> Any:
     """
     Return the process-wide store, building it on first use.
 

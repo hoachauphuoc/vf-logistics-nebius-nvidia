@@ -160,7 +160,7 @@ CORS(app, origins=_ALLOWED_ORIGINS)
 
 
 @app.after_request
-def _security_headers(response):
+def _security_headers(response: Any) -> Any:
     """Add security headers to every response."""
     response.headers["X-Frame-Options"] = "DENY"
     # Cloud Run terminates TLS and never serves plaintext, so this changes
@@ -280,7 +280,7 @@ def _safe_error(e: Exception, status: int = 500) -> Any:
 
 
 @app.errorhandler(RequestEntityTooLarge)
-def _too_large(_e):
+def _too_large(_e: Any) -> Any:
     """The MAX_CONTENT_LENGTH refusal, reported as the status it actually is."""
     return jsonify({
         "error": "Request body too large",
@@ -293,7 +293,7 @@ def _too_large(_e):
 
 
 @app.errorhandler(429)
-def _rate_limited(e):
+def _rate_limited(e: Any) -> Any:
     """
     Rate limit refusals, as JSON and naming the limit that fired.
 
@@ -308,12 +308,12 @@ def _rate_limited(e):
 
 
 @app.errorhandler(404)
-def _not_found(_e):
+def _not_found(_e: Any) -> Any:
     return jsonify({"error": "Not found"}), 404
 
 
 @app.errorhandler(405)
-def _method_not_allowed(_e):
+def _method_not_allowed(_e: Any) -> Any:
     return jsonify({"error": "Method not allowed"}), 405
 
 
@@ -356,7 +356,7 @@ def _ensure_worker() -> asyncio.AbstractEventLoop:
         return loop
 
 
-def _on_worker(coro):
+def _on_worker(coro: Any) -> Any:
     """Run a coroutine on the worker loop and wait for its result."""
     loop = _ensure_worker()
     return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=120)
@@ -411,9 +411,9 @@ def _drain_step(tenant_id: str | None) -> tuple[dict | None, str | None]:
 
 
 # Helper to run async functions in Flask
-def async_route(f):
+def async_route(f: Any) -> Any:
     @wraps(f)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         # These handlers run on the long-lived worker loop rather than a private
         # asyncio.run() loop per request. asyncio.run() closes its loop on the way
         # out, and the inference client is created once and cached at module level,
@@ -433,7 +433,7 @@ def before_request_hook() -> Any:
 
 
 @app.after_request
-def after_request_hook(response):
+def after_request_hook(response: Any) -> Any:
     """Log request completion."""
     logger.debug(
         f"Request completed: {request.method} {request.path} -> {response.status_code}"

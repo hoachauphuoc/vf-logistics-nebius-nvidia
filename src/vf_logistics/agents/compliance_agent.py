@@ -25,7 +25,7 @@ from vf_logistics import config as model_config
 # bounds what a runaway costs, it does not stop the case going to a human.
 MAX_OUTPUT_TOKENS = 6000
 
-def get_model_id():
+def get_model_id() -> str:
     return model_config.get_model()
 
 COMPLIANCE_PROMPT = """
@@ -309,7 +309,7 @@ async def screen_entity(entity_data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def get_agent_info() -> dict[str, str]:
+def get_agent_info() -> dict[str, Any]:
     """Return agent metadata."""
     return {
         "name": "VF Logistics Compliance Screening Agent",

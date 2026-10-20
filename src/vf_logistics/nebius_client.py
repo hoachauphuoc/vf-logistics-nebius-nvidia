@@ -163,7 +163,7 @@ def get_client() -> AsyncOpenAI:
     return _client
 
 
-def _usage(response) -> tuple[int, int]:
+def _usage(response: Any) -> tuple[int, int]:
     usage = getattr(response, "usage", None)
     if not usage:
         return 0, 0
@@ -258,7 +258,7 @@ async def complete_json(
     client = get_client()
     mode = {"response_format": {"type": "json_object"}} if json_mode else {}
 
-    async def _call():
+    async def _call() -> Any:
         return await client.chat.completions.create(
             model=model,
             messages=[
@@ -284,7 +284,7 @@ async def complete_with_tools(
     tools: list[dict],
     temperature: float = 0.3,
     max_tokens: int | None = None,
-):
+) -> Any:
     """
     Chat completion with function calling (tool use) support.
 
@@ -297,7 +297,7 @@ async def complete_with_tools(
     """
     client = get_client()
 
-    async def _call():
+    async def _call() -> Any:
         return await client.chat.completions.create(
             model=model,
             messages=messages,
@@ -331,7 +331,7 @@ async def complete_vision_json(
     b64 = base64.b64encode(document_bytes).decode("ascii")
     data_url = f"data:{mime_type};base64,{b64}"
 
-    async def _call():
+    async def _call() -> Any:
         return await client.chat.completions.create(
             model=model,
             messages=[

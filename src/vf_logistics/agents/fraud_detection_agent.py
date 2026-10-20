@@ -17,7 +17,7 @@ from vf_logistics import config as model_config
 # nebius_client._ceiling for why a ceiling exists at all.
 MAX_OUTPUT_TOKENS = 3500
 
-def get_model_id():
+def get_model_id() -> str:
     return model_config.get_model()
 
 # Fraud detection system prompt
@@ -160,7 +160,7 @@ async def batch_analyze(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]
     return results
 
 
-def get_agent_info() -> dict[str, str]:
+def get_agent_info() -> dict[str, Any]:
     """Return agent metadata."""
     return {
         "name": "VF Logistics Fraud Detection Agent",
