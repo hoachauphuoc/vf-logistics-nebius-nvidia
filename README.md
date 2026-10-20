@@ -410,14 +410,15 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **1,600 backend tests** passing at 85.8% line coverage (20 more skip without
-the Firestore and Pub/Sub emulators), 365 frontend tests, and a mutation check —
-`scripts/check_test_sensitivity.py` breaks 112 lines of backend and console code on
-purpose and the suite catches all 112. The weak spot is `store.py` at 58%:
-`FirestoreStore`, the production backend, is exercised mainly by the emulator tests, and
-CI has no emulator job. Five GitHub Actions jobs run on every push to `master`:
-lint, typecheck, test (with a 75% coverage floor), frontend, and a container job that
-builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
+**Now:** **2,084 backend tests** pass in CI with none skipped, at 96% line coverage (CI
+runs them inside the Firestore and Pub/Sub emulators, so the `FirestoreStore` tests
+run for real; without the emulators the 18 emulator tests and the store parity suite
+skip). The console has 1,729 frontend tests at 61.6% line coverage. A mutation check —
+`scripts/check_test_sensitivity.py`, which can resume from an index — breaks 112 lines of
+backend and console code on purpose and the suite catches all 112. mypy reports 0 errors.
+Five GitHub Actions jobs run on every push to `master`: lint, typecheck (mypy ceiling 0),
+test (backend coverage floor 92%, in the emulators), frontend (coverage floor 35%), and a
+container job that builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
 added here on 19 Sep (`ae240fb`) filtered on a branch named `main` while this
 repository uses `master`, so it never executed until `9d683f6` fixed the trigger on
 24 Sep.
@@ -1013,6 +1014,9 @@ caller is likely to want. The most useful omissions:
 | `/api/v1/billing/usage` | GET | Windowed spend, including `tavily_searches` / `tavily_cached` / `tavily_billable` |
 | `/api/v1/cases` | GET | Case list, slim shape, filterable by state |
 | `/api/v1/audit` | GET | The audit trail, filterable by case, action or status |
+| `/api/v1/audit/unreconciled` | GET | Executions whose `publish_decision` audit row is still missing after the broker accepted the message (N01), with a count (viewer) |
+| `/api/v1/audit/reconcile` | POST | Writes each missing `publish_decision` row once, under the signed-in person (operator; the key alone must name a person). Two reconciliations at the same moment leave one row: the row has a fixed id derived from tenant, case and idempotency key and is created atomically |
+| `/api/v1/ops/sent-ledger` | GET | Whether the sent ledger is configured and this service may read it; never its name (viewer) |
 | `/api/v1/security/screen` | POST | The injection probe on the console's Agents page: paste an attack, get the real screen verdict |
 
 `GET /api/v1/auth/policy` lists every route with the role it enforces, and is the
@@ -1183,7 +1187,7 @@ gcloud run deploy vf-app \
   --allow-unauthenticated \
   --memory 1Gi --cpu 1 --timeout 300 \
   --min-instances 0 --max-instances 2 \
-  --set-env-vars "PROJECT_ID=$PROJECT_ID,WORKER_MODE=ondemand,STORE_BACKEND=firestore,ANONYMOUS_ROLE=viewer,VF_PUBLIC_READS=true" \
+  --set-env-vars "PROJECT_ID=$PROJECT_ID,WORKER_MODE=ondemand,STORE_BACKEND=firestore,ANONYMOUS_ROLE=none,VF_PUBLIC_READS=false,VF_ONE_CLICK_JUDGE=true" \
   --update-env-vars "^|^ADMIN_EMAILS=you@example.com|REVIEWER_EMAILS=reviewer@example.com" \
   --set-secrets "NEBIUS_API_KEY=NEBIUS_API_KEY:latest,TAVILY_API_KEY=TAVILY_API_KEY:latest,VF_API_KEY=VF_API_KEY:latest,VF_SESSION_SECRET=VF_SESSION_SECRET:latest,VF_OPERATORS=VF_OPERATORS:latest"
 ```
@@ -1220,10 +1224,14 @@ gcloud run services delete vf-app --region asia-southeast1
 
 ## Signing in
 
-**Most of the console needs no account.** An anonymous visitor is a real `viewer`
-(`ANONYMOUS_ROLE=viewer`, `VF_PUBLIC_READS=true`): the board, every case trace, the review
-queue, the audit trail, the governance history and the evaluation figures are all
-readable. If you are here to assess the system, you can ignore this section entirely.
+**The deployed console asks everyone to sign in.** It runs with `ANONYMOUS_ROLE=none` and
+`VF_PUBLIC_READS=false`, so an anonymous visitor is sent to the sign-in screen and the API
+answers 401. The one-click guest-judge button (`VF_ONE_CLICK_JUDGE=true`) needs no password:
+the guest can look around, inject shipments, block a case and simulate policy, but cannot
+release or approve. With `ANONYMOUS_ROLE=viewer` (the default in code) and `VF_PUBLIC_READS=true`
+(off unless set; used for a demo over synthetic data) an anonymous visitor is a real `viewer` and the board, every
+case trace, the review queue, the audit trail, the governance history and the evaluation
+figures are readable without an account.
 
 What each role adds is declared on the route itself, by its decorator, not kept in a
 list, and `GET /api/v1/auth/policy` returns the table from the running service:
@@ -1629,7 +1637,7 @@ python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=92
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: install, typecheck, lint, 365 unit tests in 27 files, production build
+# Frontend: install, typecheck, lint, 1,729 unit tests in 91 files, production build
 (cd frontend && npm ci && npx tsc --noEmit && npm run lint && npm test && npm run build)
 
 # Real-model run (spends tokens, needs the operator key): cost, model time and whether each
@@ -1721,7 +1729,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Internal execute | 15 | `/internal/execute` acts only in the organisation it checked the role in |
 | Login throttle | 14 | One sign-in attempt ledger for every console instance |
 | Approval gate at the route | 14 | Who may release or approve through the real Flask routes, and what the legacy `/decide` refuses |
-| Firestore emulator | 18 | `FirestoreStore`'s transactions against the emulator; 16 of the 18 skip unless `FIRESTORE_EMULATOR_HOST` is set, and CI has no emulator job |
+| Firestore emulator | 18 | `FirestoreStore`'s transactions against the emulator; they skip unless `FIRESTORE_EMULATOR_HOST` is set, and CI runs them inside the emulators |
 | Poll drain | 3 | A board poll that advances the pipeline stays a bounded read, with one drain per tenant |
 | Exception approval and route | 11 | A release over unresolved or contradicting evidence is an operation of its own: the reason is mandatory, and the waived findings are stored on the approval |
 | Publish once per key | 7 | A decision is published once per idempotency key, the key travels as a Pub/Sub attribute, and a resume after an accepted but unconfirmed publish does not publish again |
@@ -1730,7 +1738,7 @@ python scripts/compare_debate_models.py       # replays disputed cases through S
 | Untyped links | 3 | A request-level link carries no document type, so with several documents requested it cannot say which slot an upload fills |
 | Decisions receiver | 19 | The Pub/Sub push endpoint accepts only a Google-signed push, applies each decision once per key and tenant (8 concurrent deliveries of one key apply it once on the emulator), and a message without a key is refused (`test_decision_receiver.py`, `test_applied_decisions.py`, `test_reference_receiver.py`) |
 | Sent ledger, hard kill and `/health` | 15 | A retry reads the sent ledger and does not publish again; an unreadable ledger sends nothing; a process killed right after the broker accepted leaves one message on the emulator; `/health` names the revision and the ledger (`test_sent_ledger.py`, `test_sim_hard_kill.py`, `test_health_deploy_info.py`) |
-| **Total** | **1,620** | 1,600 pass and 20 skip without the emulators; 72 files |
+| **Total** | **2,084** | all pass in CI, which runs the emulators; 105 test files. This table names areas of the hardening suite, not every file |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -2116,7 +2124,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
-├── tests/                        72 files, 1,620 tests
+├── tests/                        105 files, 2,084 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
@@ -2143,7 +2151,7 @@ collection effort.
 │   ├── RECEIVER_CONTRACT.md      What Floorline publishes, what a receiver must do, the sent ledger and the receiver it ships
 │   ├── swagger.json              Generated by scripts/build_docs.py — do not hand-edit
 │   └── diagrams/                 Mermaid flows
-├── .github/workflows/ci.yml      ruff, mypy ratchet, tests (75% floor), frontend, container smoke
+├── .github/workflows/ci.yml      ruff, mypy (ceiling 0), tests in the emulators (92% floor), frontend (coverage floor 35%), container smoke
 ├── Dockerfile                    The deployed image: Next.js console + Flask API, one container
 ├── Dockerfile.backend            The API alone, for running Flask without the console
 ├── entrypoint.sh                 Starts Flask on 127.0.0.1:9090, waits for /health, then Next.js

@@ -948,9 +948,10 @@ An architecture document that omits these is marketing.
   backend-independent and is tested end to end (`tests/test_membership.py`). The
   Firestore transactions behind boundary publish/revoke, `put_case` and the sign-in ledger are
   exercised against the emulator in `tests/test_firestore_emulator.py` and the receiver's
-  tests, which are skipped unless `FIRESTORE_EMULATOR_HOST` is set. CI has no emulator job, so
-  `store.py`, which holds the production backend, sits at 58% line coverage while the package
-  is at 85.8%.
+  tests, which are skipped unless `FIRESTORE_EMULATOR_HOST` is set. CI runs the emulators
+  (`firebase emulators:exec` with Firestore and Pub/Sub), so those tests run on every push, and
+  `store.py`, which holds the production backend, is covered at about 96% together with the
+  `MemoryStore`/`FirestoreStore` parity suite (`tests/test_store_parity.py`); the package is at 96%.
 - **Concurrent publishes in one tenant queue.** Publish and revoke are one Firestore
   transaction on the tenant's `boundary_counters` document, retried as a whole on
   contention. Against the emulator six simultaneous publishes all succeeded with distinct
@@ -966,7 +967,12 @@ An architecture document that omits these is marketing.
   subscription, and a pull does not promise to return every backlogged message, so a retry
   can still send a decision the broker already holds, under the same key. Floorline's own
   receiver applies each key once, but a system that reads the topic directly has to do the
-  same (`docs/RECEIVER_CONTRACT.md`); Floorline cannot prove that for a system it does not run.
+  same (`docs/RECEIVER_CONTRACT.md`); Floorline cannot prove that for a system it does not run. The trail itself holds one
+  `publish_decision` row per send: its id (`audit-publish-<hash>`) is derived from the tenant, the
+  case and the idempotency key and the row is created atomically (`store.add_audit_once`), so a
+  reconciliation and a sent-ledger settle that race leave one row (N01;
+  `tests/test_publish_audit_concurrent.py`, `tests/test_publish_audit_http_race.py`, and against the
+  real Firestore `scripts/n01_contention_check.py`; reproduction steps in `docs/REVIEW_N01_REPRODUCE.md`).
   The hard-kill result (one message left on the topic) was measured on the Pub/Sub and
   Firestore emulators; on the live service the sent ledger is configured and the receiver has
   applied a decision delivered twice once, but a process was not killed there.
