@@ -256,7 +256,7 @@ def _prefilter_rules() -> "verifier.PrefilterRules":
     stored = _on_worker(get_store().get_prefilter_rules(tenant_id=_tenant()))
     return verifier.PrefilterRules.from_dict(stored)
 
-def _safe_error(e: Exception, status: int = 500):
+def _safe_error(e: Exception, status: int = 500) -> Any:
     """
     Return a sanitized error response. Logs the real exception server-side.
 
@@ -426,7 +426,7 @@ def async_route(f):
 
 
 @app.before_request
-def before_request_hook():
+def before_request_hook() -> Any:
     """Initialize observability context for each request."""
     init_request_context(request)
     logger.debug(f"Request started: {request.method} {request.path}")
@@ -442,7 +442,7 @@ def after_request_hook(response):
 
 
 @app.route("/", methods=["GET"])
-def index():
+def index() -> Any:
     """
     Flask's own root, which a deployed visitor never reaches.
 
@@ -466,13 +466,13 @@ def index():
 
 
 @app.route("/legacy", methods=["GET"])
-def legacy_dashboard():
+def legacy_dashboard() -> Any:
     """The bundled vanilla dashboard, always reachable at an explicit path."""
     return send_from_directory("static", "index.html")
 
 
 @app.route("/health", methods=["GET"])
-def health():
+def health() -> Any:
     """Health check endpoint."""
     from vf_logistics import tools
     return jsonify({
@@ -491,7 +491,7 @@ def health():
 
 @app.route("/metrics", methods=["GET"])
 @require_viewer
-def metrics():
+def metrics() -> Any:
     """Expose application metrics for monitoring."""
     return jsonify(get_metrics().snapshot())
 
@@ -501,7 +501,7 @@ def metrics():
 # it is the Agent Console page -- so the JSON is reachable from outside only at
 # this second path. Both are kept so a standalone backend answers the old URL.
 @app.route("/api/v1/agents", methods=["GET"])
-def list_agents():
+def list_agents() -> Any:
     """List all available agents and their capabilities."""
     return jsonify({
         "agents": [
@@ -519,7 +519,7 @@ def list_agents():
 @require_operator
 @limiter.limit("10 per minute")
 @async_route
-async def fraud_analyze():
+async def fraud_analyze() -> Any:
     """Analyze a single shipment for fraud indicators."""
     try:
         data = request.get_json()
@@ -565,7 +565,7 @@ def _bounded_batch(value: object, field: str) -> tuple[list, tuple[Response, int
 @require_operator
 @limiter.limit("10 per minute")
 @async_route
-async def fraud_batch():
+async def fraud_batch() -> Any:
     """Analyze multiple shipments in batch."""
     try:
         data = request.get_json()
@@ -592,7 +592,7 @@ async def fraud_batch():
 @require_operator
 @limiter.limit("20 per minute")
 @async_route
-async def compliance_screen():
+async def compliance_screen() -> Any:
     """Screen a shipment for compliance issues."""
     try:
         data = request.get_json()
@@ -610,7 +610,7 @@ async def compliance_screen():
 @require_operator
 @limiter.limit("20 per minute")
 @async_route
-async def compliance_entity():
+async def compliance_entity() -> Any:
     """Screen an entity for sanctions/compliance."""
     try:
         data = request.get_json()
@@ -636,7 +636,7 @@ async def compliance_entity():
 # until it was removed. Deep review costs more than this call, but it is opt-in.
 @limiter.limit("5 per minute")
 @async_route
-async def investigation_case():
+async def investigation_case() -> Any:
     """Investigate a flagged case."""
     try:
         data = request.get_json()
@@ -654,7 +654,7 @@ async def investigation_case():
 @require_operator
 @limiter.limit("10 per minute")
 @async_route
-async def investigation_report():
+async def investigation_report() -> Any:
     """Generate consolidated investigation report."""
     try:
         data = request.get_json()
@@ -681,7 +681,7 @@ async def investigation_report():
 @app.route("/api/v1/events/shipment", methods=["POST"])
 @require_operator
 @limiter.limit("30 per minute")
-def event_shipment():
+def event_shipment() -> Any:
     """
     Shipment-created event sink.
 
@@ -732,7 +732,7 @@ def event_shipment():
 @app.route("/api/v1/simulate", methods=["POST"])
 @require_operator
 @limiter.limit("5 per minute")
-def simulate():
+def simulate() -> Any:
     """Inject the scripted demo batch and return immediately."""
     try:
         run_tag = datetime.now(timezone.utc).strftime("%H%M%S")
@@ -756,7 +756,7 @@ def simulate():
 @app.route("/api/v1/orchestrator/state", methods=["GET"])
 @require_viewer
 @limiter.limit("120 per minute")
-def orchestrator_state():
+def orchestrator_state() -> Any:
     """
     Full projection for the operations dashboard.
 
@@ -802,7 +802,7 @@ def orchestrator_state():
 
 @app.route("/api/v1/cases", methods=["GET"])
 @require_viewer
-def list_cases():
+def list_cases() -> Any:
     """
     Cursor-paginated, slim case listing for the board.
 
@@ -848,7 +848,7 @@ def audit_reconcile() -> Any:
 
 @app.route("/api/v1/audit", methods=["GET"])
 @require_viewer
-def list_audit():
+def list_audit() -> Any:
     """
     Cursor-paginated audit search.
 
@@ -884,7 +884,7 @@ def list_audit():
 
 @app.route("/api/v1/events", methods=["GET"])
 @require_viewer
-def list_events():
+def list_events() -> Any:
     """Cursor-paginated event feed."""
     try:
         cursor = request.args.get("cursor")
@@ -904,7 +904,7 @@ def list_events():
 
 @app.route("/api/v1/metrics/summary", methods=["GET"])
 @require_viewer
-def metrics_summary():
+def metrics_summary() -> Any:
     """
     Exact counts and token/cost/latency totals across the whole collection,
     from a briefly TTL-cached aggregation query (see
@@ -1004,7 +1004,7 @@ def case_activity(case_id: str) -> Any:
 @app.route("/api/v1/orchestrator/drain", methods=["POST"])
 @require_operator
 @limiter.limit("20 per minute")
-def orchestrator_drain():
+def orchestrator_drain() -> Any:
     """
     Run pending cases to completion.
 
@@ -1026,7 +1026,7 @@ def orchestrator_drain():
 @app.route("/api/v1/orchestrator/tick", methods=["POST"])
 @require_operator
 @limiter.limit("20 per minute")
-def orchestrator_tick():
+def orchestrator_tick() -> Any:
     """
     Advance the pipeline one step per in-flight case.
 
@@ -1043,7 +1043,7 @@ def orchestrator_tick():
 @app.route("/api/v1/events/document", methods=["POST"])
 @require_operator
 @limiter.limit("10 per minute")
-def event_document():
+def event_document() -> Any:
     """
     Shipping document intake.
 
@@ -1096,7 +1096,7 @@ def event_document():
 @app.route("/api/v1/simulate/bulk", methods=["POST"])
 @require_operator
 @limiter.limit("5 per minute")
-def simulate_bulk():
+def simulate_bulk() -> Any:
     """
     Inject a larger randomised batch to show the pipeline under volume.
 
@@ -1145,7 +1145,7 @@ def _profile_mix(shipments: list) -> dict:
 
 @app.route("/api/v1/config", methods=["GET"])
 @require_viewer
-def config():
+def config() -> Any:
     """
     The active AI and routing configuration.
 
@@ -1184,7 +1184,7 @@ def config():
 
 @app.route("/api/v1/config/model", methods=["GET"])
 @require_viewer
-def get_model_config():
+def get_model_config() -> Any:
     """Get current model configuration and available models."""
     return jsonify({
         "current_model": model_config.get_model(),
@@ -1195,7 +1195,7 @@ def get_model_config():
 
 @app.route("/api/v1/config/model", methods=["POST"])
 @require_operator
-def set_model_config():
+def set_model_config() -> Any:
     """
     Change the active AI model at runtime.
     
@@ -1256,7 +1256,7 @@ def set_model_config():
 
 @app.route("/api/v1/governance/agent", methods=["GET"])
 @require_viewer
-def governance_agent():
+def governance_agent() -> Any:
     """Agent readiness and the boundary currently in force."""
     try:
         return jsonify(_on_worker(governance.agent_readiness(tenant_id=_tenant())))
@@ -1266,7 +1266,7 @@ def governance_agent():
 
 @app.route("/api/v1/governance/drift", methods=["GET"])
 @require_viewer
-def governance_drift():
+def governance_drift() -> Any:
     """Return drift detection details for the governance banner."""
     try:
         readiness = _on_worker(governance.agent_readiness(tenant_id=_tenant()))
@@ -1278,7 +1278,7 @@ def governance_drift():
 
 @app.route("/api/v1/governance/boundaries", methods=["GET"])
 @require_viewer
-def governance_boundaries():
+def governance_boundaries() -> Any:
     """Full boundary history, including SUPERSEDED versions."""
     try:
         from vf_logistics.store import get_store
@@ -1302,7 +1302,7 @@ def governance_boundaries():
 # one-click session (finding A01), and BOUNDARY-v2 on the live service was in fact
 # published by the judge account. Judges keep simulate, which writes nothing.
 @require_password_session
-def governance_publish():
+def governance_publish() -> Any:
     """
     Publish a delegation boundary. This is the only way an agent gains authority.
 
@@ -1368,7 +1368,7 @@ def governance_publish():
 
 @app.route("/api/v1/governance/simulate", methods=["POST"])
 @require_viewer
-def governance_simulate():
+def governance_simulate() -> Any:
     """
     Replay recent cases against a candidate boundary without publishing it.
 
@@ -1413,7 +1413,7 @@ def governance_simulate():
 # every visitor after this one until someone with a password re-publishes. Publish
 # is gated the same way (see governance_publish); judges keep simulate.
 @require_password_session
-def governance_revoke():
+def governance_revoke() -> Any:
     """
     Revoke the active delegation boundary -- the governance kill switch.
 
@@ -1453,7 +1453,7 @@ def governance_revoke():
 # somebody driving the screening API directly from a script.
 @require_operator
 @limiter.limit("20 per minute")
-def security_screen():
+def security_screen() -> Any:
     """
     Run arbitrary text through the same defence layer the document pipeline uses.
 
@@ -1498,7 +1498,7 @@ def security_screen():
 
 @app.route("/api/v1/security/attacks", methods=["GET"])
 @require_viewer
-def security_attacks():
+def security_attacks() -> Any:
     """
     The attack corpus the Red Team panel offers, derived from the live patterns.
 
@@ -1542,7 +1542,7 @@ def security_attacks():
         return _safe_error(e)
 
 
-def model_armor_status_safe():
+def model_armor_status_safe() -> Any:
     """Model Armor config status, tolerating an unconfigured environment."""
     try:
         from vf_logistics import model_armor
@@ -1556,7 +1556,7 @@ def model_armor_status_safe():
 # public read surface is a bill anyone can run up.
 @require_operator
 @limiter.limit("20 per minute")
-def verify_entity():
+def verify_entity() -> Any:
     """
     Use Tavily web search to verify that a company or tax ID actually exists.
 
@@ -1625,7 +1625,7 @@ def verify_entity():
 @require_governance_admin
 # Up to five Tavily searches per call, each one metered.
 @limiter.limit("5 per minute")
-def governance_tavily_scan():
+def governance_tavily_scan() -> Any:
     """Search for recent sanctions or regulatory updates relevant to current watchlists."""
     try:
         from vf_logistics import tavily_client
@@ -1644,7 +1644,7 @@ def governance_tavily_scan():
         # module. Spinning up a private event loop here raced with the worker
         # and left the client's connection pool bound to a loop that was then
         # closed underneath it.
-        async def _scan():
+        async def _scan() -> Any:
             gathered = await asyncio.gather(
                 *(tavily_client.search(q, max_results=3) for q in queries)
             )
@@ -1676,7 +1676,7 @@ def governance_tavily_scan():
 
 @app.route("/api/v1/governance/prefilter-rules", methods=["GET"])
 @require_viewer
-def get_prefilter_rules():
+def get_prefilter_rules() -> Any:
     """Return current SQL pre-filter rules (whitelist, blacklist, safe routes, threshold)."""
     try:
         return jsonify(verifier.serialise_prefilter_rules(_prefilter_rules()))
@@ -1690,7 +1690,7 @@ def get_prefilter_rules():
 # stranger holding a one-click session could empty the blacklist for every judge
 # who arrives after them.
 @require_password_session
-def update_prefilter_rules():
+def update_prefilter_rules() -> Any:
     """
     Update SQL pre-filter rules.
     
@@ -1758,7 +1758,7 @@ def update_prefilter_rules():
 
 @app.route("/api/v1/auth/whoami", methods=["GET"])
 @require_viewer
-def auth_whoami():
+def auth_whoami() -> Any:
     """
     Who this service believes the caller is, and what they may therefore do.
 
@@ -1774,7 +1774,7 @@ def auth_whoami():
 
 @app.route("/api/v1/auth/policy", methods=["GET"])
 @require_viewer
-def auth_policy():
+def auth_policy() -> Any:
     """
     The access policy this service enforces, read from its own routes.
 
@@ -1812,7 +1812,7 @@ def auth_policy():
 # its admin key to anonymous reads so the Review screen could render. Deciding a
 # case, and opening its original document, still need reviewer.
 @require_viewer
-def review_queue():
+def review_queue() -> Any:
     """Cases the agent could not close on its own. Cursor-paginated."""
     try:
         cursor = request.args.get("cursor")
@@ -1827,7 +1827,7 @@ def review_queue():
 
 @app.route("/api/v1/review/<case_id>/decide", methods=["POST"])
 @require_reviewer
-def review_decide(case_id: str):
+def review_decide(case_id: str) -> Any:
     """
     Apply a named reviewer's decision: release, block, or request_info.
 
@@ -1971,7 +1971,7 @@ def review_evidence_cancel(case_id: str, request_id: str) -> Any:
 # debate_agent.py records having leaked into the README, the architecture diagram
 # and the Devpost submission once already.
 @limiter.limit("3 per minute")
-def review_deep_review(case_id: str):
+def review_deep_review(case_id: str) -> Any:
     """
     Trigger Multi-Agent Debate: the Senior Auditor reviews Nano's assessment.
 
@@ -1990,7 +1990,7 @@ def review_deep_review(case_id: str):
 
 @app.route("/api/v1/review/<case_id>/document", methods=["GET"])
 @require_reviewer
-def review_document(case_id: str):
+def review_document(case_id: str) -> Any:
     """
     Stream the archived source document so a reviewer sees the paperwork itself,
     not only a transcription of it.
@@ -2171,7 +2171,7 @@ def receiver_applied(key: str) -> Any:
 
 @require_operator
 @limiter.limit("60 per minute")
-def internal_execute():
+def internal_execute() -> Any:
     """Perform a protected action on behalf of the analysis runtime."""
     try:
         body = request.get_json(silent=True) or {}
@@ -2243,7 +2243,7 @@ def internal_execute():
 @app.route("/api/v1/events/storage", methods=["POST"])
 @require_operator
 @limiter.limit("30 per minute")
-def event_storage():
+def event_storage() -> Any:
     """
     Cloud Storage object-finalize sink.
 
@@ -2320,7 +2320,7 @@ def event_storage():
 @require_operator
 # Up to 25 documents, so up to 25 vision-model calls, per request.
 @limiter.limit("2 per minute")
-def bucket_sweep():
+def bucket_sweep() -> Any:
     """
     Process documents already sitting in the bucket.
 
@@ -2352,7 +2352,7 @@ def bucket_sweep():
 # Low not for cost but for blast radius: this clears the tenant's board, and
 # nothing legitimate needs to do that repeatedly.
 @limiter.limit("5 per minute")
-def orchestrator_reset():
+def orchestrator_reset() -> Any:
     """
     Clear the tenant's cases and events so a demo starts clean.
 
@@ -2386,7 +2386,7 @@ def orchestrator_reset():
 @require_operator
 # A one-off migration that rewrites every case in the tenant.
 @limiter.limit("2 per minute")
-def admin_backfill_rollups():
+def admin_backfill_rollups() -> Any:
     """
     One-off migration: compute token/latency/cost rollup fields on cases
     written before those fields existed, so the metrics summary's exact
@@ -2405,7 +2405,7 @@ def admin_backfill_rollups():
 
 @app.route("/api/v1/orchestrator/case/<case_id>", methods=["GET"])
 @require_viewer
-def orchestrator_case(case_id: str):
+def orchestrator_case(case_id: str) -> Any:
     """Single case with its full agent hop history and action receipts."""
     try:
         from vf_logistics.store import get_store
@@ -2616,7 +2616,7 @@ evidence_respond._required_role = "operator"  # type: ignore[attr-defined]
 @require_operator
 @limiter.limit("3 per minute")
 @async_route
-async def demo():
+async def demo() -> Any:
     """
     Demo endpoint with sample shipment analysis.
 
@@ -2664,7 +2664,7 @@ async def demo():
 # the same models that validate the traffic and cannot drift from it.
 
 
-def _audit_response(case: dict, *, replay: bool = False):
+def _audit_response(case: dict, *, replay: bool = False) -> Any:
     """Serialise a case as the published contract, or 500 with the reason."""
     from vf_logistics import b2b
 
@@ -2674,7 +2674,7 @@ def _audit_response(case: dict, *, replay: bool = False):
 @app.route("/api/v1/compliance/audit", methods=["POST"])
 @require_operator
 @limiter.limit("60 per minute")
-def compliance_audit():
+def compliance_audit() -> Any:
     """
     Audit a shipment. The B2B entry point.
 
@@ -2779,7 +2779,7 @@ def compliance_audit():
 async def _attach_integration_fields(
     case_id: str, client_reference: str | None, webhook_url: str | None,
     tenant_id: str | None = None,
-):
+) -> Any:
     """
     Record the integrator's reference and webhook on the stored case.
 
@@ -2804,7 +2804,7 @@ async def _attach_integration_fields(
 
 @app.route("/api/v1/compliance/audit/<audit_id>", methods=["GET"])
 @require_viewer
-def compliance_audit_get(audit_id: str):
+def compliance_audit_get(audit_id: str) -> Any:
     """Fetch one audit. The poll target after an async submission."""
     try:
         from vf_logistics.store import get_store
@@ -2822,7 +2822,7 @@ def compliance_audit_get(audit_id: str):
 
 @app.route("/api/v1/compliance/reports", methods=["GET"])
 @require_viewer
-def compliance_reports():
+def compliance_reports() -> Any:
     """Completed audits, newest first, cursor paginated."""
     try:
         from vf_logistics import b2b
@@ -2869,7 +2869,7 @@ def compliance_reports():
 @app.route("/api/v1/billing/usage", methods=["GET"])
 @require_operator
 @limiter.limit("60 per minute")
-def billing_usage():
+def billing_usage() -> Any:
     """
     Billable usage for the calling tenant, optionally for one billing period.
 
@@ -2912,7 +2912,7 @@ def billing_usage():
 
 @app.route("/api/v1/evaluation", methods=["GET"])
 @require_viewer
-def evaluation_summary():
+def evaluation_summary() -> Any:
     """
     What was measured, on which split, at what cost -- the committed reports.
 
@@ -2928,7 +2928,7 @@ def evaluation_summary():
 
 
 @app.route("/api/v1/openapi.json", methods=["GET"])
-def openapi_spec():
+def openapi_spec() -> Any:
     """
     The published contract, generated from the Pydantic models.
 
