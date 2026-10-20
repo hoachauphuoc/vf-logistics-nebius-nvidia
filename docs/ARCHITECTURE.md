@@ -924,11 +924,10 @@ An architecture document that omits these is marketing.
   `REVIEWER_EMAILS`) and are global. With `MULTI_TENANT=true` they come instead from
   `VF_TENANT_MEMBERS`, a per-organisation registry (see `membership.py`). Either way a
   change needs a new revision.
-- **`ANONYMOUS_ROLE=viewer` on a service open to the internet** means case, review-queue
-  and audit reads need no credential. The console no longer lends its key to anonymous
-  reads, so a visitor holds exactly `viewer`, but that is still every case on the board.
-  Deliberate for a demo over synthetic data, and it must change before a customer's data
-  is in the store.
+- **Anonymous reads are off on the deployed service (2026-10-20).** `ANONYMOUS_ROLE=none` is set on
+  `vf-app` (revision 00040), so case, review-queue and audit reads answer 401 without a credential;
+  `/health` and the console shell stay open. The default in code is still `viewer`, for a local demo over
+  synthetic data. A visitor now needs a sign-in (the one-click judge session, where enabled, or a password).
 - **Document cases recorded before the intake step reached the billing rollups stay
   under-counted.** Intake is now rolled up like every other step, through
   `lineage.cost_usd()`, the one pricing implementation. `backfill_rollups` cannot repair
