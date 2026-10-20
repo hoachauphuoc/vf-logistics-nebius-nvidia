@@ -47,6 +47,10 @@ export default function LoginPage() {
 }
 
 function Frame({ children }: { children?: React.ReactNode }) {
+  // Public reads are a deployment setting (VF_PUBLIC_READS here, ANONYMOUS_ROLE upstream). Until the
+  // posture says they are on, the page promises nothing: a visitor told the board is public and then
+  // shown "sign in" has been told something false.
+  const publicReads = useConsolePosture().data?.auth.public_reads === true;
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-3 px-4 py-12">
       <div className="bento-card w-full max-w-sm p-7">
@@ -78,12 +82,23 @@ function Frame({ children }: { children?: React.ReactNode }) {
             -- the API reserves them for operators and reviewers, and the console no
             longer lends a visitor its key to get round that. */}
         <p className="mt-5 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-dim">
-          <span className="font-medium text-white">
-            You do not need an account to look around.
-          </span>{" "}
-          The board, every case trace, the review queue and the audit trail are public.
-          Signing in is required to <em>act</em> — the API gives each account a role,
-          and the audit trail names the person who made each decision.
+          {publicReads ? (
+            <>
+              <span className="font-medium text-white">
+                You do not need an account to look around.
+              </span>{" "}
+              The board, every case trace, the review queue and the audit trail are public.
+              Signing in is required to <em>act</em> — the API gives each account a role,
+              and the audit trail names the person who made each decision.
+            </>
+          ) : (
+            <>
+              <span className="font-medium text-white">Sign in to look around.</span>{" "}
+              On this deployment the board, the case traces, the review queue and the audit
+              trail are shown to signed-in accounts only. Each account has a role, and the
+              audit trail names the person who made each decision.
+            </>
+          )}
         </p>
 
         {children}
