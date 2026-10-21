@@ -14,7 +14,9 @@ Only a push Google signed for the configured service account and audience is
 accepted; without that configuration nothing is (fail closed). A message that cannot
 be deduplicated (no key, no case, no tenant where one is required) is refused with
 422 and never applied: Pub/Sub keeps it, redelivers it or dead-letters it, for a
-person to see. docs/RECEIVER_CONTRACT.md is the contract this implements.
+person to see. The same topic also carries pipeline status notifications, which
+are acknowledged without applying a human decision. docs/RECEIVER_CONTRACT.md is
+the contract this implements.
 """
 
 from __future__ import annotations
@@ -22,11 +24,35 @@ from __future__ import annotations
 import base64
 import importlib
 import json
+import logging
 import os
 from typing import Any
 
 from vf_logistics.store import get_store
 from vf_logistics.tenant import multi_tenant_enabled
+
+
+# These are the exact keyless payloads emitted by orchestrator.advance(). They
+# describe pipeline progress, not an executed human approval. A payload carrying
+# approval metadata, a body-only key, or an unknown shape must still be refused.
+_PIPELINE_NOTIFICATION_FIELDS = {
+    "AUTO_CLEARED": {"case_id", "outcome", "effective_risk", "at"},
+    "HELD_FOR_REVIEW": {"case_id", "outcome", "effective_risk", "at"},
+    "ESCALATED": {"case_id", "outcome", "fraud_pattern", "exposure_estimate", "at"},
+}
+
+
+def _pipeline_notification(body: Any, message_id: Any) -> bool:
+    if not isinstance(body, dict) or not isinstance(message_id, str) or not message_id.strip():
+        return False
+    outcome = body.get("outcome")
+    return (
+        isinstance(outcome, str)
+        and outcome in _PIPELINE_NOTIFICATION_FIELDS
+        and set(body) == _PIPELINE_NOTIFICATION_FIELDS[outcome]
+        and isinstance(body.get("case_id"), str)
+        and bool(body["case_id"].strip())
+    )
 
 
 def verify_push_token(authorization: str | None) -> str | None:
@@ -62,8 +88,9 @@ async def receive(envelope: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     """
     Apply one pushed decision unless its key was applied before.
 
-    Returns the HTTP status and body for Pub/Sub: 200 acknowledges ("applied" or
-    "duplicate"); 422 leaves a message that cannot be deduplicated with Pub/Sub.
+    Returns the HTTP status and body for Pub/Sub: 200 acknowledges ("applied",
+    "duplicate", or "ignored" for a pipeline notification); 422 leaves a decision
+    that cannot be deduplicated with Pub/Sub.
     """
     message = envelope.get("message")
     if not isinstance(message, dict):
@@ -78,15 +105,25 @@ async def receive(envelope: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     except ValueError:
         body = None
     case_id = body.get("case_id") if isinstance(body, dict) else None
-    if not key or not case_id:
+    message_id = message.get("messageId") or message.get("message_id") or ""
+    notification = not key and _pipeline_notification(body, message_id)
+    if not case_id or (not key and not notification):
         return 422, {"outcome": "rejected", "reason": "a decision needs an idempotency_key attribute and a case_id"}
     if owner is None and multi_tenant_enabled():
         return 422, {"outcome": "rejected", "reason": "a multi-tenant decision needs a tenant_id attribute"}
+    if notification:
+        # No shipment action and no applied_decisions write: acknowledging the
+        # same informational message again has no business side effect.
+        logging.info(
+            "receiver ignored pipeline notification: outcome=%s case_id=%s message_id=%s",
+            body["outcome"], case_id, message_id,
+        )
+        return 200, {"outcome": "ignored", "reason": "pipeline status notification; no human decision to apply"}
     record = {
         "case_id": str(case_id),
         "outcome": body.get("outcome"),
         "approval_id": body.get("approval_id"),
-        "first_message_id": str(message.get("messageId") or message.get("message_id") or ""),
+        "first_message_id": str(message_id),
     }
     result = await get_store().apply_decision_once(key, record, tenant_id=owner)
     return 200, {"outcome": "applied" if result["applied"] else "duplicate", "deliveries": result["deliveries"]}

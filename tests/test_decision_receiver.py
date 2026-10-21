@@ -16,6 +16,8 @@ import os
 import sys
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(__file__))
 from test_console_session import TEST_KEY  # noqa: E402
 from test_evidence_eval_approve import Base  # noqa: E402
@@ -26,6 +28,15 @@ SA = "push@vf-test.iam.gserviceaccount.com"
 AUDIENCE = "https://vf-test.example/api/v1/receiver/decision"
 PUSH_ENV = {"RECEIVER_PUSH_SA": SA, "RECEIVER_PUSH_AUDIENCE": AUDIENCE}
 KEYED = {"X-VF-API-Key": TEST_KEY}
+
+
+def notification(outcome="AUTO_CLEARED"):
+    body = {"case_id": "CASE-1", "outcome": outcome, "at": "2026-10-21T00:00:00Z"}
+    if outcome == "ESCALATED":
+        body.update(fraud_pattern="document mismatch", exposure_estimate=100)
+    else:
+        body["effective_risk"] = 10
+    return body
 
 
 def envelope(key="exec-apr-1", message_id="m-1", data=None):
@@ -83,6 +94,52 @@ class TestTheReceiverRoute(Base):
 
     def test_an_unknown_key_reads_as_not_applied(self):
         assert self._read("exec-apr-404").status_code == 404
+
+    @pytest.mark.parametrize("outcome", ["AUTO_CLEARED", "HELD_FOR_REVIEW", "ESCALATED"])
+    def test_pipeline_notifications_are_acknowledged_without_applying_a_decision(self, outcome):
+        payload = envelope(key="", data=notification(outcome))
+        with patch.object(decision_receiver, "get_store", side_effect=AssertionError("must not apply")):
+            first = self._push(payload)
+            repeat = self._push(payload)
+        assert first.status_code == repeat.status_code == 200
+        assert first.get_json()["outcome"] == repeat.get_json()["outcome"] == "ignored"
+        assert self._read("exec-apr-1").status_code == 404
+
+    @pytest.mark.parametrize("extra", [
+        {"approval_id": "apr-1"}, {"idempotency_key": "exec-apr-1"},
+        {"executor": "reviewer@example.test"}, {"unknown_field": True},
+    ])
+    def test_a_keyless_payload_with_approval_metadata_or_unknown_fields_is_still_refused(self, extra):
+        body = {**notification(), **extra}
+        assert self._push(envelope(key="", data=body)).status_code == 422
+        assert self._read("exec-apr-1").status_code == 404
+
+    @pytest.mark.parametrize("field", ["case_id", "at", "effective_risk"])
+    def test_an_incomplete_pipeline_notification_is_not_silently_acknowledged(self, field):
+        body = notification()
+        del body[field]
+        assert self._push(envelope(key="", data=body)).status_code == 422
+
+    def test_a_pipeline_notification_needs_a_broker_message_id(self):
+        payload = envelope(key="", data=notification())
+        del payload["message"]["messageId"]
+        assert self._push(payload).status_code == 422
+
+    def test_an_unknown_keyless_outcome_is_still_refused(self):
+        body = {**notification(), "outcome": "UNKNOWN"}
+        assert self._push(envelope(key="", data=body)).status_code == 422
+
+    def test_a_pipeline_notification_still_requires_a_valid_push_token(self):
+        r = self.client.post("/api/v1/receiver/decision", json=envelope(key="", data=notification()))
+        assert r.status_code == 403
+
+    def test_a_pipeline_notification_still_requires_its_tenant_in_multi_tenant_mode(self):
+        payload = envelope(key="", data=notification())
+        with patch.dict(os.environ, {"MULTI_TENANT": "true"}):
+            assert self._push(payload).status_code == 422
+            payload["message"]["attributes"]["tenant_id"] = "acme"
+            with patch.object(decision_receiver, "get_store", side_effect=AssertionError("must not apply")):
+                assert self._push(payload).status_code == 200
 
 
 class TestThePushToken:
