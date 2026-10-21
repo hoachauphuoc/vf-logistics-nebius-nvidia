@@ -18,16 +18,16 @@ The narration under each clip is the text in `SCENES` in `scripts/build_narratio
 | Clip | Scene | Length | Screen |
 |---|---|---|---|
 | 1 | Two identical shipments | 12s | A and B side by side (edited) |
-| 2 | Who and what | 18s | Case page, finding and required documents |
-| 3 | Evidence requested and received | 22s | Request info, three links, a signed-out upload, the receipt record |
-| 4 | The invoice splits the cases | 30s | Invoice line, extraction, Re-evaluate, Evidence check for A then B |
-| 5 | A person decides, then it executes | 26s | Reason, Release and Confirm for A; reason, Block and Confirm for B |
-| 6 | Nebius and NVIDIA in the trace | 22s | The filmed case's agent record, with its Tavily search |
-| 7 | The next reviewer can follow | 20s | The case timeline, "What happened" |
+| 2 | Nemotron screens both | 26s | Case A's trace: Nano hops, Tavily sources, HS check, then the finding and required documents |
+| 3 | Evidence requested and received | 20s | Request info, three links, a signed-out upload, the receipt record |
+| 4 | The invoice splits the cases | 28s | Invoice line, extraction, Re-evaluate, Evidence check for A then B |
+| 5 | A person decides, then it executes | 24s | Reason, Release and Confirm for A; reason, Block and Confirm for B |
+| 6 | Nemotron in the trace | 22s | Per-hop model, tokens and cost; an Ultra auto-debate and its Super investigation |
+| 7 | The next reviewer can follow | 18s | The case timeline, "What happened" |
 | 8 | Close | 15s | A and B final states side by side, then the end card |
 | | | **165s** | |
 
-Timeline: 1: 12s   2: 18s   3: 22s   4: 30s   5: 26s   6: 22s   7: 20s   8: 15s     total 165s
+Timeline: 1: 12s   2: 26s   3: 20s   4: 28s   5: 24s   6: 22s   7: 18s   8: 15s     total 165s
 
 ## Part 0 — before you press record
 
@@ -35,7 +35,7 @@ Timeline: 1: 12s   2: 18s   3: 22s   4: 30s   5: 26s   6: 22s   7: 20s   8: 15s 
 2. **Two new cases.** Create two NEW case ids, A and B, with identical booking data: Vietnam to United States, plywood, HS 4412.33, 22,000 kg, declared value 28,000 USD. Do not clear the board and do not reuse a case an earlier visitor decided.
 3. **Six synthetic PDFs, one page each.** For each case: a certificate of origin (country of origin Vietnam), a producer declaration (input origin Vietnam), and a purchase invoice. A's invoice is from VN Timber JSC with country of origin of goods Vietnam; B's invoice is from Linyi Veneer Co., Ltd. with country of origin of goods China. The generator is `scripts/rev2_e2e/gen.mjs`; check that the only difference between A and B is the invoice.
 4. **Upload links.** The request-evidence screen shows full URLs. `scripts/rev2_e2e/run.mjs` parses relative paths, so copy the three full URLs by hand, or fix the parsing first. Never leave a token in a frame.
-5. **A dry run before the real take.** Run both cases from request to decision once and read the result: A should end `RELEASED_BY_HUMAN` and B `BLOCKED_BY_HUMAN`, A's re-evaluation should read provided and B's contradicted. Use the take only if the extracted invoice country matches the PDF text.
+5. **A dry run before the real take.** Run both cases from request to decision once and read the result: A should end `RELEASED_BY_HUMAN` and B `BLOCKED_BY_HUMAN`, A's re-evaluation should read provided and B's contradicted. Use the take only if the extracted invoice country matches the PDF text. Open A's trace and write down which hops ran and on which model: Nano fraud and compliance, the HS classifier, and whether `auto_debate` (Ultra) fired. The plywood finding floors the case at 45, so the debate fires only if Nano scored it 30 or lower. Clip 6 depends on this.
 6. **Capture.** Record at 2560×1440 or larger and check the export at 1920×1080 (16:9). Record important cards and document lines as separate close-ups; never shrink a whole screen to make small text readable. Pause the mouse before each click; no idle sweeps, no sudden scrolls.
 7. **Waiting.** Cut waiting time and caption the cut "Time condensed". Keep the original waiting time in the production record.
 8. **Colours of the edited layer.** Case A green #246B4E on #F8FBF9; case B wine #8A3F5C on #FBF8F9; explanations blue #244E95 on #F8F9FB. Always add a word as well as a colour ("Provided", "Contradicted"). Keep the product's own dark interface as recorded.
@@ -49,17 +49,19 @@ Timeline: 1: 12s   2: 18s   3: 22s   4: 30s   5: 26s   6: 22s   7: 20s   8: 15s 
 
 **Caption.** Same booking information. Missing input-origin evidence.
 
-## Clip 2 — Who and what (0:12 → 0:30, 18s)
+## Clip 2 — Nemotron screens both (0:12 → 0:38, 26s)
 
-> Floorline helps freight forwarders turn a hold into a documented decision, using Nebius Token Factory and NVIDIA Nemotron. On this lane, the rules identify missing evidence about where the plywood inputs came from.
+> Floorline screens both cases for a freight forwarder, on Nebius Token Factory. NVIDIA Nemotron 3 Nano scores fraud and compliance with live Tavily searches, and checks the tariff code against the goods. The rules set a risk floor the model may raise, never lower, and on this lane they ask where the plywood inputs came from.
 
-**Screen.** The case page. Enlarge the finding ORIGIN_INPUTS_UNVERIFIED and the list of required documents. Show the words "Freight forwarders" once. Nebius Token Factory and NVIDIA Nemotron are both spoken and captioned.
+**Screen.** Case A's trace, the real one from the take. First the fraud and compliance hops with their model `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` and Nano's score; then the compliance hop's Tavily sources (titles and links) for the shipper and receiver; then the HS classifier hop agreeing that 4412.33 is plywood. End on the case page: the risk floor of 45 above Nano's score, the finding ORIGIN_INPUTS_UNVERIFIED and the list of required documents. Show the words "Freight forwarders" once. B's trace is not filmed; one caption says B ran the same hops.
 
-**Caption.** Identify what must be verified before a decision.
+**Caption.** Nemotron 3 Nano scores · the rules set the floor · the model can raise it, never lower it
 
-## Clip 3 — Evidence requested and received (0:30 → 0:52, 22s)
+**Check.** If a Tavily search on A is marked cached (a name searched in the last hour), the caption says "cached", not "live". Nano's low score is the point of the clip: the model alone would let A through, and the floor is why it waits.
 
-> The reviewer requests a certificate of origin, a producer declaration, and input purchase invoices. The shipper uploads each document through its own link, without an account. Floorline records the documents and extracts their contents for verification.
+## Clip 3 — Evidence requested and received (0:38 → 0:58, 20s)
+
+> The reviewer requests a certificate of origin, a producer declaration, and input purchase invoices. The shipper uploads each document through its own link, without an account. Floorline records the documents and extracts their contents with MiniCPM-V.
 
 **Screen.** Request info, then Confirm, then film the three links. Switch to a signed-out browser and show one upload as the example. After the rest are submitted, return to the reviewer's side and show the receipt record. The wait for processing is cut and captioned "Time condensed".
 
@@ -67,7 +69,7 @@ Timeline: 1: 12s   2: 18s   3: 22s   4: 30s   5: 26s   6: 22s   7: 20s   8: 15s 
 
 **Check.** The upload page does not necessarily show the document type or the documents still missing. The explanation of what is required is an editing caption and is never presented as part of the real interface. Each document type has its own link.
 
-## Clip 4 — The invoice splits the cases (0:52 → 1:22, 30s)
+## Clip 4 — The invoice splits the cases (0:58 → 1:26, 28s)
 
 > The first two documents match. The purchase invoices reveal the difference. Case A identifies Vietnamese inputs. Case B identifies Chinese veneer, contradicting the declaration. Floorline marks A as provided and B as contradicted. Both results stay linked to the submitted evidence.
 
@@ -86,7 +88,7 @@ Timeline: 1: 12s   2: 18s   3: 22s   4: 30s   5: 26s   6: 22s   7: 20s   8: 15s 
 
 **Check.** "Provided" means the papers are consistent; it is not a guarantee that they are genuine or lawful. A's risk floor is not lowered by the documents; a person confirms and releases. B is not declared fraud; the contradiction is why the reviewer chooses to stop it.
 
-## Clip 5 — A person decides, then it executes (1:22 → 1:48, 26s)
+## Clip 5 — A person decides, then it executes (1:26 → 1:50, 24s)
 
 > The reviewer reads the evidence and authorizes release for A, then blocks B with a reason. Confirmation comes before execution. The system records the person, evidence version, and the decision sent. These are human decisions, supported by AI and checks.
 
@@ -98,17 +100,17 @@ Timeline: 1: 12s   2: 18s   3: 22s   4: 30s   5: 26s   6: 22s   7: 20s   8: 15s 
 
 **Check.** This clip and clips 4 and 7 are the heart of the video: the invoice difference is readable, the re-evaluation difference is readable, and it is clear that a person decided, confirmed, and then the decision was executed. Follow the same case from source document to final state without reordering.
 
-## Clip 6 — Nebius and NVIDIA in the trace (1:48 → 2:10, 22s)
+## Clip 6 — Nemotron in the trace (1:50 → 2:12, 22s)
 
-> Nebius Token Factory serves the model calls. NVIDIA Nemotron 3 Nano checks shipment risk and compliance. Super supports deeper investigations, and Ultra reviews rule-model disagreements when triggered. Evidence extraction uses MiniCPM-V. Tavily search adds sourced evidence to the trace. Rules and people control the final decision.
+> Every hop in the trace names its model, tokens and cost. When the floor sits fifteen points above Nano's score, Nemotron 3 Ultra debates the case and calls Tavily itself. It can send a case to Nemotron 3 Super for investigation, never clear it.
 
-**Screen.** The real agent record of the filmed case is the main picture. Model names and roles appear only as helper captions. If Super or Ultra did not run on this case, say so by showing them as conditional ("when triggered"), not as executed. Do not move to a full-screen list of the seven agents or to code.
+**Screen.** 0–6s: A's trace with each hop's model, tokens and cost readable, and the case total. 6–22s: the `auto_debate` hop on `nvidia/Nemotron-3-Ultra-550b-a55b`: the Tavily query Ultra chose, its CONFIRM or DISAGREE with the confidence, and the `investigation` hop on `nvidia/nemotron-3-super-120b-a12b` when it ran. Use A if the debate fired on A (Part 0, step 5). If it did not, film a case on the board whose trace has both hops (on 21 Oct `CASE-VFL-2026-91177` did) and caption it "Another case on the board"; never present that trace as A's.
 
-**Tavily (5 seconds).** Show the Tavily search in the same case's trace: the query and its sources. If the trace marks the search as cached (a name searched in the last hour is reused), say "cached" on screen and do not call it a live search.
+**Check.** Do not move to a full-screen list of the seven agents or to code. If Ultra's search is marked cached, say so.
 
-**Caption.** Nebius Token Factory  /  NVIDIA Nemotron 3
+**Caption.** Nano screens · Ultra argues the dispute · Super investigates
 
-## Clip 7 — The next reviewer can follow (2:10 → 2:30, 20s)
+## Clip 7 — The next reviewer can follow (2:12 → 2:30, 18s)
 
 > The timeline ties each decision to the reviewer and evidence version, then records dispatch. A second reviewer can inspect the same chain, from missing information to the action taken.
 

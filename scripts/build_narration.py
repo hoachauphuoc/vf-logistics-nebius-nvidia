@@ -83,25 +83,25 @@ SCENES: list[tuple[str, float, str]] = [
         "The input origins are still unverified.",
     ),
     (
-        "2 - Who and what",
-        18.0,
-        "Floorline helps freight forwarders turn a hold into a documented decision, "
-        "using Nebius Token Factory and NVIDIA Nemotron. "
-        "On this lane, the rules identify missing evidence about where the plywood "
-        "inputs came from.",
+        "2 - Nemotron screens both",
+        26.0,
+        "Floorline screens both cases for a freight forwarder, on Nebius Token Factory. "
+        "NVIDIA Nemotron 3 Nano scores fraud and compliance with live Tavily searches, "
+        "and checks the tariff code against the goods. "
+        "The rules set a risk floor the model may raise, never lower, "
+        "and on this lane they ask where the plywood inputs came from.",
     ),
     (
         "3 - Evidence requested and received",
-        22.0,
+        20.0,
         "The reviewer requests a certificate of origin, a producer declaration, "
         "and input purchase invoices. "
         "The shipper uploads each document through its own link, without an account. "
-        "Floorline records the documents and extracts their contents for "
-        "verification.",
+        "Floorline records the documents and extracts their contents with MiniCPM-V.",
     ),
     (
         "4 - The invoice splits the cases",
-        30.0,
+        28.0,
         "The first two documents match. "
         "The purchase invoices reveal the difference. "
         "Case A identifies Vietnamese inputs. "
@@ -111,7 +111,7 @@ SCENES: list[tuple[str, float, str]] = [
     ),
     (
         "5 - A person decides, then it executes",
-        26.0,
+        24.0,
         "The reviewer reads the evidence and authorizes release for A, "
         "then blocks B with a reason. "
         "Confirmation comes before execution. "
@@ -119,19 +119,16 @@ SCENES: list[tuple[str, float, str]] = [
         "These are human decisions, supported by AI and checks.",
     ),
     (
-        "6 - Nebius and NVIDIA in the trace",
+        "6 - Nemotron in the trace",
         22.0,
-        "Nebius Token Factory serves the model calls. "
-        "NVIDIA Nemotron 3 Nano checks shipment risk and compliance. "
-        "Super supports deeper investigations, and Ultra reviews rule-model "
-        "disagreements when triggered. "
-        "Evidence extraction uses MiniCPM-V. "
-        "Tavily search adds sourced evidence to the trace. "
-        "Rules and people control the final decision.",
+        "Every hop in the trace names its model, tokens and cost. "
+        "When the floor sits fifteen points above Nano's score, "
+        "Nemotron 3 Ultra debates the case and calls Tavily itself. "
+        "It can send a case to Nemotron 3 Super for investigation, never clear it.",
     ),
     (
         "7 - The next reviewer can follow",
-        20.0,
+        18.0,
         "The timeline ties each decision to the reviewer and evidence version, "
         "then records dispatch. "
         "A second reviewer can inspect the same chain, from missing information "
