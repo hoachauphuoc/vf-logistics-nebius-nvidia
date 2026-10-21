@@ -126,8 +126,21 @@ def summarise(rows: list[dict[str, Any]], model: str, splits: tuple[str, ...]) -
             reason: sum(1 for r in mine if not r["usable"] and r["error"] == reason)
             for reason in sorted({r["error"] for r in mine if not r["usable"]})
         },
+        # By score alone, over replies that parsed.
         "recall": rate(sum(r["flagged"] for r in fraud), len(fraud)),
         "false_alarm_rate": rate(sum(r["flagged"] for r in honest), len(honest)),
+        # As production behaves: a reply that fails to parse or validate sets
+        # `_model_failures`, which refuses auto-clear, so the case is held for a person.
+        # A failed reply therefore counts as a hold here, over every case sent.
+        "recall_as_held": rate(
+            sum(r["flagged"] or not r["usable"] for r in mine if r["fraud"]),
+            sum(1 for r in mine if r["fraud"]),
+        ),
+        "false_alarm_as_held": rate(
+            sum(r["flagged"] or not r["usable"] for r in mine if not r["fraud"]),
+            sum(1 for r in mine if not r["fraud"]),
+        ),
+        "failed_reply_rate": rate(len(mine) - len(usable), len(mine)),
         "cost_usd": round(sum(r["cost_usd"] for r in mine), 6),
         "cost_per_case_usd": round(sum(r["cost_usd"] for r in mine) / len(mine), 6) if mine else None,
         "median_seconds": sorted(r["seconds"] for r in mine)[len(mine) // 2] if mine else None,
@@ -208,7 +221,8 @@ async def main() -> int:
         },
         "total_cost_usd": round(spent, 6),
         "notes": [
-            "A model flags a case when its risk_score is 40 or more. Unparseable replies are excluded from both rates and counted.",
+            "A model flags a case when its risk_score is 40 or more. recall and false_alarm_rate use that score alone, over replies that parsed.",
+            "recall_as_held and false_alarm_as_held count a reply that failed to parse or validate as a hold, because the orchestrator refuses auto-clear after a model failure (_model_failures). That is what a person would see.",
             "No model threshold was tuned on this data, so both halves are reported; the holdout half is the headline.",
             "24 fraud cases on holdout and 52 in total: read the intervals, not the point estimates.",
             "Synthetic corpus: no real customer traffic has been measured.",
@@ -220,8 +234,9 @@ async def main() -> int:
         for split in ("holdout", "all"):
             s = report["results"][SHORT[m]][split]
             r, f = s["recall"], s["false_alarm_rate"]
-            print(f"{SHORT[m]:6} {split:8} recall {r['count']}/{r['of']} ci {r['ci95']}   "
-                  f"false alarms {f['count']}/{f['of']} ci {f['ci95']}   ${s['cost_usd']}  unusable {s['unusable_replies']} {s['unusable_reasons'] or ''}")
+            rh, fh = s["recall_as_held"], s["false_alarm_as_held"]
+            print(f"{SHORT[m]:6} {split:8} score only: recall {r['count']}/{r['of']}, false alarms {f['count']}/{f['of']}   "
+                  f"as held: recall {rh['count']}/{rh['of']} ci {rh['ci95']}, false alarms {fh['count']}/{fh['of']} ci {fh['ci95']}   ${s['cost_usd']}  unusable {s['unusable_replies']} {s['unusable_reasons'] or ''}")
     print(f"\nwritten to {path}   total ${spent:.4f}")
     return 1 if stop else 0
 
