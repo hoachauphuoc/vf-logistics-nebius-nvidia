@@ -156,7 +156,10 @@ _ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-CORS(app, origins=_ALLOWED_ORIGINS)
+# always_send=False: flask-cors otherwise answers a request with NO Origin header
+# with the first allowed origin, which put http://127.0.0.1:3000 on every live
+# response. A caller that sent no Origin asked for no CORS.
+CORS(app, origins=_ALLOWED_ORIGINS, always_send=False)
 
 
 @app.after_request
@@ -1963,20 +1966,16 @@ def review_evidence_cancel(case_id: str, request_id: str) -> Any:
 
 @app.route("/api/v1/review/<case_id>/deep-review", methods=["POST"])
 @require_reviewer
-# Nemotron 3 Ultra debate plus Tavily searches. The docstring below calls it
-# an expensive, opt-in operation; this is the ceiling that makes that true.
-#
-# Ultra, not Super. This comment and the docstring under it both named Super on the
-# hop that runs debate_agent.MODEL_ID, which defaults to Ultra -- the same drift
-# debate_agent.py records having leaked into the README, the architecture diagram
-# and the Devpost submission once already.
+# multi-round debate (debate_agent.MODEL_ID, Nemotron 3 Super by default) plus Tavily
+# searches. The docstring below calls it an expensive, opt-in operation; this is the
+# ceiling that makes that true.
 @limiter.limit("3 per minute")
 def review_deep_review(case_id: str) -> Any:
     """
     Trigger Multi-Agent Debate: the Senior Auditor reviews Nano's assessment.
 
-    This is an expensive, opt-in operation. The Senior Auditor runs on Nemotron 3
-    Ultra and can use function calling to:
+    This is an expensive, opt-in operation. The Senior Auditor runs on
+    debate_agent.MODEL_ID (Nemotron 3 Super by default) and can use function calling to:
     - Request Nano to re-evaluate with specific focus
     - Run additional Tavily searches
     - Render a CONFIRM or DISAGREE verdict

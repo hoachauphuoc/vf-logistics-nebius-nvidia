@@ -27,10 +27,13 @@ That single rule decided the model layer, which is why our tiering is not the us
 model there cannot change the outcome in the direction that matters: a weaker one can
 miss a hold but can never release a shipment the rules stopped. So Nemotron 3 Nano on
 those hops is a choice the floor makes safe, not one we have shown is best; where the
-floor is zero the model is the only check, and whether a larger model would catch more
-there is not measured. Nemotron 3 Ultra runs in exactly one place, the Senior Auditor
-debate, because that is the only hop whose output is a verdict the floor does not
-override rather than a score it does.
+floor is zero the model is the only check, and on the 179 corpus cases the rules score 0,
+Nano flagged 46/52 frauds against Super's 47/52, a difference the sample cannot show
+(Super costs 4.3x as much per case). The Senior Auditor debate is the one hop whose
+output is a verdict the floor does not override rather than a score it does, so it was
+measured against Nemotron 3 Ultra: the debate runs on Super (a verdict on 40 of 46
+disputed cases to Ultra's 37, at `$0.0021` a debate against `$0.0108`, 5.2x), and Ultra
+stays selectable with `DEBATE_MODEL`.
 
 That rule is also the name. **Floorline** is the line the agents may climb above and
 never cross below.
@@ -104,7 +107,7 @@ dropped. The model never reads the instruction aimed at it.
 ## How we built it
 
 Seven agents on **Nebius Token Factory**, with the model chosen per agent rather
-than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
+than one model everywhere. Two NVIDIA Nemotron tiers in use (Ultra stays selectable) plus one vision model:
 
 - **Nemotron 3 Nano** (`NVIDIA-Nemotron-3-Nano-30B-A3B`) — fraud detection,
   compliance screening, HS classification and zero-day adverse-media screening.
@@ -112,25 +115,30 @@ than one model everywhere. Three NVIDIA Nemotron tiers plus one vision model:
   whenever their inputs or gate apply, so the per-token rate matters more here than
   anywhere else, and all four resolve their model at call time so the cost of
   switching is observable rather than theoretical.
-- **Nemotron 3 Super** (`nemotron-3-super-120b-a12b`) — investigation. Pinned in
+- **Nemotron 3 Super** (`nemotron-3-super-120b-a12b`) — investigation and the Senior
+  Auditor debate. Investigation is pinned in
   code via `INVESTIGATION_MODEL`. The reason for pinning inverted during the
   build: originally this was the cheap hop and we did not want it switched *up*.
   It is now the expensive multi-hop one, and the guard that matters is
   `MAX_RATE_MULTIPLE_WITHOUT_OVERRIDE` in `config.py`, which refuses a runtime
   switch that would raise the rate past a multiple of the cheapest model.
-- **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — the Senior Auditor debate, and
-  the only place Ultra is used. It fires on its own only when the deterministic floor
-  exceeds the model's score by 15 points or more; a reviewer can also run it by hand
-  (Deep Review) on any case awaiting a person, where it records a verdict and changes
-  no route. Everywhere else the floor has already decided whether a shipment may clear,
-  and a stronger model could only add holds above it. By
-  the time the debate runs, auto-clear is already off the table and a person decides
-  the case either way; what Ultra's verdict can do is send the dispute to a deep
-  investigation on Super that it would otherwise skip. CONFIRM changes
-  nothing, and a genuine DISAGREE at confidence 0.7 or above sends the case there and
-  may raise its risk. It is
-  the one hop whose output is a verdict on the dispute rather than a score the floor
-  overrides, so reasoning capacity is load-bearing.
+  The debate fires on its own only when the deterministic floor exceeds the model's score
+  by 15 points or more; a reviewer can also run it by hand (Deep Review) on any case
+  awaiting a person, where it records a verdict and changes no route. Everywhere else the
+  floor has already decided whether a shipment may clear, and a stronger model could only
+  add holds above it. By the time the debate runs, auto-clear is already off the table and
+  a person decides the case either way; what the verdict can do is send the dispute to a
+  deep investigation that it would otherwise skip. CONFIRM changes nothing, and a genuine
+  DISAGREE at confidence 0.7 or above sends the case there and may raise its risk.
+- **Nemotron 3 Ultra** (`Nemotron-3-Ultra-550b-a55b`) — optional, not used by default.
+  It was the debate default until measured against Super on 46 disputed corpus cases:
+  Super reached a verdict on 40 and Ultra on 37, Ultra disagreed more often (DISAGREE on
+  95% of frauds and 94% of honest cases against Super's 73% and 72%) without separating
+  fraud from honest trade, and it cost 5.2x as much (`$0.0108` against `$0.0021`).
+  `DEBATE_MODEL=nvidia/Nemotron-3-Ultra-550b-a55b` restores it with no deploy. The caveat:
+  the auditor sees the rules' findings and every honest case in the sample was one the
+  rules had held, so DISAGREE largely tracks agreement with the rules; the corpus is
+  synthetic and the sample small.
 - **MiniCPM-V 4.5** — document intake. NVIDIA has no vision model on Token
   Factory, so this is the one non-NVIDIA model in the pipeline. Unlike the PDF
   path we started with, it needs a rasterisation stage in front of it:
@@ -395,17 +403,21 @@ something that degrades out loud than something that looks confident.
 **Model choice is a per-agent decision, not a project-wide one.** We started with
 one model constant. Splitting it by task is both cheaper and easier to justify:
 the four high-volume hops get Nano (fraud and compliance on every case that reaches the
-models, HS and zero-day when their inputs or gate apply), investigation gets Super, and Ultra
-is reserved for the one call whose reasoning the deterministic floor does not
+models, HS and zero-day when their inputs or gate apply), investigation and the debate get Super, and
+Ultra stays selectable for the one call whose verdict the deterministic floor does not
 override.
 
-**A rate multiple is not a cost multiple.** We documented the Ultra switch as
+**A rate multiple is not a cost multiple.** In an earlier live-service measurement we had documented the Ultra switch as
 costing 3.3x, because that is its per-token rate against Super. Measured, it cost
 **13x** — `$0.0198` a debate against `$0.0015` — because Ultra emits more tool-call
 rounds and each round resends the growing transcript, so volume compounds on top of
 price. We had produced the original figure by multiplying Super's token usage by
 Ultra's rate, which assumed the two models would spend the same tokens. That was
-the one assumption worth testing.
+the one assumption worth testing, and it led to the corpus comparison. There the ratio
+was 5.2x (`$0.0108` against `$0.0021`), with empty search results in place of Tavily's.
+The two measurements used different cases as well as different search results, so we do
+not know how much of the gap the search results explain; real results adding input tokens
+to every round of the more talkative model is the likely part, not a measured one.
 
 **Fail-closed design pays off at the moment you discover you were wrong.** The
 IAM misconfiguration would have been a security incident in a fail-open system.

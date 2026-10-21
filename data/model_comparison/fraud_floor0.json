@@ -1,0 +1,358 @@
+{
+  "kind": "fraud_floor_zero",
+  "question": "Where the deterministic floor is 0 the model is the only check. Does a larger model flag more of the fraud the rules miss?",
+  "population": "corpus cases whose verifier floor is 0, labelled by expected_flagged",
+  "flag_threshold": 40,
+  "corpus": "data/synthetic_test_cases.json (synthetic, 1,000 cases)",
+  "partial": false,
+  "results": {
+    "nano": {
+      "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+      "holdout": {
+        "cases": 77,
+        "unusable_replies": 1,
+        "unusable_reasons": {
+          "model reply failed FraudAnalysis: recommendations: Input should be a valid list": 1
+        },
+        "recall": {
+          "count": 21,
+          "of": 24,
+          "rate": 0.875,
+          "ci95": [
+            0.6899,
+            0.9566
+          ]
+        },
+        "false_alarm_rate": {
+          "count": 29,
+          "of": 52,
+          "rate": 0.5577,
+          "ci95": [
+            0.4233,
+            0.6841
+          ]
+        },
+        "recall_as_held": {
+          "count": 21,
+          "of": 24,
+          "rate": 0.875,
+          "ci95": [
+            0.6899,
+            0.9566
+          ]
+        },
+        "false_alarm_as_held": {
+          "count": 30,
+          "of": 53,
+          "rate": 0.566,
+          "ci95": [
+            0.4326,
+            0.6905
+          ]
+        },
+        "failed_reply_rate": {
+          "count": 1,
+          "of": 77,
+          "rate": 0.013,
+          "ci95": [
+            0.0022,
+            0.07
+          ]
+        },
+        "cost_usd": 0.020604,
+        "cost_per_case_usd": 0.000268,
+        "median_seconds": 11.3,
+        "mean_input_tokens": 695
+      },
+      "dev": {
+        "cases": 102,
+        "unusable_replies": 4,
+        "unusable_reasons": {
+          "model reply failed FraudAnalysis: recommendations: Input should be a valid list": 4
+        },
+        "recall": {
+          "count": 25,
+          "of": 28,
+          "rate": 0.8929,
+          "ci95": [
+            0.728,
+            0.9629
+          ]
+        },
+        "false_alarm_rate": {
+          "count": 46,
+          "of": 70,
+          "rate": 0.6571,
+          "ci95": [
+            0.5403,
+            0.7576
+          ]
+        },
+        "recall_as_held": {
+          "count": 25,
+          "of": 28,
+          "rate": 0.8929,
+          "ci95": [
+            0.728,
+            0.9629
+          ]
+        },
+        "false_alarm_as_held": {
+          "count": 50,
+          "of": 74,
+          "rate": 0.6757,
+          "ci95": [
+            0.5626,
+            0.7714
+          ]
+        },
+        "failed_reply_rate": {
+          "count": 4,
+          "of": 102,
+          "rate": 0.0392,
+          "ci95": [
+            0.0153,
+            0.0966
+          ]
+        },
+        "cost_usd": 0.026606,
+        "cost_per_case_usd": 0.000261,
+        "median_seconds": 11.3,
+        "mean_input_tokens": 696
+      },
+      "all": {
+        "cases": 179,
+        "unusable_replies": 5,
+        "unusable_reasons": {
+          "model reply failed FraudAnalysis: recommendations: Input should be a valid list": 5
+        },
+        "recall": {
+          "count": 46,
+          "of": 52,
+          "rate": 0.8846,
+          "ci95": [
+            0.7702,
+            0.9461
+          ]
+        },
+        "false_alarm_rate": {
+          "count": 75,
+          "of": 122,
+          "rate": 0.6148,
+          "ci95": [
+            0.5261,
+            0.6964
+          ]
+        },
+        "recall_as_held": {
+          "count": 46,
+          "of": 52,
+          "rate": 0.8846,
+          "ci95": [
+            0.7702,
+            0.9461
+          ]
+        },
+        "false_alarm_as_held": {
+          "count": 80,
+          "of": 127,
+          "rate": 0.6299,
+          "ci95": [
+            0.5432,
+            0.709
+          ]
+        },
+        "failed_reply_rate": {
+          "count": 5,
+          "of": 179,
+          "rate": 0.0279,
+          "ci95": [
+            0.0119,
+            0.0638
+          ]
+        },
+        "cost_usd": 0.047209,
+        "cost_per_case_usd": 0.000264,
+        "median_seconds": 11.3,
+        "mean_input_tokens": 696
+      }
+    },
+    "super": {
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "holdout": {
+        "cases": 77,
+        "unusable_replies": 1,
+        "unusable_reasons": {
+          "model reply was not valid JSON": 1
+        },
+        "recall": {
+          "count": 20,
+          "of": 24,
+          "rate": 0.8333,
+          "ci95": [
+            0.6414,
+            0.9333
+          ]
+        },
+        "false_alarm_rate": {
+          "count": 35,
+          "of": 52,
+          "rate": 0.6731,
+          "ci95": [
+            0.5375,
+            0.7848
+          ]
+        },
+        "recall_as_held": {
+          "count": 20,
+          "of": 24,
+          "rate": 0.8333,
+          "ci95": [
+            0.6414,
+            0.9333
+          ]
+        },
+        "false_alarm_as_held": {
+          "count": 36,
+          "of": 53,
+          "rate": 0.6792,
+          "ci95": [
+            0.5451,
+            0.7891
+          ]
+        },
+        "failed_reply_rate": {
+          "count": 1,
+          "of": 77,
+          "rate": 0.013,
+          "ci95": [
+            0.0022,
+            0.07
+          ]
+        },
+        "cost_usd": 0.088005,
+        "cost_per_case_usd": 0.001143,
+        "median_seconds": 8.2,
+        "mean_input_tokens": 695
+      },
+      "dev": {
+        "cases": 102,
+        "unusable_replies": 0,
+        "unusable_reasons": {},
+        "recall": {
+          "count": 27,
+          "of": 28,
+          "rate": 0.9643,
+          "ci95": [
+            0.8228,
+            0.9937
+          ]
+        },
+        "false_alarm_rate": {
+          "count": 47,
+          "of": 74,
+          "rate": 0.6351,
+          "ci95": [
+            0.5213,
+            0.7357
+          ]
+        },
+        "recall_as_held": {
+          "count": 27,
+          "of": 28,
+          "rate": 0.9643,
+          "ci95": [
+            0.8228,
+            0.9937
+          ]
+        },
+        "false_alarm_as_held": {
+          "count": 47,
+          "of": 74,
+          "rate": 0.6351,
+          "ci95": [
+            0.5213,
+            0.7357
+          ]
+        },
+        "failed_reply_rate": {
+          "count": 0,
+          "of": 102,
+          "rate": 0.0,
+          "ci95": [
+            0.0,
+            0.0363
+          ]
+        },
+        "cost_usd": 0.116584,
+        "cost_per_case_usd": 0.001143,
+        "median_seconds": 9.3,
+        "mean_input_tokens": 696
+      },
+      "all": {
+        "cases": 179,
+        "unusable_replies": 1,
+        "unusable_reasons": {
+          "model reply was not valid JSON": 1
+        },
+        "recall": {
+          "count": 47,
+          "of": 52,
+          "rate": 0.9038,
+          "ci95": [
+            0.7939,
+            0.9583
+          ]
+        },
+        "false_alarm_rate": {
+          "count": 82,
+          "of": 126,
+          "rate": 0.6508,
+          "ci95": [
+            0.5642,
+            0.7285
+          ]
+        },
+        "recall_as_held": {
+          "count": 47,
+          "of": 52,
+          "rate": 0.9038,
+          "ci95": [
+            0.7939,
+            0.9583
+          ]
+        },
+        "false_alarm_as_held": {
+          "count": 83,
+          "of": 127,
+          "rate": 0.6535,
+          "ci95": [
+            0.5673,
+            0.7307
+          ]
+        },
+        "failed_reply_rate": {
+          "count": 1,
+          "of": 179,
+          "rate": 0.0056,
+          "ci95": [
+            0.0009,
+            0.031
+          ]
+        },
+        "cost_usd": 0.20459,
+        "cost_per_case_usd": 0.001143,
+        "median_seconds": 8.9,
+        "mean_input_tokens": 696
+      }
+    }
+  },
+  "total_cost_usd": 0.251799,
+  "notes": [
+    "A model flags a case when its risk_score is 40 or more. recall and false_alarm_rate use that score alone, over replies that parsed.",
+    "recall_as_held and false_alarm_as_held count a reply that failed to parse or validate as a hold, because the orchestrator refuses auto-clear after a model failure (_model_failures). That is what a person would see.",
+    "No model threshold was tuned on this data, so both halves are reported; the holdout half is the headline.",
+    "24 fraud cases on holdout and 52 in total: read the intervals, not the point estimates.",
+    "Synthetic corpus: no real customer traffic has been measured."
+  ]
+}

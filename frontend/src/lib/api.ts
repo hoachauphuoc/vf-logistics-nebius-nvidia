@@ -81,8 +81,8 @@ const CLIENT_TIMEOUT_MS = 20_000;
 /**
  * The ceiling for the two writes that run models before they answer: a document
  * upload (Model Armor, extraction, then the whole workflow in on-demand mode --
- * 30 to 60 seconds is normal) and a deep review (a multi-round Nemotron 3 Ultra
- * debate). With the 20s default the browser gave up first and reported "the API
+ * 30 to 60 seconds is normal) and a deep review (a multi-round debate on the
+ * Senior Auditor model). With the 20s default the browser gave up first and reported "the API
  * is unreachable" while the server finished the job and created the case.
  *
  * A little over the BFF's own 120s write timeout, so a genuine upstream timeout
@@ -356,7 +356,7 @@ export async function decideReview(args: {
 }
 
 /**
- * The Senior Auditor (Nemotron 3 Ultra) re-reads the case. Expensive, opt-in,
+ * The Senior Auditor re-reads the case. Expensive, opt-in,
  * and slow -- a multi-round debate -- so it gets the long write timeout.
  */
 export async function requestDeepReview(
@@ -940,11 +940,64 @@ export interface OperatingCurve {
   splits: Record<string, { cases_run: number; attacks: number; clean: number; points: CurvePoint[] }>;
 }
 
+/** A count with its rate and 95% Wilson interval, as the comparison scripts write them. */
+export interface CountedRate {
+  count: number;
+  of: number;
+  rate: number | null;
+  ci95: [number, number] | null;
+}
+
+export interface FraudFloorArm {
+  cases: number;
+  unusable_replies: number;
+  recall: CountedRate;
+  false_alarm_rate: CountedRate;
+  /** A reply that failed to parse counts as a hold, as the orchestrator treats it. */
+  recall_as_held: CountedRate;
+  false_alarm_as_held: CountedRate;
+  failed_reply_rate: CountedRate;
+  cost_per_case_usd: number | null;
+  median_seconds: number | null;
+}
+
+export interface FraudFloorZero {
+  kind: "fraud_floor_zero";
+  question: string;
+  partial?: boolean;
+  total_cost_usd: number;
+  notes: string[];
+  results: Record<string, { model: string; holdout: FraudFloorArm; dev: FraudFloorArm; all: FraudFloorArm }>;
+}
+
+export interface DebateArm {
+  model: string;
+  debates: number;
+  reached_a_verdict: CountedRate;
+  disagree_on_fraud: CountedRate;
+  disagree_on_honest: CountedRate;
+  cost_per_debate_usd: number | null;
+  median_seconds: number | null;
+  mean_input_tokens: number | null;
+}
+
+export interface DebateCorpus {
+  kind: "debate_corpus";
+  question: string;
+  partial?: boolean;
+  debated: { fraud: number; honest: number };
+  total_cost_usd: number;
+  notes: string[];
+  results: Record<string, DebateArm>;
+}
+
 export interface EvaluationSummary {
   pipeline: PipelineResult[];
   hs_classifier: { pairs: HsResult[]; holdout: HsResult[] };
   /** Threshold sweeps by arm, from data/operating_curve/. Absent from an older backend. */
   operating_curve?: Record<string, OperatingCurve>;
+  /** Model choices tested head to head, by report name. Absent from an older backend. */
+  model_comparison?: { fraud_floor0?: FraudFloorZero; debate_corpus?: DebateCorpus };
   caveats: string[];
 }
 

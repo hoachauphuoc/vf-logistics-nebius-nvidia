@@ -20,13 +20,15 @@ Floorline screens shipments for a freight forwarder's compliance desk. Fraud in 
 
 ### The design rule
 
-`reconcile()` takes the higher of the model's score and the floor, and `validate()` raises if the HS or zero-day findings ever lowered it. A weaker model can miss a hold; it cannot release what the rules stopped. The strongest model (Ultra) runs in exactly one place, the debate, because that is the one hop whose output can change routing instead of a score the floor overrides.
+`reconcile()` takes the higher of the model's score and the floor, and `validate()` raises if the HS or zero-day findings ever lowered it. A weaker model can miss a hold; it cannot release what the rules stopped. The debate is the one hop whose output can change routing instead of a score the floor overrides, so it was the one place a stronger model might matter. It runs on Super: Nemotron 3 Ultra was measured against it there and did not do better (below).
 
 ### Measured (synthetic holdout; 95% Wilson intervals in brackets)
 
 - Rules alone, 453 holdout cases: recall 93.5% [90–96], false-positive rate 38.4% [28–49].
 - Adding the HS classifier and the zero-day radar, on 200 holdout cases: recall 95.8% [91–98] → 100% [97–100], because the classifier caught all 7 disguised tariff codes the rules missed. It held 2 more honest shipments and, by design, released none the rules held.
 - 19 public enforcement cases, each paired with the honest trade it imitated: 14 frauds held (73.7% [51–89]; rules alone 11), and 9 of the 19 honest look-alikes also held.
+- Model choice, measured on 179 corpus cases the rules scored 0, where the model is the only check: Nemotron 3 Nano flagged 46 of 52 frauds (88% [77–95]) and Super 47 of 52 (90% [79–96]). The sample cannot show a difference, and Super costs 4.3x as much per case, so fraud screening stays on Nano. The cost of that layer: on the holdout half Nano flagged 21 of the 24 frauds the rules missed, and also held 30 of the 53 honest shipments the rules had passed. With the rules' own 33 honest holds that is 63 of 86 honest holdout shipments (73%), against 38.4% for the rules alone.
+- The debate, measured on 46 labelled disputed cases (`data/model_comparison/debate_corpus.json`): Ultra reached a verdict less often than Super (37/46 against 40/46), cost 5.2x as much per debate and took twice as long. Neither told fraud from honest trade: Super said DISAGREE on 16 of 22 frauds and 13 of 18 honest cases, Ultra on 18 of 19 and 17 of 18. The auditor is shown the rules' findings and every honest case in the sample was one the rules held, so DISAGREE largely tracks the rules; it can only send a held case to investigation, never clear one. Read the debate as a routing step, not as evidence of independent judgement.
 - The weakness, in reviewer time: at the 2024 Vietnam customs fraud rate of 0.2%, the rules would hold about 206 shipments per real fraud case. The screen is not precise, and no real customer traffic has been measured. Cost is under half a cent of model spend per case.
 
 The details, the operating curve and the reproduction commands are in [REFERENCE.md](REFERENCE.md#measured-results) and on the console's Evaluation page (`/evaluation`).
@@ -37,13 +39,13 @@ Every model call goes through **Nebius Token Factory**, one OpenAI-compatible en
 
 | Model | Where it runs | Why this size |
 |---|---|---|
-| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar | The floor makes a smaller model safe here; whether a larger one would add holds is not measured |
-| `nvidia/nemotron-3-super-120b-a12b` | investigation | Writes the narrative a human reads; does not decide the verdict |
-| `nvidia/Nemotron-3-Ultra-550b-a55b` | the auto-debate | Its verdict can change routing; measured `$0.0198` per debate against `$0.0015` on Super |
+| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar | The floor makes a smaller model safe here, and Super flagged no more frauds where the rules saw none (46/52 against 47/52, at 4.3x the cost) |
+| `nvidia/nemotron-3-super-120b-a12b` | investigation, the auto-debate | The investigation writes the narrative a human reads; the debate routes a held case to it. Super matched Ultra on the debate at a fifth of the cost |
+| `nvidia/Nemotron-3-Ultra-550b-a55b` | not used by default; `DEBATE_MODEL` selects it | Measured against Super on 46 debates: a verdict less often (80% against 87%), no better at telling fraud from honest trade, 5.2x the cost |
 | `openbmb/MiniCPM-V-4_5` | document intake (vision) | Not an NVIDIA model: Token Factory offers no NVIDIA vision model yet |
 
-- **Model choice is a config value.** Moving a hop from Nano to Super to Ultra is a string in `config.py`, so the HS experiment (Nano from 40.0% to 92.9% recall on the pairs set, 50.0% to 91.7% on the holdout) cost nothing in plumbing.
-- **No GPU provisioning.** Per-token access made a 550B model practical for an occasional call.
+- **Model choice is a config value.** Moving a hop from Nano to Super to Ultra is a string in `config.py`, so the HS experiment (Nano from 40.0% to 92.9% recall on the pairs set, 50.0% to 91.7% on the holdout) and the two model comparisons above cost nothing in plumbing.
+- **No GPU provisioning.** Per-token access made a 550B model practical to test on 46 debates for about a dollar.
 - **The port was a client change.** The JSON contract of each agent was kept, so moving from Vertex AI Gemini changed the base URL, the model ids and the sampling parameters.
 - **Tavily** is a live runtime call in six places: compliance screening, route validation, investigation, the zero-day radar, the debate's search tool, and the Governance page's sanctions scan. In the radar and the debate, Nemotron calls the search as a tool and chooses the query.
 - **Other Nebius services used: none.** Nebius AI Cloud (Serverless Endpoints and Jobs) is not used; the service runs on Cloud Run.
@@ -54,7 +56,7 @@ This began as an entry to a different hackathon (Google Cloud, Vertex AI Gemini)
 
 | | Before (`755d998`) | Now |
 |---|---|---|
-| Models | 4 agents on Gemini via Vertex AI | 7 agents on Token Factory: Nemotron 3 Nano, Super, Ultra, plus MiniCPM-V |
+| Models | 4 agents on Gemini via Vertex AI | 7 agents on Token Factory: Nemotron 3 Nano and Super (Ultra measured, not adopted), plus MiniCPM-V |
 | Console | one static HTML page | Next.js 16 in the same container as the API |
 | Evidence loop | a note | request, receive, re-evaluate, approve, execute, with an audit trail |
 | Tests | none | 2,095 backend (96% coverage, with the Firestore and Pub/Sub emulators) and 1,729 frontend (61.6%); mypy 0 errors |
@@ -124,7 +126,7 @@ Without the emulators the emulator tests skip. [REFERENCE.md](REFERENCE.md#repro
 | Rule | Where it is met |
 |---|---|
 | Runtime call to Nebius Token Factory | every one of the seven agents |
-| At least one NVIDIA open source model | three Nemotron 3 sizes, table above |
+| At least one NVIDIA open source model | Nemotron 3 Nano and Super in the pipeline; Ultra measured against Super and not adopted |
 | Track | **Best Apps and Agents** |
 | Significantly updated after 26 Aug 2026 | the section above; first commit here `6bb1e59`, 17 Sep |
 | Working demo URL | the `vf-app` URL at the top |

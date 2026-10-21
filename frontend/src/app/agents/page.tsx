@@ -237,7 +237,7 @@ export default function AgentConsolePage() {
               {Object.entries(byAgent)
                 // Sorted by money, not by tokens. This card is titled "Cost by agent"
                 // and used to rank by token volume, which inverts the one thing it
-                // exists to show: Ultra runs the debate at roughly 13x Nano's cost per
+                // exists to show: the debate (Super by default) costs several times Nano's per
                 // call, so the dearest agent is routinely not the chattiest one. A cost
                 // card that buries the expensive agent below four cheap ones is worse
                 // than no card.

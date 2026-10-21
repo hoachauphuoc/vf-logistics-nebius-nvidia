@@ -331,7 +331,7 @@
         can pull a case below it. A person publishes what the agent may do, and a person decides
         every disputed case.</p>
       <div class="chips">
-        <span class="chip"><span class="dot" style="background:var(--nano)"></span>Nemotron 3 Nano &middot; Super &middot; Ultra</span>
+        <span class="chip"><span class="dot" style="background:var(--nano)"></span>Nemotron 3 Nano &middot; Super</span>
         <span class="chip"><span class="dot" style="background:var(--ultra)"></span>Nebius Token Factory</span>
         <span class="chip"><span class="dot" style="background:var(--search)"></span>Tavily, live, 6 call sites</span>
         <span class="chip"><span class="dot" style="background:var(--muted)"></span>Cloud Run &middot; Firestore &middot; Pub/Sub</span>
@@ -520,25 +520,25 @@
 <section id="models">
   <div class="wrap">
     <div class="sec-head">
-      <div><div class="num">02 &middot; MODEL LADDER</div><h2>Three Nemotron sizes, each where its size pays</h2></div>
+      <div><div class="num">02 &middot; MODEL LADDER</div><h2>Two Nemotron sizes in use, each where its size pays</h2></div>
       <p>Capacity goes where it can change the answer. Nano runs on every case that reaches the
-        models; Super writes the investigation a person reads; Ultra runs only when the floor and the
-        model disagree, and its verdict can only send a case upward.</p>
+        models; Super writes the investigation a person reads and runs the Senior Auditor debate, whose
+        verdict can only send a case upward. Ultra was measured on the debate and stays selectable.</p>
     </div>
     <div class="ladder" id="ladder"></div>
     <div class="endpoint">
       <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="#5D4A8A" stroke-width="1.5"/><circle cx="17" cy="17" r="4" fill="#5D4A8A"/><path d="M17 2v8M17 24v8M2 17h8M24 17h8" stroke="#5D4A8A" stroke-width="1.5"/></svg>
       <div>
         <div class="mono">api.tokenfactory.nebius.com/v1/</div>
-        <p>One OpenAI-compatible endpoint serves all four models through <code>openai.AsyncOpenAI</code>.
-          Changing a model is a string in <code>config.py</code>, not an integration, and a 550B model was
-          affordable to reach for on the rare path where it matters.</p>
+        <p>One OpenAI-compatible endpoint serves every model through <code>openai.AsyncOpenAI</code>.
+          Changing a model is a string in <code>config.py</code>, not an integration, and a 550B model could be
+          measured against Super on the rare path where it matters.</p>
       </div>
       <span class="chip">no GPUs provisioned</span>
     </div>
     <div class="facts3">
       <div class="fact"><div class="v">40.0% &rarr; 92.9%</div><p>HS classifier recall with Nano on the pairs set, after reasoning over the published headings (holdout: 50.0% &rarr; 91.7%).</p></div>
-      <div class="fact"><div class="v">$0.0198</div><p>per Ultra debate, measured, against <span class="mono">$0.0015</span> for a Super call: paid only when the floor beats the model by 15 points or more.</p></div>
+      <div class="fact"><div class="v">$0.0021</div><p>per Super debate, measured on 46 disputed corpus cases, against <span class="mono">$0.0108</span> for Ultra (5.2x): paid only when the floor beats the model by 15 points or more.</p></div>
       <div class="fact"><div class="v">json_object</div><p>on every model but Super, and every reply is checked against its schema before anything reads it.</p></div>
     </div>
   </div>
@@ -640,7 +640,7 @@
     s.push(floor > 0 ? "verifier.py sets a floor of " + floor + " from rules; no model is consulted" : "verifier.py finds nothing: the floor is 0");
     s.push("Nano scores " + model + "; compliance screens the parties with live Tavily search");
     if (floor - model >= 15) {
-      s.push("The floor beats the model by " + (floor - model) + " points, so the Senior Auditor debate runs on Ultra");
+      s.push("The floor beats the model by " + (floor - model) + " points, so the Senior Auditor debate runs on Super");
       s.push("Its verdict can send the case to investigation, never clear it");
       s.push("Under the default boundary a disputed score is a person's call");
       return { eff: eff, state: "PENDING_HUMAN", cls: "s-human", steps: s };
@@ -735,7 +735,7 @@
       ["a_route", "k-search", "Route search", "Tavily", { file: "tavily_client.py", model: "Tavily", lower: "never", text: "Looks for disruptions on the shipping lane. The query carries only a country pair, so it is cached for 6 hours." }],
       ["a_hs", "k-nano", "HS classifier", "Nano", { file: "agents/hs_classifier_agent.py", model: "Nemotron 3 Nano", lower: "never", text: "Asks whether the declared tariff code fits the goods, reasoning over the published heading text. validate() raises if its finding ever lowered the floor." }],
       ["a_zero", "k-search", "Zero-day radar", "Nano chooses queries", { file: "agents/zero_day_agent.py", model: "Nemotron 3 Nano + Tavily tool", lower: "never", text: "Adverse media on parties no sanctions list has caught up with. Opens only when its code gate does (two distinct diversion hubs, for example), and the model calls the search as a tool." }],
-      ["a_debate", "k-ultra", "Senior Auditor debate", "Ultra 550B", { file: "agents/debate_agent.py", model: "Nemotron 3 Ultra", lower: "never", text: "Fires when the floor exceeds the model's score by 15 points or more. A confident DISAGREE (0.7 by default) sends the case to investigation; nothing it says can clear one." }],
+      ["a_debate", "k-super", "Senior Auditor debate", "Super 120B", { file: "agents/debate_agent.py", model: "Nemotron 3 Super", lower: "never", text: "Fires when the floor exceeds the model's score by 15 points or more. A confident DISAGREE (0.7 by default) sends the case to investigation; nothing it says can clear one." }],
       ["a_invest", "k-super", "Investigation", "Super 120B", { file: "agents/investigation_agent.py", model: "Nemotron 3 Super", lower: "never", text: "Writes the cited narrative a reviewer reads on escalated cases. It informs the verdict; it does not decide it." }]
     ]},
     { h: "Authority", n: [
@@ -790,7 +790,7 @@
       ["a_fraud", "Nano argues it is low, say 30. It cannot pull the case below the floor."],
       ["a_comp", "Compliance screens the parties."],
       ["a_hs", "The HS classifier checks the declared code against the goods."],
-      ["a_debate", "The floor beats the model by 15 points or more, so the Ultra debate runs."],
+      ["a_debate", "The floor beats the model by 15 points or more, so the Super debate runs."],
       ["a_invest", "A DISAGREE at confidence 0.7 or more sends it to Super for a cited investigation."],
       ["b_gate", "The default boundary does not let the agent act on a disputed score."],
       ["d_queue", "A person decides, with the findings beside the original."],
@@ -873,9 +873,9 @@
     { size: "30", unit: "B", name: "Nemotron 3 Nano", id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", c: "#246D72", price: [0.06, 0.24],
       job: "Fraud, compliance, HS classification and the zero-day radar. A weaker model here can miss a hold, never release what the rules stopped.", when: "EVERY CASE THAT REACHES A MODEL" },
     { size: "120", unit: "B", name: "Nemotron 3 Super", id: "nvidia/nemotron-3-super-120b-a12b", c: "var(--super)", price: [0.30, 0.90],
-      job: "The investigation narrative a reviewer reads on escalated cases. Benefits from reasoning; does not decide the verdict.", when: "ESCALATIONS ONLY" },
+      job: "The investigation narrative a reviewer reads on escalated cases, and the Senior Auditor debate, whose verdict can change routing, upward only.", when: "ESCALATIONS AND DISPUTES" },
     { size: "550", unit: "B", name: "Nemotron 3 Ultra", id: "nvidia/Nemotron-3-Ultra-550b-a55b", c: "var(--ultra)", price: [1.00, 3.00],
-      job: "The Senior Auditor debate: the one place a model's output is a verdict that can change routing, upward only.", when: "ONLY WHEN FLOOR − MODEL ≥ 15" },
+      job: "Optional: set DEBATE_MODEL to run the debate on it. Measured against Super on 46 disputed cases it disagreed more often without separating fraud from honest trade, at 5.2x the cost.", when: "NOT USED BY DEFAULT" },
     { size: "V", unit: "4.5", name: "MiniCPM-V", id: "openbmb/MiniCPM-V-4_5", c: "#566579", price: [0.658, 1.11],
       job: "Reads scanned documents into fields. Not an NVIDIA model: Token Factory carries no NVIDIA vision model yet.", when: "DOCUMENT INTAKE" }
   ];

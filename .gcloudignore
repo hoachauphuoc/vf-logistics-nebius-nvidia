@@ -60,3 +60,4 @@ venv/
 !/data/benchmark_results/
 !/data/eval_results/
 !/data/operating_curve/
+!/data/model_comparison/

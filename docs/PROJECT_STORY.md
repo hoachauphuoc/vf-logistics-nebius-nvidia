@@ -14,13 +14,14 @@ When the floor exceeds the model's score by 15 points or more, a Senior Auditor 
 
 ## How we built it
 
-Nebius Token Factory serves every model call through one OpenAI-compatible endpoint. Nemotron 3 Nano handles fraud, compliance, HS classification and the zero-day radar; Nemotron 3 Super handles investigation; Nemotron 3 Ultra handles the debate; MiniCPM-V-4.5 reads scanned documents, since Token Factory has no NVIDIA vision model yet. Tavily runs at runtime in six places. The backend is Flask on Cloud Run with Firestore and Pub/Sub, and the Next.js console runs in the same container.
+Nebius Token Factory serves every model call through one OpenAI-compatible endpoint. Nemotron 3 Nano handles fraud, compliance, HS classification and the zero-day radar; Nemotron 3 Super handles investigation and the debate; MiniCPM-V-4.5 reads scanned documents, since Token Factory has no NVIDIA vision model yet. Tavily runs at runtime in six places. The backend is Flask on Cloud Run with Firestore and Pub/Sub, and the Next.js console runs in the same container.
 
-Nano on fraud and compliance is a choice the floor makes safe, not one we have shown is best: a weaker model can miss a hold but cannot release what the rules stopped. Ultra runs in one place only, the debate, because its verdict can change routing rather than only a score the floor overrides.
+Both model choices were measured rather than assumed. Where the rules score a case 0 the model is the only check, and on 179 such cases Nano flagged 46 of 52 frauds against Super's 47 of 52, at a quarter of the cost, so fraud stays on Nano. The debate began on Ultra, because its verdict can change routing rather than only a score the floor overrides; on 46 labelled disputed cases Ultra reached a verdict less often than Super, said DISAGREE about as often on honest trade as on fraud, and cost 5.2x as much, so the debate runs on Super.
 
 ## Challenges we ran into
 
-- **A rate multiple is not a cost multiple.** We documented Ultra as 3.3x Super from its per-token rate. Measured, a debate cost 13x ($0.0198 against $0.0015), because Ultra makes more tool-call rounds and each one resends the growing transcript.
+- **A rate multiple is not a cost multiple, and neither is a price worth paying until it is measured.** We documented Ultra as 3.3x Super from its per-token rate. Measured on the live service a debate cost 13x ($0.0198 against $0.0015), because Ultra makes more tool-call rounds and each one resends the growing transcript. Then we measured what that bought: nothing we could show, so Super runs the debate.
+- **A model that agrees with the rules is not independent evidence.** Both models said DISAGREE on honest cases about as often as on fraud, because the auditor is shown the rules' findings and every honest case in the test was one the rules held. The debate can only send a held case to investigation; we report it as a routing step.
 - **Booking data cannot separate fraud from honest trade.** Four identical origin-fraud pairs in the benchmark proved it, and led to the evidence loop.
 - **Independent reviews found real defects.** Concurrent execution could send a decision twice, and a failed publish was recorded as done. The fixes were claim-before-send and one publish per idempotency key.
 - **The screen is not precise.** On a held-out half of a synthetic corpus the rules held 38.4% of clean shipments (95% interval 28–49%). At 0.2% fraud, the 2024 Vietnam customs rate, that is about 206 holds per real fraud case.

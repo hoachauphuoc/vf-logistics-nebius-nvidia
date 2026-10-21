@@ -1,0 +1,129 @@
+{
+  "kind": "debate_corpus",
+  "question": "Does the Senior Auditor on Ultra notice what Nano missed more reliably than on Super?",
+  "trigger": "floor exceeds Nano's score by 15 or more (verifier.reconcile score_disputed)",
+  "confident_threshold": 0.7,
+  "labels": "corpus expected_flagged; both halves used because nothing is tuned here",
+  "partial": false,
+  "candidates_screened": 192,
+  "candidates_disputed": 65,
+  "debated": {
+    "fraud": 25,
+    "honest": 21
+  },
+  "results": {
+    "super": {
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "debates": 46,
+      "reached_a_verdict": {
+        "count": 40,
+        "of": 46,
+        "rate": 0.8696,
+        "ci95": [
+          0.7433,
+          0.9389
+        ]
+      },
+      "disagree_on_fraud": {
+        "count": 16,
+        "of": 22,
+        "rate": 0.7273,
+        "ci95": [
+          0.5184,
+          0.8685
+        ]
+      },
+      "disagree_on_honest": {
+        "count": 13,
+        "of": 18,
+        "rate": 0.7222,
+        "ci95": [
+          0.4912,
+          0.8751
+        ]
+      },
+      "confident_disagree_on_fraud": {
+        "count": 16,
+        "of": 22,
+        "rate": 0.7273,
+        "ci95": [
+          0.5184,
+          0.8685
+        ]
+      },
+      "confident_disagree_on_honest": {
+        "count": 13,
+        "of": 18,
+        "rate": 0.7222,
+        "ci95": [
+          0.4912,
+          0.8751
+        ]
+      },
+      "cost_usd": 0.095519,
+      "cost_per_debate_usd": 0.002077,
+      "mean_input_tokens": 5201,
+      "median_seconds": 6.4
+    },
+    "ultra": {
+      "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "debates": 46,
+      "reached_a_verdict": {
+        "count": 37,
+        "of": 46,
+        "rate": 0.8043,
+        "ci95": [
+          0.6682,
+          0.8935
+        ]
+      },
+      "disagree_on_fraud": {
+        "count": 18,
+        "of": 19,
+        "rate": 0.9474,
+        "ci95": [
+          0.7536,
+          0.9907
+        ]
+      },
+      "disagree_on_honest": {
+        "count": 17,
+        "of": 18,
+        "rate": 0.9444,
+        "ci95": [
+          0.7424,
+          0.9902
+        ]
+      },
+      "confident_disagree_on_fraud": {
+        "count": 18,
+        "of": 19,
+        "rate": 0.9474,
+        "ci95": [
+          0.7536,
+          0.9907
+        ]
+      },
+      "confident_disagree_on_honest": {
+        "count": 17,
+        "of": 18,
+        "rate": 0.9444,
+        "ci95": [
+          0.7424,
+          0.9902
+        ]
+      },
+      "cost_usd": 0.49571,
+      "cost_per_debate_usd": 0.010776,
+      "mean_input_tokens": 7281,
+      "median_seconds": 13.5
+    }
+  },
+  "total_cost_usd": 0.695364,
+  "notes": [
+    "DISAGREE on a fraud case is the debate noticing what Nano missed; DISAGREE on an honest case is an investigation that did not need to run. A model worth its rate has the first clearly above the second.",
+    "Nothing the debate says can clear a case: a CONFIRM changes nothing and a DISAGREE only routes a held case to investigation.",
+    "Small samples: read the intervals. Synthetic corpus, no real customer traffic.",
+    "A debate with no verdict, or a forced default, counts against 'reached a verdict' and is left out of the DISAGREE rates."
+  ]
+}

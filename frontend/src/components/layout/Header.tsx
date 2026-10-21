@@ -120,7 +120,7 @@ function ModelsChip() {
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-[22rem]">
         Every agent runs on Nebius Token Factory. Nemotron 3 Nano screens fraud,
-        compliance and HS codes; Super investigates; Ultra argues the disputed
+        compliance and HS codes; Super investigates and argues the disputed
         cases. Documents are read by MiniCPM-V, also on Token Factory.
       </TooltipContent>
     </Tooltip>

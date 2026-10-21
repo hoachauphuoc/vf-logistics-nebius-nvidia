@@ -279,7 +279,52 @@ def test_every_directory_the_endpoint_reads_is_shipped():
         value.name for value in vars(evaluation).values()
         if isinstance(value, pathlib.Path) and value.parent == evaluation.DATA_DIR
     )
-    assert served == ["benchmark_results", "eval_results", "operating_curve"]
+    assert served == ["benchmark_results", "eval_results", "model_comparison", "operating_curve"]
     for name in served:
         assert f"COPY data/{name}/ data/{name}/" in dockerfile, f"Dockerfile does not copy data/{name}/"
         assert f"!/data/{name}/" in gcloudignore, f".gcloudignore leaves data/{name}/ out of the upload"
+
+
+# ---------------------------------------------------------------------------
+# Model comparisons: the model choices, tested head to head.
+# ---------------------------------------------------------------------------
+
+
+def test_the_model_comparisons_are_served_with_their_intervals():
+    body = app.test_client().get("/api/v1/evaluation").get_json()
+    comparison = body["model_comparison"]
+    assert {"fraud_floor0", "debate_corpus"} <= set(comparison)
+
+    fraud = comparison["fraud_floor0"]["results"]
+    assert {"nano", "super"} <= set(fraud)
+    recall = fraud["nano"]["all"]["recall"]
+    assert recall["of"] == 52 and recall["ci95"][0] < recall["rate"] < recall["ci95"][1]
+
+    debate = comparison["debate_corpus"]["results"]
+    assert {"super", "ultra"} <= set(debate)
+    for arm in debate.values():
+        assert arm["debates"] == 46
+        assert arm["disagree_on_fraud"]["ci95"] and arm["disagree_on_honest"]["ci95"]
+
+
+def test_the_debate_default_is_the_model_the_comparison_supports():
+    """The default rests on a measurement: Ultra cost more and did not separate fraud from honest trade."""
+    from vf_logistics.agents import debate_agent
+
+    arms = evaluation.model_comparisons()["debate_corpus"]["results"]
+    assert arms["ultra"]["cost_per_debate_usd"] > 3 * arms["super"]["cost_per_debate_usd"]
+    gap = {
+        name: arm["disagree_on_fraud"]["rate"] - arm["disagree_on_honest"]["rate"]
+        for name, arm in arms.items()
+    }
+    assert abs(gap["ultra"]) < 0.1 and abs(gap["super"]) < 0.1
+    assert debate_agent.MODEL_ID.endswith("nemotron-3-super-120b-a12b") or "DEBATE_MODEL" in __import__("os").environ
+
+
+def test_a_file_that_is_not_a_comparison_is_skipped(tmp_path):
+    (tmp_path / "good.json").write_text(json.dumps({"kind": "x", "results": {"a": {}}}), encoding="utf-8")
+    (tmp_path / "no_kind.json").write_text(json.dumps({"results": {}}), encoding="utf-8")
+    (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "list.json").write_text("[1, 2]", encoding="utf-8")
+    assert list(evaluation.model_comparisons(tmp_path)) == ["good"]
+    assert evaluation.model_comparisons(tmp_path / "missing") == {}

@@ -229,7 +229,7 @@ class TestDebateFieldNames(unittest.TestCase):
 
         self.assertEqual(
             debate_agent.MODEL_ID,
-            os.getenv("DEBATE_MODEL", "nvidia/Nemotron-3-Ultra-550b-a55b"),
+            os.getenv("DEBATE_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
         )
 
 

@@ -247,7 +247,7 @@ Seven agents call a model. All live in `src/vf_logistics/agents/`.
 | `compliance` | `compliance_agent.py` | Nano | CLEARED / REVIEW_REQUIRED / BLOCKED |
 | `hs_classifier` | `hs_classifier_agent.py` | Nano | whether cargo description matches the declared HS heading |
 | `zero_day` | `zero_day_agent.py` | Nano | adverse media on counterparties absent from the sanctions list |
-| `auto_debate` | `debate_agent.py` | Ultra | CONFIRM or DISAGREE with Nano, with an adjusted score |
+| `auto_debate` | `debate_agent.py` | Super | CONFIRM or DISAGREE with Nano, with an adjusted score |
 | `investigation` | `investigation_agent.py` | Super | fraud pattern, exposure estimate, escalation narrative |
 
 Two further identifiers appear in the same "Cost by agent" panel and are **not**
@@ -257,7 +257,7 @@ model calls:
   construction*. A reader of that panel would otherwise assume every row cost money.
 - `model_armor` -- the blocked-document path.
 
-A third, `debate`, is the manual Deep Review: the same Ultra call as `auto_debate`
+A third, `debate`, is the manual Deep Review: the same Super call as `auto_debate`
 (`conduct_debate`), billed into the case rollups under a second name, so one agent
 occupies two rows. A reviewer runs it on a case awaiting a person; it records a verdict
 and changes no route.
@@ -288,8 +288,8 @@ the `INGESTED` transition. Its result lands on the case but never in the cost pa
 | Model id | Input | Output | Used for |
 | --- | --- | --- | --- |
 | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 0.06 | 0.24 | fraud, compliance, HS, zero-day |
-| `nvidia/nemotron-3-super-120b-a12b` | 0.30 | 0.90 | investigation |
-| `nvidia/Nemotron-3-Ultra-550b-a55b` | 1.00 | 3.00 | auto_debate and manual Deep Review, by default |
+| `nvidia/nemotron-3-super-120b-a12b` | 0.30 | 0.90 | investigation, auto_debate and manual Deep Review, by default |
+| `nvidia/Nemotron-3-Ultra-550b-a55b` | 1.00 | 3.00 | optional: `DEBATE_MODEL` selects it for the debate; not used by default |
 | `openbmb/MiniCPM-V-4_5` | 0.658 | 1.11 | document intake |
 
 Transport is `openai.AsyncOpenAI` against Token Factory. 45 s per request, a 90 s total
@@ -404,7 +404,7 @@ flowchart TD
     Z -->|risk indicator present| ZD["zero_day plus Tavily"]
     ZD --> RV
     RV --> D{"score disputed by 15 or more?"}
-    D -->|yes| AD["auto_debate on Ultra"]
+    D -->|yes| AD["auto_debate on Super"]
     D -->|no| SD["SPECIALISTS_DONE"]
     AD --> SD
 ```
@@ -998,7 +998,7 @@ An architecture document that omits these is marketing.
 | Decisions topic | `case-decisions`, with two subscriptions: `case-decisions-sent-ledger` (pull, 7-day retention, read by the service on a retry; `SENT_LEDGER_SUBSCRIPTION`) and `case-decisions-receiver` (push with OIDC to `/api/v1/receiver/decision`; `RECEIVER_PUSH_SA`, `RECEIVER_PUSH_AUDIENCE`) |
 | Text model | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` — fraud, compliance, HS, zero-day |
 | Investigation | `nvidia/nemotron-3-super-120b-a12b` |
-| Debate | `nvidia/Nemotron-3-Ultra-550b-a55b` |
+| Debate | `nvidia/nemotron-3-super-120b-a12b` (`DEBATE_MODEL`; Ultra optional) |
 | Vision | `openbmb/MiniCPM-V-4_5` |
 | Spend ceiling | `VF_TENANT_SPEND_CEILING_USD=50`, soft |
 | Anonymous floor | `none` (`ANONYMOUS_ROLE=none`, `VF_PUBLIC_READS=false`): an anonymous visitor is sent to the sign-in screen and the API answers 401; the one-click guest judge (`VF_ONE_CLICK_JUDGE=true`) cannot release or approve |

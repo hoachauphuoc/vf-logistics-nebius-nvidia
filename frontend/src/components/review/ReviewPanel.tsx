@@ -916,7 +916,7 @@ export function ReviewPanel({
               size="sm"
               variant="outline"
               // Guarded against a double submit as well as confirmed: this spends
-              // Nemotron 3 Ultra tokens, and a second click while the first is in
+              // debate-model tokens, and a second click while the first is in
               // flight bills the tenant twice for the same answer.
               disabled={deep.isPending}
               onClick={() => setConfirmDeep(true)}
@@ -1024,7 +1024,7 @@ export function ReviewPanel({
               Run a deep review?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-[12.5px] leading-relaxed text-dim">
-              The Senior Auditor, on Nemotron 3 Ultra, re-reads the junior
+              The Senior Auditor re-reads the junior
               analyst&rsquo;s assessment and may run further searches. It is the most
               expensive operation in the system, takes a minute or two, and is
               billed to this tenant.
