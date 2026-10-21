@@ -214,8 +214,8 @@ at the single point every model call passes through, and the finding that surpri
 us most: **Tavily, not the models, is what actually runs out.**
 
 There were also **zero unit tests**. The first commit of this repository contains one
-test file, and it drives a deployed service over HTTP. There are now 2,095 backend
-tests passing in CI (which runs the Firestore and Pub/Sub emulators) and 1,729 frontend
+test file, and it drives a deployed service over HTTP. There are now 2,090 backend
+tests passing in CI (which runs the Firestore and Pub/Sub emulators) and 1,731 frontend
 tests.
 
 ## Challenges we ran into
@@ -461,7 +461,7 @@ three-document request, reevaluate reopening concluded cases, empty extractions
 counted as evidence, the legacy API bypassing the new policy, and the UI not connected
 to the new endpoints -- were fixed in the same sprint.
 
-The result: a suite that now stands at 2,095 passing backend tests, 0 improper executions on a
+The result: a suite that now stands at 2,090 passing backend tests, 0 improper executions on a
 7-case evaluation corpus (a mocked harness, with no model or network calls), three
 operator screens, a public upload page for shippers, and a lineage record that carries
 the evidence version and approval through to the audit trail.

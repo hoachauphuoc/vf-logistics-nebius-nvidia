@@ -427,10 +427,10 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **2,095 backend tests** pass in CI with none skipped, at 96% line coverage (CI
+**Now:** **2,090 backend tests** pass in CI with none skipped (run `b6389c9`), at 96% line coverage (304 of 8,059 lines missed; CI
 runs them inside the Firestore and Pub/Sub emulators, so the `FirestoreStore` tests
 run for real; without the emulators the 18 emulator tests and the store parity suite
-skip). The console has 1,729 frontend tests at 61.6% line coverage. A mutation check —
+skip). The console has 1,731 frontend tests in 91 files at 62.0% line coverage (8,371 of 13,506 lines). A mutation check —
 `scripts/check_test_sensitivity.py`, which can resume from an index — breaks 112 lines of
 backend and console code on purpose and the suite catches all 112. mypy reports 0 errors.
 Five GitHub Actions jobs run on every push to `master`: lint, typecheck (mypy ceiling 0),
@@ -1655,7 +1655,7 @@ python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=92
 # refuses to run on a tree with uncommitted changes.
 python scripts/check_test_sensitivity.py
 
-# Frontend: install, typecheck, lint, 1,729 unit tests in 91 files, production build
+# Frontend: install, typecheck, lint, 1,731 unit tests in 91 files, production build
 (cd frontend && npm ci && npx tsc --noEmit && npm run lint && npm test && npm run build)
 
 # Real-model run (spends tokens, needs the operator key): cost, model time and whether each
@@ -1736,7 +1736,7 @@ python scripts/compare_fraud_models.py        # Nano vs Super on score-0 corpus 
 | Screen layers | 7 | Which of the two screening layers may refuse a shipment |
 | Audit integrity | 6 | The governance author is the authenticated identity, not a body field |
 | Cache concurrency | 5 | That concurrent identical searches all miss, and what that costs |
-| Evaluation endpoint | 19 | The committed reports served as written, each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; the public-case pairs with their sources; Wilson intervals at the edges (0 of 12, 15 of 15) rounded outward; and the operating curve shipped in the image |
+| Evaluation endpoint | 22 | The committed reports served as written, the model comparisons with their intervals (and a debate default that the committed measurement supports), each naming its split and verifier, never the per-case rows that carry the labels; the workload arithmetic at real fraud rates; the public-case pairs with their sources; Wilson intervals at the edges (0 of 12, 15 of 15) rounded outward; and the operating curve shipped in the image |
 | Operating curve | 5 | The threshold sweep on hand-built rows counted by eye, and `scripts/operating_curve.py` run once end to end |
 | Release fails closed | 15 | A missing reconciliation, a compliance status other than `CLEARED`, an unverified shipper's discount, a missing finding count, an absent or unusable declared value and a blank destination each withhold an automated release |
 | Document archive | 26 | The receipt written onto the case is one the reader can fetch back, and every storage failure is a receipt that says why, or an empty answer, never an exception; under `MULTI_TENANT`, objects filed and ingested only inside the tenant's own space |
@@ -1758,7 +1758,7 @@ python scripts/compare_fraud_models.py        # Nano vs Super on score-0 corpus 
 | Untyped links | 3 | A request-level link carries no document type, so with several documents requested it cannot say which slot an upload fills |
 | Decisions receiver | 19 | The Pub/Sub push endpoint accepts only a Google-signed push, applies each decision once per key and tenant (8 concurrent deliveries of one key apply it once on the emulator), and a message without a key is refused (`test_decision_receiver.py`, `test_applied_decisions.py`, `test_reference_receiver.py`) |
 | Sent ledger, hard kill and `/health` | 15 | A retry reads the sent ledger and does not publish again; an unreadable ledger sends nothing; a process killed right after the broker accepted leaves one message on the emulator; `/health` names the revision and the ledger (`test_sent_ledger.py`, `test_sim_hard_kill.py`, `test_health_deploy_info.py`) |
-| **Total** | **2,095** | all pass in CI, which runs the emulators; 105 test files. This table names areas of the hardening suite, not every file |
+| **Total** | **2,090** | all pass in CI, which runs the emulators; 106 test files. This table names areas of the hardening suite, not every file |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -2178,7 +2178,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Super
-├── tests/                        105 files, 2,095 tests
+├── tests/                        106 files, 2,090 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports

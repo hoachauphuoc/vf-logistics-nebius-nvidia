@@ -24,13 +24,13 @@ Both model choices were measured rather than assumed. Where the rules score a ca
 - **A model that agrees with the rules is not independent evidence.** Both models said DISAGREE on honest cases about as often as on fraud, because the auditor is shown the rules' findings and every honest case in the test was one the rules held. The debate can only send a held case to investigation; we report it as a routing step.
 - **Booking data cannot separate fraud from honest trade.** Four identical origin-fraud pairs in the benchmark proved it, and led to the evidence loop.
 - **Independent reviews found real defects.** Concurrent execution could send a decision twice, and a failed publish was recorded as done. The fixes were claim-before-send and one publish per idempotency key.
-- **The screen is not precise.** On a held-out half of a synthetic corpus the rules held 38.4% of clean shipments (95% interval 28–49%). At 0.2% fraud, the 2024 Vietnam customs rate, that is about 206 holds per real fraud case.
+- **The screen is not precise.** On a held-out half of a synthetic corpus the rules held 38.4% of clean shipments (95% interval 28–49%). At 0.2% fraud, the 2024 Vietnam customs rate, that is about 206 holds per real fraud case. The model layer buys recall and costs precision: Nano flagged 21 of the 24 frauds the rules missed on the holdout half, and also held 30 of the 53 honest shipments the rules had passed, so the whole screen holds about 73% of honest holdout shipments (63 of 86).
 
 ## Accomplishments that we're proud of
 
 - The risk floor cannot be talked down, because no model takes part in computing it. The answer to "what can this do without asking" is a versioned document with a person's name on it.
 - The HS classifier is our best-measured number. Nano started at 40.0% recall on a 30-case set and 50.0% on a 24-case holdout. Worked examples made it worse. Giving it the published contents of the real HS headings took recall to 92.9% and 91.7%. The numbers are small: 11 of 12 evasions caught, 0 of 12 honest cases flagged, and a 95% interval of 64% to 99% on that recall.
-- Tests run against real database and broker emulators: 2,095 backend tests at 96% coverage, 1,729 frontend tests, and mypy at 0 errors.
+- Tests run against real database and broker emulators: 2,090 backend tests at 96% coverage, 1,731 frontend tests at 62% line coverage, and mypy at 0 errors.
 - Failure is legible. When Model Armor returned 403, the system said so in the response instead of pretending.
 
 ## What we learned
