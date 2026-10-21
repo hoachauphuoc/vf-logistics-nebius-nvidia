@@ -289,6 +289,7 @@ async def corpus_main(args: argparse.Namespace) -> int:
 
     install_empty_tavily()
     sem = asyncio.Semaphore(args.concurrency)
+    print("screening with Nano (no output until it finishes; about 3-6 minutes)...", flush=True)
     screened = [r for r in await asyncio.gather(*(nano_screen(c, sem) for c in pool)) if r]
     spent = sum(r["screen_cost_usd"] for r in screened)
     disputed = [r for r in screened if r["disputed"]]
@@ -314,31 +315,40 @@ async def corpus_main(args: argparse.Namespace) -> int:
             spent += row["cost_usd"]
             if spent > args.max_cost_usd:
                 stopped = True
+            total = len(chosen) * 2
+            print(f"  [{len(rows)}/{total}] {row['model'].split('/')[-1][:22]:22} "
+                  f"{str(row['verdict']):9} {row['seconds']:6}s  spent ${spent:.3f}", flush=True)
+            # A partial report every 10 debates, so an interrupted run keeps what it paid for.
+            if len(rows) % 10 == 0:
+                write_report(args.out, build_report(True))
 
     await asyncio.gather(*(debate(r, m) for r in chosen for m in (SUPER, ULTRA)))
     if stopped:
         print(f"ABORTED: spend ${spent:.4f} passed --max-cost-usd {args.max_cost_usd}; the report is partial")
 
-    report = {
-        "kind": "debate_corpus",
-        "question": "Does the Senior Auditor on Ultra notice what Nano missed more reliably than on Super?",
-        "trigger": "floor exceeds Nano's score by 15 or more (verifier.reconcile score_disputed)",
-        "confident_threshold": CONFIDENT,
-        "labels": "corpus expected_flagged; both halves used because nothing is tuned here",
-        "partial": stopped,
-        "candidates_screened": len(screened),
-        "candidates_disputed": len(disputed),
-        "debated": {"fraud": len(d_fraud), "honest": len(d_honest)},
-        "results": {"super": {"model": SUPER, **debate_stats(rows, SUPER)},
-                    "ultra": {"model": ULTRA, **debate_stats(rows, ULTRA)}},
-        "total_cost_usd": round(spent, 6),
-        "notes": [
-            "DISAGREE on a fraud case is the debate noticing what Nano missed; DISAGREE on an honest case is an investigation that did not need to run. A model worth its rate has the first clearly above the second.",
-            "Nothing the debate says can clear a case: a CONFIRM changes nothing and a DISAGREE only routes a held case to investigation.",
-            "Small samples: read the intervals. Synthetic corpus, no real customer traffic.",
-            "A debate with no verdict, or a forced default, counts against 'reached a verdict' and is left out of the DISAGREE rates.",
-        ],
-    }
+    def build_report(partial: bool) -> dict:
+        return {
+            "kind": "debate_corpus",
+            "question": "Does the Senior Auditor on Ultra notice what Nano missed more reliably than on Super?",
+            "trigger": "floor exceeds Nano's score by 15 or more (verifier.reconcile score_disputed)",
+            "confident_threshold": CONFIDENT,
+            "labels": "corpus expected_flagged; both halves used because nothing is tuned here",
+            "partial": partial,
+            "candidates_screened": len(screened),
+            "candidates_disputed": len(disputed),
+            "debated": {"fraud": len(d_fraud), "honest": len(d_honest)},
+            "results": {"super": {"model": SUPER, **debate_stats(rows, SUPER)},
+                        "ultra": {"model": ULTRA, **debate_stats(rows, ULTRA)}},
+            "total_cost_usd": round(spent, 6),
+            "notes": [
+                "DISAGREE on a fraud case is the debate noticing what Nano missed; DISAGREE on an honest case is an investigation that did not need to run. A model worth its rate has the first clearly above the second.",
+                "Nothing the debate says can clear a case: a CONFIRM changes nothing and a DISAGREE only routes a held case to investigation.",
+                "Small samples: read the intervals. Synthetic corpus, no real customer traffic.",
+                "A debate with no verdict, or a forced default, counts against 'reached a verdict' and is left out of the DISAGREE rates.",
+            ],
+        }
+
+    report = build_report(stopped)
     path = write_report(args.out, report)
     print()
     for name in ("super", "ultra"):
@@ -362,7 +372,7 @@ async def main() -> int:
                         help="--corpus: disputed cases to debate for each label")
     parser.add_argument("--screen-fraud", type=int, default=120,
                         help="--corpus: fraud candidates Nano screens to find disputed ones")
-    parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument("--concurrency", type=int, default=6)
     parser.add_argument("--max-cost-usd", type=float, default=3.0)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--out", default="debate_corpus.json")
