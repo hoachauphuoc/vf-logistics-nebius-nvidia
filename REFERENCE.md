@@ -80,8 +80,8 @@ Details: [One click for judges](#one-click-for-judges).
   console refuse to publish policy, naming the role it needs.
 - **Verify:** the console's Evaluation page (`/evaluation`) and `GET /api/v1/evaluation`
   serve every committed report, with 95% intervals and the operating curve (since the
-  `896bbae` merge, 14 Oct 2026). The live service runs revision `vf-app-00044-x7b`,
-  deployed 21 Oct 2026 from `cd2053f`. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
+  `896bbae` merge, 14 Oct 2026). The live service runs revision `vf-app-00045-fxk`,
+  deployed 21 Oct 2026 from `fb3a53f`. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
   at no cost; [Reproducible testing](#reproducible-testing) has the rest.
 
 ## The problem
