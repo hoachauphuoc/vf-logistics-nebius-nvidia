@@ -56,151 +56,93 @@ GAP_AFTER_SENTENCE_S = 0.25
 
 # (scene name, recorded clip length in seconds, narration)
 #
-# TEN scenes, 165 seconds -- 2:45. Three deliberate changes from the nine-scene, 180s
-# version, and the enabling fact is that NOTHING had been shot: build/ did not exist, the
-# repository held no media, and the clip lengths previously in this list were measured on
-# 31/08 against footage of the PREDECESSOR system, before the Nebius port landed on 17/09.
-# Restructuring therefore cost nothing.
+# Eight scenes, 165 seconds (2:45), one story: two cases, A and B, with the same booking
+# data, which part ways on the purchase invoice. The rules ask for a video "less than three
+# (3) minutes", so the cut lands under the limit, not on it.
 #
-#   1. It now runs UNDER three minutes rather than to exactly 180.0s. The rules say the
-#      video "should be less than three (3) minutes", and landing on the boundary is a
-#      needless risk for no gain.
-#   2. Two evidence scenes added -- 5 (live Tavily citations resolving to real URLs) and 9
-#      (the test suite and CI). The rigour in this project was almost entirely invisible on
-#      camera, so a judge scoring Technological Implementation had to read the repository to
-#      find it. Scene 5 also carries the Tavily bonus award, which the old script showed
-#      nowhere at all.
-#   3. Scene 3 now states the DESIGN RULE instead of the cost. It used to say spend was
-#      metered "in tokens and in dollars" over a screen that displayed no dollars, and it
-#      justified Nano on price -- the very framing the README spends a thousand lines
-#      correcting. The floor is why Nano is CORRECT there, not why it is cheap.
-#
-# What was cut, and it is a real loss: the old clip 6, a bill of lading rendered from a data
-# event and labelled as rendered. A good honesty point with nowhere to go inside 2:45 once
-# the evidence scenes were in. It survives in the console and in SUBMISSION.md, not on film.
-#
-# WORD BUDGET. There is no offline fit check -- the real one runs AFTER the billable TTS
-# call, only warns, and exits 0. Estimate before spending a run:
+# WORD BUDGET. There is no offline fit check in this script: the real one runs AFTER the
+# billable TTS call, only warns, and exits 0. Estimate first with
+# scripts/check_narration_budget.py:
 #
 #     seconds_needed = 0.6 + (sentences - 1) * 0.25 + words / 2.5
 #
-# Every scene below leaves at least a second of headroom on that estimate. Splitting a
-# sentence costs 0.25s even if no words are added. And an overrun is not local: clip_start
-# advances by max(clip_seconds, spoken), so one long scene pushes every later scene off its
-# cut.
+# An overrun is not local: clip_start advances by max(clip_seconds, spoken), so one long
+# scene pushes every later scene off its cut. Splitting a sentence costs 0.25s even if no
+# words are added.
 #
-# Pitch, not tutorial (the organisers' own guidance): scene 1 now names the product and who
-# it is for in its first sentence, and NVIDIA is said aloud -- scenes 3 and 10 name "NVIDIA
-# Nemotron" and "Nebius Token Factory" together. Before this, "NVIDIA" was never spoken and
-# Nebius only in the closing line. Scene 3 dropped "Spend is metered per agent, in dollars"
-# to make room; the dollar column is still on screen. Clips 1 and 3 grew a second each and
-# clip 2, which had the most headroom, gave one back: 165s.
-#
-# Scene 4 changed subject on 10/10. It was "a case that cleared itself" and named three
-# numbers, but every case that clears on this board clears on a rule in sql_prefilter:
-# no model runs, so there is no "Model alone" row and no sources for scene 5 to scroll
-# to. It now films a case where the floor overrode the model, which is the design rule
-# itself, and names no figures so a reseed cannot falsify it. Scene 10 said "seven
-# agents on NVIDIA Nemotron"; document intake runs MiniCPM-V, which is not an NVIDIA
-# model. The fixed line is longer, so scene 4 gave scene 10 a second: still 165s.
-#
-# ELEVEN scenes from 10/10, still 165s, for the grand-prize push. What changed and why:
-#
-#   - Scene 1 opens on a verified number instead of an assertion. "Thousands of shipments
-#     a week" was nobody's figure; 29,849 violating declarations in 16.84 million is
-#     Vietnam Customs' own (customs.gov.vn, 2 Jan 2025), and it carries the product's
-#     real argument: almost every hold is honest, so the job is deciding each one fast.
-#   - Scene 7 is new: the due-diligence dossier, which is the answer to that argument and
-#     the one artefact a forwarder would file. It is the Potential Impact scene.
-#   - The close names the only measurement on cases the project did not write: 14 of 19
-#     public enforcement cases held. It films the Evaluation screen, where the table is.
-#   - Paid for by: clip 2 to 10s (the intake agent is on screen, so the sentence naming it
-#     went), clips 5 and 6 merged two sentences each, and the boundary clip lost "so old
-#     decisions replay against the policy of their day" (28s to 24s).
+# Scene 6 names the Tavily search recorded in the filmed case's own trace. If that search
+# was served from the one-hour cache, the picture says so and the narration does not call
+# it live.
 SCENES: list[tuple[str, float, str]] = [
     (
-        "1 - The problem",
-        17.0,
-        "Floorline is for freight forwarders. "
-        "In 2024, Vietnam Customs found a violation in fewer than one declaration "
-        "in five hundred. "
-        "So almost everything held is honest: the job is holding the right ones, "
-        "and deciding each fast.",
-    ),
-    (
-        "2 - A real document",
-        10.0,
-        "A real bill of lading, dropped as a mailroom would. "
-        "Model Armor screens it before any model reads it.",
-    ),
-    (
-        "3 - The design rule",
-        21.0,
-        "Floorline runs on NVIDIA Nemotron 3, through Nebius Token Factory. "
-        "Rules set a risk floor an agent may raise, never lower. "
-        "So fraud and compliance run on Nano: a stronger model cannot change it. "
-        "Ultra runs only the debate, where its verdict can trigger an investigation.",
-    ),
-    (
-        "4 - The floor overrules the model",
-        19.0,
-        "Here the model scored this lower than the rules allow. "
-        "The floor wins, so the higher number stands. "
-        "An agent may raise risk, never lower it. "
-        "This score is arithmetic, not judgement, and the trace records which "
-        "rule set it.",
-    ),
-    (
-        "5 - Live evidence",
-        10.0,
-        "The compliance screen read five public sources at decision time, each a "
-        "live link, not a summary.",
-    ),
-    (
-        "6 - The review queue",
+        "1 - Two identical shipments",
         12.0,
-        "Everything the agent may not close comes here, with the document beside "
-        "the findings, because approving a hold you cannot check is a rubber stamp.",
+        "Two shipments look identical at booking. "
+        "Both declare Vietnamese plywood. "
+        "Would you release both? "
+        "The input origins are still unverified.",
     ),
     (
-        "7 - The dossier",
-        14.0,
-        "One click turns any case into a due-diligence dossier. "
-        "Every finding, the sanctions list and its date, the regulation it rests on, "
-        "and a real enforcement case like it.",
+        "2 - Who and what",
+        18.0,
+        "Floorline helps freight forwarders turn a hold into a documented decision, "
+        "using Nebius Token Factory and NVIDIA Nemotron. "
+        "On this lane, the rules identify missing evidence about where the plywood "
+        "inputs came from.",
     ),
     (
-        "8 - The delegation boundary",
-        24.0,
-        "The agent has no authority of its own. "
-        "A human publishes a machine-readable boundary; the agent works inside it: "
-        "the value ceiling, forbidden destinations, which actions it may take "
-        "unasked. "
-        "Every action records the boundary version that allowed it. "
-        "Withdraw it and the system suspends itself, still analysing but refusing "
-        "every protected action.",
+        "3 - Evidence requested and received",
+        22.0,
+        "The reviewer requests a certificate of origin, a producer declaration, "
+        "and input purchase invoices. "
+        "The shipper uploads each document through its own link, without an account. "
+        "Floorline records the documents and extracts their contents for "
+        "verification.",
     ),
     (
-        "9 - Prompt injection blocked",
-        14.0,
-        "This document told the agent to ignore its instructions and release the "
-        "container. "
-        "Model Armor caught it before any model ran. "
-        "The case opened already denied.",
+        "4 - The invoice splits the cases",
+        30.0,
+        "The first two documents match. "
+        "The purchase invoices reveal the difference. "
+        "Case A identifies Vietnamese inputs. "
+        "Case B identifies Chinese veneer, contradicting the declaration. "
+        "Floorline marks A as provided and B as contradicted. "
+        "Both results stay linked to the submitted evidence.",
     ),
     (
-        "10 - Tests and CI",
-        8.0,
-        "Over fourteen hundred passing tests, over eighty-five percent coverage, "
-        "and CI on every push to master.",
+        "5 - A person decides, then it executes",
+        26.0,
+        "The reviewer reads the evidence and authorizes release for A, "
+        "then blocks B with a reason. "
+        "Confirmation comes before execution. "
+        "The system records the person, evidence version, and the decision sent. "
+        "These are human decisions, supported by AI and checks.",
     ),
     (
-        "11 - Close",
-        16.0,
-        "On nineteen real enforcement cases it held fourteen, and says what it "
-        "cannot see. "
-        "Floorline: NVIDIA Nemotron on Nebius Token Factory. "
-        "Agents that act inside limits a person set, and stop when they should.",
+        "6 - Nebius and NVIDIA in the trace",
+        22.0,
+        "Nebius Token Factory serves the model calls. "
+        "NVIDIA Nemotron 3 Nano checks shipment risk and compliance. "
+        "Super supports deeper investigations, and Ultra reviews rule-model "
+        "disagreements when triggered. "
+        "Evidence extraction uses MiniCPM-V. "
+        "Tavily search adds sourced evidence to the trace. "
+        "Rules and people control the final decision.",
+    ),
+    (
+        "7 - The next reviewer can follow",
+        20.0,
+        "The timeline ties each decision to the reviewer and evidence version, "
+        "then records dispatch. "
+        "A second reviewer can inspect the same chain, from missing information "
+        "to the action taken.",
+    ),
+    (
+        "8 - Close",
+        15.0,
+        "Floorline helps freight forwarders turn missing information into a "
+        "documented decision: move a case forward when evidence supports it, "
+        "and stop it when the evidence conflicts.",
     ),
 ]
 
