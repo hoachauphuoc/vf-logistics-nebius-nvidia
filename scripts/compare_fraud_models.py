@@ -46,6 +46,28 @@ if hasattr(sys.stdout, "reconfigure"):
 SHORT = {NANO: "nano", SUPER: "super", ULTRA: "ultra"}
 
 
+def install_super_json_workaround() -> None:
+    """
+    Ask every model except Nano for JSON by prompt alone.
+
+    Nemotron 3 Super does not survive response_format=json_object (its reasoning is
+    cut off by the constrained decoding; investigation_agent.JSON_MODE is False for
+    that reason, and 6 of 12 replies were fragments when it was on). The fraud agent
+    hard-codes JSON mode, which is right for Nano and would make Super look worse than
+    it is. Wrapping the one transport function once, up front, keeps the comparison
+    about the model and not about the decoding mode. Nano is untouched, so its arm is
+    exactly what production runs.
+    """
+    from vf_logistics import nebius_client
+
+    original = nebius_client.complete_json
+
+    async def complete_json(*, model, json_mode=True, **kwargs):
+        return await original(model=model, json_mode=json_mode and model == NANO, **kwargs)
+
+    nebius_client.complete_json = complete_json  # type: ignore[assignment]
+
+
 def floor_zero_cases() -> list[dict[str, Any]]:
     from vf_logistics import verifier
 
@@ -82,6 +104,7 @@ async def score_one(case: dict[str, Any], model: str) -> dict[str, Any]:
         "fraud": bool(case["expected_flagged"]),
         "model": model,
         "usable": usable,
+        "error": None if usable else (str(error)[:80] if error else "no risk_score in reply"),
         "score": float(score) if usable else None,
         "flagged": bool(usable and score >= FLAG_AT),
         "cost_usd": lineage.cost_usd(model, in_tok, out_tok),
@@ -99,6 +122,10 @@ def summarise(rows: list[dict[str, Any]], model: str, splits: tuple[str, ...]) -
     return {
         "cases": len(mine),
         "unusable_replies": len(mine) - len(usable),
+        "unusable_reasons": {
+            reason: sum(1 for r in mine if not r["usable"] and r["error"] == reason)
+            for reason in sorted({r["error"] for r in mine if not r["usable"]})
+        },
         "recall": rate(sum(r["flagged"] for r in fraud), len(fraud)),
         "false_alarm_rate": rate(sum(r["flagged"] for r in honest), len(honest)),
         "cost_usd": round(sum(r["cost_usd"] for r in mine), 6),
@@ -142,6 +169,7 @@ async def main() -> int:
         return 0
 
     install_empty_tavily()
+    install_super_json_workaround()
     sem = asyncio.Semaphore(args.concurrency)
     rows: list[dict[str, Any]] = []
     spent = 0.0
@@ -193,7 +221,7 @@ async def main() -> int:
             s = report["results"][SHORT[m]][split]
             r, f = s["recall"], s["false_alarm_rate"]
             print(f"{SHORT[m]:6} {split:8} recall {r['count']}/{r['of']} ci {r['ci95']}   "
-                  f"false alarms {f['count']}/{f['of']} ci {f['ci95']}   ${s['cost_usd']}  unusable {s['unusable_replies']}")
+                  f"false alarms {f['count']}/{f['of']} ci {f['ci95']}   ${s['cost_usd']}  unusable {s['unusable_replies']} {s['unusable_reasons'] or ''}")
     print(f"\nwritten to {path}   total ${spent:.4f}")
     return 1 if stop else 0
 
