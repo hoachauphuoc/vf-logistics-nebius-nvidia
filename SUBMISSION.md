@@ -759,7 +759,7 @@ for it) → paste the *Feedback* section below.
 
 **Video demo link** → the public YouTube URL, once recorded (see *Submission checklist*).
 
-**Thumbnail and image gallery** → the seventeen screenshots in `docs/screenshots/`, with a
+**Thumbnail and image gallery** → Devpost takes 15 images, so upload the set in `docs/screenshots/devpost/` in the numbered order (`01` is the 3:2 thumbnail; the folder README has a caption for each). The full set of seventeen screenshots is in `docs/screenshots/`, with a
 caption for each in its README, taken from revision `vf-app-00045-fxk` (the pipeline board, a
 review case where the floor overrides the model, a case trace naming the model on each hop,
 the dossier PDF, governance, the evaluation page with the model comparisons, the agent
