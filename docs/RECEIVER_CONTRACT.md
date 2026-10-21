@@ -20,6 +20,14 @@ One Pub/Sub message per executed human decision, on the topic named by `DECISION
 | attribute `idempotency_key` | `exec-<approval_id>`: the same for every send of one approval |
 | attribute `tenant_id` | present in multi-tenant deployments: the tenant the case belongs to |
 
+The topic also carries the orchestrator's **pipeline status notifications**:
+`AUTO_CLEARED` and `HELD_FOR_REVIEW` with `case_id`, `outcome`, `effective_risk`,
+`at`; and `ESCALATED` with `case_id`, `outcome`, `fraud_pattern`,
+`exposure_estimate`, `at`. These have no approval or idempotency key and are not
+executed human decisions. A receiver dedicated to human decisions acknowledges
+these known notification shapes without applying a decision. Other keyless
+payloads remain invalid; never invent an approval key to apply them.
+
 ## Delivery guarantee: at least once
 
 The same approval can arrive more than once, always with the same `idempotency_key`:
@@ -76,6 +84,13 @@ receiving system has to show its own claim-and-apply transaction.
   that claims the key is the same transaction, so a repeat only increments
   `deliveries`. A message without a key or a case is refused (422) and never applied;
   Pub/Sub keeps it, redelivers it, or moves it to a dead-letter topic if one is set.
+- The three exact pipeline notification shapes above, with a case and broker
+  message id, return `200` with `outcome: ignored`. They are logged with their
+  outcome, case and message id, and cause **no shipment action and no
+  `applied_decisions` write**. Repeats therefore have no business side effect.
+  OIDC and the multi-tenant tenant requirement still apply. Approval metadata,
+  a body-only key, incomplete or unknown payloads are not treated as notifications
+  and remain refused with `422`.
 - `GET /api/v1/receiver/applied/<key>` (viewer) returns `applied_once`, `deliveries`,
   the case, the outcome and the first message id.
 
