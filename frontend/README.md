@@ -33,8 +33,8 @@ required in production, where a missing one takes the console offline), `VF_OPER
 ```bash
 npx tsc --noEmit    # typecheck
 npm run lint
-npm test            # 1,729 unit tests in 91 files (vitest)
-npm run test:coverage   # the same, with v8 coverage: 61.6% of lines (the seven largest pages are left untested on purpose); CI fails below 35%
+npm test            # 1,731 unit tests in 91 files (vitest)
+npm run test:coverage   # the same, with v8 coverage: 62.0% of lines (the seven largest pages are left untested on purpose); CI fails below 35%
 npm run build
 ```
 
