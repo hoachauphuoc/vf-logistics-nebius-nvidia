@@ -50,7 +50,7 @@ Every model call goes through **Nebius Token Factory**, one OpenAI-compatible en
 
 ## What was significantly updated during the Submission Period
 
-This began as an entry to a different hackathon (Google Cloud, Vertex AI Gemini): [CHAUPHUOCHOA/vf-logistics-hackathon-google](https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google), first commit 29 Aug 2026 (after the Submission Period opened on 26 Aug), last commit `755d998` on 31 Aug. This repository's first commit is `6bb1e59` (17 Sep).
+This began as an entry to a different hackathon (Google Cloud, Vertex AI Gemini): [CHAUPHUOCHOA/vf-logistics-hackathon-google](https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google), first commit 29 Aug 2026 (after the Submission Period opened on 26 Aug), last commit `755d998` on 31 Aug (Vietnam time; 30 Aug 23:46 UTC on GitHub). This repository's first commit is `6bb1e59` (17 Sep).
 
 | | Before (`755d998`) | Now |
 |---|---|---|
@@ -58,7 +58,7 @@ This began as an entry to a different hackathon (Google Cloud, Vertex AI Gemini)
 | Console | one static HTML page | Next.js 16 in the same container as the API |
 | Evidence loop | a note | request, receive, re-evaluate, approve, execute, with an audit trail |
 | Tests | none | 2,095 backend (96% coverage, with the Firestore and Pub/Sub emulators) and 1,729 frontend (61.6%); mypy 0 errors |
-| CI | none | five GitHub Actions jobs, each able to fail the build |
+| CI | no test or lint CI, only a Cloud Build deploy config | five GitHub Actions jobs, each able to fail the build |
 
 ```bash
 git fetch https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google.git main

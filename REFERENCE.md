@@ -420,7 +420,7 @@ skip). The console has 1,729 frontend tests at 61.6% line coverage. A mutation c
 backend and console code on purpose and the suite catches all 112. mypy reports 0 errors.
 Five GitHub Actions jobs run on every push to `master`: lint, typecheck (mypy ceiling 0),
 test (backend coverage floor 92%, in the emulators), frontend (coverage floor 35%), and a
-container job that builds both images and smoke-tests the deployed one. `755d998` had no CI. The workflow
+container job that builds both images and smoke-tests the deployed one. `755d998` had no test or lint CI, only a Cloud Build deploy config. The workflow
 added here on 19 Sep (`ae240fb`) filtered on a branch named `main` while this
 repository uses `master`, so it never executed until `9d683f6` fixed the trigger on
 24 Sep.
