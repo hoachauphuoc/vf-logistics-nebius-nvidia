@@ -100,6 +100,14 @@ class TestCORS(FlaskTestBase):
         acao = r.headers.get("Access-Control-Allow-Origin")
         self.assertNotEqual(acao, "https://evil.com")
 
+    def test_no_cors_header_without_an_origin(self):
+        # flask-cors defaults to always_send=True, which answered a request with no
+        # Origin with the first allowed origin in sorted order -- the live /health
+        # advertised http://127.0.0.1:3000. A caller that sent no Origin asked for
+        # no CORS, so it gets none.
+        r = self.client.get("/health")
+        self.assertIsNone(r.headers.get("Access-Control-Allow-Origin"))
+
 
 class TestAuthEnforcement(FlaskTestBase):
     """All routes should be accessible in dev mode (IAP_ENABLED=false)."""

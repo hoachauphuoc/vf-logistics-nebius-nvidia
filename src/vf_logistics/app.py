@@ -156,7 +156,10 @@ _ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-CORS(app, origins=_ALLOWED_ORIGINS)
+# always_send=False: flask-cors otherwise answers a request with NO Origin header
+# with the first allowed origin, which put http://127.0.0.1:3000 on every live
+# response. A caller that sent no Origin asked for no CORS.
+CORS(app, origins=_ALLOWED_ORIGINS, always_send=False)
 
 
 @app.after_request

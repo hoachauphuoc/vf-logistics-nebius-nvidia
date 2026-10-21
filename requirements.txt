@@ -1,6 +1,6 @@
 # AI model layer - Nebius Token Factory (OpenAI-compatible)
 # The openai package's AsyncOpenAI client talks to Token Factory; used by
-# nebius_client.py for all four agents (three text, one vision).
+# nebius_client.py for all seven agents (six on NVIDIA Nemotron, one vision).
 openai>=1.40.0
 
 # Google Cloud Services (infrastructure only - no AI SDK from Google is used)
