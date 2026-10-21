@@ -9,8 +9,11 @@ import { ErrorState } from "@/components/layout/States";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   type CasePair,
+  type CountedRate,
+  type DebateCorpus,
   type Detection,
   type EvaluationSummary,
+  type FraudFloorZero,
   type HsResult,
   type Interval,
   type Intervals,
@@ -111,6 +114,8 @@ function Report({ data }: { data: EvaluationSummary }) {
   const publicFull = byId.get("public_full_all");
   const hsHoldout = data.hs_classifier.holdout;
   const rulesCurve = data.operating_curve?.rules;
+  const fraudFloor = data.model_comparison?.fraud_floor0;
+  const debate = data.model_comparison?.debate_corpus;
 
   return (
     <div className="space-y-4">
@@ -129,6 +134,7 @@ function Report({ data }: { data: EvaluationSummary }) {
       {rulesCurve && <OperatingCurveCard curve={rulesCurve} />}
       {publicRules && publicFull && <PublicCases rules={publicRules} full={publicFull} />}
       {hsHoldout.length > 0 && <HsTable rows={hsHoldout} />}
+      {(fraudFloor || debate) && <ModelComparisonCard fraudFloor={fraudFloor} debate={debate} />}
       <Sources results={data.pipeline} />
     </div>
   );
@@ -512,6 +518,130 @@ const ARM_LABEL: Record<string, string> = {
   cot_ref: "Nano, with the reference table",
   teacher: "Nemotron Super, plain prompt",
 };
+
+/** "46/52 (88%) [77–95]": the count first, because a small count is the point. */
+function Counted({ value }: { value: CountedRate }) {
+  if (!value.of) return <>—</>;
+  const ci = value.ci95;
+  return (
+    <>
+      {value.count}/{value.of}{" "}
+      <span className="text-faint">
+        ({pct(value.rate)}
+        {ci ? `, ${Math.round(ci[0] * 100)}–${Math.round(ci[1] * 100)}` : ""})
+      </span>
+    </>
+  );
+}
+
+const MODEL_NAME: Record<string, string> = {
+  nano: "Nemotron 3 Nano",
+  super: "Nemotron 3 Super",
+  ultra: "Nemotron 3 Ultra",
+};
+
+const usdSmall = (v: number | null | undefined) => (v == null ? "—" : `$${v.toFixed(4)}`);
+
+function ModelComparisonCard({ fraudFloor, debate }: { fraudFloor?: FraudFloorZero; debate?: DebateCorpus }) {
+  return (
+    <div className="bento-card p-4">
+      <CardTitle help="evaluation.models">Model choices, tested</CardTitle>
+
+      {fraudFloor && (
+        <div className="mt-3">
+          <h4 className="text-[12px] font-medium text-white/85">Fraud screening where the rules see nothing</h4>
+          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-dim">
+            Corpus cases the deterministic checks score 0, so the model is the only check. Recall is the
+            share of frauds it flags; false alarms the share of honest shipments it holds. A reply that
+            failed to parse counts as a hold, as the orchestrator treats it.
+            {fraudFloor.partial ? " This report is partial." : ""}
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[42rem] text-left">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wide text-faint">
+                  <th className="py-1.5 pr-3 font-medium">Model</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Frauds flagged</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Honest held</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Failed replies</th>
+                  <th className="py-1.5 text-right font-medium">Cost per case</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(fraudFloor.results).map(([key, arm]) => (
+                  <tr key={key} className="border-t border-white/[0.05]">
+                    <td className="py-1.5 pr-3 text-[12px] text-white/85">{MODEL_NAME[key] ?? arm.model}</td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                      <Counted value={arm.all.recall_as_held} />
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                      <Counted value={arm.all.false_alarm_as_held} />
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                      <Counted value={arm.all.failed_reply_rate} />
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-dim">
+                      {usdSmall(arm.all.cost_per_case_usd)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {debate && (
+        <div className="mt-4">
+          <h4 className="text-[12px] font-medium text-white/85">The debate: which model argues disputed cases</h4>
+          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-dim">
+            {debate.debated.fraud + debate.debated.honest} disputed cases ({debate.debated.fraud} fraud,{" "}
+            {debate.debated.honest} honest), each debated by every model. A DISAGREE sends a held case to
+            investigation; nothing the debate says can clear one. A model that tells fraud from honest trade
+            would say DISAGREE far more often on the first than the second.
+            {debate.partial ? " This report is partial." : ""}
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[42rem] text-left">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wide text-faint">
+                  <th className="py-1.5 pr-3 font-medium">Model</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Reached a verdict</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">DISAGREE on fraud</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">DISAGREE on honest</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Cost per debate</th>
+                  <th className="py-1.5 text-right font-medium">Median time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(debate.results).map(([key, arm]) => (
+                  <tr key={key} className="border-t border-white/[0.05]">
+                    <td className="py-1.5 pr-3 text-[12px] text-white/85">{MODEL_NAME[key] ?? arm.model}</td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-white">
+                      <Counted value={arm.reached_a_verdict} />
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                      <Counted value={arm.disagree_on_fraud} />
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                      <Counted value={arm.disagree_on_honest} />
+                    </td>
+                    <td className="py-1.5 pr-3 text-right font-mono text-[12px] tabular-nums text-dim">
+                      {usdSmall(arm.cost_per_debate_usd)}
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-dim">
+                      {arm.median_seconds == null ? "—" : `${arm.median_seconds.toFixed(1)} s`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function HsTable({ rows }: { rows: HsResult[] }) {
   return (

@@ -1,8 +1,8 @@
 """
-Multi-Agent Debate: Nemotron Ultra reviews Nano's assessment using function calling.
+Multi-Agent Debate: a Senior Auditor reviews Nano's assessment using function calling.
 
-A Senior Auditor (Ultra 550B) reviews and can challenge the Junior Analyst's
-(Nano 30B) fraud assessment. Ultra has access to tools:
+A Senior Auditor (Nemotron 3 Super 120B by default) reviews and can challenge the
+Junior Analyst's (Nano 30B) fraud assessment. The auditor has access to tools:
   - request_nano_reevaluation: Ask Nano to re-score with specific focus
   - search_tavily: Run additional web searches for context
   - render_final_verdict: Submit final CONFIRM or DISAGREE verdict
@@ -10,11 +10,10 @@ A Senior Auditor (Ultra 550B) reviews and can challenge the Junior Analyst's
 It runs automatically when the deterministic floor and the model disagree by 15 points
 or more, and is also reachable manually as "Deep Review".
 
-MODEL_ID below is the authority on which model this is, and it reads Ultra. This
-docstring said Super for a while, 60 lines above a constant that said otherwise, which
-is the failure mode worth naming: a comment and the code it describes drifted apart in
-the same file, and the comment is what got copied into the README, the architecture
-diagram and the Devpost submission.
+MODEL_ID below is the authority on which model this is. Comments and docstrings have
+named the wrong model before, and the name was copied into the README, the architecture
+diagram and the Devpost submission, so the strings that tell a person which model ran
+are read from MODEL_ID rather than written out (see config.model_label).
 
 Nano does not support function calling and uses context injection instead.
 """
@@ -35,44 +34,43 @@ from ._common import Timer, utcnow
 # a short structured judgement. Still 3.7x the largest observed reply.
 MAX_OUTPUT_TOKENS = 1500
 
-# Nemotron 3 Ultra, the one place in the pipeline it earns its rate.
+# Nemotron 3 Super. It was Ultra until it was measured.
 #
-# Ultra is 1.00/3.00 per million against Super's 0.30/0.90, so its RATE is 3.3x. It is
-# deliberately NOT used on fraud_detection or compliance, which run on every case. The
-# reason there is architectural rather than financial: verifier.py computes a
-# deterministic risk floor, and an agent may raise risk but never lower it below that
-# floor, so a stronger model cannot move the outcome in the direction that matters.
+# The debate is the one place a stronger model could matter. It runs only when
+# `score_disputed` is set, by which point auto-clear is already ruled out and a person
+# decides the case either way. What it produces is a reasoned CONFIRM/DISAGREE on whether
+# the junior analyst missed something. CONFIRM changes nothing; a genuine DISAGREE at or
+# above the escalation confidence sends the case to deep investigation and may raise its
+# risk, never lower it (orchestrator.debate_escalation).
 #
-# The debate is the exception. It runs only when `score_disputed` is set -- measured at
-# 2 calls across 20 cases -- by which point auto-clear is already ruled out and a person
-# decides the case either way. What it produces is not a score that the floor will
-# override, it is a reasoned CONFIRM/DISAGREE on whether the junior analyst missed
-# something. CONFIRM changes nothing; a genuine DISAGREE at or above the escalation
-# confidence sends the case to deep investigation and may raise its risk, never lower it
-# (orchestrator.debate_escalation). That judgement can decide whether a dispute is
-# investigated. It never decides how the case ends.
+# So the default was Ultra, on the argument that reasoning capacity is worth paying for
+# there. scripts/compare_debate_models.py --corpus tested it: 46 disputed cases from the
+# labelled synthetic corpus (data/model_comparison/debate_corpus.json), each debated by
+# both models.
 #
-# THE COST MULTIPLE IS 13x, NOT THE 3.3x RATE MULTIPLE, and that gap is measured rather
-# than predicted. Three Ultra debates on the live service:
+#                                   Super              Ultra
+#     reached a verdict             40/46 (87%)        37/46 (80%)
+#     DISAGREE on fraud             16/22 (73%)        18/19 (95%)
+#     DISAGREE on honest            13/18 (72%)        17/18 (94%)
+#     cost per debate               $0.0021            $0.0108   (5.2x)
+#     median seconds                6.4                13.5
 #
-#     Ultra   13,151 in / 2,011 out   $0.019184
-#     Ultra   16,502 in / 2,333 out   $0.023501
-#     Ultra   13,937 in /   879 out   $0.016574
-#     Super    2,522 in /   276 out   $0.001005
-#     Super    5,546 in /   403 out   $0.002027
+# Ultra did not resolve more disputes and did not tell fraud from honest trade any
+# better: both models DISAGREE about as often on honest cases as on fraud (a gap of
+# 0.5 and 0.3 points), and Ultra simply DISAGREEs more. That is a reason to take the
+# cheaper model, not a finding that the debate works: the auditor is shown the rules'
+# findings (DETERMINISTIC VALIDATION below), and every honest case in the sample was one
+# the rules held, so DISAGREE here largely tracks agreement with the rules. A DISAGREE
+# only routes a held case to an investigation; nothing the debate says can clear a case.
 #
-# $0.0198 per Ultra debate against Super's $0.0015. The rate explains 3.3x of that; the
-# rest is token volume -- Ultra consumed 13,151-16,502 input tokens where Super used
-# 2,522-5,546, because it emits more tool-call rounds and each round resends the growing
-# transcript. An earlier version of this comment said "about $0.007 per 20 cases",
-# arrived at by multiplying Super's token usage by Ultra's rate. That assumed the two
-# models would spend the same tokens, which is the one thing worth checking before
-# quoting a number.
+# Two cost multiples were measured and they differ. On the live service, with real search
+# results, an Ultra debate cost $0.0198 against Super's $0.0015 (13x), because Ultra made
+# more tool rounds and each round resent a longer transcript. In the comparison, with empty
+# search results, the ratio was 5.2x. The cases differed as well as the search results, so
+# how much of the gap is the search results is a guess, not a measurement.
 #
-# Worth being honest that this is a quality bet, not a measured improvement: nothing
-# here yet demonstrates Ultra resolves more disputes than Super. scripts/compare_debate_models.py
-# measures exactly that, and DEBATE_MODEL reverses the decision without a deploy.
-MODEL_ID = os.getenv("DEBATE_MODEL", "nvidia/Nemotron-3-Ultra-550b-a55b")
+# DEBATE_MODEL=nvidia/Nemotron-3-Ultra-550b-a55b restores Ultra without a deploy.
+MODEL_ID = os.getenv("DEBATE_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 
 
 DEBATE_TOOLS = [

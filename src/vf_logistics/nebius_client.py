@@ -288,7 +288,7 @@ async def complete_with_tools(
     """
     Chat completion with function calling (tool use) support.
 
-    Used by the debate agent, where the Senior Auditor (Nemotron 3 Ultra) reviews
+    Used by the debate agent, where the Senior Auditor (debate_agent.MODEL_ID, Nemotron 3 Super by default) reviews
     Nano's assessment and can call tools like request_nano_reevaluation or
     search_tavily.
 

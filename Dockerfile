@@ -82,6 +82,7 @@ COPY data/hs_reference.yaml data/hs_reference.yaml
 COPY data/benchmark_results/ data/benchmark_results/
 COPY data/eval_results/ data/eval_results/
 COPY data/operating_curve/ data/operating_curve/
+COPY data/model_comparison/ data/model_comparison/
 
 # Next.js standalone output
 COPY --from=node-builder /app/.next/standalone ./console/

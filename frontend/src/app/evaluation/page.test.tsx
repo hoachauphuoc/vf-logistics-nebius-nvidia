@@ -102,6 +102,33 @@ const CURRENT: EvaluationSummary = {
   caveats: ["synthetic corpus"],
 };
 
+const counted = (count: number, of: number, ci: [number, number]) => ({ count, of, rate: count / of, ci95: ci });
+const FRAUD_ARM = (recall: ReturnType<typeof counted>, cost: number) => ({
+  cases: 179, unusable_replies: 0, recall, false_alarm_rate: counted(75, 122, [0.52, 0.7]),
+  recall_as_held: recall, false_alarm_as_held: counted(80, 127, [0.54, 0.71]),
+  failed_reply_rate: counted(5, 179, [0.01, 0.06]), cost_per_case_usd: cost, median_seconds: 11,
+});
+
+const WITH_COMPARISON: EvaluationSummary = {
+  ...CURRENT,
+  model_comparison: {
+    fraud_floor0: {
+      kind: "fraud_floor_zero", question: "q", total_cost_usd: 0.25, notes: [],
+      results: {
+        nano: { model: "nano-id", holdout: FRAUD_ARM(counted(21, 24, [0.69, 0.96]), 0.00026), dev: FRAUD_ARM(counted(25, 28, [0.73, 0.96]), 0.00026), all: FRAUD_ARM(counted(46, 52, [0.77, 0.95]), 0.00026) },
+        super: { model: "super-id", holdout: FRAUD_ARM(counted(20, 24, [0.64, 0.93]), 0.00114), dev: FRAUD_ARM(counted(27, 28, [0.82, 0.99]), 0.00114), all: FRAUD_ARM(counted(47, 52, [0.79, 0.96]), 0.00114) },
+      },
+    },
+    debate_corpus: {
+      kind: "debate_corpus", question: "q", total_cost_usd: 0.7, notes: [], debated: { fraud: 25, honest: 21 },
+      results: {
+        super: { model: "s", debates: 46, reached_a_verdict: counted(40, 46, [0.74, 0.94]), disagree_on_fraud: counted(16, 22, [0.52, 0.87]), disagree_on_honest: counted(13, 18, [0.49, 0.88]), cost_per_debate_usd: 0.002077, median_seconds: 6.4, mean_input_tokens: 5201 },
+        ultra: { model: "u", debates: 46, reached_a_verdict: counted(37, 46, [0.67, 0.89]), disagree_on_fraud: counted(18, 19, [0.75, 0.99]), disagree_on_honest: counted(17, 18, [0.74, 0.99]), cost_per_debate_usd: 0.010776, median_seconds: 13.5, mean_input_tokens: 7281 },
+      },
+    },
+  },
+};
+
 async function renderWith(data: EvaluationSummary) {
   payload.current = data;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -145,5 +172,22 @@ describe("the Evaluation page", () => {
     expect(text).toContain("93.5%");
     expect(text).not.toContain("(90–96)");
     expect(screen.queryByText(/rules at every review threshold/i)).toBeNull();
+  });
+
+  it("shows the model comparisons with their counts and intervals", async () => {
+    const text = await renderWith(WITH_COMPARISON);
+    expect(screen.getByText(/model choices, tested/i)).toBeInTheDocument();
+    expect(text).toContain("46/52 (88.5%, 77–95)"); // Nano, frauds flagged
+    expect(text).toContain("47/52 (90.4%, 79–96)"); // Super
+    expect(text).toContain("$0.0011"); // Super per case
+    expect(text).toContain("18/19 (94.7%, 75–99)"); // Ultra DISAGREE on fraud
+    expect(text).toContain("17/18 (94.4%, 74–99)"); // ... and on honest, about the same
+    expect(text).toContain("$0.0108");
+    expect(text).toContain("25 fraud, 21 honest");
+  });
+
+  it("omits the comparison card when the backend sends none", async () => {
+    await renderWith(CURRENT);
+    expect(screen.queryByText(/model choices, tested/i)).toBeNull();
   });
 });

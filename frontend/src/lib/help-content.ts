@@ -451,9 +451,9 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
   "agents.cost-by-agent": {
     title: "Cost by agent",
     body:
-      "One row per agent, ordered by spend. The dollar figure is summed from each call's own rate rather than from these token totals, because the rate depends on which model ran the step: Nano on fraud, compliance, HS and zero-day, Super on investigation, Ultra on the debate. Calls is how many times that agent was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
+      "One row per agent, ordered by spend. The dollar figure is summed from each call's own rate rather than from these token totals, because the rate depends on which model ran the step: Nano on fraud, compliance, HS and zero-day, Super on investigation and the debate. Calls is how many times that agent was invoked; the two token figures are input then output. Windowed over the cases currently on the board, not the whole collection.",
     note:
-      "Ordered by money rather than by tokens on purpose — Ultra's per-token rate is 12.5-16.7x Nano's, and a debate makes several tool-call rounds, so the most expensive agent is usually not the one that produced the most tokens. The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
+      "Ordered by money rather than by tokens on purpose — Super's per-token rate is 4-5x Nano's, and a debate makes several tool-call rounds, so the most expensive agent is usually not the one that produced the most tokens. The headline totals on the Pipeline board are exact. A per-agent breakdown across every case would need a stored field per agent per case.",
   },
   "agents.injection-probe": {
     title: "Prompt-injection screen",
@@ -703,6 +703,13 @@ export const PANEL_HELP: Record<string, HelpEntry> = {
       "The same holdout cases re-scored at each review threshold that changes what is held. Each row down the table raises the threshold: fewer honest shipments held, and as many frauds missed or more. The held-per-real-case column is that trade in reviewer time at the measured fraud rate. Bracketed rates are 95% intervals; the held-per-real-case range puts both rates at their interval ends at once, which is not itself a 95% interval.",
     note:
       "A what-if over the rules' floors, not a setting. In the running system any non-zero floor already withholds automatic release, so moving along the curve would mean changing the code and the published boundary.",
+  },
+  "evaluation.models": {
+    title: "Model choices, tested",
+    body:
+      "Two choices that were assumptions until they were measured. Fraud screening: on the corpus cases the rules score 0, where the model is the only check, did a larger model flag more of the frauds? Debate: on disputed cases, did the dearer model give a verdict more often, or tell fraud from honest trade better? Each rate shows its count and 95% interval; the samples are small, so read the intervals.",
+    note:
+      "A DISAGREE from the debate largely tracks the rules: the auditor is shown their findings and every honest case in the sample was one the rules had held. It routes a held case to an investigation and never clears one.",
   },
   "evaluation.public": {
     title: "Public enforcement cases",

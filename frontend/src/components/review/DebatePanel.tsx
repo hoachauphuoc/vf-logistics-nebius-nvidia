@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * The Senior Auditor's debate, readable.
  *
  * Replaces a `JSON.stringify` dump that was the only rendering of the one hop that
- * runs Nemotron Ultra -- CONFIRM and DISAGREE appeared nowhere else on screen. The
+ * runs the debate model -- CONFIRM and DISAGREE appeared nowhere else on screen. The
  * raw record is still here, collapsed: this panel is a reading of it, not a
  * replacement, and on a screen whose purpose is that a person can check the
  * machine the artefact has to stay one click away.

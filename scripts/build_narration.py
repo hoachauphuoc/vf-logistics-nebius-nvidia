@@ -123,8 +123,8 @@ SCENES: list[tuple[str, float, str]] = [
         22.0,
         "Every hop in the trace names its model, tokens and cost. "
         "When the floor sits fifteen points above Nano's score, "
-        "Nemotron 3 Ultra debates the case and calls Tavily itself. "
-        "It can send a case to Nemotron 3 Super for investigation, never clear it.",
+        "Nemotron 3 Super debates the case and calls Tavily itself. "
+        "It can send a case to investigation, never clear it.",
     ),
     (
         "7 - The next reviewer can follow",

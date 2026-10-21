@@ -1316,14 +1316,11 @@ async def advance(case: dict[str, Any]) -> dict[str, Any]:
             # fraud and compliance steps off the case, both of which _record_step
             # has already appended above, along with model_risk_score/risk_score.
             #
-            # This comment and the event string below both said "Super" while the
-            # hop ran Ultra (debate_agent.MODEL_ID defaults to
-            # nvidia/Nemotron-3-Ultra-550b-a55b). The name is now read from the
-            # result the debate actually returned, so it reports the model that
-            # ran rather than the model someone last wrote down -- see
-            # debate_agent.py, which records that this exact drift had already been
-            # copied into the README, the architecture diagram and the Devpost
-            # submission once.
+            # The model name in the event string is read from the result the debate
+            # actually returned, so it reports the model that ran rather than the
+            # model someone last wrote down. An earlier version hard-coded "Super"
+            # while the hop ran Ultra, and the wrong name was copied into the
+            # README, the architecture diagram and the Devpost submission.
             if reconciled.get("score_disputed"):
                 try:
                     debate_result = await conduct_debate(case)
@@ -2214,8 +2211,8 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
     """
     Conduct a Multi-Agent Debate on a case.
 
-    Nemotron Ultra (Senior Auditor) reviews Nemotron Nano's (Junior Analyst)
-    fraud assessment. Ultra can use function calling to:
+    A Senior Auditor (debate_agent.MODEL_ID, Nemotron 3 Super by default) reviews
+    Nemotron Nano's (Junior Analyst) fraud assessment. It can use function calling to:
     - Request Nano to re-evaluate with specific focus areas
     - Run additional Tavily searches for context
     - Render a final verdict: CONFIRM or DISAGREE
@@ -2225,7 +2222,7 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
     """
     store = get_store()
     # Scoped for the same reason as human_decide, plus one of its own: this spends
-    # Nemotron Ultra tokens and returns a debate payload containing the case
+    # debate-model tokens and returns a debate payload containing the case
     # content, so an unscoped lookup bills one tenant to read another's shipment.
     case = await store.get_case(case_id, tenant_id=tenant_id)
 
@@ -2242,10 +2239,9 @@ async def deep_review(case_id: str, tenant_id: str | None = None) -> dict[str, A
 
     # Read off the stored case rather than the argument, for the same reason advance()
     # does: the case's own owner is the authority on whose budget this spends. Deep
-    # review runs the debate agent, which is Nemotron 3 Ultra -- the most expensive
-    # text model in the table. This comment said Super, and so did the event string
-    # below; both were wrong in the same direction, and Super is not the dearest entry
-    # either. The name is now read from debate_agent.MODEL_ID so it cannot drift again.
+    # review runs the debate agent, whose model is debate_agent.MODEL_ID (Nemotron 3 Super
+    # by default; DEBATE_MODEL can put Ultra there). The name in the event string below
+    # is read from MODEL_ID so it cannot drift from what ran.
     budget.set_current_tenant(_case_tenant(case))
 
     await emit(
@@ -2814,7 +2810,7 @@ async def snapshot(limit: int = 60, tenant_id: str | None = None) -> dict[str, A
     #
     # `cost_usd` is summed here rather than derived in the console, for the reason
     # config.pricing_for() spells out: the rate depends on WHICH model ran the step,
-    # and only the step knows that. Investigation runs Super and the debate runs Ultra
+    # and only the step knows that. Investigation and the debate run Super (by default)
     # while fraud and compliance run Nano, so a client multiplying total tokens by the
     # currently selected model's rate would misreport every mixed window. The per-step
     # figure already exists -- _record_step writes it -- so this only adds it up.

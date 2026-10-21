@@ -10,6 +10,9 @@ GET /api/v1/evaluation reads two directories committed with the code:
                             test set, written by scripts/eval_hs.py
   data/operating_curve/     the rules arm at every review threshold, written by
                             scripts/operating_curve.py
+  data/model_comparison/    the model choices tested head to head, written by
+                            scripts/compare_fraud_models.py and
+                            scripts/compare_debate_models.py --corpus
 
 Why serve them at all: a README number is a claim about a moment. These files are
 the reports themselves, versioned with the code that produced them, so the console
@@ -33,6 +36,7 @@ DATA_DIR = pathlib.Path(__file__).resolve().parents[2] / "data"
 BENCHMARK_DIR = DATA_DIR / "benchmark_results"
 HS_EVAL_DIR = DATA_DIR / "eval_results"
 CURVE_DIR = DATA_DIR / "operating_curve"
+MODEL_COMPARISON_DIR = DATA_DIR / "model_comparison"
 
 # The fields of a benchmark report worth showing, in the order a reader needs
 # them. Everything else in the report (latency percentiles, per-verdict counts)
@@ -252,12 +256,29 @@ def operating_curves(directory: pathlib.Path = CURVE_DIR) -> dict[str, dict[str,
     return out
 
 
+def model_comparisons(directory: pathlib.Path = MODEL_COMPARISON_DIR) -> dict[str, dict[str, Any]]:
+    """
+    Head-to-head model comparisons, keyed by file name.
+
+    Each report carries its own counts and 95% Wilson intervals (the scripts compute them
+    with wilson() above), so they are served as written. A file without a `kind` and a
+    `results` block is not a comparison and is skipped, as are unreadable ones.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        report = _read(path)
+        if report and report.get("kind") and isinstance(report.get("results"), dict):
+            out[path.stem] = report
+    return out
+
+
 def summary() -> dict[str, Any]:
     """The GET /api/v1/evaluation payload."""
     return {
         "pipeline": pipeline_results(),
         "hs_classifier": hs_results(),
         "operating_curve": operating_curves(),
+        "model_comparison": model_comparisons(),
         "caveats": [
             "The pipeline corpus is synthetic (data/synthetic_test_cases.json, "
             "1,000 cases, fixed seed). No real customer traffic has been measured.",
@@ -274,6 +295,11 @@ def summary() -> dict[str, Any]:
             "so adverse-media detection is measured on that subset only.",
             "The HS classifier test sets are small (30 and 24 cases), so a single "
             "case moves recall by several points.",
+            "The model comparisons use the same synthetic corpus: 179 cases the rules "
+            "scored 0 (52 of them fraud) for the fraud models, and 46 disputed cases for "
+            "the debate. The debate's auditor is shown the rules' findings and every honest "
+            "case in that sample was one the rules had held, so a DISAGREE largely tracks "
+            "agreement with the rules.",
             "Ranges in brackets are 95% Wilson score intervals on the counts behind "
             "each rate. A workload range puts recall and the false-alarm rate at the "
             "ends of their intervals at once, the favourable ends and then the "

@@ -22,7 +22,7 @@ The narration under each clip is the text in `SCENES` in `scripts/build_narratio
 | 3 | Evidence requested and received | 20s | Request info, three links, a signed-out upload, the receipt record |
 | 4 | The invoice splits the cases | 28s | Invoice line, extraction, Re-evaluate, Evidence check for A then B |
 | 5 | A person decides, then it executes | 24s | Reason, Release and Confirm for A; reason, Block and Confirm for B |
-| 6 | Nemotron in the trace | 22s | Per-hop model, tokens and cost; an Ultra auto-debate and its Super investigation |
+| 6 | Nemotron in the trace | 22s | Per-hop model, tokens and cost; a Super auto-debate and the investigation it can trigger |
 | 7 | The next reviewer can follow | 18s | The case timeline, "What happened" |
 | 8 | Close | 15s | A and B final states side by side, then the end card |
 | | | **165s** | |
@@ -35,7 +35,7 @@ Timeline: 1: 12s   2: 26s   3: 20s   4: 28s   5: 24s   6: 22s   7: 18s   8: 15s 
 2. **Two new cases.** Create two NEW case ids, A and B, with identical booking data: Vietnam to United States, plywood, HS 4412.33, 22,000 kg, declared value 28,000 USD. Do not clear the board and do not reuse a case an earlier visitor decided.
 3. **Six synthetic PDFs, one page each.** For each case: a certificate of origin (country of origin Vietnam), a producer declaration (input origin Vietnam), and a purchase invoice. A's invoice is from VN Timber JSC with country of origin of goods Vietnam; B's invoice is from Linyi Veneer Co., Ltd. with country of origin of goods China. The generator is `scripts/rev2_e2e/gen.mjs`; check that the only difference between A and B is the invoice.
 4. **Upload links.** The request-evidence screen shows full URLs. `scripts/rev2_e2e/run.mjs` parses relative paths, so copy the three full URLs by hand, or fix the parsing first. Never leave a token in a frame.
-5. **A dry run before the real take.** Run both cases from request to decision once and read the result: A should end `RELEASED_BY_HUMAN` and B `BLOCKED_BY_HUMAN`, A's re-evaluation should read provided and B's contradicted. Use the take only if the extracted invoice country matches the PDF text. Open A's trace and write down which hops ran and on which model: Nano fraud and compliance, the HS classifier, and whether `auto_debate` (Ultra) fired. The plywood finding floors the case at 45, so the debate fires only if Nano scored it 30 or lower. Clip 6 depends on this.
+5. **A dry run before the real take.** Run both cases from request to decision once and read the result: A should end `RELEASED_BY_HUMAN` and B `BLOCKED_BY_HUMAN`, A's re-evaluation should read provided and B's contradicted. Use the take only if the extracted invoice country matches the PDF text. Open A's trace and write down which hops ran and on which model: Nano fraud and compliance, the HS classifier, and whether `auto_debate` (Super, since the default moved off Ultra) fired. Record only after the redeploy that carries that change: until then the live service still runs the debate on Ultra, and a trace filmed before it would show the wrong model. The plywood finding floors the case at 45, so the debate fires only if Nano scored it 30 or lower. Clip 6 depends on this.
 6. **Capture.** Record at 2560×1440 or larger and check the export at 1920×1080 (16:9). Record important cards and document lines as separate close-ups; never shrink a whole screen to make small text readable. Pause the mouse before each click; no idle sweeps, no sudden scrolls.
 7. **Waiting.** Cut waiting time and caption the cut "Time condensed". Keep the original waiting time in the production record.
 8. **Colours of the edited layer.** Case A green #246B4E on #F8FBF9; case B wine #8A3F5C on #FBF8F9; explanations blue #244E95 on #F8F9FB. Always add a word as well as a colour ("Provided", "Contradicted"). Keep the product's own dark interface as recorded.
@@ -102,13 +102,13 @@ Timeline: 1: 12s   2: 26s   3: 20s   4: 28s   5: 24s   6: 22s   7: 18s   8: 15s 
 
 ## Clip 6 — Nemotron in the trace (1:50 → 2:12, 22s)
 
-> Every hop in the trace names its model, tokens and cost. When the floor sits fifteen points above Nano's score, Nemotron 3 Ultra debates the case and calls Tavily itself. It can send a case to Nemotron 3 Super for investigation, never clear it.
+> Every hop in the trace names its model, tokens and cost. When the floor sits fifteen points above Nano's score, Nemotron 3 Super debates the case and calls Tavily itself. It can send a case to investigation, never clear it.
 
-**Screen.** 0–6s: A's trace with each hop's model, tokens and cost readable, and the case total. 6–22s: the `auto_debate` hop on `nvidia/Nemotron-3-Ultra-550b-a55b`: the Tavily query Ultra chose, its CONFIRM or DISAGREE with the confidence, and the `investigation` hop on `nvidia/nemotron-3-super-120b-a12b` when it ran. Use A if the debate fired on A (Part 0, step 5). If it did not, film a case on the board whose trace has both hops (on 21 Oct `CASE-VFL-2026-91177` did) and caption it "Another case on the board"; never present that trace as A's.
+**Screen.** 0–6s: A's trace with each hop's model, tokens and cost readable, and the case total. 6–22s: the `auto_debate` hop on `nvidia/nemotron-3-super-120b-a12b`: the Tavily query the auditor chose, its CONFIRM or DISAGREE with the confidence, and the `investigation` hop (also Super) when it ran. Use A if the debate fired on A (Part 0, step 5). If it did not, film a case created after the redeploy whose trace has both hops (`CASE-VFL-2026-91177` predates it and shows Ultra, so do not film that one) and caption it "Another case on the board"; never present that trace as A's.
 
-**Check.** Do not move to a full-screen list of the seven agents or to code. If Ultra's search is marked cached, say so.
+**Check.** Do not move to a full-screen list of the seven agents or to code. If the auditor's search is marked cached, say so. Do not say the debate "found" anything Nano missed: the measurement (46 labelled debates) shows it disagrees about as often on honest cases as on fraud, so call it a routing step.
 
-**Caption.** Nano screens · Ultra argues the dispute · Super investigates
+**Caption.** Nano screens · Super argues the dispute and investigates
 
 ## Clip 7 — The next reviewer can follow (2:12 → 2:30, 18s)
 

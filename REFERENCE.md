@@ -11,7 +11,7 @@ service `vf-app` and the API keep that name.)
 Nano** (fraud, compliance, HS (Harmonized System) classification — whether the declared
 customs tariff code fits the goods — and the zero-day radar, an adverse-media search for
 parties no sanctions list has caught up with), **NVIDIA Nemotron 3 Super**
-(investigation) and **NVIDIA Nemotron 3 Ultra** (the Senior Auditor debate), plus
+(investigation and the Senior Auditor debate), plus
 MiniCPM-V-4.5 for reading scanned documents. **Tavily** live web search is called at
 runtime by compliance screening, route validation, investigation, the zero-day radar,
 the debate and the Governance page's sanctions scan; in the zero-day radar and the
@@ -46,9 +46,9 @@ Details: [One click for judges](#one-click-for-judges).
   evidence and a cited dossier.
 - **The one design rule:** a model may raise risk, never lower it below the floor:
   `reconcile()` takes the higher of the model's score and the floor, and `validate()`
-  raises if the HS or zero-day model findings ever lowered it. Ultra runs only in the
-  debate, where its verdict can send a disputed case to a deep investigation it would
-  otherwise skip and can never clear one; a person still decides every disputed case.
+  raises if the HS or zero-day model findings ever lowered it. The debate is the one hop
+  whose verdict can send a disputed case to a deep investigation it would
+  otherwise skip, and it can never clear one; a person still decides every disputed case.
 - **Measured** (95% Wilson intervals in brackets; the holdout corpus is synthetic):
   - rules alone, 453 holdout cases: recall 93.5% [90–96], false-positive rate 38.4% [28–49];
   - adding the two model checks benchmarked so far, the HS classifier and the zero-day
@@ -146,7 +146,7 @@ End to end, for one case:
 > scanned document → Model Armor → document intake (MiniCPM-V) → deterministic risk
 > floor and pre-filter → fraud + compliance in parallel (NVIDIA Nemotron 3 Nano, live
 > Tavily search) → HS classifier and zero-day radar (Nano) → auto-debate when the floor
-> exceeds the model's score by 15+ (Nemotron 3 Ultra, calling tools) → investigation when
+> exceeds the model's score by 15+ (Nemotron 3 Super, calling tools) → investigation when
 > risk, compliance or a confident DISAGREE calls for it (Nemotron 3 Super, Tavily) →
 > delegation gate → release / hold / assign analyst / draft SAR / webhook / Pub/Sub →
 > audit trail
@@ -156,7 +156,7 @@ each hop (`frontend/src/lib/case-chain.ts`).
 
 The AI model layer runs on **Nebius Token Factory**: **NVIDIA Nemotron 3 Nano**
 for fraud, compliance, HS classification and zero-day screening, **NVIDIA Nemotron 3
-Super** for deep investigation, **NVIDIA Nemotron 3 Ultra** for the auto-debate, and
+Super** for deep investigation and the auto-debate, and
 a vision model (**MiniCPM-V-4.5**) for document intake, since
 Token Factory does not yet carry an NVIDIA vision model. Infrastructure — Cloud
 Run, Firestore, Pub/Sub, Cloud Storage, Model Armor — stays on Google Cloud;
@@ -179,12 +179,21 @@ spending ten minutes on a clean shipment.
 **So Nemotron Nano on fraud and compliance is a choice the floor makes safe, not one it
 proves best.** A weak model there can fail to add a hold, but it can never release a
 shipment the rules stopped: auto-clear needs a floor of zero (`reconcile()` in
-`verifier.py`). Where the floor is zero the model is the only check, and a larger model
-might catch more there; that has not been measured. What is known is the price: Ultra
-there would pay 13.3× Nano's per-token rate (16.7× on input, 12.5× on output;
-`config.PRICING`) on the two highest-volume calls in the pipeline.
+`verifier.py`). Where the floor is zero the model is the only check, so that was measured: on the 179
+corpus cases the rules score 0 (52 fraud, 127 honest; flag = model `risk_score` >= 40, a
+reply that fails to parse or validate counts as a hold), Nano flagged 46/52 frauds (88%)
+[77-95] and Super 47/52 (90%) [79-96], a difference the sample cannot show. Super costs
+`$0.00114` a case against Nano's `$0.00026` (4.3×). Honest cases held: Nano 80/127 (63%),
+Super 83/127 (65%). Failed replies: Nano 5/179 (2.8%, schema error on `recommendations`),
+Super 1/179. On the holdout half Nano flagged 21/24 frauds the rules missed and held
+30/53 honest shipments the rules passed; with the rules' own 33 honest holds that is
+63/86 (73%) honest holdout shipments held, against 38.4% for the rules alone
+(`scripts/compare_fraud_models.py`). Ultra, at 13.3× Nano's per-token rate (16.7× on
+input, 12.5× on output; `config.PRICING`), stays priced in config and selectable but is
+not used on these calls.
 
-**And the debate is the one exception, which is why Ultra runs there and nowhere else.**
+**The debate is the exception: its verdict can change routing, so it was the one hop
+measured against Ultra.**
 It fires when the floor exceeds the model's score by 15 points or more, so auto-clear is
 already ruled out, and what it emits is
 not another score for the floor to override — it is a reasoned CONFIRM or DISAGREE on
@@ -199,11 +208,15 @@ rather than `HELD_FOR_REVIEW`; the delegation gate executes neither, because
 waits in `PENDING_HUMAN` with Super's report attached. CONFIRM, a forced default verdict
 or a low-confidence DISAGREE change nothing, and `case.debate_effect` records why. A
 person still decides every disputed case. So this is the one hop whose output is a
-verdict on the dispute rather than a score the floor overrides, which is why reasoning
-capacity is spent there. Measured: `$0.0198` per Ultra debate against Super's
-`$0.0015`. This is a design bet, not a measured gain: the debate fired twice in a
-20-case live run, and nothing yet shows Ultra resolves disputes better than Super
-(`scripts/compare_debate_models.py` measures exactly that).
+verdict on the dispute rather than a score the floor overrides, so it was tested against a
+larger model. The debate runs on Super by default. On 46 disputed corpus cases (25 fraud,
+21 honest) Super reached a verdict on 40 (87%) and Ultra on 37 (80%); Ultra costs `$0.0108`
+a debate against Super's `$0.0021` (5.2×) and takes 13.5 s median against 6.4 s. Ultra
+disagrees more, not better: DISAGREE on 18/19 frauds (95%) and 17/18 honest (94%) against
+Super's 16/22 (73%) and 13/18 (72%), so neither separates fraud from honest trade.
+`DEBATE_MODEL=nvidia/Nemotron-3-Ultra-550b-a55b` restores Ultra with no deploy. An earlier
+live-service measurement, with real Tavily results, put an Ultra debate at `$0.0198`
+against Super's `$0.0015` (13×); that led to this test.
 
 The invariant is not a convention. `reconcile()` sets effective risk to the higher of
 the model's score and the floor, and `validate()` computes the floor twice, with and
@@ -221,8 +234,9 @@ without the HS classifier's and zero-day radar's findings, and raises if they lo
 That runs on every call. The claim is checked rather than argued, which is the difference
 between a design rule and a comment.
 
-Full working, with the per-call measurements and why an Ultra debate cost 13× a Super
-one although Ultra's per-token rate is only 3.3× Super's: *[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else)*.
+Full working, with the measured comparison and the earlier per-call measurements (an Ultra
+debate cost 13× a Super one on the live service although Ultra's per-token rate is only
+3.3× Super's): *[Why the debate runs on Super, and what was measured](#why-the-debate-runs-on-super-and-what-was-measured)*.
 
 ---
 
@@ -273,21 +287,22 @@ The areas below were rebuilt.
 **Before:** four agents on Vertex AI. Gemini 3.5 Flash for document intake, fraud
 and compliance; Flash-Lite for investigation, with `thinking_budget=8000`.
 
-**Now:** seven agents on Nebius Token Factory, four models chosen per job.
+**Now:** seven agents on Nebius Token Factory, three models chosen per job; Ultra stays priced and selectable.
 Nemotron 3 Nano runs four hops (fraud and compliance on every case that reaches the
 models, HS classification and the zero-day radar when their inputs or gate apply); Super
-runs investigation; **Ultra runs the auto-debate**; MiniCPM-V-4.5 reads documents,
+runs investigation and the auto-debate; MiniCPM-V-4.5 reads documents,
 because Token Factory carries no NVIDIA vision model yet.
 
 **Why the split rather than one model everywhere:** `verifier.py` computes a
 deterministic risk floor that an agent may raise but never lower, so on fraud and
 compliance a weaker model can miss a hold but can never release what the rules stopped;
-whether a larger model would add holds there is not measured.
+on score-0 cases Nano flagged 46/52 frauds against Super's 47/52, which the sample cannot tell apart.
 The debate is the exception — its CONFIRM/DISAGREE is a verdict that can change routing,
 not a score the floor overrides: a confident DISAGREE can send the case to an
-investigation it would otherwise skip, and nothing it says can lower risk — so that is
-the one place reasoning capacity is worth paying for. Measured: `$0.0198` per Ultra
-debate against Super's `$0.0015`.
+investigation it would otherwise skip, and nothing it says can lower risk — so it was the one
+hop tested against a larger model: Super `$0.0021` a debate against Ultra's `$0.0108`
+(5.2×), with Ultra disagreeing more often rather than separating fraud from honest trade,
+so Super is the default.
 
 ### Three agents that did not exist
 
@@ -450,20 +465,20 @@ governance control plane:
 | **HS Classification** | Whether the declared HS heading matches the cargo described, reasoned against the published heading contents. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | `cot_strict` prompt, `temperature=0.0`; runs when goods and HS code are both stated |
 | **Zero-Day Radar** | Adverse-media search for parties no sanctions list has caught up with. | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | Tavily news tool, last 45 days; only when its code gate opens |
 | **AI Investigation** | Multi-step case investigation, pattern analysis, network mapping. | `nvidia/nemotron-3-super-120b-a12b` | Only where compliance returned `BLOCKED` or `REVIEW_REQUIRED`, risk reached 70, or the debate confidently disagreed |
-| **Multi-Agent Debate** | Senior Auditor (Ultra) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. A confident DISAGREE can send the case to an investigation it would otherwise skip; nothing it says can lower risk. | `nvidia/Nemotron-3-Ultra-550b-a55b` | Fires automatically on a 15-point floor-model gap; also manual via "Deep Review". Function calling with 3 tools |
+| **Multi-Agent Debate** | Senior Auditor (Super) reviews Junior Analyst (Nano) fraud assessment using function calling. Can request re-evaluation, run Tavily searches, and render CONFIRM/DISAGREE verdicts. A confident DISAGREE can send the case to an investigation it would otherwise skip; nothing it says can lower risk. | `nvidia/nemotron-3-super-120b-a12b` (default; `DEBATE_MODEL` can restore Ultra) | Fires automatically on a 15-point floor-model gap; also manual via "Deep Review". Function calling with 3 tools |
 
 ### Model selection, chosen per task
 
 The hackathon's own model guidance is: let Nano or Super handle the fast,
 everyday calls, and reach for Ultra when you need serious reasoning. This
-system follows that shape directly:
+system follows that shape, and tested the top rung on the one hop where it could matter:
 
 Fraud and compliance screening run on **Nemotron 3 Nano** — every shipment
 that reaches the models is scored by both, so this is the highest-volume call in the
 pipeline. Nano is also fast and cheap. The floor is what makes that safe: these two
 hops cannot release anything the rules stopped, so a weaker model here costs missed
-holds on cases the rules found clean, never a release of flagged cargo. Whether a
-larger model would add holds is not measured — see *[The design rule](#the-design-rule-model-capacity-only-where-it-can-change-the-answer)*.
+holds on cases the rules found clean, never a release of flagged cargo. On score-0 cases Nano flagged 46/52
+frauds against Super's 47/52, at a quarter of the cost per case — see *[The design rule](#the-design-rule-model-capacity-only-where-it-can-change-the-answer)*.
 
 Investigation runs on **Nemotron 3 Super** — by the time a case reaches it, the
 fraud and compliance findings already exist; it runs only where compliance returned
@@ -471,20 +486,21 @@ fraud and compliance findings already exist; it runs only where compliance retur
 confidently disagreed, so it is the low-volume, high-stakes call that can afford a
 stronger, pricier model.
 
-The debate agent runs on **Nemotron 3 Ultra**, and it is the only place Ultra is used.
-Not because the debate is the most important step, but because it is the only one whose
-output is a verdict on a dispute rather than a score the deterministic floor overrides — see
-[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else).
-Investigation deliberately stays on Super: it is 40% of measured spend already, and
-`INVESTIGATION_MODEL` can point it at Ultra if more Token Factory credit becomes
-available.
+The debate agent also runs on **Nemotron 3 Super**. It was measured against Nemotron 3
+Ultra, its previous default: Ultra reached a verdict on fewer disputes (37/46 against
+40/46), cost 5.2× as much, was slower, and disagreed more often without separating fraud
+from honest trade. See
+[Why the debate runs on Super, and what was measured](#why-the-debate-runs-on-super-and-what-was-measured).
+`DEBATE_MODEL` restores Ultra with no deploy. Investigation is 40% of measured spend
+already, and `INVESTIGATION_MODEL` can point it at Ultra if more Token Factory credit
+becomes available.
 
 Document intake is the one agent that needs a vision-capable model, and
 NVIDIA does not currently publish one on Token Factory, so it runs on
 **MiniCPM-V-4.5**, a model the catalog specifically calls out for OCR/PDF
 understanding.
 
-All three NVIDIA models and MiniCPM-V are reached through the same
+Nano, Super (and Ultra, if selected) and MiniCPM-V are reached through the same
 OpenAI-compatible endpoint (`nebius_client.py`), so the split costs no extra
 integration surface. Fraud, compliance, HS classification and document intake are
 requested in JSON mode (`response_format={"type": "json_object"}`); zero-day and
@@ -510,20 +526,20 @@ result either: the search status goes into the prompt (the worse of the shipper 
 receiver searches), so the model is told a search failed rather than that it found
 nothing.
 
-### Multi-Agent Debate: Ultra reviews Nano
+### Multi-Agent Debate: Super reviews Nano
 
 The most sophisticated reasoning pattern in the system is **Multi-Agent Debate**,
-where a Senior Auditor (Nemotron Ultra 550B) reviews the Junior Analyst's
+where a Senior Auditor (Nemotron Super 120B) reviews the Junior Analyst's
 (Nemotron Nano 30B) fraud assessment.
 
 **Why two models?** Nano is fast and cheap — it scores every shipment that reaches the
 models.
 But speed optimises for throughput, not for catching the subtle case that slips
-through. Ultra is slower and costs more, but it can challenge Nano's reasoning
-and catch what Nano missed. The debate is asymmetric: Ultra can call Nano back
-for a re-evaluation with specific focus areas, but Nano never calls Ultra.
+through. Super is slower and costs more, but it can challenge Nano's reasoning
+and catch what Nano missed. The debate is asymmetric: Super can call Nano back
+for a re-evaluation with specific focus areas, but Nano never calls Super.
 
-**Function calling, not prompt chaining.** Nemotron Ultra supports native
+**Function calling, not prompt chaining.** Nemotron Super supports native
 tool_calls, so the debate agent uses real function calling with three tools:
 
 | Tool | Purpose |
@@ -532,11 +548,11 @@ tool_calls, so the debate agent uses real function calling with three tools:
 | `search_tavily` | Run an additional web search for context (e.g., "Thanh Phat Trading sanctions Vietnam") |
 | `render_final_verdict` | Submit the final verdict: **CONFIRM** (agree with Nano) or **DISAGREE** (found issues Nano missed), with confidence, rationale, and recommended action |
 
-Ultra iterates through tool calls until it calls `render_final_verdict`, up to
+The auditor iterates through tool calls until it calls `render_final_verdict`, up to
 3 rounds. The debate is recorded on the case and rendered on the review page and in
 the case trace as a readable panel — verdict, confidence, rationale, what it changed,
 and the rounds — with the raw record one click away, so the analyst sees exactly what
-Ultra did.
+the auditor did.
 
 **When it runs.** The debate fires **automatically**, with no human involved, when
 the deterministic floor exceeds the model's score by 15 points or more — measured at 2
@@ -546,10 +562,12 @@ when:
 - The shipper or receiver name sounds suspicious
 - The case is borderline and the analyst wants a second opinion
 
-It is expensive: measured at `$0.0198` per debate against Super's `$0.0015`, and
-14–22 seconds against Super's 4–6. See
-[Why Ultra is on the debate agent and nowhere else](#why-ultra-is-on-the-debate-agent-and-nowhere-else)
-for why that is worth paying on this call and on no other.
+On Super it measured `$0.0021` a debate and 6.4 s median; Ultra, selectable with
+`DEBATE_MODEL`, measured `$0.0108` and 13.5 s (an earlier live-service run with real
+Tavily results put Ultra at `$0.0198` against Super's `$0.0015`, and 14–22 seconds against
+4–6). See
+[Why the debate runs on Super, and what was measured](#why-the-debate-runs-on-super-and-what-was-measured)
+for the comparison.
 
 **What the automatic verdict changes, and what it cannot.** It never overrides a
 person's decision, and it can only push a case upward. A genuine DISAGREE at confidence
@@ -558,8 +576,8 @@ Nemotron Super where its risk alone (under 70) and its compliance status would n
 and may raise effective risk to the auditor's adjusted score, never lower it. The case
 then proposes `ESCALATED` rather than `HELD_FOR_REVIEW`. CONFIRM, a forced default
 verdict or a low-confidence DISAGREE change nothing, and `case.debate_effect` records
-which applied. Before this the verdict was recorded and read by nothing, so the most
-expensive call in the pipeline could not change a single outcome. A disputed case still
+which applied. Before this the verdict was recorded and read by nothing, so the debate
+could not change a single outcome. A disputed case still
 goes to a person either way, because `score_disputed` is a `require_human_when` trigger
 in the delegation boundary: the gate refuses the hold, nothing is executed (no hold, no
 SAR draft, no webhook), and the case waits in `PENDING_HUMAN` with the investigation's
@@ -743,9 +761,7 @@ obligation comes from, not that it has been met.
                  |    NVIDIA Nemotron 3 Nano               |
                  |      fraud · compliance · HS · zero-day |
                  |    NVIDIA Nemotron 3 Super              |
-                 |      investigation                      |
-                 |    NVIDIA Nemotron 3 Ultra              |
-                 |      the auto-debate                    |
+                 |      investigation · the auto-debate    |
                  |    MiniCPM-V-4.5 (vision)               |
                  |      document intake                    |
                  +-----------------------------------------+
@@ -779,7 +795,7 @@ obligation comes from, not that it has been met.
                 fraud (Nano) || compliance (Nano + Tavily) || route search (Tavily)
                 --> HS classifier (Nano), if goods and HS code are stated
                 --> zero-day radar (Nano + Tavily), if its code gate opens
-                --> re-validate --> auto-debate (Ultra), if floor - model >= 15
+                --> re-validate --> auto-debate (Super), if floor - model >= 15
                 --> SPECIALISTS_DONE
                       |
                       +-- risk < 40, floor 0, compliance exactly CLEARED,
@@ -818,8 +834,8 @@ otherwise have skipped.
 
 ### Why these choices
 
-- **OpenAI-compatible client, one wrapper for four models** — `nebius_client.py`
-  wraps `openai.AsyncOpenAI` pointed at Token Factory; all three Nemotron tiers
+- **OpenAI-compatible client, one wrapper for every model** — `nebius_client.py`
+  wraps `openai.AsyncOpenAI` pointed at Token Factory; all the Nemotron tiers (Ultra too, if selected)
   and the vision model are reached the same way, so adding or swapping a model
   is a string change, not a new integration.
 - **Async calls, gunicorn `--threads 8`** — a single instance handles concurrent
@@ -863,7 +879,7 @@ otherwise have skipped.
 
 | Layer | Choice |
 |---|---|
-| Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance, HS classification, zero-day radar) + **NVIDIA Nemotron 3 Super** (investigation) + **NVIDIA Nemotron 3 Ultra** (Senior Auditor debate) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
+| Model | **NVIDIA Nemotron 3 Nano** (fraud, compliance, HS classification, zero-day radar) + **NVIDIA Nemotron 3 Super** (investigation and Senior Auditor debate) + **MiniCPM-V-4.5** (document intake, vision), all via **Nebius Token Factory** |
 | Agent framework | `openai.AsyncOpenAI` (Token Factory's OpenAI-compatible endpoint) |
 | External signal | **Tavily Search API** — live sanctions/news lookup in compliance, route validation, investigation, the zero-day radar, the debate and the Governance scan |
 | Input security | **Model Armor** (Google Cloud) — windowed prompt-injection screening |
@@ -885,12 +901,12 @@ task rather than one model everywhere:
 
 | Model | Where it runs | Why this size |
 |---|---|---|
-| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar — fraud and compliance on **every** case that reaches the models, the other two when their inputs or gate apply | `verifier.py` computes a deterministic risk floor an agent may raise but never lower, so a weaker model here can miss a hold but never release what the rules stopped; whether a larger one would add holds is not measured |
-| `nvidia/nemotron-3-super-120b-a12b` | investigation | writes the narrative a human reads; benefits from reasoning, does not decide the verdict |
-| `nvidia/Nemotron-3-Ultra-550b-a55b` | the auto-debate ("Senior Auditor") | the one place where the model's output is a verdict that can change routing rather than a score the floor overrides — a confident DISAGREE can send the case to an investigation it would otherwise skip, upward only — so reasoning capacity is worth paying for: measured `$0.0198` per debate against Super's `$0.0015` |
+| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | fraud, compliance, HS classification, zero-day radar — fraud and compliance on **every** case that reaches the models, the other two when their inputs or gate apply | `verifier.py` computes a deterministic risk floor an agent may raise but never lower, so a weaker model here can miss a hold but never release what the rules stopped; on score-0 cases Nano flagged 46/52 frauds against Super's 47/52, no difference the sample can show |
+| `nvidia/nemotron-3-super-120b-a12b` | investigation and the auto-debate ("Senior Auditor") | investigation writes the narrative a human reads; the debate's verdict can change routing, upward only, and measured against Ultra on 46 disputed cases Super reached a verdict on 40 to Ultra's 37 at `$0.0021` a debate against `$0.0108` |
+| `nvidia/Nemotron-3-Ultra-550b-a55b` | optional: `DEBATE_MODEL` selects it for the debate | not used by default; it disagreed more often than Super without separating fraud from honest trade, at 5.2× the cost per debate |
 | `openbmb/MiniCPM-V-4_5` | document intake (vision) | not an NVIDIA model, and said plainly: Token Factory carries no NVIDIA vision model yet |
 
-**Where Token Factory accelerated the workflow.** All four models, from 30B to 550B plus a
+**Where Token Factory accelerated the workflow.** Every model, from 30B to 550B plus a
 vision model, are served by **one** OpenAI-compatible endpoint
 (`https://api.tokenfactory.nebius.com/v1/`) through `openai.AsyncOpenAI` — `nebius_client.py`
 is a thin wrapper, not a bespoke SDK. Three consequences that shaped the build:
@@ -901,10 +917,10 @@ is a thin wrapper, not a bespoke SDK. Three consequences that shaped the build:
   structured reasoning, reasoning over the published headings, and Super as the teacher
   — cost nothing in plumbing. It took Nano from 40.0% to 92.9% recall on the pairs set
   and from 50.0% to 91.7% on the holdout.
-- **No GPU provisioning, so a 550B model was affordable to reach for once.** Ultra runs only
-  on the debate path, which fires when the deterministic floor exceeds the model's score by
-  15 points or more. Standing up 550B of capacity for an occasional call would not have been
-  worth it; per-token access made a rarely-used heavyweight practical.
+- **No GPU provisioning, so a 550B model could be tried on the debate path.** Ultra was the
+  debate default until it was measured against Super; it stays selectable with
+  `DEBATE_MODEL`. Standing up 550B of capacity for an occasional comparison would not have
+  been worth it; per-token access made it practical to test.
 - **The port from the predecessor was a client change, not a rewrite.** The JSON contract
   each agent returns was preserved, so swapping Vertex AI Gemini for Token Factory changed
   the base URL, the model ids and the sampling parameters — not the pipeline.
@@ -929,7 +945,7 @@ track, the video, the feedback and the licence, which are.
 | Rule | Where it is met |
 |---|---|
 | Runtime call to Nebius Token Factory | every one of the seven agents |
-| At least one NVIDIA open source model | three Nemotron 3 sizes, table above |
+| At least one NVIDIA open source model | Nemotron 3 Nano and Super in use, Ultra selectable; table above |
 | Fits one of the four tracks | **Best Apps and Agents** |
 | Significantly updated after the Submission Period opened (26 Aug 2026) | every commit in this repository is dated 17 Sep 2026 or later (first `6bb1e59`, 17 Sep; last change to `src/` and `tests/` `2842358`, 20 Oct); `git log --reverse --format="%ai" \| head -1` shows the first, in a full (not shallow) clone |
 | Written explanation of what was updated | *What was significantly updated during the Submission Period*, above |
@@ -1004,7 +1020,7 @@ caller is likely to want. The most useful omissions:
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/v1/review/<case_id>/deep-review` | POST | Runs the Ultra debate by hand on a case awaiting review, the same agent the orchestrator fires automatically; here the verdict is recorded on the case and changes no route (reviewer) |
+| `/api/v1/review/<case_id>/deep-review` | POST | Runs the debate (Super by default) by hand on a case awaiting review, the same agent the orchestrator fires automatically; here the verdict is recorded on the case and changes no route (reviewer) |
 | `/api/v1/review/<case_id>/request-evidence` | POST | Verification loop: ask the shipper for named documents through a signed link (reviewer) |
 | `/api/v1/review/<case_id>/evidence/<request_id>/link`, `.../cancel` | POST | Reissue a request's link, or cancel the request with a reason (reviewer) |
 | `/api/v1/review/<case_id>/reevaluate` | POST | Re-run the deterministic origin checks against the evidence received so far (reviewer) |
@@ -1675,6 +1691,8 @@ Two live checks that need credentials and spend real tokens, so they are run by 
 ```bash
 python scripts/check_model_switch_guard.py    # the cost ratchet, end to end, restores Nano
 python scripts/compare_debate_models.py       # replays disputed cases through Super and Ultra
+python scripts/compare_debate_models.py --corpus   # the 46 disputed corpus cases (--per-label, --screen-fraud, --max-cost-usd, --dry-run)
+python scripts/compare_fraud_models.py        # Nano vs Super on score-0 corpus cases (--models nano,super,ultra, --limit, --max-cost-usd, --dry-run)
 ```
 
 ### Test coverage
@@ -1808,7 +1826,7 @@ collection.
 | `NEMOTRON_MODEL` | Model for fraud detection and compliance screening, and for the HS classifier and zero-day radar unless `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` pin them | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` |
 | `VISION_MODEL` | Model for document intake | `openbmb/MiniCPM-V-4_5` |
 | `INVESTIGATION_MODEL` | Model for investigation, pinned separately | `nvidia/nemotron-3-super-120b-a12b` |
-| `DEBATE_MODEL` | Model for the debate agent — **the one place Nemotron Ultra is used by default**. See the note below the table. | `nvidia/Nemotron-3-Ultra-550b-a55b` |
+| `DEBATE_MODEL` | Model for the debate agent — Defaults to Super; `nvidia/Nemotron-3-Ultra-550b-a55b` restores Ultra with no deploy. See the note below the table. | `nvidia/nemotron-3-super-120b-a12b` |
 | `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` | Pin the HS classifier or the zero-day radar to its own model. Unset, each uses whatever model fraud and compliance are on, including after a `POST /api/v1/config/model` switch. | unset |
 | `MODEL_SWITCH_MAX_RATE_MULTIPLE` | How much dearer a model `POST /api/v1/config/model` may select without `confirm_higher_cost`, against the cheapest priced model. Super is 4.0× Nano and permitted; Ultra is 13.3× and answered 409. | `5.0` |
 | `TAVILY_ROUTE_CACHE_TTL_SECONDS` | TTL for the shipping-lane disruption search, whose query carries only a country pair. Measured: 20 searches across 6 distinct lanes. `0` disables. | `21600` (6h) |
@@ -1863,33 +1881,56 @@ Nemotron tiers at runtime, and the HS classifier and zero-day radar follow the s
 unless `HS_CLASSIFIER_MODEL` / `ZERO_DAY_MODEL` pin them; investigation ignores it and
 reads `INVESTIGATION_MODEL` at import.
 
-#### Why Ultra is on the debate agent and nowhere else
+#### Why the debate runs on Super, and what was measured
 
-`DEBATE_MODEL` defaults to Nemotron Ultra. Every other agent stays on Nano or Super, and
-the reason is architectural rather than financial: `verifier.py` computes a deterministic
-risk floor, and an agent may **raise** risk but never lower it below that floor. A
-stronger model on fraud detection or compliance therefore cannot move the outcome in the
-direction that matters — the floor has already decided whether a shipment may clear, and
-a model can only add holds above it. Ultra's per-token rate is 13.3× Nano's, blended
-(`config.rate_multiple`), on the two highest-volume calls; whether it would catch
-anything Nano misses there has not been measured.
+`DEBATE_MODEL` defaults to Nemotron Super. Every agent stays on Nano or Super, and the
+reason a larger model was not the default anywhere is architectural as well as financial:
+`verifier.py` computes a deterministic risk floor, and an agent may **raise** risk but
+never lower it below that floor. A stronger model on fraud detection or compliance
+therefore cannot move the outcome in the direction that matters — the floor has already
+decided whether a shipment may clear, and a model can only add holds above it. Ultra's
+per-token rate is 13.3× Nano's, blended (`config.rate_multiple`).
 
-The debate is the exception. The orchestrator runs it only when the floor exceeds the
-model's score by 15 points or more (measured: 2 calls across 20 cases), and a reviewer can
-run it by hand with Deep Review on any case awaiting review. Either way auto-clear is
-already impossible and a person will decide the case. What it emits is not a
-score awaiting override but a reasoned CONFIRM or DISAGREE on whether the junior analyst
-missed something. CONFIRM changes nothing; on the automatic path a genuine DISAGREE at
-confidence 0.7 or above sends the case to deep investigation on Super and may raise its
-risk (by hand, the verdict is recorded for the reviewer and changes no route). So Ultra's
-verdict can send a disputed case to a deep investigation it would otherwise skip
-(effective risk under the 70 investigation bar, compliance not already `BLOCKED` or
-`REVIEW_REQUIRED`), and can never clear one — the one hop whose output is a verdict on the
-dispute rather than a score the floor overrides — and reasoning capacity is load-bearing
-there.
+The debate is the one hop where a model's output can change routing, so it was the one
+tested against Ultra, its previous default. The orchestrator runs it only when the floor
+exceeds the model's score by 15 points or more (2 calls across 20 cases on the live run),
+and a reviewer can run it by hand with Deep Review on any case awaiting review. Either
+way auto-clear is already impossible and a person will decide the case. What it emits is
+a reasoned CONFIRM or DISAGREE on whether the junior analyst missed something. CONFIRM
+changes nothing; on the automatic path a genuine DISAGREE at confidence 0.7 or above
+sends the case to deep investigation on Super and may raise its risk (by hand, the
+verdict is recorded for the reviewer and changes no route). It can send a disputed case
+to a deep investigation it would otherwise skip (effective risk under the 70 investigation
+bar, compliance not already `BLOCKED` or `REVIEW_REQUIRED`), and can never clear one.
 
-**Measured cost, and it is higher than the rate suggests.** Three Ultra debates and two
-Super debates have now run on the live service:
+**Measured: Super against Ultra on the debate.** 46 disputed corpus cases (25 fraud, 21
+honest; the floor exceeded Nano's score by 15 or more), both models debating the same
+cases, Tavily stubbed to return nothing (`scripts/compare_debate_models.py --corpus`;
+`data/model_comparison/debate_corpus.json`). Intervals in brackets.
+
+| | Super | Ultra |
+|---|---|---|
+| Reached a verdict | 40/46 (87%) | 37/46 (80%) |
+| DISAGREE on fraud | 16/22 (73%) [52-87] | 18/19 (95%) [75-99] |
+| DISAGREE on honest | 13/18 (72%) [49-88] | 17/18 (94%) [74-99] |
+| Fraud minus honest | +0.5 pt | +0.3 pt |
+| Cost per debate | `$0.0021` | `$0.0108` (5.2×) |
+| Median seconds | 6.4 | 13.5 |
+| Mean input tokens | 5,201 | 7,281 |
+
+Neither model separates fraud from honest trade: the gap between the two DISAGREE rates
+is under a point for both. Ultra just disagrees more. Every DISAGREE was at confidence
+0.7 or above.
+
+Caveats. The auditor is shown the rules' findings (DETERMINISTIC VALIDATION), and every
+honest case in the sample was one the rules had held (floor of 40 or more), so DISAGREE
+largely tracks agreement with the rules rather than an independent judgement of the
+shipment. A DISAGREE only routes a held case to investigation; nothing it says can clear
+a case. The corpus is synthetic and the sample small.
+
+**Why this ratio differs from the earlier one.** The earlier measurement, on the live
+service with real Tavily results, was higher: three Ultra debates and two Super debates.
+It is what led to the test above.
 
 | Model | Input | Output | Cost |
 |---|---|---|---|
@@ -1900,17 +1941,28 @@ Super debates have now run on the live service:
 | Super | 5,546 | 403 | `$0.002027` |
 
 `$0.0198` per Ultra debate against Super's `$0.0015` — **13×, not the 3.3× rate
-multiple.** The rate accounts for 3.3× of that; the rest is token volume. Ultra consumed
-13,151–16,502 input tokens where Super used 2,522–5,546, because it emits more tool-call
-rounds and each round resends the growing transcript, so volume compounds on top of price.
-An earlier version of this section said "roughly `$0.007` per 20 cases", arrived at by
-multiplying Super's token usage by Ultra's rate — which assumed the two models would spend
-the same tokens, and they do not.
+multiple.** The rate accounts for 3.3× of that; the rest is token volume, because Ultra
+emitted more tool-call rounds and each round resends the growing transcript. The corpus
+comparison gave 5.2×, with empty search results and different cases. Real search results
+adding input tokens to each round is the likely reason for the gap, but the two
+measurements differ in more than that, so it is not isolated. An earlier
+version of this section said "roughly `$0.007` per 20 cases", arrived at by multiplying
+Super's token usage by Ultra's rate, which assumed the two models would spend the same
+tokens, and they do not.
 
-This is a quality bet, not a measured improvement: nothing yet demonstrates Ultra
-resolves more disputes than Super. `scripts/compare_debate_models.py` replays disputed
-cases through both and reports resolution rate and cost, and setting `DEBATE_MODEL` back
-to `nvidia/nemotron-3-super-120b-a12b` reverses the decision without a deploy.
+**Nano against Super on fraud screening, where the rules score 0.** 179 corpus cases (52
+fraud, 127 honest), flag = model `risk_score` >= 40, a reply that fails to parse or
+validate counted as a hold because the orchestrator refuses auto-clear after a model
+failure (`scripts/compare_fraud_models.py`; `data/model_comparison/fraud_floor0.json`).
+Nano flagged 46/52 frauds (88%) [77-95], Super 47/52 (90%) [79-96]: no difference the
+sample can show. Super costs `$0.00114` a case against Nano's `$0.00026` (4.3×). Honest
+cases held: Nano 80/127 (63%), Super 83/127 (65%). Failed replies: Nano 5/179 (2.8%,
+schema error on `recommendations`), Super 1/179. On the holdout half Nano flagged 21/24
+frauds the rules missed and held 30/53 honest shipments the rules passed; with the rules'
+own 33 honest holds that is 63/86 (73%) honest holdout shipments held, against 38.4% for
+the rules alone.
+
+Setting `DEBATE_MODEL=nvidia/Nemotron-3-Ultra-550b-a55b` restores Ultra with no deploy.
 
 #### Tavily is the binding cost constraint, not the models
 
@@ -2125,7 +2177,7 @@ collection effort.
 │       ├── hs_cot.py             Reasoning-first prompts and exemplars; the few-shot regression
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
-│       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Ultra
+│       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Super
 ├── tests/                        105 files, 2,095 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism

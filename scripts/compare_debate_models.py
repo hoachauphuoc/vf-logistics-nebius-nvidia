@@ -4,7 +4,10 @@ Is Nemotron Ultra worth its rate on the debate agent?
     python scripts/compare_debate_models.py
 
 The debate moved to Ultra on a judgement, not a measurement, and this script exists so
-the judgement can be checked. It replays the same disputed cases through Super and
+the judgement can be checked. It has been: `--corpus` debated 46 labelled disputed cases on
+both models (data/model_comparison/debate_corpus.json). Ultra reached a verdict less often
+(37/46 against 40/46), said DISAGREE on fraud and on honest trade about equally (95% and
+94%, against Super's 73% and 72%) and cost 5.2x as much, so the default is now Super. It replays the same disputed cases through Super and
 Ultra and reports what each costs and what each concludes.
 
 WHAT MAKES THE DEBATE DIFFERENT FROM EVERY OTHER AGENT
@@ -41,9 +44,8 @@ one should be an investigation worth having run. So:
     and each round resends the growing transcript. Volume compounds on top of price,
     which is why the cost column below is worth reading rather than assuming.
 
-If Ultra shows no better resolution rate, set DEBATE_MODEL back to
-nvidia/nemotron-3-super-120b-a12b. That reverses the decision without a deploy, which
-is why the model is read from the environment rather than pinned.
+The default is Super. DEBATE_MODEL=nvidia/Nemotron-3-Ultra-550b-a55b restores Ultra
+without a deploy, which is why the model is read from the environment rather than pinned.
 
 This costs real tokens on a real endpoint. It is a deliberate spend, run manually.
 """
@@ -413,7 +415,7 @@ async def main() -> int:
         print(f"Ultra costs {ultra_cost / super_cost:.1f}x Super on this sample.")
     print(
         "The number that justifies Ultra is a better resolution rate, not agreement\n"
-        "with Super. If the rates match, set DEBATE_MODEL back to Super."
+        "with Super. If the rates match, keep the debate on Super."
     )
     return 0
 

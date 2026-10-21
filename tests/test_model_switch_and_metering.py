@@ -140,32 +140,31 @@ class TestTheSwitchGuard(ModelSwitchTestCase):
         self.assertLess(limit, config.rate_multiple(ULTRA, against=NANO))
 
 
-class TestTheDebateAgentUsesUltra(unittest.TestCase):
+class TestTheDebateAgentModel(unittest.TestCase):
     """
-    The one place Ultra is on by default, and the reason it is defensible there.
+    The debate ran on Ultra by default until it was measured against Super.
 
-    Everywhere else the deterministic floor overrides the model -- an agent may raise
-    risk but never lower it below the floor -- so reasoning capacity cannot change the
-    outcome. The debate is the exception: it runs only on a disputed score, measured at
-    2 calls per 20 cases, and its output is a reasoned CONFIRM/DISAGREE that IS the
-    outcome rather than a score awaiting override.
+    scripts/compare_debate_models.py --corpus debated 46 disputed cases from the labelled
+    corpus on both models (data/model_comparison/debate_corpus.json). Ultra reached a
+    verdict less often (80% against 87%), told fraud from honest trade no better, cost
+    5.2x as much and took twice as long, so the default is Super. DEBATE_MODEL puts Ultra
+    back without a deploy.
     """
 
-    def test_the_debate_default_is_ultra(self):
+    def test_the_debate_default_is_super(self):
         from vf_logistics.agents import debate_agent
 
-        self.assertEqual(debate_agent.MODEL_ID, ULTRA)
+        if os.getenv("DEBATE_MODEL"):
+            self.skipTest("DEBATE_MODEL is set in this environment")
+        self.assertEqual(debate_agent.MODEL_ID, SUPER)
 
-    def test_ultra_is_priced_so_the_debate_is_billed_correctly(self):
+    def test_ultra_is_priced_so_the_debate_is_billed_correctly_when_selected(self):
         self.assertIn(ULTRA, config.PRICING)
         self.assertEqual(config.pricing_for(ULTRA)["input"], 1.00)
         self.assertEqual(config.pricing_for(ULTRA)["output"], 3.00)
 
     def test_the_per_case_agents_are_not_on_ultra(self):
-        """
-        The guard against the obvious mistake: reading "Ultra is good for the debate"
-        as "Ultra is good". These two run on every shipment.
-        """
+        """These two run on every shipment, so they must never default to the dearest model."""
         from vf_logistics.agents import compliance_agent, fraud_detection_agent
 
         for agent in (fraud_detection_agent, compliance_agent):
@@ -174,11 +173,7 @@ class TestTheDebateAgentUsesUltra(unittest.TestCase):
                 f"{agent.__name__} runs on every case and must not default to Ultra",
             )
 
-    def test_the_comparison_script_exists(self):
-        """
-        Ultra here is a quality bet, not a measured improvement. The script that would
-        settle it has to exist, or the bet is unfalsifiable.
-        """
+    def test_the_comparison_script_exists_and_says_how_to_reverse_the_decision(self):
         import pathlib
 
         script = (
@@ -188,6 +183,22 @@ class TestTheDebateAgentUsesUltra(unittest.TestCase):
         self.assertTrue(script.is_file())
         text = script.read_text(encoding="utf-8")
         self.assertIn("DEBATE_MODEL", text, "it must say how to reverse the decision")
+
+    def test_the_measured_comparison_is_committed(self):
+        """The default rests on a measurement, so the measurement has to be in the repo."""
+        import json
+        import pathlib
+
+        path = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "data" / "model_comparison" / "debate_corpus.json"
+        )
+        report = json.loads(path.read_text(encoding="utf-8"))
+        self.assertFalse(report["partial"])
+        self.assertEqual(
+            {report["results"]["super"]["model"], report["results"]["ultra"]["model"]},
+            {SUPER, ULTRA},
+        )
 
 
 class TestTavilyMetering(unittest.TestCase):
@@ -320,34 +331,29 @@ class TestTheModelNameInStringsAPersonReads(unittest.TestCase):
         """
         from vf_logistics.agents import debate_agent
 
+        if os.getenv("DEBATE_MODEL"):
+            self.skipTest("DEBATE_MODEL is set in this environment")
         self.assertEqual(
             config.model_label(debate_agent.MODEL_ID),
-            "NVIDIA Nemotron 3 Ultra",
-            "DEBATE_MODEL defaults to Ultra, so the label the audit trail carries for "
-            "the debate hop must read Ultra -- if this says Super, the string has been "
+            "NVIDIA Nemotron 3 Super",
+            "DEBATE_MODEL defaults to Super, so the label the audit trail carries for "
+            "the debate hop must read Super -- if this says Ultra, the string has been "
             "hard-coded again",
         )
-        self.assertNotIn("Super", config.model_label(debate_agent.MODEL_ID))
+        self.assertNotIn("Ultra", config.model_label(debate_agent.MODEL_ID))
 
-    def test_no_source_file_hardcodes_Super_onto_the_debate_path(self):
+    def test_no_source_file_hardcodes_a_model_name_onto_the_debate_path(self):
         """
         A grep as a test, because this drifted back three times.
 
-        Two exclusions, both necessary rather than convenient:
+        The debate's model is debate_agent.MODEL_ID, and the strings a person reads must
+        not name a model on that path: a name written out in a comment or an event string
+        goes stale the day DEBATE_MODEL changes, and the stale name is what gets copied
+        into the README and the submission. (Ultra was the default until the measured
+        comparison moved it to Super; before that, "Super" was written over an Ultra hop.)
 
-        `Super` is CORRECT for the investigation agent -- INVESTIGATION_MODEL genuinely
-        is Super -- so this cannot ban the word. It is scoped to lines that also mention
-        the debate, the Senior Auditor, or deep review.
-
-        And a line naming BOTH Ultra and Super is comparing them, not claiming Super runs
-        the debate. The measured cost lines in debate_agent.py ("$0.0198 per Ultra debate
-        against Super's $0.0015") and the note in config.model_label describing this very
-        bug are the reason: a rule that flagged those would be a rule people switch off.
-        What is left is the actual failure mode -- Super named on the debate path with no
-        Ultra in sight, which is how every one of the three regressions read.
-
-        This caught orchestrator.py:1907 on its first run, one line below a docstring
-        that said Ultra correctly.
+        Lines that name BOTH Super and Ultra are comparing them and are allowed. So are
+        lines that point at MODEL_ID or DEBATE_MODEL, or that say "by default".
         """
         import pathlib
         import re
@@ -358,16 +364,19 @@ class TestTheModelNameInStringsAPersonReads(unittest.TestCase):
             for number, line in enumerate(
                 path.read_text(encoding="utf-8").splitlines(), start=1
             ):
-                if not re.search(r"\bSuper\b", line):
+                if not re.search(r"debate|Senior Auditor|deep.?review", line, re.I):
                     continue
-                if re.search(r"\bUltra\b", line):
+                if not re.search(r"\b(Super|Ultra)\b", line):
                     continue
-                if re.search(r"debate|Senior Auditor|deep.?review", line, re.I):
-                    offenders.append(f"{path.name}:{number}: {line.strip()}")
+                if re.search(r"\bSuper\b", line) and re.search(r"\bUltra\b", line):
+                    continue
+                if re.search(r"MODEL_ID|DEBATE_MODEL|by default|model_label", line):
+                    continue
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
         self.assertEqual(
             offenders, [],
-            "these lines name Super on the debate/Senior Auditor/deep-review path "
-            "without naming Ultra, and that hop runs Ultra:\n  "
+            "these lines name a model on the debate/Senior Auditor/deep-review path "
+            "without naming both models or pointing at MODEL_ID:\n  "
             + "\n  ".join(offenders),
         )
 

@@ -536,7 +536,7 @@ export interface OrchestratorSnapshot {
     string,
     // `cost_usd` is summed server-side from each step's own rate, not derived here.
     // The rate depends on which model ran the step -- Nano for fraud and compliance,
-    // Super for investigation, Ultra for the debate -- so multiplying these tokens by
+    // Super for investigation and the debate -- so multiplying these tokens by
     // any single model's price would misreport every mixed window.
     { calls: number; input: number; output: number; cost_usd: number }
   >;
