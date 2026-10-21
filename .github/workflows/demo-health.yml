@@ -1,13 +1,16 @@
 name: Demo health
 
-# Keeps the judged deployment honest through the judging window, at no cost.
+# Keeps the judged deployment reachable through the judging window, at no cost.
 #
-# The hackathon requires the demo to stay live until judging closes, and three things
-# can break it without anyone noticing: a cold start (Cloud Run scales to zero, so the
-# first visit after an idle hour waits 10-20 s), a revoked delegation boundary (the
-# agent suspends for every visitor after that), and an emptied board. This job reads
-# only. It never writes, never signs in, and holds no secret, so a failure here is a
-# signal for a person rather than an automated repair that could fight a judge.
+# The hackathon requires the demo to stay live until judging closes, and a cold start
+# (Cloud Run scales to zero, so the first visit after an idle hour waits 10-20 s) can break
+# it without anyone noticing. This job reads only /health. It never writes, never signs in,
+# and holds no secret, so a failure here is a signal for a person rather than an automated
+# repair that could fight a judge.
+#
+# The deployed console and API answer 401 to an anonymous visitor (ANONYMOUS_ROLE=none), so
+# the agent state and the board are not checked here: an unauthenticated check of them failed
+# on every run from 2026-10-20.
 #
 # Pinging every 20 minutes during European and American working hours keeps an
 # instance warm: Cloud Run bills request time, not idle time, and a GET to /health
@@ -44,21 +47,3 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$BASE/health")
           echo "/health -> $code"
           test "$code" = "200"
-
-      - name: Agent is operating under a published boundary
-        if: steps.window.outputs.open == 'true'
-        run: |
-          body=$(curl -sf --max-time 60 "$BASE/api/proxy/governance/agent")
-          state=$(echo "$body" | jq -r '.state')
-          boundary=$(echo "$body" | jq -r '.boundary.boundary_id // "none"')
-          echo "agent state: $state, boundary: $boundary"
-          test "$state" = "READY"
-
-      - name: Board still carries the seeded cases
-        if: steps.window.outputs.open == 'true'
-        run: |
-          body=$(curl -sf --max-time 60 "$BASE/api/proxy/metrics/summary")
-          total=$(echo "$body" | jq '[.counts[]] | add')
-          spent=$(echo "$body" | jq -r '.estimated_cost_usd')
-          echo "cases on the board: $total, model spend: \$$spent"
-          test "$total" -ge 20
