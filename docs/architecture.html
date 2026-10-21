@@ -1,368 +1,1015 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Floorline &mdash; Architecture Diagram</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floorline Architecture</title>
+<meta name="description" content="How Floorline works: deterministic checks set a risk floor, NVIDIA Nemotron agents on Nebius Token Factory argue above it, and nothing can take a case below it.">
 <style>
-  body {
-    margin: 0; padding: 0;
-    background: #0b1020;
-    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+  :root {
+    color-scheme: light;
+    --bg: #FFFFFF;
+    --bg-2: #F8F9FB;
+    --surface: #FFFFFF;
+    --surface-2: #F8F9FB;
+    --line: #DDE3EC;
+    --line-2: #C3CCDA;
+    --text: #2E426B;
+    --muted: #566579;
+    --faint: #6B7789;
+    --floor: #246B4E;
+    --floor-soft: rgba(36, 107, 78, 0.09);
+    --risk: #984B45;
+    --risk-soft: rgba(152, 75, 69, 0.09);
+    --auth: #956B24;
+    --auth-soft: rgba(149, 107, 36, 0.10);
+    --search: #71665B;
+    --nano: #246D72;
+    --ultra: #5D4A8A;
+    --ultra-soft: rgba(93, 74, 138, 0.09);
+    --super: #244E95;
+    --tint-blue: #F8F9FB;
+    --tint-green: #F8FBF9;
+    --tint-teal: #F8FBFB;
+    --tint-purple: #F9F8FB;
+    --tint-wine: #FBF8F8;
+    --tint-gold: #FBFAF8;
+    --tint-brown: #FBFAF9;
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+    --sans: "Meiryo UI", Meiryo, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
   }
-  #shot { width: 1500px; background: #0b1020; padding: 30px 20px 24px; }
-  h1 { color: #e8edf9; font-size: 27px; margin: 0 0 5px; letter-spacing: -0.5px; }
-  .sub { color: #96a2c0; font-size: 13px; margin-bottom: 20px; }
-  .sub b { color: #e8edf9; }
-  svg { display: block; }
-  .hint { color: #6f7d9c; font-size: 12px; margin-top: 14px; }
-  .hint b { color: #9fb0d0; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---------- top bar ---------- */
+  .bar {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar .wrap { display: flex; align-items: center; gap: 20px; height: 54px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.2px; white-space: nowrap; }
+  .brand svg { flex: none; }
+  .bar nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-left: auto; }
+  .bar nav::-webkit-scrollbar { display: none; }
+  .bar nav a {
+    text-decoration: none; color: var(--muted); font-size: 13px; padding: 6px 10px;
+    border-radius: 7px; white-space: nowrap;
+  }
+  .bar nav a:hover { color: var(--text); background: var(--surface-2); }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      linear-gradient(var(--bg) 0, transparent 30%, transparent 70%, var(--bg) 100%),
+      repeating-linear-gradient(90deg, transparent 0 59px, rgba(46,66,107,0.05) 59px 60px),
+      repeating-linear-gradient(0deg, transparent 0 59px, rgba(46,66,107,0.05) 59px 60px);
+    pointer-events: none;
+  }
+  .hero .wrap { position: relative; padding-top: 56px; padding-bottom: 64px; }
+  .hero-grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; align-items: start; margin-top: 30px; }
+  .hero-grid > div:first-child { padding-top: 8px; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: 1.6px; text-transform: uppercase; color: var(--floor); }
+  h1 { font-size: clamp(34px, 6.4vw, 84px); line-height: 1.0; letter-spacing: -0.03em; margin: 14px 0 0; }
+  h1 .strike { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--risk); text-decoration-thickness: 4px; }
+  h1 .up { color: var(--floor); }
+  .lede { color: var(--muted); font-size: 17px; max-width: 560px; margin: 0 0 26px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line-2); font-size: 12.5px; color: var(--muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+
+  /* ---------- the ratchet (hero simulator) ---------- */
+  .ratchet {
+    background: linear-gradient(180deg, var(--surface) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--line-2); border-radius: 18px; padding: 20px; box-shadow: 0 24px 60px -36px rgba(36,78,149,0.28);
+  }
+  .ratchet-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .ratchet-head h2 { font-size: 15px; margin: 0; letter-spacing: -0.1px; }
+  .ratchet-head .mono { color: var(--faint); font-size: 11.5px; }
+  .gauge-row { display: grid; grid-template-columns: 136px 1fr; gap: 18px; align-items: stretch; }
+  .gauge { position: relative; height: 270px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
+  .gauge .tick { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); }
+  .gauge .tick span { position: absolute; left: 6px; top: -8px; font: 10px var(--mono); color: var(--faint); }
+  .gauge .floor-zone { position: absolute; left: 0; right: 0; bottom: 0; background: var(--floor-soft); transition: height .45s cubic-bezier(.2,.8,.2,1); }
+  .gauge .floor-line { position: absolute; left: 0; right: 0; height: 3px; background: var(--floor); box-shadow: 0 0 10px var(--floor-soft); transition: bottom .45s cubic-bezier(.2,.8,.2,1); }
+  .gauge .floor-line::after { content: "FLOOR"; position: absolute; left: 34px; top: 7px; font: 700 9.5px var(--mono); color: var(--floor); letter-spacing: 1px; }
+  .gauge .model-mark { position: absolute; left: 34px; width: 34px; height: 3px; background: var(--risk); transition: bottom .45s cubic-bezier(.2,.8,.2,1), opacity .3s; }
+  .gauge .model-mark::after { content: "MODEL"; position: absolute; left: 0; top: -14px; font: 700 9px var(--mono); color: var(--risk); letter-spacing: 1px; }
+  .gauge .model-mark.ghost { opacity: .45; background: repeating-linear-gradient(90deg, var(--risk) 0 4px, transparent 4px 7px); }
+  .gauge .eff { position: absolute; right: 14px; width: 26px; border-radius: 6px 6px 0 0; bottom: 0; background: linear-gradient(180deg, var(--super) 0%, var(--text) 100%); opacity: .92; transition: height .45s cubic-bezier(.2,.8,.2,1); }
+  .gauge .eff-label { position: absolute; right: 6px; font: 700 10px var(--mono); color: var(--text); transition: bottom .45s cubic-bezier(.2,.8,.2,1); }
+  .controls { display: grid; gap: 14px; align-content: start; }
+  .ctl label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  .ctl label b { font: 700 13px var(--mono); }
+  input[type=range] { width: 100%; accent-color: var(--floor); height: 22px; }
+  input[type=range].model { accent-color: var(--risk); }
+  .seg { display: flex; border: 1px solid var(--line-2); border-radius: 9px; overflow: hidden; }
+  .seg button {
+    flex: 1; background: transparent; color: var(--muted); border: 0; padding: 7px 4px; font: 600 11px var(--mono);
+    cursor: pointer; border-right: 1px solid var(--line-2);
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed=true] { background: var(--surface-2); color: var(--text); }
+  .eff-out { display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+  .eff-out .big { font: 800 34px/1 var(--mono); letter-spacing: -1px; }
+  .eff-out .who { font-size: 12px; color: var(--muted); }
+  .formula { font: 12px var(--mono); color: var(--faint); margin-top: 2px; }
+  .route { margin-top: 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); padding: 12px 14px; }
+  .route .state { display: inline-block; font: 800 12px var(--mono); letter-spacing: .8px; padding: 4px 8px; border-radius: 6px; }
+  .route ol { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  .route ol li { margin: 3px 0; }
+  .route ol li::marker { color: var(--faint); font: 11px var(--mono); }
+  .s-clear { background: var(--floor-soft); color: var(--floor); }
+  .s-held { background: var(--auth-soft); color: var(--auth); }
+  .s-esc { background: var(--risk-soft); color: var(--risk); }
+  .s-human { background: var(--ultra-soft); color: var(--ultra); }
+  .autoplay-note { font-size: 11.5px; color: var(--faint); margin-top: 10px; display: flex; gap: 6px; align-items: center; }
+  .autoplay-note .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--floor); animation: blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+
+  /* ---------- sections ---------- */
+  section { padding: 76px 0; border-bottom: 1px solid var(--line); }
+  .sec-head { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: end; margin-bottom: 34px; }
+  .sec-head h2 { font-size: clamp(28px, 3.6vw, 40px); letter-spacing: -1px; line-height: 1.08; margin: 10px 0 0; }
+  .sec-head p { color: var(--muted); margin: 0; font-size: 15.5px; }
+  .num { font: 600 12px var(--mono); color: var(--faint); letter-spacing: 1.4px; }
+
+  /* ---------- system map ---------- */
+  .scen { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .scen button {
+    background: var(--surface); color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px;
+    padding: 8px 14px; font: 600 13px var(--sans); cursor: pointer; display: inline-flex; gap: 8px; align-items: center;
+  }
+  .scen button:hover { border-color: var(--faint); }
+  .scen button[aria-pressed=true] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .narr {
+    min-height: 54px; display: flex; gap: 12px; align-items: center; padding: 12px 16px; margin-bottom: 18px;
+    border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); font-size: 14px; color: var(--text);
+  }
+  .narr .step-n { font: 800 12px var(--mono); color: var(--bg); background: var(--floor); border-radius: 6px; padding: 3px 7px; flex: none; }
+  .map { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; position: relative; }
+  .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .col-h { font: 700 10.5px var(--mono); letter-spacing: 1.3px; color: var(--faint); text-transform: uppercase; padding: 0 2px 6px; border-bottom: 1px solid var(--line); margin-bottom: 2px; display: flex; justify-content: space-between; }
+  .col-h i { font-style: normal; color: var(--line-2); }
+  .node {
+    text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 10px 9px 12px; color: var(--text); cursor: pointer; position: relative; font: inherit;
+    transition: border-color .25s, background .25s, opacity .3s, transform .25s, box-shadow .25s;
+  }
+  .node::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--k, var(--line-2)); }
+  .node b { display: block; font-size: 12.5px; line-height: 1.25; font-weight: 650; }
+  .node small { display: block; font: 10.5px/1.3 var(--mono); color: var(--muted); margin-top: 3px; }
+  .node:hover { border-color: var(--line-2); background: var(--surface-2); }
+  .node[aria-expanded=true] { border-color: var(--text); }
+  .map.playing .node { opacity: .28; }
+  .map.playing .node.on { opacity: 1; border-color: var(--k, var(--floor)); background: var(--surface-2); }
+  .map.playing .node.now { opacity: 1; transform: translateY(-2px); box-shadow: 0 0 0 1px var(--k, var(--floor)), 0 10px 30px -10px var(--k, var(--floor)); }
+  .map.playing .node.stop { border-color: var(--risk); box-shadow: 0 0 0 1px var(--risk); opacity: 1; }
+  .k-in { --k: #566579; } .k-gate { --k: var(--risk); } .k-floor { --k: var(--floor); } .k-nano { --k: var(--nano); }
+  .k-search { --k: var(--search); } .k-ultra { --k: var(--ultra); } .k-super { --k: var(--super); }
+  .k-auth { --k: var(--auth); } .k-human { --k: var(--floor); } .k-out { --k: var(--nano); }
+  .detail {
+    margin-top: 18px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface);
+    padding: 18px 20px; display: grid; grid-template-columns: 220px 1fr; gap: 20px;
+  }
+  .detail h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.3px; }
+  .detail .meta { font: 11.5px/1.6 var(--mono); color: var(--muted); }
+  .detail .meta b { color: var(--text); font-weight: 600; }
+  .detail p { margin: 0; color: var(--muted); }
+  .tag { display: inline-block; font: 700 10.5px var(--mono); padding: 3px 7px; border-radius: 5px; margin-top: 8px; letter-spacing: .5px; }
+  .tag.never { background: var(--floor-soft); color: var(--floor); }
+  .tag.up { background: var(--risk-soft); color: var(--risk); }
+  .tag.none { background: var(--surface-2); color: var(--muted); }
+
+  /* ---------- model ladder ---------- */
+  .ladder { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .rung { border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); padding: 18px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .rung .size { font: 800 44px/1 var(--mono); letter-spacing: -2px; }
+  .rung .size small { font-size: 16px; letter-spacing: 0; color: var(--muted); margin-left: 3px; }
+  .rung h3 { margin: 10px 0 2px; font-size: 15px; }
+  .rung .id { font: 10.5px var(--mono); color: var(--faint); word-break: break-all; }
+  .rung .job { margin: 14px 0 0; color: var(--muted); font-size: 13.5px; flex: 1; }
+  .rung .when { margin-top: 14px; font: 700 11px var(--mono); letter-spacing: .6px; padding: 7px 9px; border-radius: 7px; background: var(--bg); border: 1px solid var(--line); }
+  .price { margin-top: 12px; }
+  .price .lbl { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); margin-bottom: 5px; }
+  .price .track { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; }
+  .price .fill { height: 100%; border-radius: 3px; width: 0; transition: width 1.1s cubic-bezier(.2,.8,.2,1); }
+  .endpoint {
+    margin-top: 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center;
+    border: 1px dashed var(--line-2); border-radius: 14px; padding: 14px 18px; background: var(--bg-2);
+  }
+  .endpoint .mono { color: var(--floor); font-size: 13px; }
+  .endpoint p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .endpoint .chip { justify-self: start; }
+  .facts3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+  .fact { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--surface); }
+  .fact .v { font: 800 22px var(--mono); letter-spacing: -.5px; }
+  .fact p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+  /* ---------- chain of custody ---------- */
+  .custody { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; counter-reset: c; }
+  .lock { border: 1px solid var(--line); border-radius: 14px; padding: 16px; background: var(--surface); position: relative; counter-increment: c; }
+  .lock::before { content: counter(c, decimal-leading-zero); font: 700 11px var(--mono); color: var(--faint); }
+  .lock h3 { margin: 6px 0 6px; font-size: 15px; letter-spacing: -.2px; }
+  .lock p { margin: 0; color: var(--muted); font-size: 13.2px; }
+  .lock code { color: var(--text); }
+  .lock .rule { margin-top: 10px; font: 700 11px var(--mono); color: var(--floor); letter-spacing: .3px; }
+  .lock.warn .rule { color: var(--auth); }
+
+  /* ---------- exactly once ---------- */
+  .once { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
+  .seq-wrap { border: 1px solid var(--line-2); border-radius: 16px; background: var(--surface); padding: 14px; overflow-x: auto; }
+  .seq-wrap svg { width: 100%; min-width: 640px; height: auto; display: block; }
+  .tally { display: grid; gap: 12px; align-content: start; }
+  .counter { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--surface); }
+  .counter .k { font: 700 10.5px var(--mono); letter-spacing: 1.2px; color: var(--faint); text-transform: uppercase; }
+  .counter .v { font: 800 38px/1.1 var(--mono); letter-spacing: -1px; margin-top: 4px; transition: color .3s; }
+  .counter p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  .verdict { border-radius: 12px; padding: 14px 16px; font-size: 13.5px; border: 1px solid var(--floor); background: var(--floor-soft); color: var(--floor); }
+  .verdict.warn { border-color: var(--auth); background: var(--auth-soft); color: var(--auth); }
+  .msg-line { fill: none; stroke-width: 1.8; }
+  .msg-text { font: 13.5px var(--sans); fill: var(--text); }
+  .msg-text.dim { fill: var(--muted); font-size: 10.5px; }
+  .lane-h { font: 700 13px var(--mono); fill: var(--text); letter-spacing: .3px; }
+  .lane-s { font: 11px var(--mono); fill: var(--faint); }
+  .reveal { opacity: 0; transition: opacity .35s; }
+  .reveal.in { opacity: 1; }
+
+  /* ---------- proof ---------- */
+  .proof { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--surface); }
+  .stat .v { font: 800 34px/1 var(--mono); letter-spacing: -1.2px; }
+  .stat .ci { font: 11px var(--mono); color: var(--faint); margin-top: 6px; }
+  .stat p { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+  .stat.wide { grid-column: span 2; }
+  .stat.bad .v { color: var(--auth); }
+  .honest { margin-top: 18px; border-left: 3px solid var(--auth); padding: 4px 0 4px 16px; color: var(--muted); font-size: 13.5px; max-width: 900px; }
+  footer { padding: 34px 0 54px; color: var(--faint); font-size: 12.5px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1080px) {
+    .map { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .ladder, .custody, .proof { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .once { grid-template-columns: 1fr; }
+    .tally { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 860px) {
+    .hero-grid, .sec-head, .once { grid-template-columns: 1fr; }
+    .hero .wrap { padding-top: 40px; padding-bottom: 40px; }
+    .hero-grid { gap: 28px; margin-top: 22px; }
+    .facts3 { grid-template-columns: 1fr; }
+    .endpoint { grid-template-columns: 1fr; }
+    .detail { grid-template-columns: 1fr; }
+    section { padding: 52px 0; }
+  }
+  @media (max-width: 560px) {
+    .map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ladder, .custody, .proof { grid-template-columns: 1fr; }
+    .stat.wide { grid-column: auto; }
+    .tally { grid-template-columns: 1fr; }
+    .gauge-row { grid-template-columns: 92px 1fr; gap: 12px; }
+    .bar nav { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+    html { scroll-behavior: auto; }
+  }
+  /* ---------- deployment map (drawn like the architecture deck) ---------- */
+  .deploy-sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+  .deploy-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+  .deploy-wrap svg { display: block; width: 100%; min-width: 880px; height: auto; font-family: var(--sans); }
+  .deploy-wrap .cap { font-size: 14px; font-weight: 700; letter-spacing: .6px; fill: #566579; }
+  .deploy-wrap .t1 { font-size: 17px; font-weight: 700; }
+  .deploy-wrap .t2 { font-size: 16px; font-weight: 700; }
+  .deploy-wrap .t3 { font-size: 13px; font-weight: 600; }
+  .deploy-wrap .lbl { font-size: 13px; font-weight: 700; letter-spacing: .5px; }
+  .deploy-wrap .note { font-size: 13px; fill: #566579; }
 </style>
 </head>
 <body>
-<div id="shot">
-  <h1>Floorline &mdash; Fraud Detection That an Operator Can Delegate To</h1>
-  <div class="sub">
-    <b>NVIDIA Nemotron on Nebius Token Factory</b> &middot; OpenAI-compatible transport &middot;
-    <b>Cloud Run</b> asia-southeast1 &middot; Google Cloud for infrastructure only &middot;
-    VF Logistics is the operator in the demo &middot;
-    an agent finding is a <b>claim</b> until something deterministic agrees with it
+
+<header class="bar">
+  <div class="wrap">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect x="1" y="1" width="20" height="20" rx="5" fill="none" stroke="#C3CCDA"/><path d="M5 15 L9 9 L12 12 L17 5" fill="none" stroke="#984B45" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14.5 H18" stroke="#246B4E" stroke-width="2.2" stroke-linecap="round"/></svg>
+      Floorline
+    </div>
+    <nav aria-label="Sections">
+      <a href="#rule">The rule</a>
+      <a href="#deploy">Deployment</a>
+      <a href="#map">Follow a shipment</a>
+      <a href="#models">Models</a>
+      <a href="#custody">Chain of custody</a>
+      <a href="#once">Exactly once</a>
+      <a href="#proof">Measured</a>
+    </nav>
   </div>
+</header>
 
-  <svg width="1460" height="1086" viewBox="0 0 1460 1086" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="gRun" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#1b2750"/><stop offset="1" stop-color="#141d3a"/>
-      </linearGradient>
-      <linearGradient id="gAgent" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#1d2b52"/><stop offset="1" stop-color="#172244"/>
-      </linearGradient>
-      <linearGradient id="gNeb" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#4f7cff"/><stop offset="0.55" stop-color="#76b900"/>
-        <stop offset="1" stop-color="#9ad600"/>
-      </linearGradient>
-      <linearGradient id="gGov" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2a2414"/><stop offset="1" stop-color="#1c1a12"/>
-      </linearGradient>
-      <linearGradient id="gExec" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#14261c"/><stop offset="1" stop-color="#101d17"/>
-      </linearGradient>
-      <marker id="arw" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
-        <path d="M0,1 L10,5.5 L0,10 z" fill="#5b6b93"/>
-      </marker>
-      <marker id="arwB" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
-        <path d="M0,1 L10,5.5 L0,10 z" fill="#76b900"/>
-      </marker>
-      <marker id="arwY" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
-        <path d="M0,1 L10,5.5 L0,10 z" fill="#fbbc05"/>
-      </marker>
-      <marker id="arwG" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
-        <path d="M0,1 L10,5.5 L0,10 z" fill="#34a853"/>
-      </marker>
-    </defs>
+<!-- ================================================================ HERO -->
+<div class="hero" id="rule">
+  <div class="wrap">
+    <div class="eyebrow">Shipment-fraud agents &middot; architecture</div>
+    <h1>Models may raise risk.<br><span class="strike">Lower it?</span> <span class="up">Never.</span></h1>
+    <div class="hero-grid">
+    <div>
+      <p class="lede">Deterministic checks set a <b>floor</b> under every shipment. NVIDIA Nemotron agents on
+        Nebius Token Factory score, search, investigate and debate above it, and nothing they say
+        can pull a case below it. A person publishes what the agent may do, and a person decides
+        every disputed case.</p>
+      <div class="chips">
+        <span class="chip"><span class="dot" style="background:var(--nano)"></span>Nemotron 3 Nano &middot; Super &middot; Ultra</span>
+        <span class="chip"><span class="dot" style="background:var(--ultra)"></span>Nebius Token Factory</span>
+        <span class="chip"><span class="dot" style="background:var(--search)"></span>Tavily, live, 6 call sites</span>
+        <span class="chip"><span class="dot" style="background:var(--muted)"></span>Cloud Run &middot; Firestore &middot; Pub/Sub</span>
+      </div>
+    </div>
 
-    <!-- ==================== LEFT COLUMN ==================== -->
-    <rect x="16" y="16" width="260" height="190" rx="13"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="43" fill="#96a2c0" font-size="11" letter-spacing="1.4">EVENT SOURCES</text>
-    <text x="38" y="69" fill="#e8edf9" font-size="13" font-weight="600">Pub/Sub shipment-events</text>
-    <text x="38" y="88" fill="#8f9dbd" font-size="11.5">push envelope or bare shipment</text>
-    <text x="38" y="116" fill="#e8edf9" font-size="13" font-weight="600">Document upload</text>
-    <text x="38" y="135" fill="#8f9dbd" font-size="11.5">bill of lading / invoice, PDF or scan</text>
-    <text x="38" y="163" fill="#e8edf9" font-size="13" font-weight="600">Cloud Storage stage</text>
-    <text x="38" y="182" fill="#8f9dbd" font-size="11.5">object-finalize push, or batch sweep</text>
-    <text x="38" y="199" fill="#6f7d9c" font-size="11">push arrives over authenticated HTTP</text>
-
-    <rect x="16" y="222" width="260" height="92" rx="13"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="249" fill="#96a2c0" font-size="11" letter-spacing="1.4">OPERATOR CONSOLE</text>
-    <text x="38" y="274" fill="#e8edf9" font-size="13" font-weight="600">Next.js &middot; in vf-app, on $PORT</text>
-    <text x="38" y="293" fill="#8f9dbd" font-size="11.5">HMAC session &middot; writes need one</text>
-    <text x="38" y="308" fill="#8496b5" font-size="11">anonymous is a viewer, for the demo only</text>
-
-    <rect x="16" y="330" width="260" height="116" rx="13"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="355" fill="#96a2c0" font-size="11" letter-spacing="1.4">IDENTITY &middot; vf-app</text>
-    <text x="38" y="377" fill="#c3ccdf" font-size="11.5">datastore.user &middot; storage.objectAdmin</text>
-    <text x="38" y="394" fill="#c3ccdf" font-size="11.5">pubsub.publisher &middot; one identity</text>
-    <text x="38" y="410" fill="#8f9dbd" font-size="11">EXECUTOR_URL can split publishing out</text>
-    <text x="38" y="428" fill="#c3ccdf" font-size="11">the key authorises &middot; a session narrows</text>
-    <text x="38" y="441" fill="#c3ccdf" font-size="11">it to one role, never widens it</text>
-
-    <rect x="16" y="456" width="260" height="54" rx="13"
-          fill="#141d3a" stroke="#4fc3f7" stroke-width="1.5"/>
-    <text x="38" y="474" fill="#4fc3f7" font-size="11" letter-spacing="1.4">TAVILY &middot; LIVE WEB SEARCH</text>
-    <text x="38" y="490" fill="#c3ccdf" font-size="11">6 call sites; debate &amp; radar choose queries</text>
-    <text x="38" y="504" fill="#8f9dbd" font-size="11">a failed search is reported, not hidden</text>
-    <path d="M324,483 L278,483" stroke="#4fc3f7" stroke-width="1.8" stroke-dasharray="4 3" fill="none" marker-end="url(#arw)"/>
-
-    <path d="M276,111 L324,111" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
-    <path d="M276,268 L300,268 L300,145 L324,145" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-
-    <!-- ==================== REASONING SERVICE ==================== -->
-    <rect x="324" y="16" width="576" height="494" rx="15"
-          fill="url(#gRun)" stroke="#3a4d7d" stroke-width="1.8"/>
-    <text x="346" y="43" fill="#8fb4ff" font-size="11" letter-spacing="1.4">CLOUD RUN &middot; asia-southeast1 &middot; ONE SERVICE, ONE CONTAINER</text>
-    <text x="346" y="67" fill="#e8edf9" font-size="16" font-weight="700">vf-app</text>
-    <text x="346" y="87" fill="#8f9dbd" font-size="11.5">Flask on 127.0.0.1:9090 behind Next.js &middot; WORKER_MODE=ondemand &middot; min-instances=0</text>
-
-    <rect x="346" y="100" width="532" height="68" rx="10"
-          fill="#101a36" stroke="#2c3a5e" stroke-width="1.3"/>
-    <text x="366" y="124" fill="#e8edf9" font-size="13" font-weight="600">gunicorn &rarr; Flask &nbsp;+&nbsp; orchestrator driven by request handlers</text>
-    <text x="366" y="144" fill="#8f9dbd" font-size="11.5">a claim is a lease, not a lock &middot; 180s &middot; a dead holder's case is re-offered</text>
-    <text x="366" y="161" fill="#6f7d9c" font-size="11">5s / 10s / 20s backoff &rarr; DEAD_LETTER after 3 attempts</text>
-
-    <path d="M612,168 L612,190" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
-
-    <rect x="346" y="194" width="532" height="88" rx="10"
-          fill="#1e1a2e" stroke="#6b4fa8" stroke-width="1.4"/>
-    <text x="366" y="217" fill="#b39ddb" font-size="11" letter-spacing="1.2">UNTRUSTED INPUT GATE &mdash; treat the document as the attacker</text>
-    <text x="366" y="240" fill="#e8edf9" font-size="12.5" font-weight="600">untrusted.py</text>
-    <text x="458" y="240" fill="#93a1c1" font-size="11.5">schema whitelist &middot; rejects risk_score / decision / state</text>
-    <text x="366" y="263" fill="#e8edf9" font-size="12.5" font-weight="600">model_armor.py</text>
-    <text x="468" y="263" fill="#93a1c1" font-size="11.5">400-char windows &middot; 120 overlap &middot; us-central1</text>
-    <text x="366" y="278" fill="#8d7bb8" font-size="11">a transcription may fill fields, never verdict fields</text>
-
-    <path d="M612,282 L612,304" stroke="#5b6b93" stroke-width="2" fill="none" marker-end="url(#arw)"/>
-
-    <rect x="346" y="308" width="532" height="164" rx="10"
-          fill="#0f1a34" stroke="#2c3a5e" stroke-width="1.3"/>
-    <text x="366" y="330" fill="#8fb4ff" font-size="11" letter-spacing="1.2">AGENT LAYER &middot; openai.AsyncOpenAI &middot; seven agents call a model</text>
-
-    <!-- agent column 1 -->
-    <rect x="362" y="340" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="362" y="340" width="4" height="28" rx="2" fill="#9ad600"/>
-    <text x="376" y="358" fill="#e8edf9" font-size="11.5" font-weight="600">document_intake</text>
-    <text x="482" y="358" fill="#93a1c1" font-size="10">MiniCPM-V vision</text>
-
-    <rect x="362" y="374" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="362" y="374" width="4" height="28" rx="2" fill="#ea4335"/>
-    <text x="376" y="392" fill="#e8edf9" font-size="11.5" font-weight="600">fraud_detection</text>
-    <text x="482" y="392" fill="#93a1c1" font-size="10">Nano &middot; risk 0&ndash;100</text>
-
-    <rect x="362" y="408" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="362" y="408" width="4" height="28" rx="2" fill="#fbbc05"/>
-    <text x="376" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">compliance</text>
-    <text x="482" y="426" fill="#93a1c1" font-size="10">Nano &middot; OFAC SDN / UN</text>
-
-    <rect x="362" y="442" width="248" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="362" y="442" width="4" height="28" rx="2" fill="#4285f4"/>
-    <text x="376" y="460" fill="#e8edf9" font-size="11.5" font-weight="600">hs_classifier</text>
-    <text x="482" y="460" fill="#93a1c1" font-size="10">Nano &middot; HS heading</text>
-
-    <!-- agent column 2 -->
-    <rect x="618" y="340" width="244" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="618" y="340" width="4" height="28" rx="2" fill="#ff8a3d"/>
-    <text x="632" y="358" fill="#e8edf9" font-size="11.5" font-weight="600">zero_day</text>
-    <text x="712" y="358" fill="#93a1c1" font-size="10">Nano &middot; gated by code</text>
-
-    <rect x="618" y="374" width="244" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="618" y="374" width="4" height="28" rx="2" fill="#b39ddb"/>
-    <text x="632" y="392" fill="#e8edf9" font-size="11.5" font-weight="600">auto_debate</text>
-    <text x="712" y="392" fill="#93a1c1" font-size="10">Ultra &middot; escalates only</text>
-
-    <rect x="618" y="408" width="244" height="28" rx="7" fill="url(#gAgent)" stroke="#41558a" stroke-width="1.1"/>
-    <rect x="618" y="408" width="4" height="28" rx="2" fill="#34a853"/>
-    <text x="632" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">investigation</text>
-    <text x="712" y="426" fill="#93a1c1" font-size="10">Super &middot; escalation case</text>
-
-    <rect x="618" y="442" width="244" height="28" rx="7" fill="#12192f" stroke="#33405f" stroke-width="1.1" stroke-dasharray="3 3"/>
-    <text x="632" y="453" fill="#93a1c1" font-size="10">no model: sql_prefilter &middot; model_armor</text>
-    <text x="632" y="464" fill="#8496b5" font-size="10">debate: Deep Review, same Ultra call</text>
-
-    <rect x="346" y="478" width="532" height="30" rx="8"
-          fill="#132a22" stroke="#34a853" stroke-width="1.4"/>
-    <text x="366" y="498" fill="#7fd6a0" font-size="12" font-weight="700">verifier.py</text>
-    <text x="444" y="498" fill="#a8d8bd" font-size="11">no model consulted &middot; effective_risk = max(model risk, floor)</text>
-
-    <!-- ==================== NEBIUS TOKEN FACTORY ==================== -->
-    <path d="M900,392 L940,392" stroke="#76b900" stroke-width="2.4" fill="none" marker-end="url(#arwB)"/>
-
-    <rect x="940" y="308" width="504" height="202" rx="14"
-          fill="#101a36" stroke="#76b900" stroke-width="1.8"/>
-    <text x="962" y="331" fill="#9ad600" font-size="11" letter-spacing="1.3">NEBIUS TOKEN FACTORY &middot; api.tokenfactory.nebius.com/v1/</text>
-
-    <rect x="962" y="342" width="6" height="94" rx="3" fill="url(#gNeb)"/>
-
-    <text x="980" y="357" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Nano 30B</text>
-    <text x="1166" y="357" fill="#93a1c1" font-size="11">$0.06 / $0.24</text>
-    <text x="1262" y="357" fill="#8496b5" font-size="10.5">fraud, compliance, HS, zero-day</text>
-
-    <text x="980" y="380" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Super 120B</text>
-    <text x="1166" y="380" fill="#93a1c1" font-size="11">$0.30 / $0.90</text>
-    <text x="1262" y="380" fill="#8496b5" font-size="10.5">investigation</text>
-
-    <text x="980" y="403" fill="#e8edf9" font-size="11.5" font-weight="600">Nemotron 3 Ultra 550B</text>
-    <text x="1166" y="403" fill="#93a1c1" font-size="11">$1.00 / $3.00</text>
-    <text x="1262" y="403" fill="#8496b5" font-size="10.5">debate, auto + Deep Review</text>
-
-    <text x="980" y="426" fill="#e8edf9" font-size="11.5" font-weight="600">MiniCPM-V 4.5 vision</text>
-    <text x="1166" y="426" fill="#93a1c1" font-size="11">$0.658 / $1.11</text>
-    <text x="1262" y="426" fill="#8496b5" font-size="10.5">document intake</text>
-
-    <text x="962" y="448" fill="#8496b5" font-size="10.5">USD per million tokens, input / output</text>
-
-    <text x="962" y="466" fill="#93a1c1" font-size="11.5">json_object on all but Super &middot; every reply checked against its schema</text>
-    <text x="962" y="484" fill="#93a1c1" font-size="11.5">an unknown model id prices at Nano and logs ERROR &mdash; it under-reports</text>
-    <text x="962" y="500" fill="#8496b5" font-size="11">per-tenant spend ceiling is checked before the call, not after</text>
-
-    <!-- ==================== FIELD NOTES ==================== -->
-    <rect x="940" y="16" width="504" height="280" rx="14"
-          fill="#131a30" stroke="#3a4d7d" stroke-width="1.5"/>
-    <text x="962" y="41" fill="#8fb4ff" font-size="11" letter-spacing="1.4">FIELD NOTES &mdash; WHAT THE BUILD ACTUALLY TAUGHT US</text>
-
-    <text x="962" y="66" fill="#e8edf9" font-size="12.5" font-weight="600">Scanning a whole document hides the injection</text>
-    <text x="962" y="84" fill="#93a1c1" font-size="11">One planted line inside a four-page bill of lading scores below</text>
-    <text x="962" y="100" fill="#93a1c1" font-size="11">threshold when scored whole. Windowing keeps the signal undiluted.</text>
-
-    <text x="962" y="128" fill="#e8edf9" font-size="12.5" font-weight="600">Two numbers are never read from a document</text>
-    <text x="962" y="146" fill="#93a1c1" font-size="11">avg_route_cost and shipper_tx_count decide whether a price looks</text>
-    <text x="962" y="162" fill="#93a1c1" font-size="11">wrong. A document supplying its own baseline could clear itself.</text>
-
-    <text x="962" y="190" fill="#e8edf9" font-size="12.5" font-weight="600">The risk floor is deliberately one-way</text>
-    <text x="962" y="208" fill="#93a1c1" font-size="11">A wrong exoneration releases contraband; a wrong escalation costs a</text>
-    <text x="962" y="224" fill="#93a1c1" font-size="11">reviewer ten minutes. Those two errors are not worth the same.</text>
-
-    <text x="962" y="252" fill="#e8edf9" font-size="12.5" font-weight="600">A lock guards writes, not side effects</text>
-    <text x="962" y="270" fill="#93a1c1" font-size="11">By the time the version check fired, hold_shipment had already run</text>
-    <text x="962" y="286" fill="#93a1c1" font-size="11">against cargo a reviewer released. The chain now re-reads each step.</text>
-
-    <!-- ==================== DELEGATED AUTHORITY ==================== -->
-    <path d="M470,510 L470,534" stroke="#fbbc05" stroke-width="2" fill="none" marker-end="url(#arwY)"/>
-    <text x="480" y="528" fill="#c9a227" font-size="11">verified risk + proposed action</text>
-
-    <rect x="16" y="534" width="884" height="170" rx="14"
-          fill="url(#gGov)" stroke="#fbbc05" stroke-width="1.8"/>
-    <text x="40" y="561" fill="#fbbc05" font-size="11" letter-spacing="1.4">DELEGATED AUTHORITY &mdash; governance.py</text>
-
-    <rect x="40" y="574" width="410" height="112" rx="10" fill="#191a2c" stroke="#4a4530" stroke-width="1.2"/>
-    <text x="60" y="597" fill="#e8edf9" font-size="13" font-weight="700">Delegation Boundary &nbsp;v1 &middot; v2 &middot; v3 &hellip;</text>
-    <text x="60" y="617" fill="#93a1c1" font-size="11.5">published by a named human, machine-readable JSON</text>
-    <text x="60" y="636" fill="#93a1c1" font-size="11.5">allowed_actions &middot; auto_release caps &middot; require_human_when</text>
-    <text x="60" y="655" fill="#93a1c1" font-size="11.5">re-publishing supersedes the version before it</text>
-    <text x="60" y="676" fill="#c9a227" font-size="11">authority is granted by publication, not by reasoning well</text>
-
-    <path d="M450,630 L478,630" stroke="#fbbc05" stroke-width="2" fill="none" marker-end="url(#arwY)"/>
-
-    <rect x="478" y="574" width="400" height="112" rx="10" fill="#191a2c" stroke="#4a4530" stroke-width="1.2"/>
-    <text x="498" y="597" fill="#e8edf9" font-size="13" font-weight="700">Execution Gate &mdash; fail closed</text>
-    <text x="498" y="615" fill="#93a1c1" font-size="11.5">no active boundary &rArr; every protected action refused</text>
-    <text x="498" y="631" fill="#93a1c1" font-size="11">auto-release needs CLEARED, a floor, a finding count, a value</text>
-    <text x="498" y="647" fill="#93a1c1" font-size="11.5">a denial turns the whole outcome into a proposal, and breaks</text>
-    <text x="498" y="663" fill="#93a1c1" font-size="11.5">injection_detected and forbidden_field are never waivable</text>
-    <text x="498" y="679" fill="#c9a227" font-size="11">draft_sar may draft and may never file</text>
-
-    <!-- ==================== EXECUTION IDENTITY ==================== -->
-    <path d="M900,604 L940,604" stroke="#34a853" stroke-width="2.2" fill="none" marker-end="url(#arwG)"/>
-
-    <rect x="940" y="534" width="504" height="170" rx="14"
-          fill="url(#gExec)" stroke="#34a853" stroke-width="1.8"/>
-    <text x="962" y="561" fill="#7fd6a0" font-size="11" letter-spacing="1.3">EXECUTION &middot; ONLY THROUGH THE GATE</text>
-    <text x="962" y="584" fill="#e8edf9" font-size="15" font-weight="700">vf-app</text>
-    <text x="1030" y="584" fill="#8f9dbd" font-size="11.5">acts itself, and only through the execution gate</text>
-    <text x="962" y="603" fill="#ea6a5e" font-size="11.5">a split-identity executor (EXECUTOR_URL) is optional and not deployed</text>
-
-    <rect x="962" y="614" width="460" height="76" rx="9" fill="#101f19" stroke="#2a4b39" stroke-width="1.1"/>
-    <text x="982" y="634" fill="#a8d8bd" font-size="11" letter-spacing="1">PROTECTED ACTIONS &middot; tools.py</text>
-    <text x="982" y="655" fill="#c3ccdf" font-size="11.5">release_shipment &middot; hold_shipment &middot; assign_analyst</text>
-    <text x="982" y="673" fill="#c3ccdf" font-size="11.5">draft_sar &middot; notify_webhook &middot; publish_decision</text>
-    <text x="1274" y="655" fill="#8f9dbd" font-size="11">each writes a receipt</text>
-    <text x="1274" y="673" fill="#6f7d9c" font-size="11">cargo really moves</text>
-
-    <!-- ==================== STATE ROW ==================== -->
-    <rect x="16" y="724" width="468" height="102" rx="12"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="38" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">FIRESTORE &middot; native mode &middot; eight collections, main five:</text>
-    <text x="38" y="772" fill="#c3ccdf" font-size="12">cases &middot; events &middot; audit_log &middot; delegation_boundaries &middot; prefilter_rules</text>
-    <text x="38" y="791" fill="#8f9dbd" font-size="11.5">_tenant_id on every write &middot; a foreign read returns nothing, not 403</text>
-    <text x="38" y="808" fill="#8f9dbd" font-size="11">27 composite indexes, each leading with _tenant_id</text>
-    <text x="38" y="822" fill="#6f7d9c" font-size="11">PITR 7 days &middot; daily + weekly backups &middot; delete protection on</text>
-
-    <rect x="504" y="724" width="468" height="102" rx="12"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="526" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">CLOUD STORAGE</text>
-    <text x="526" y="772" fill="#c3ccdf" font-size="12">the uploaded original, streamed back byte for byte</text>
-    <text x="526" y="791" fill="#c3ccdf" font-size="12">and a generated bill of lading for event-sourced cases</text>
-    <text x="526" y="808" fill="#8f9dbd" font-size="11">flagged generated, so a reconstruction is never shown as an original</text>
-    <text x="526" y="822" fill="#6f7d9c" font-size="11">its own archive and evidence prefixes are never re-ingested</text>
-
-    <rect x="992" y="724" width="452" height="102" rx="12"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="1014" y="750" fill="#8fb4ff" font-size="11" letter-spacing="1.3">PUB/SUB &middot; outbound</text>
-    <text x="1014" y="772" fill="#c3ccdf" font-size="12">case-decisions &rarr; ERP / WMS / billing</text>
-    <text x="1014" y="791" fill="#8f9dbd" font-size="11.5">only terminal decisions fan out downstream</text>
-    <text x="1014" y="808" fill="#8f9dbd" font-size="11">published last, so a refused action cannot be announced first</text>
-    <text x="1014" y="822" fill="#6f7d9c" font-size="11">published by vf-app itself; a split executor is optional</text>
-
-    <path d="M200,704 L200,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M700,704 L700,724" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M1180,704 L1180,724" stroke="#34a853" stroke-width="1.8" fill="none" marker-end="url(#arwG)"/>
-
-    <!-- ==================== VERIFICATION LOOP ==================== -->
-    <rect x="16" y="850" width="1428" height="124" rx="14"
-          fill="#141d3a" stroke="#4285f4" stroke-width="1.6"/>
-    <text x="38" y="873" fill="#8fb4ff" font-size="11" letter-spacing="1.3">VERIFICATION LOOP &middot; evidence.py &mdash; WHEN BOOKING DATA ALONE CANNOT SEPARATE HONEST FROM FRAUDULENT</text>
-
-    <rect x="36" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
-    <text x="48" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">1 &middot; Request</text>
-    <text x="48" y="920" fill="#93a1c1" font-size="10.5">HMAC link, one per document type</text>
-    <text x="48" y="935" fill="#93a1c1" font-size="10.5">cancelling needs a reason</text>
-
-    <rect x="272" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
-    <text x="284" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">2 &middot; Receive</text>
-    <text x="284" y="920" fill="#93a1c1" font-size="10.5">public /respond page, no sign-in</text>
-    <text x="284" y="935" fill="#93a1c1" font-size="10.5">only a usable copy fills a slot</text>
-
-    <rect x="508" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
-    <text x="520" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">3 &middot; Re-evaluate</text>
-    <text x="520" y="920" fill="#93a1c1" font-size="10.5">deterministic origin checks on what</text>
-    <text x="520" y="935" fill="#93a1c1" font-size="10.5">arrived; unread pages stay unverified</text>
-
-    <rect x="744" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
-    <text x="756" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">4 &middot; Approve</text>
-    <text x="756" y="920" fill="#93a1c1" font-size="10.5">open evidence: exception operation,</text>
-    <text x="756" y="935" fill="#93a1c1" font-size="10.5">operator + password, who and why</text>
-
-    <rect x="980" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
-    <text x="992" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">5 &middot; Execute</text>
-    <text x="992" y="920" fill="#93a1c1" font-size="10.5">claim before send; one key per</text>
-    <text x="992" y="935" fill="#93a1c1" font-size="10.5">approval; retry reads sent ledger</text>
-
-    <rect x="1216" y="884" width="208" height="68" rx="9" fill="#101a36" stroke="#2c3a5e" stroke-width="1.2"/>
-    <text x="1228" y="902" fill="#e8edf9" font-size="12.5" font-weight="600">6 &middot; Outcome</text>
-    <text x="1228" y="920" fill="#93a1c1" font-size="10.5">/today shows what waits,</text>
-    <text x="1228" y="935" fill="#93a1c1" font-size="10.5">/outcomes what resolved</text>
-
-    <path d="M246,918 L270,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M482,918 L506,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M718,918 L742,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M954,918 L978,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M1190,918 L1214,918" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-
-    <text x="38" y="966" fill="#c9a227" font-size="11">only a password sign-in can approve or execute &middot; a one-click guest session never can &middot; a failed send is retried, not assumed done &middot; the receiver applies each key once</text>
-
-    <path d="M300,826 L300,850" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-    <path d="M300,974 L300,996" stroke="#5b6b93" stroke-width="1.8" fill="none" marker-end="url(#arw)"/>
-
-    <!-- ==================== HUMAN ==================== -->
-    <rect x="16" y="996" width="700" height="84" rx="12"
-          fill="#1a2340" stroke="#4285f4" stroke-width="1.6"/>
-    <text x="38" y="1022" fill="#8fb4ff" font-size="11" letter-spacing="1.3">HUMAN &mdash; EVERY CASE THE AGENT DOES NOT CLEAR</text>
-    <text x="38" y="1045" fill="#e8edf9" font-size="13" font-weight="600">The review queue shows the original document beside the findings</text>
-    <text x="38" y="1066" fill="#93a1c1" font-size="11.5">release &middot; block &middot; request information &mdash; the signed session names the reviewer on the case</text>
-
-    <rect x="736" y="996" width="708" height="84" rx="12"
-          fill="#141d3a" stroke="#2c3a5e" stroke-width="1.5"/>
-    <text x="758" y="1022" fill="#96a2c0" font-size="11" letter-spacing="1.3">WHY THIS IS STILL AUTONOMY</text>
-    <text x="758" y="1045" fill="#e8edf9" font-size="13" font-weight="600">The human approves a policy once, not a shipment at a time</text>
-    <text x="758" y="1066" fill="#93a1c1" font-size="11.5">an agent that asked permission per case would be a slow human process with extra steps</text>
-  </svg>
-
-  <div class="hint">
-    Drawn from the code &mdash; fraud and compliance run concurrently into <b>SPECIALISTS_DONE</b>;
-    a case held for missing evidence goes through the <b>verification loop</b> before a person decides.
-    <b>The load-bearing idea:</b> the agent decides what is true, the verifier decides what is
-    proven, and a published boundary decides what may be done about it.
+    <div class="ratchet" aria-label="Interactive risk floor simulator">
+      <div class="ratchet-head">
+        <h2>Try the rule</h2>
+        <span class="mono">effective = max(model, floor)</span>
+      </div>
+      <div class="gauge-row">
+        <div class="gauge" id="gauge" aria-hidden="true">
+          <div class="tick" style="bottom:25%"><span>25</span></div>
+          <div class="tick" style="bottom:50%"><span>50</span></div>
+          <div class="tick" style="bottom:75%"><span>75</span></div>
+          <div class="floor-zone" id="gFloorZone"></div>
+          <div class="floor-line" id="gFloor"></div>
+          <div class="model-mark" id="gModel"></div>
+          <div class="eff" id="gEff"></div>
+          <div class="eff-label" id="gEffLabel"></div>
+        </div>
+        <div class="controls">
+          <div class="ctl">
+            <label for="inFloor"><span>Deterministic floor <span class="mono" style="color:var(--faint)">verifier.py</span></span><b id="vFloor" style="color:var(--floor)">45</b></label>
+            <input id="inFloor" type="range" min="0" max="100" step="5" value="45">
+          </div>
+          <div class="ctl">
+            <label for="inModel"><span>Model's risk score <span class="mono" style="color:var(--faint)">Nano</span></span><b id="vModel" style="color:var(--risk)">20</b></label>
+            <input id="inModel" class="model" type="range" min="0" max="100" step="5" value="20">
+          </div>
+          <div class="ctl">
+            <label><span>Compliance screen</span></label>
+            <div class="seg" role="group" aria-label="Compliance result" id="inComp">
+              <button type="button" data-v="CLEARED" aria-pressed="true">CLEARED</button>
+              <button type="button" data-v="REVIEW_REQUIRED" aria-pressed="false">REVIEW</button>
+              <button type="button" data-v="BLOCKED" aria-pressed="false">BLOCKED</button>
+            </div>
+          </div>
+          <div class="eff-out">
+            <span class="big" id="vEff">45</span>
+            <span><span class="who" id="vWho">the floor holds</span><div class="formula" id="vFormula">max(20, 45)</div></span>
+          </div>
+        </div>
+      </div>
+      <div class="route" aria-live="polite">
+        <span class="state" id="rState">HELD_FOR_REVIEW</span>
+        <ol id="rSteps"></ol>
+      </div>
+      <div class="autoplay-note" id="autoNote"><span class="pulse"></span>Playing examples. Move a slider to take over.</div>
+    </div>
+    </div>
   </div>
 </div>
+
+<!-- ================================================================ DEPLOYMENT -->
+<section id="deploy">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><div class="num">00 &middot; DEPLOYMENT</div><h2>Floorline | System Architecture</h2></div>
+      <p>One Cloud Run service, one image, two processes: the Next.js console on the public port and the Flask API behind it on loopback. Colour is the trust tier: purple is an AI claim, green is proof, gold is authority.</p>
+    </div>
+    <p class="deploy-sub">Cloud Run <b>vf-app</b> &middot; asia-southeast1</p>
+    <div class="deploy-wrap">
+<svg viewBox="60 140 1440 710" role="img" aria-label="Floorline system architecture: actors, the Cloud Run service with its Next.js and Flask processes, and the managed services it calls">
+  <defs>
+    <marker id="ah-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#244E95"/></marker>
+    <marker id="ah-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#246B4E"/></marker>
+    <marker id="ah-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#246D72"/></marker>
+    <marker id="ah-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#5D4A8A"/></marker>
+    <marker id="ah-wine" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#984B45"/></marker>
+    <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#956B24"/></marker>
+    <marker id="ah-brown" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#71665B"/></marker>
+    <marker id="ah-navy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#2E426B"/></marker>
+  </defs>
+
+  <text class="cap" x="78" y="181">ENTRY / ACTORS</text>
+  <text class="cap" x="1168" y="181">MANAGED SERVICES / EXTERNAL</text>
+
+  <rect x="338" y="157" width="787" height="681" rx="14" fill="#F8F9FB" stroke="#244E95" stroke-width="1.5"/>
+  <text class="t1" x="366" y="193" fill="#244E95">Cloud Run  vf-app  |  one image / two processes  |  asia-southeast1</text>
+
+  <rect x="366" y="220" width="731" height="143" rx="28" fill="#FFFFFF" stroke="#244E95" stroke-width="1.5"/>
+  <text class="lbl" x="443" y="252" fill="#244E95">NEXT.JS 16  /  PUBLIC PORT</text>
+  <rect x="390" y="272" width="187" height="66" fill="#F8F9FB" stroke="#244E95"/>
+  <text class="t3" text-anchor="middle" fill="#244E95"><tspan x="483.5" y="300">HMAC session</tspan><tspan x="483.5" y="320">login / role identity</tspan></text>
+  <rect x="594" y="272" width="195" height="66" fill="#F8F9FB" stroke="#244E95"/>
+  <text class="t3" text-anchor="middle" fill="#244E95"><tspan x="691.5" y="300">/api/proxy/*</tspan><tspan x="691.5" y="320">BFF allow-list</tspan></text>
+  <rect x="806" y="272" width="253" height="66" fill="#F8FBFB" stroke="#246D72"/>
+  <text class="t3" text-anchor="middle" fill="#246D72"><tspan x="932.5" y="300">/api/v1/* /health</tspan><tspan x="932.5" y="320">public pass-through</tspan></text>
+
+  <rect x="366" y="385" width="731" height="407" rx="70" fill="#FFFFFF" stroke="#246B4E" stroke-width="1.5"/>
+  <text class="lbl" x="443" y="418" fill="#246B4E">FLASK / GUNICORN  127.0.0.1:9090</text>
+  <rect x="390" y="437" width="167" height="75" fill="#F8F9FB" stroke="#244E95"/>
+  <text class="t3" text-anchor="middle" fill="#244E95"><tspan x="473.5" y="469">Auth &amp; roles</tspan><tspan x="473.5" y="489">key / session / viewer</tspan></text>
+  <rect x="593" y="437" width="178" height="75" fill="#FBF8F8" stroke="#984B45"/>
+  <text class="t3" text-anchor="middle" fill="#984B45"><tspan x="682" y="463">Input safety</tspan><tspan x="682" y="481">untrusted +</tspan><tspan x="682" y="499">Model Armor</tspan></text>
+  <rect x="806" y="437" width="258" height="75" fill="#F9F8FB" stroke="#5D4A8A"/>
+  <text class="t3" text-anchor="middle" fill="#5D4A8A"><tspan x="935" y="469">7 agents + orchestrator</tspan><tspan x="935" y="489">AI findings / investigation</tspan></text>
+  <rect x="390" y="562" width="197" height="80" fill="#F8FBF9" stroke="#246B4E"/>
+  <text class="t3" text-anchor="middle" fill="#246B4E"><tspan x="488.5" y="598">Deterministic verifier</tspan><tspan x="488.5" y="618">risk floor / contradictions</tspan></text>
+  <rect x="620" y="562" width="207" height="80" fill="#F8FBFB" stroke="#246D72"/>
+  <text class="t3" text-anchor="middle" fill="#246D72"><tspan x="723.5" y="588">Evidence loop</tspan><tspan x="723.5" y="608">request &rarr; upload &rarr;</tspan><tspan x="723.5" y="628">re-evaluate</tspan></text>
+  <rect x="858" y="562" width="211" height="80" fill="#FBFAF8" stroke="#956B24"/>
+  <text class="t3" text-anchor="middle" fill="#956B24"><tspan x="963.5" y="598">Delegation boundary</tspan><tspan x="963.5" y="618">+ execution gate</tspan></text>
+  <rect x="630" y="684" width="291" height="70" fill="#FBFAF8" stroke="#956B24"/>
+  <text class="t3" text-anchor="middle" fill="#956B24"><tspan x="775.5" y="715">OIDC push receiver</tspan><tspan x="775.5" y="735">applied decisions / dedupe</tspan></text>
+
+  <rect x="410" y="800" width="167" height="29" fill="#F9F8FB" stroke="#5D4A8A"/>
+  <text class="lbl" x="493.5" y="819" text-anchor="middle" fill="#5D4A8A">AI = CLAIM</text>
+  <rect x="607" y="800" width="200" height="29" fill="#F8FBF9" stroke="#246B4E"/>
+  <text class="lbl" x="707" y="819" text-anchor="middle" fill="#246B4E">VERIFIER = PROOF</text>
+  <rect x="838" y="800" width="238" height="29" fill="#FBFAF8" stroke="#956B24"/>
+  <text class="lbl" x="957" y="819" text-anchor="middle" fill="#956B24">BOUNDARY = AUTHORITY</text>
+
+  <rect x="82" y="214" width="213" height="94" fill="#F8F9FB" stroke="#244E95"/>
+  <text class="t2" x="188.5" y="267" text-anchor="middle" fill="#244E95">Browser / API caller</text>
+  <rect x="82" y="403" width="213" height="104" fill="#F8FBF9" stroke="#246B4E"/>
+  <text class="t2" text-anchor="middle" fill="#246B4E"><tspan x="188.5" y="450">Reviewer / Operator</tspan><tspan x="188.5" y="472">Human decision</tspan></text>
+  <rect x="82" y="594" width="213" height="104" fill="#F8FBFB" stroke="#246D72"/>
+  <text class="t2" text-anchor="middle" fill="#246D72"><tspan x="188.5" y="641">Shipper</tspan><tspan x="188.5" y="663">/ respond link</tspan></text>
+  <text class="note" text-anchor="middle"><tspan x="188.5" y="754">verified session / own</tspan><tspan x="188.5" y="772">credential / HMAC token</tspan></text>
+
+  <rect x="1170" y="192" width="305" height="75" fill="#F9F8FB" stroke="#5D4A8A"/>
+  <text class="t2" text-anchor="middle" fill="#5D4A8A"><tspan x="1322.5" y="226">Nebius Token Factory</tspan><tspan x="1322.5" y="246">all model calls</tspan></text>
+  <rect x="1170" y="288" width="305" height="63" fill="#FBFAF9" stroke="#71665B"/>
+  <text class="t2" x="1322.5" y="325" text-anchor="middle" fill="#71665B">Tavily Search</text>
+  <rect x="1170" y="382" width="305" height="70" fill="#FBF8F8" stroke="#984B45"/>
+  <text class="t2" text-anchor="middle" fill="#984B45"><tspan x="1322.5" y="414">Google Model Armor</tspan><tspan x="1322.5" y="434">us-central1</tspan></text>
+  <rect x="1170" y="490" width="305" height="85" fill="#F8F9FB" stroke="#244E95"/>
+  <text class="t2" text-anchor="middle" fill="#244E95"><tspan x="1322.5" y="518">Firestore</tspan><tspan x="1322.5" y="540">case / audit / governance /</tspan><tspan x="1322.5" y="560">applied record</tspan></text>
+  <rect x="1170" y="594" width="305" height="71" fill="#F8FBFB" stroke="#246D72"/>
+  <text class="t2" text-anchor="middle" fill="#246D72"><tspan x="1322.5" y="624">Cloud Storage</tspan><tspan x="1322.5" y="644">document archive</tspan></text>
+  <rect x="1170" y="694" width="305" height="82" fill="#FBFAF8" stroke="#956B24"/>
+  <text class="t2" text-anchor="middle" fill="#956B24"><tspan x="1322.5" y="729">Pub/Sub  case-decisions</tspan><tspan x="1322.5" y="749">+ sent-ledger subscription</tspan></text>
+
+  <g fill="none" stroke-width="1.5">
+    <path d="M295 262 H380" stroke="#244E95" marker-end="url(#ah-blue)"/>
+    <path d="M295 455 H323 V371 H692 V342" stroke="#244E95" marker-end="url(#ah-blue)"/>
+    <path d="M295 643 H328 V378 H932 V342" stroke="#246D72" marker-end="url(#ah-teal)"/>
+    <path d="M731 345 V418" stroke="#2E426B" marker-end="url(#ah-navy)"/>
+    <path d="M557 474 H590" stroke="#244E95" marker-end="url(#ah-blue)"/>
+    <path d="M771 474 H803" stroke="#984B45" marker-end="url(#ah-wine)"/>
+    <path d="M587 602 H618" stroke="#246B4E" marker-end="url(#ah-green)"/>
+    <path d="M827 602 H856" stroke="#956B24" marker-end="url(#ah-gold)"/>
+    <path d="M937 514 L587 563" stroke="#5D4A8A" stroke-width="1" marker-end="url(#ah-purple)"/>
+    <path d="M1064 465 L1167 229" stroke="#5D4A8A" stroke-width="1" marker-end="url(#ah-purple)"/>
+    <path d="M1064 482 L1167 320" stroke="#71665B" stroke-width="1" marker-end="url(#ah-brown)"/>
+    <path d="M995 437 L1167 411" stroke="#984B45" stroke-width="1" marker-end="url(#ah-wine)"/>
+    <path d="M1043 562 L1167 535" stroke="#246D72" stroke-width="1" marker-end="url(#ah-teal)"/>
+    <path d="M1069 634 L1167 631" stroke="#246D72" stroke-width="1" marker-end="url(#ah-teal)"/>
+    <path d="M1069 618 L1167 725" stroke="#956B24" stroke-width="1" marker-end="url(#ah-gold)"/>
+    <path d="M1023 642 L921 703" stroke="#246D72" stroke-width="1" marker-end="url(#ah-teal)"/>
+    <path d="M1169 757 L922 718" stroke="#956B24" stroke-width="1" marker-end="url(#ah-gold)"/>
+  </g>
+</svg>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ MAP -->
+<section id="map">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><div class="num">01 &middot; SYSTEM MAP</div><h2>Follow a shipment through seven stages</h2></div>
+      <p>Pick a path to watch a case move. Every box is a module that runs in the deployed
+        service; click one to see what it may and may not do. Agents only ever add evidence of
+        risk: the floor, the boundary and the person sit after them.</p>
+    </div>
+
+    <div class="scen" role="group" aria-label="Paths" id="scen">
+      <button type="button" data-s="rules" aria-pressed="false"><span class="dot" style="background:var(--floor)"></span>Settled by rules, no model</button>
+      <button type="button" data-s="agents" aria-pressed="false"><span class="dot" style="background:var(--nano)"></span>Grey area, agents clear it</button>
+      <button type="button" data-s="disputed" aria-pressed="false"><span class="dot" style="background:var(--ultra)"></span>Model argues low, floor wins</button>
+      <button type="button" data-s="injection" aria-pressed="false"><span class="dot" style="background:var(--risk)"></span>A planted instruction</button>
+      <button type="button" data-s="evidence" aria-pressed="false"><span class="dot" style="background:var(--auth)"></span>Papers are missing</button>
+    </div>
+    <div class="narr" id="narr" aria-live="polite"><span class="step-n">GO</span><span>Choose a path above, or click any box.</span></div>
+
+    <div class="map" id="mapGrid"></div>
+    <div class="detail" id="detail" hidden></div>
+  </div>
+</section>
+
+<!-- ================================================================ MODELS -->
+<section id="models">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><div class="num">02 &middot; MODEL LADDER</div><h2>Three Nemotron sizes, each where its size pays</h2></div>
+      <p>Capacity goes where it can change the answer. Nano runs on every case that reaches the
+        models; Super writes the investigation a person reads; Ultra runs only when the floor and the
+        model disagree, and its verdict can only send a case upward.</p>
+    </div>
+    <div class="ladder" id="ladder"></div>
+    <div class="endpoint">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15" fill="none" stroke="#5D4A8A" stroke-width="1.5"/><circle cx="17" cy="17" r="4" fill="#5D4A8A"/><path d="M17 2v8M17 24v8M2 17h8M24 17h8" stroke="#5D4A8A" stroke-width="1.5"/></svg>
+      <div>
+        <div class="mono">api.tokenfactory.nebius.com/v1/</div>
+        <p>One OpenAI-compatible endpoint serves all four models through <code>openai.AsyncOpenAI</code>.
+          Changing a model is a string in <code>config.py</code>, not an integration, and a 550B model was
+          affordable to reach for on the rare path where it matters.</p>
+      </div>
+      <span class="chip">no GPUs provisioned</span>
+    </div>
+    <div class="facts3">
+      <div class="fact"><div class="v">40.0% &rarr; 92.9%</div><p>HS classifier recall with Nano on the pairs set, after reasoning over the published headings (holdout: 50.0% &rarr; 91.7%).</p></div>
+      <div class="fact"><div class="v">$0.0198</div><p>per Ultra debate, measured, against <span class="mono">$0.0015</span> for a Super call: paid only when the floor beats the model by 15 points or more.</p></div>
+      <div class="fact"><div class="v">json_object</div><p>on every model but Super, and every reply is checked against its schema before anything reads it.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ CUSTODY -->
+<section id="custody">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><div class="num">03 &middot; CHAIN OF CUSTODY</div><h2>Every hop narrows what the next one may do</h2></div>
+      <p>A finding from a model is a claim until something deterministic agrees with it. These are
+        the eight places where that is enforced in code, in the order a case meets them.</p>
+    </div>
+    <div class="custody">
+      <div class="lock"><h3>The document is the attacker</h3><p>Model Armor screens every upload in <code>400</code>-character windows with <code>120</code> of overlap, so one planted line in a four-page bill of lading is not diluted below the threshold.</p><div class="rule">injection_detected is never waivable</div></div>
+      <div class="lock"><h3>A transcription fills fields, never verdicts</h3><p><code>untrusted.py</code> whitelists what a document may set. <code>risk_score</code>, <code>decision</code> and <code>state</code> from a document are refused.</p><div class="rule">forbidden_field is never waivable</div></div>
+      <div class="lock"><h3>Two numbers never come from paper</h3><p>The route's average cost and the shipper's history decide whether a price looks wrong, so they come from our records. A document that supplied its own baseline could clear itself.</p><div class="rule">baselines are ours</div></div>
+      <div class="lock"><h3>The floor is one-way</h3><p><code>reconcile()</code> takes the higher of model and floor; <code>validate()</code> raises if the HS or zero-day findings ever lowered it. A wrong release ships contraband; a wrong hold costs ten minutes.</p><div class="rule">effective = max(model, floor)</div></div>
+      <div class="lock"><h3>Authority is published, not earned</h3><p>A named person publishes a versioned Delegation Boundary. With none active, every protected action is refused, and a refused action turns the whole outcome into a proposal.</p><div class="rule">no boundary &rArr; nothing runs</div></div>
+      <div class="lock warn"><h3>A guest can look, not release</h3><p>The one-click judge session can block or ask for papers. Releasing cargo needs a password sign-in, and a release over open evidence needs the operator role, a reason and every waived item named.</p><div class="rule">approve() over open evidence &rArr; 403</div></div>
+      <div class="lock"><h3>Claim before send</h3><p>An approval is claimed with an optimistic lock before anything is called, so two clicks cannot both publish. The claim is a lease: a crashed holder's case is offered again after it runs out.</p><div class="rule">one key per approval: exec-&lt;approval_id&gt;</div></div>
+      <div class="lock"><h3>Applied once, downstream</h3><p>The receiver claims the key and applies the decision in one Firestore transaction, so a repeat is only counted. It accepts only a push Google signed for the configured account.</p><div class="rule">no token &rArr; 403, nothing written</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ EXACTLY ONCE -->
+<section id="once">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><div class="num">04 &middot; DELIVERY</div><h2>At least once on the wire, exactly once where it counts</h2></div>
+      <p>A released shipment must be announced to the ERP once, even when a process dies between the
+        broker accepting the message and Floorline writing that down. Play each failure.</p>
+    </div>
+    <div class="scen" role="group" aria-label="Delivery cases" id="onceBtns">
+      <button type="button" data-m="normal" aria-pressed="true">Normal send</button>
+      <button type="button" data-m="killed" aria-pressed="false">Killed after the broker accepted</button>
+      <button type="button" data-m="redeliver" aria-pressed="false">Pub/Sub delivers twice</button>
+      <button type="button" data-m="blind" aria-pressed="false">Ledger cannot be read</button>
+    </div>
+    <div class="once">
+      <div class="seq-wrap"><svg id="seq" viewBox="0 0 860 470" role="img" aria-label="Sequence of messages between Floorline, Pub/Sub, the sent ledger and the receiver"></svg></div>
+      <div class="tally">
+        <div class="counter"><div class="k">Messages on the topic</div><div class="v" id="cMsgs">0</div><p id="cMsgsP">published under one key</p></div>
+        <div class="counter"><div class="k">Times applied downstream</div><div class="v" id="cApplied">0</div><p id="cAppliedP">deliveries counted: 0</p></div>
+        <div class="verdict" id="onceVerdict">Press a case to play it.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ PROOF -->
+<section id="proof">
+  <div class="wrap">
+    <div class="sec-head">
+      <div><div class="num">05 &middot; MEASURED</div><h2>Numbers with their error bars, including the bad one</h2></div>
+      <p>95% Wilson intervals in brackets. The holdout corpus is synthetic, and no real customer
+        traffic has been measured. Every report is served by the console's Evaluation page and
+        <code>GET /api/v1/evaluation</code>.</p>
+    </div>
+    <div class="proof">
+      <div class="stat"><div class="v">93.5%</div><div class="ci">[90&ndash;96] &middot; 453 holdout cases</div><p>Recall of the deterministic rules alone, at no model cost.</p></div>
+      <div class="stat"><div class="v">95.8&rarr;100%</div><div class="ci">[91&ndash;98] &rarr; [97&ndash;100] &middot; 200 cases</div><p>Recall after adding the HS classifier and zero-day radar: the HS check caught all 7 disguised tariff codes the rules missed.</p></div>
+      <div class="stat"><div class="v">11 / 12</div><div class="ci">0 of 12 honest flagged &middot; upper bound 24.2%</div><p>HS substitutions caught that the reference never mentions.</p></div>
+      <div class="stat"><div class="v">14 / 19</div><div class="ci">73.7% [51&ndash;89] &middot; rules alone: 11</div><p>Public enforcement cases held, but 9 of the 19 honest look-alikes were held too.</p></div>
+      <div class="stat bad wide"><div class="v">~206 holds per real fraud</div><div class="ci">at the 0.2% fraud rate Vietnam customs reported for 2024 &middot; range 151&ndash;271</div><p>The screen is not precise: false-positive rate 38.4% [28&ndash;49] for the rules. Customs' own targeting makes about 19 inspections per violation found. So the product's job is to make each hold quick and defensible to decide.</p></div>
+      <div class="stat"><div class="v">&lt; $0.005</div><div class="ci">per case &middot; $0.068&ndash;$0.088 per 20-case live run</div><p>Model spend. Tavily's search quota, not the models, is the binding constraint.</p></div>
+      <div class="stat"><div class="v">2 &rarr; 1</div><div class="ci">delivered twice &middot; applied once</div><p>Checked on the live service on 18 Oct 2026: the receiver counted <span class="mono">deliveries: 2</span>, <span class="mono">applied_once: true</span>.</p></div>
+      <div class="stat wide"><div class="v">2,095 + 1,729 tests</div><div class="ci">96% backend line coverage &middot; mutation check 112 / 112</div><p>Backend and console tests run on every push to <code>master</code> in five CI jobs. The backend tests run against the Firestore and Pub/Sub emulators in CI, including a process killed right after the broker accepted.</p></div>
+      <div class="stat wide"><div class="v">0 improper executions</div><div class="ci">7-case verification corpus &middot; mocked harness</div><p>Wrong authority, stale approval or missing evidence never led to an execution. The harness makes no model or network calls, so it shows the loop's logic, not its cost or speed.</p></div>
+    </div>
+    <div class="honest">What is not used, said plainly: Token Factory's inference API is the only Nebius service here.
+      The app runs on Google Cloud Run, Firestore, Pub/Sub, Cloud Storage and Model Armor.
+      MiniCPM-V-4.5 reads scanned documents because Token Factory carries no NVIDIA vision model yet.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Floorline &middot; drawn from the repository, 21 Oct 2026 &middot; VF Logistics is the operator in the demo</span>
+    <span>Nebius &times; NVIDIA Global AI Hackathon &middot; Best Apps and Agents</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  /* ================================================================ the rule */
+  var inFloor = $("inFloor"), inModel = $("inModel"), comp = "CLEARED";
+
+  // The routing in orchestrator.py, as the README states it, under the default boundary.
+  function route(floor, model, c) {
+    var eff = Math.max(floor, model);
+    var s = [];
+    s.push(floor > 0 ? "verifier.py sets a floor of " + floor + " from rules; no model is consulted" : "verifier.py finds nothing: the floor is 0");
+    s.push("Nano scores " + model + "; compliance screens the parties with live Tavily search");
+    if (floor - model >= 15) {
+      s.push("The floor beats the model by " + (floor - model) + " points, so the Senior Auditor debate runs on Ultra");
+      s.push("Its verdict can send the case to investigation, never clear it");
+      s.push("Under the default boundary a disputed score is a person's call");
+      return { eff: eff, state: "PENDING_HUMAN", cls: "s-human", steps: s };
+    }
+    if (c === "BLOCKED") {
+      s.push("Compliance BLOCKED: investigation runs on Super and proposes a hold");
+      s.push("The default boundary refuses the hold for a BLOCKED party, so the proposal goes to a person");
+      return { eff: eff, state: "PENDING_HUMAN", cls: "s-human", steps: s };
+    }
+    if (c === "REVIEW_REQUIRED" || eff >= 70) {
+      s.push((eff >= 70 ? "Effective risk " + eff + " is at or above 70" : "Compliance asks for review") + ": investigation runs on Super");
+      s.push("hold_shipment, draft_sar (a draft, never filed), notify_webhook, assign_analyst");
+      return { eff: eff, state: "ESCALATED", cls: "s-esc", steps: s };
+    }
+    if (eff < 40 && floor === 0 && c === "CLEARED") {
+      s.push("Risk below 40, floor 0, compliance exactly CLEARED, no model failure");
+      s.push("release_shipment() runs if the published boundary's caps allow it");
+      return { eff: eff, state: "AUTO_CLEARED", cls: "s-clear", steps: s };
+    }
+    s.push(floor > 0 && eff < 40 ? "Risk is low, but a floor above 0 blocks auto-clear" : "Neither clear nor serious enough to escalate");
+    s.push("assign_analyst(): a reviewer sees the findings beside the original document");
+    return { eff: eff, state: "HELD_FOR_REVIEW", cls: "s-held", steps: s };
+  }
+
+  function renderRule() {
+    var f = +inFloor.value, m = +inModel.value, r = route(f, m, comp);
+    $("vFloor").textContent = f; $("vModel").textContent = m; $("vEff").textContent = r.eff;
+    var raised = m > f, held = f > m;
+    $("vWho").textContent = raised ? "the model raised it" : held ? "the floor holds" : "they agree";
+    $("vWho").style.color = raised ? "var(--risk)" : held ? "var(--floor)" : "var(--muted)";
+    $("vFormula").textContent = "max(" + m + ", " + f + ")";
+    $("gFloor").style.bottom = "calc(" + f + "% - 1px)";
+    $("gFloorZone").style.height = f + "%";
+    $("gModel").style.bottom = "calc(" + m + "% - 1px)";
+    $("gModel").classList.toggle("ghost", held);
+    $("gEff").style.height = r.eff + "%";
+    $("gEffLabel").style.bottom = "calc(" + Math.min(r.eff, 93) + "% + 4px)";
+    $("gEffLabel").textContent = r.eff;
+    var st = $("rState"); st.textContent = r.state; st.className = "state " + r.cls;
+    $("rSteps").innerHTML = r.steps.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+  }
+
+  function setComp(v) {
+    comp = v;
+    Array.prototype.forEach.call($("inComp").querySelectorAll("button"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-v") === v));
+    });
+  }
+
+  var demo = [
+    { f: 0, m: 15, c: "CLEARED" }, { f: 45, m: 20, c: "CLEARED" }, { f: 45, m: 80, c: "CLEARED" },
+    { f: 70, m: 30, c: "CLEARED" }, { f: 0, m: 35, c: "BLOCKED" }, { f: 20, m: 10, c: "CLEARED" }
+  ];
+  var demoI = 0, demoTimer = null;
+  function stopDemo() {
+    if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+    $("autoNote").style.visibility = "hidden";
+  }
+  function stepDemo() {
+    var d = demo[demoI++ % demo.length];
+    inFloor.value = d.f; inModel.value = d.m; setComp(d.c); renderRule();
+  }
+  inFloor.addEventListener("input", function () { stopDemo(); renderRule(); });
+  inModel.addEventListener("input", function () { stopDemo(); renderRule(); });
+  $("inComp").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    stopDemo(); setComp(b.getAttribute("data-v")); renderRule();
+  });
+  renderRule();
+  if (!reduce) { stepDemo(); demoTimer = setInterval(stepDemo, 3200); } else { $("autoNote").style.visibility = "hidden"; }
+
+  /* ================================================================ the map */
+  var COLS = [
+    { h: "Arrive", n: [
+      ["in_events", "k-in", "Pub/Sub shipment-events", "push envelope", { file: "app.py", model: "none", lower: "none", text: "A shipment-created event, pushed by Pub/Sub or posted by an integrator. Ingestion is idempotent per shipment_id, so a repeat returns the existing case." }],
+      ["in_upload", "k-in", "Document upload", "PDF or scan", { file: "app.py", model: "none", lower: "none", text: "A bill of lading or invoice from the console or the API. Treated as hostile from the first byte." }],
+      ["in_bucket", "k-in", "Cloud Storage drop", "finalize push / sweep", { file: "document_store.py", model: "none", lower: "none", text: "Objects dropped in the bucket are ingested on a finalize notification or a bounded sweep. The service's own archive and evidence prefixes are never re-ingested." }]
+    ]},
+    { h: "Distrust", n: [
+      ["g_armor", "k-gate", "Model Armor", "400 / 120 windows", { file: "model_armor.py", model: "Google Model Armor", lower: "none", text: "Prompt-injection screening in overlapping windows, before any model reads the text. A hit stops the case for a person and is never waivable." }],
+      ["g_vision", "k-gate", "Vision transcription", "MiniCPM-V-4.5", { file: "agents/document_agent.py", model: "MiniCPM-V-4.5", lower: "none", text: "The first page is rasterised to PNG, because Token Factory's vision endpoint takes images, and read into shipment fields." }],
+      ["g_untrusted", "k-gate", "Field whitelist", "untrusted.py", { file: "untrusted.py", model: "none", lower: "none", text: "A transcription may fill shipment fields, never verdict fields. risk_score, decision and state from a document are refused outright." }]
+    ]},
+    { h: "Floor", n: [
+      ["f_verifier", "k-floor", "verifier.validate()", "rules, no model", { file: "verifier.py", model: "none", lower: "never", text: "Deterministic checks set the risk floor: sanctions hits, route and price anomalies, HS mismatches, watched lanes. Nothing downstream can go below it." }],
+      ["f_prefilter", "k-floor", "Pre-filter", "whitelist / blacklist", { file: "orchestrator.py", model: "none", lower: "never", text: "Some cases are settled without spending a token: a whitelisted or low-value domestic shipment is cleared, a blacklisted party is proposed for a hold." }],
+      ["f_origin", "k-floor", "Origin-input check", "watched lane, floor 45", { file: "verifier.py", model: "none", lower: "never", text: "On a watched lane (HS 4412, Vietnam to the US) a shipment cannot be cleared by rules: ORIGIN_INPUTS_UNVERIFIED sets floor 45 and names the three papers needed." }]
+    ]},
+    { h: "Argue", n: [
+      ["a_fraud", "k-nano", "Fraud scoring", "Nano", { file: "agents/fraud_detection_agent.py", model: "Nemotron 3 Nano", lower: "never", text: "Scores the shipment 0 to 100 across the fraud families. Runs on every case that reaches the models, in parallel with compliance." }],
+      ["a_comp", "k-search", "Compliance + Tavily", "Nano, live search", { file: "agents/compliance_agent.py", model: "Nemotron 3 Nano + Tavily", lower: "never", text: "Screens the parties against the OFAC SDN and UN lists and live web results. A failed search is reported as failed, not read as \"found nothing\"." }],
+      ["a_route", "k-search", "Route search", "Tavily", { file: "tavily_client.py", model: "Tavily", lower: "never", text: "Looks for disruptions on the shipping lane. The query carries only a country pair, so it is cached for 6 hours." }],
+      ["a_hs", "k-nano", "HS classifier", "Nano", { file: "agents/hs_classifier_agent.py", model: "Nemotron 3 Nano", lower: "never", text: "Asks whether the declared tariff code fits the goods, reasoning over the published heading text. validate() raises if its finding ever lowered the floor." }],
+      ["a_zero", "k-search", "Zero-day radar", "Nano chooses queries", { file: "agents/zero_day_agent.py", model: "Nemotron 3 Nano + Tavily tool", lower: "never", text: "Adverse media on parties no sanctions list has caught up with. Opens only when its code gate does (two distinct diversion hubs, for example), and the model calls the search as a tool." }],
+      ["a_debate", "k-ultra", "Senior Auditor debate", "Ultra 550B", { file: "agents/debate_agent.py", model: "Nemotron 3 Ultra", lower: "never", text: "Fires when the floor exceeds the model's score by 15 points or more. A confident DISAGREE (0.7 by default) sends the case to investigation; nothing it says can clear one." }],
+      ["a_invest", "k-super", "Investigation", "Super 120B", { file: "agents/investigation_agent.py", model: "Nemotron 3 Super", lower: "never", text: "Writes the cited narrative a reviewer reads on escalated cases. It informs the verdict; it does not decide it." }]
+    ]},
+    { h: "Authority", n: [
+      ["b_boundary", "k-auth", "Delegation boundary", "versioned, published", { file: "governance.py", model: "none", lower: "none", text: "A named person publishes what the agent may do: allowed actions, auto-release caps, when a human is required. Re-publishing supersedes the version before it." }],
+      ["b_gate", "k-auth", "Execution gate", "fail closed", { file: "governance.py", model: "none", lower: "none", text: "No active boundary means every protected action is refused. A single denial turns the whole outcome into a proposal for a person." }]
+    ]},
+    { h: "Decide", n: [
+      ["d_auto", "k-floor", "Auto-clear", "inside the boundary", { file: "orchestrator.py", model: "none", lower: "none", text: "Risk below 40, floor 0, compliance exactly CLEARED and no model failure, and only within the published caps." }],
+      ["d_queue", "k-human", "Review queue", "a person decides", { file: "frontend /review", model: "none", lower: "none", text: "Every case the agent may not close, with its findings and sources beside the original document. Releasing needs a password sign-in." }],
+      ["d_evidence", "k-human", "Evidence loop", "request &rarr; re-evaluate", { file: "evidence.py", model: "none", lower: "never", text: "Asks the shipper for named papers through a signed link, re-runs the deterministic checks on what arrived, and binds the approval to that evidence version." }],
+      ["d_exception", "k-human", "Exception operation", "operator + password", { file: "evidence.py", model: "none", lower: "none", text: "The only way to release over unresolved or contradicting papers. A reason and every waived item are required and stored with who approved." }]
+    ]},
+    { h: "Deliver", n: [
+      ["x_tools", "k-out", "Protected actions", "tools.py", { file: "tools.py", model: "none", lower: "none", text: "release_shipment, hold_shipment, assign_analyst, draft_sar, notify_webhook, publish_decision. Each writes a receipt." }],
+      ["x_publish", "k-out", "case-decisions", "key exec-&lt;approval&gt;", { file: "tools.py", model: "none", lower: "none", text: "The decision goes to ERP, WMS and billing over Pub/Sub, last, so a refused action is never announced first. Every send of one approval carries the same key." }],
+      ["x_ledger", "k-out", "Sent ledger", "pull subscription", { file: "tools.py", model: "none", lower: "none", text: "A retry after an unknown outcome reads what the broker accepted before sending again. If the ledger cannot be read, nothing is sent." }],
+      ["x_receiver", "k-out", "Decisions receiver", "applied once", { file: "decision_receiver.py", model: "none", lower: "none", text: "A Pub/Sub push endpoint that accepts only a Google-signed token and applies each key once per tenant, in one transaction." }],
+      ["x_audit", "k-out", "audit_log", "Firestore", { file: "store.py", model: "none", lower: "none", text: "Every action lands here, refused ones included, with who did it. The board reset keeps it." }]
+    ]}
+  ];
+
+  var SCEN = {
+    rules: [
+      ["in_events", "A shipment event arrives over Pub/Sub."],
+      ["f_verifier", "The rules run first and set the floor. No token is spent yet."],
+      ["f_prefilter", "The pre-filter settles it: a whitelisted shipper, a low-value domestic move."],
+      ["b_gate", "The execution gate checks the published boundary allows a release."],
+      ["d_auto", "Cleared inside the boundary, with no model involved."],
+      ["x_tools", "release_shipment() runs and writes its receipt."],
+      ["x_audit", "Recorded in the audit log. Pre-filter outcomes are not published downstream."]
+    ],
+    agents: [
+      ["in_events", "A shipment event arrives in the grey area."],
+      ["f_verifier", "The rules find nothing serious: floor 0."],
+      ["a_fraud", "Nano scores fraud risk, in parallel with compliance."],
+      ["a_comp", "Compliance screens the parties, with live Tavily results."],
+      ["a_route", "Tavily checks the lane for disruptions."],
+      ["a_hs", "The HS classifier checks the declared code fits the goods."],
+      ["b_boundary", "Risk below 40, floor 0, CLEARED: within the published caps."],
+      ["b_gate", "The execution gate allows it."],
+      ["d_auto", "Auto-cleared."],
+      ["x_tools", "release_shipment() runs."],
+      ["x_publish", "The decision is published to case-decisions under its key."],
+      ["x_audit", "And recorded in the audit log."]
+    ],
+    disputed: [
+      ["in_upload", "A bill of lading is uploaded."],
+      ["g_armor", "Model Armor finds nothing planted."],
+      ["g_vision", "MiniCPM-V reads the scan into fields."],
+      ["g_untrusted", "Only whitelisted fields pass; no verdict fields."],
+      ["f_verifier", "Say the rules set a floor of 70 (an example value)."],
+      ["a_fraud", "Nano argues it is low, say 30. It cannot pull the case below the floor."],
+      ["a_comp", "Compliance screens the parties."],
+      ["a_hs", "The HS classifier checks the declared code against the goods."],
+      ["a_debate", "The floor beats the model by 15 points or more, so the Ultra debate runs."],
+      ["a_invest", "A DISAGREE at confidence 0.7 or more sends it to Super for a cited investigation."],
+      ["b_gate", "The default boundary does not let the agent act on a disputed score."],
+      ["d_queue", "A person decides, with the findings beside the original."],
+      ["x_audit", "The decision and who made it are in the audit log."]
+    ],
+    injection: [
+      ["in_upload", "A document with a planted instruction is uploaded."],
+      ["g_armor", "Model Armor flags one window of the page. No model ever reads it.", true],
+      ["d_queue", "The case stops for a person: injection_detected is never waivable."],
+      ["x_audit", "The block is recorded in the audit log."]
+    ],
+    evidence: [
+      ["in_events", "Plywood, HS 4412, Vietnam to the US: a watched lane."],
+      ["f_verifier", "The rules run."],
+      ["f_origin", "ORIGIN_INPUTS_UNVERIFIED: floor 45, and three papers are named."],
+      ["d_evidence", "The shipper gets a signed link per document; the case waits in AWAITING_EVIDENCE."],
+      ["d_exception", "A paper never arrives. Releasing anyway is an exception: operator, password, reason, waived items."],
+      ["x_tools", "Execution claims the approval first, then release_shipment() runs."],
+      ["x_publish", "Published under exec-<approval_id>."],
+      ["x_ledger", "If this process dies now, the retry reads the sent ledger and does not send twice."],
+      ["x_receiver", "The receiver applies the key once."],
+      ["x_audit", "The waiver, its reason and its approver are in the audit trail."]
+    ]
+  };
+
+  var grid = $("mapGrid"), INFO = {};
+  COLS.forEach(function (col, ci) {
+    var c = document.createElement("div"); c.className = "col";
+    c.innerHTML = '<div class="col-h"><span>' + col.h + '</span><i>' + (ci + 1) + '</i></div>';
+    col.n.forEach(function (n) {
+      INFO[n[0]] = { kind: n[1], title: n[2], sub: n[3], d: n[4] };
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "node " + n[1]; b.id = "n_" + n[0];
+      b.setAttribute("aria-expanded", "false");
+      b.innerHTML = "<b>" + n[2] + "</b><small>" + n[3] + "</small>";
+      b.addEventListener("click", function () { mapTouched = true; stopPlay(); showDetail(n[0]); });
+      c.appendChild(b);
+    });
+    grid.appendChild(c);
+  });
+
+  function showDetail(id) {
+    var i = INFO[id], d = $("detail");
+    Array.prototype.forEach.call(grid.querySelectorAll(".node"), function (b) { b.setAttribute("aria-expanded", String(b.id === "n_" + id)); });
+    var tag = i.d.lower === "never" ? '<span class="tag never">CAN RAISE RISK &middot; NEVER LOWER IT</span>'
+      : '<span class="tag none">DOES NOT SCORE RISK</span>';
+    d.innerHTML = '<div><h3>' + i.title + '</h3><div class="meta">file <b>' + esc(i.d.file) + '</b><br>model <b>' + esc(i.d.model) + '</b></div>' + tag + '</div><p>' + esc(i.d.text) + '</p>';
+    d.hidden = false;
+  }
+
+  var playTimer = null, mapTouched = false;
+  function stopPlay() {
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+    grid.classList.remove("playing");
+    Array.prototype.forEach.call(grid.querySelectorAll(".node"), function (b) { b.classList.remove("on", "now", "stop"); });
+    Array.prototype.forEach.call($("scen").querySelectorAll("button"), function (b) { b.setAttribute("aria-pressed", "false"); });
+  }
+  function play(name) {
+    mapTouched = true;
+    stopPlay();
+    var steps = SCEN[name], k = 0;
+    $("scen").querySelector('[data-s="' + name + '"]').setAttribute("aria-pressed", "true");
+    grid.classList.add("playing");
+    $("detail").hidden = true;
+    function next() {
+      if (k > 0) { var prev = $("n_" + steps[k - 1][0]); prev.classList.remove("now"); }
+      if (k >= steps.length) { playTimer = null; return; }
+      var s = steps[k], el = $("n_" + s[0]);
+      el.classList.add("on", "now"); if (s[2]) el.classList.add("stop");
+      $("narr").innerHTML = '<span class="step-n">' + String(k + 1).padStart(2, "0") + '</span><span>' + esc(s[1]) + "</span>";
+      k++;
+      playTimer = setTimeout(next, reduce ? 600 : 1500);
+    }
+    next();
+  }
+  $("scen").addEventListener("click", function (e) { var b = e.target.closest("button"); if (b) play(b.getAttribute("data-s")); });
+
+  /* ================================================================ the ladder */
+  var MODELS = [
+    { size: "30", unit: "B", name: "Nemotron 3 Nano", id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", c: "#246D72", price: [0.06, 0.24],
+      job: "Fraud, compliance, HS classification and the zero-day radar. A weaker model here can miss a hold, never release what the rules stopped.", when: "EVERY CASE THAT REACHES A MODEL" },
+    { size: "120", unit: "B", name: "Nemotron 3 Super", id: "nvidia/nemotron-3-super-120b-a12b", c: "var(--super)", price: [0.30, 0.90],
+      job: "The investigation narrative a reviewer reads on escalated cases. Benefits from reasoning; does not decide the verdict.", when: "ESCALATIONS ONLY" },
+    { size: "550", unit: "B", name: "Nemotron 3 Ultra", id: "nvidia/Nemotron-3-Ultra-550b-a55b", c: "var(--ultra)", price: [1.00, 3.00],
+      job: "The Senior Auditor debate: the one place a model's output is a verdict that can change routing, upward only.", when: "ONLY WHEN FLOOR − MODEL ≥ 15" },
+    { size: "V", unit: "4.5", name: "MiniCPM-V", id: "openbmb/MiniCPM-V-4_5", c: "#566579", price: [0.658, 1.11],
+      job: "Reads scanned documents into fields. Not an NVIDIA model: Token Factory carries no NVIDIA vision model yet.", when: "DOCUMENT INTAKE" }
+  ];
+  var maxP = 4.0;
+  $("ladder").innerHTML = MODELS.map(function (m) {
+    var t = m.price[0] + m.price[1];
+    return '<div class="rung" style="border-top:3px solid ' + m.c + '">' +
+      '<div class="size" style="color:' + m.c + '">' + m.size + '<small>' + m.unit + '</small></div>' +
+      '<h3>' + m.name + '</h3><div class="id">' + m.id + '</div>' +
+      '<p class="job">' + esc(m.job) + '</p>' +
+      '<div class="price"><div class="lbl"><span>$ per 1M tokens, in / out</span><span>' + m.price[0] + ' / ' + m.price[1] + '</span></div>' +
+      '<div class="track"><div class="fill" data-w="' + (100 * t / maxP).toFixed(1) + '" style="background:' + m.c + '"></div></div></div>' +
+      '<div class="when">' + esc(m.when) + '</div></div>';
+  }).join("");
+
+  /* ================================================================ exactly once */
+  var LANES = [
+    { x: 88, h: "Floorline", s: "vf-app · tools.py" },
+    { x: 300, h: "Pub/Sub topic", s: "case-decisions" },
+    { x: 500, h: "Sent ledger", s: "pull subscription" },
+    { x: 690, h: "Receiver", s: "push · OIDC" }
+  ];
+  var C = { send: "#2E426B", ok: "#246B4E", warn: "#956B24", bad: "#984B45", info: "#246D72" };
+  // [from lane, to lane, label, colour, note]
+  var MODES = {
+    normal: { msgs: 1, applied: 1, del: 1, warn: false, v: "One message, applied once. The accepted message id is saved on the record, so a later Retry knows it was sent.",
+      seq: [[0, 0, "claim the approval (optimistic lock)", "send"], [0, 1, "publish · key exec-<approval_id>", "send"], [1, 0, "accepted · message id saved", "ok"],
+        [1, 2, "a copy is kept for 7 days", "info"], [1, 3, "push with a Google-signed token", "send"], [3, 3, "create the key and apply: one transaction", "ok"]] },
+    killed: { msgs: 1, applied: 1, del: 1, warn: false, v: "Measured on the Pub/Sub and Firestore emulators: without the ledger the resume publishes a second message under the same key; with it, one message stays on the topic.",
+      seq: [[0, 0, "claim the approval", "send"], [0, 1, "publish · key exec-<approval_id>", "send"], [1, 2, "the broker accepted: copy in the ledger", "info"],
+        [0, 0, "✕ process killed before it saved the receipt", "bad"], [0, 0, "Resume after the lease: outcome unknown", "warn"], [0, 2, "read the sent ledger first", "send"],
+        [2, 0, "key found → record it, send nothing", "ok"], [1, 3, "push with a Google-signed token", "send"], [3, 3, "applied once", "ok"]] },
+    redeliver: { msgs: 1, applied: 1, del: 2, warn: false, v: "Checked on the live service on 18 Oct 2026: a decision delivered twice under one key shows deliveries: 2 and applied_once: true.",
+      seq: [[0, 1, "publish · key exec-<approval_id>", "send"], [1, 3, "push, delivery 1", "send"], [3, 3, "create the key and apply", "ok"],
+        [3, 1, "acknowledgement lost", "bad"], [1, 3, "push, delivery 2, same key", "warn"], [3, 3, "key exists → count it, apply nothing", "ok"]] },
+    blind: { msgs: 0, applied: 0, del: 0, warn: true, v: "Fail closed: an unreadable ledger means the retry sends nothing and records send_unknown. A person can retry once the ledger is reachable.",
+      seq: [[0, 0, "Retry after an unknown outcome", "warn"], [0, 2, "read the sent ledger", "send"], [2, 0, "✕ cannot be read", "bad"],
+        [0, 0, "send nothing · record send_unknown", "warn"]] }
+  };
+
+  var svg = $("seq"), NS = "http://www.w3.org/2000/svg", onceTimers = [], onceTouched = false;
+  function el(tag, attrs, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function drawOnce(name) {
+    onceTouched = true;
+    onceTimers.forEach(clearTimeout); onceTimers = [];
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var m = MODES[name], top = 84, row = 46, H = top + m.seq.length * row + 24;
+    svg.setAttribute("viewBox", "0 0 780 " + Math.max(H, 300));
+    var defs = el("defs", {});
+    Object.keys(C).forEach(function (k) {
+      var mk = el("marker", { id: "ar-" + k, markerWidth: 10, markerHeight: 10, refX: 8, refY: 5, orient: "auto" });
+      mk.appendChild(el("path", { d: "M0,1 L9,5 L0,9 z", fill: C[k] })); defs.appendChild(mk);
+    });
+    svg.appendChild(defs);
+    LANES.forEach(function (l) {
+      svg.appendChild(el("rect", { x: l.x - 80, y: 6, width: 160, height: 48, rx: 10, fill: "#F8F9FB", stroke: "#C3CCDA" }));
+      svg.appendChild(el("text", { x: l.x, y: 27, "text-anchor": "middle", class: "lane-h" }, l.h));
+      svg.appendChild(el("text", { x: l.x, y: 44, "text-anchor": "middle", class: "lane-s" }, l.s));
+      svg.appendChild(el("line", { x1: l.x, y1: 54, x2: l.x, y2: Math.max(H, 300) - 6, stroke: "#C3CCDA", "stroke-dasharray": "3 5" }));
+    });
+    var setC = function (msgs, applied, del) {
+      $("cMsgs").textContent = msgs; $("cApplied").textContent = applied;
+      $("cAppliedP").textContent = "deliveries counted: " + del;
+    };
+    setC(0, 0, 0);
+    $("onceVerdict").textContent = "Playing…"; $("onceVerdict").className = "verdict";
+    var msgs = 0, applied = 0, del = 0;
+    m.seq.forEach(function (s, i) {
+      var y = top + i * row, a = LANES[s[0]].x, b = LANES[s[1]].x, col = C[s[3]];
+      var g = el("g", { class: "reveal" });
+      var path;
+      if (s[0] === s[1]) {
+        var lft = s[0] === LANES.length - 1, sx = lft ? -1 : 1;
+        path = el("path", { d: "M" + a + "," + (y - 8) + " h" + (46 * sx) + " v16 h" + (-42 * sx), class: "msg-line", stroke: col, "marker-end": "url(#ar-" + s[3] + ")" });
+        g.appendChild(path);
+        g.appendChild(el("text", { x: a + 56 * sx, y: y + 5, "text-anchor": lft ? "end" : "start", class: "msg-text" }, s[2]));
+      } else {
+        var dir = b > a ? 1 : -1;
+        path = el("path", { d: "M" + a + "," + y + " L" + (b - dir * 6) + "," + y, class: "msg-line", stroke: col, "marker-end": "url(#ar-" + s[3] + ")" });
+        g.appendChild(path);
+        var mid = (a + b) / 2;
+        g.appendChild(el("text", { x: mid, y: y - 7, "text-anchor": "middle", class: "msg-text" }, s[2]));
+      }
+      g.appendChild(el("circle", { cx: a, cy: s[0] === s[1] ? y - 8 : y, r: 3, fill: col }));
+      svg.appendChild(g);
+      onceTimers.push(setTimeout(function () {
+        g.classList.add("in");
+        if (!reduce) {
+          var len = path.getTotalLength();
+          path.style.strokeDasharray = len; path.style.strokeDashoffset = len;
+          path.getBoundingClientRect();
+          path.style.transition = "stroke-dashoffset .55s ease"; path.style.strokeDashoffset = "0";
+        }
+        if (s[1] === 1 && s[0] === 0) msgs++;
+        if (s[0] === 3 && s[1] === 3) { del++; if (applied === 0) applied = 1; }
+        setC(msgs, applied, del);
+        if (i === m.seq.length - 1) {
+          setC(m.msgs, m.applied, m.del);
+          $("onceVerdict").textContent = m.v;
+          $("onceVerdict").className = "verdict" + (m.warn ? " warn" : "");
+          $("cApplied").style.color = m.applied === 1 ? "var(--floor)" : "var(--text)";
+        }
+      }, (reduce ? 120 : 650) * (i + 1)));
+    });
+  }
+  $("onceBtns").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    Array.prototype.forEach.call($("onceBtns").querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+    drawOnce(b.getAttribute("data-m"));
+  });
+
+  /* ================================================================ on scroll */
+  var started = {};
+  function onView(id, fn) {
+    var t = $(id);
+    if (!("IntersectionObserver" in window)) { fn(); return; }
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (en) { if (en.isIntersecting && !started[id]) { started[id] = true; fn(); io.disconnect(); } });
+    }, { rootMargin: "0px 0px -35% 0px", threshold: 0 });
+    io.observe(t);
+  }
+  onView("models", function () {
+    Array.prototype.forEach.call(document.querySelectorAll(".price .fill"), function (f, i) {
+      setTimeout(function () { f.style.width = f.getAttribute("data-w") + "%"; }, 120 * i);
+    });
+  });
+  onView("map", function () { if (!mapTouched) play("disputed"); });
+  onView("once", function () { if (!onceTouched) drawOnce("normal"); });
+})();
+</script>
 </body>
 </html>
