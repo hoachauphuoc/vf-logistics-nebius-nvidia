@@ -88,6 +88,32 @@ over another tenant's case (`d76e64e`); and the verification-loop fixes of 16–
 
 ## Text description
 
+### Summary
+
+**Floorline** screens shipments for a freight forwarder's compliance desk. Deterministic checks
+set a risk **floor** for every shipment; Nemotron agents on **Nebius Token Factory**, with live
+**Tavily** search, may argue a case above that floor and never below it, and a person decides
+every disputed case. (`reconcile()` takes the higher of the model's score and the floor;
+`validate()` raises if an agent's findings ever lowered it.)
+
+- **The problem.** Fraud in a forwarder's book is rare (0.18% of Vietnam's 2024 customs
+  declarations), so almost every hold is honest. The job is to hold the right shipments and
+  make each decision quick and defensible.
+- **What was measured**, on a synthetic corpus, with 95% intervals. The rules alone catch
+  93.5% [90–96] of fraud and hold 38.4% [28–49] of honest shipments. Where the rules score a
+  case 0, Nemotron 3 Nano flagged 46 of 52 frauds and the larger Super 47 of 52, at 4.3x the
+  cost, so fraud screening stays on Nano. The debate began on Nemotron 3 Ultra; across 46
+  labelled cases it was no better than Super and cost 5.2x as much, so it runs on Super.
+- **The limits, stated.** The corpus is synthetic and no customer traffic has been measured.
+  Adding the model layer raises the share of honest holdout shipments held to about 73%. The
+  debate does not tell fraud from honest trade (DISAGREE on 73% of frauds and 72% of honest
+  cases on Super), because the auditor sees the rules' findings; it routes a held case to an
+  investigation and can never clear one.
+- **Try it.** The console is at the hosted URL above: **Continue as guest judge** signs in
+  with one click. Upload `sample_docs/injected_bol.pdf` on the DevOps page to watch Model Armor
+  block a prompt injection before any model reads it, and open `/evaluation` for every figure
+  above. The sections below hold the detail.
+
 ### The idea: agents that can raise risk, never lower it
 
 Most autonomous-agent systems get safer by making the model better. This one gets safer by
@@ -136,78 +162,6 @@ The invariant is checked rather than asserted. `reconcile()` sets effective risk
 higher of the model's score and the floor, and `validate()` computes the floor twice, with
 and without the HS classifier's and zero-day radar's findings, and raises
 `AssertionError` if they lowered it. That check runs on every validation.
-
-### What was significantly updated during the Submission Period
-
-This began as a Google Cloud entry to a different hackathon, All Things Agentic 2026,
-on Vertex AI Gemini. That entry is public, in the same author's earlier repository
-under a second GitHub account:
-[CHAUPHUOCHOA/vf-logistics-hackathon-google](https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google),
-first commit 29 Aug 2026 (after this Submission Period opened on 26 Aug), last commit
-`755d998` on 31 Aug (Vietnam time; 30 Aug 23:46 UTC on GitHub). The **Before** column describes `755d998` unless it names a commit
-of this repository.
-
-This repository's first commit, `6bb1e59` (17 Sep), already contains the first step of
-the port, so the work is measured in two ranges. From a clone of this repository, after
-`git fetch https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google.git main`:
-`git diff --shortstat 755d998 6bb1e59` reports **32 files, +1,833 / −1,380** for that
-first step; `git diff --shortstat 6bb1e59 00d896a` reports **297 files changed, 171,921
-insertions** across 49 commits for the first ten days, to 27 Sep; and
-`git diff --shortstat 6bb1e59 d76e64e` reports **395 files changed, +199,584 / −6,681**
-across 131 commits to 14 Oct. The ranges end at commits, not `HEAD`, so the figures stay
-true. Fifty-three more commits after `d76e64e`, from `3e6b1dd` (16 Oct) to `febc252` (20 Oct), change
-`src/`, `tests/` or `frontend/` again (167 files, +23,957 / −292, by `git diff --shortstat d76e64e febc252 -- src tests frontend`): they fix the verification loop (one publish per idempotency key, an
-exception route for releases over unresolved evidence, an `unknown` send state), add the receiver, the sent ledger and the one-audit-row-per-send rule, raise the tests to 2,095 backend and 1,729 frontend, and add the
-runner tooling that checked those fixes. They are outside the two ranges above.
-
-One thing was deliberately carried over rather than rebuilt: the deterministic
-governance layer — risk floor, untrusted-input boundary, delegation boundary, shipper
-identity verification. None of it is model-specific, and it is what constrains the
-system regardless of which model reasons. Carried over, not frozen: at `d76e64e`,
-`untrusted.py` is byte-for-byte the `755d998` file, while `verifier.py` grew from 487
-lines to 2,023 and `governance.py` from 492 to 894. The rows below were rebuilt.
-
-| | Before | Now | Why |
-|---|---|---|---|
-| **Models** | 4 agents on Gemini 3.5 Flash + Flash-Lite, Vertex AI | 7 agents, 3 models in the pipeline on Token Factory: Nano ×4 hops, Super ×2 (investigation and the debate), MiniCPM-V; Ultra measured and not adopted | The floor overrides a score but not a verdict, so the debate was the one place a stronger model might pay. Measured on 46 labelled debates, Ultra did not (5.2x the cost, a verdict less often, no better at telling fraud from honest trade), so the debate runs on Super |
-| **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,751 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
-| **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 107 files, 20,657 lines of TypeScript at `d76e64e` (tests excluded); it began as 7 screens, since joined by Access Control, Evaluation, three operator screens for the verification loop and a public upload page for shippers | The static page could not carry a session, and recording a decision had to be attributable |
-| **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
-| **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | code default `ANONYMOUS_ROLE=viewer` (deployed: `none`), API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
-| **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **2,095** backend tests passing at 96% coverage (CI runs the Firestore and Pub/Sub emulators), 1,729 frontend tests, and a mutation check that breaks 112 lines and sees every one caught | A test nobody has seen fail is not evidence |
-| **CI** | no test or lint CI in `755d998` (only a Cloud Build deploy config); the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (zero errors, strict on clean modules), tests in the emulators with a 92% coverage floor, frontend (with a coverage floor), and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
-| **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 16 modules that did not exist: auth, b2b, budget, dossier, evaluation, evidence, hs_reference, lineage, membership, observability, openapi, sanctions, sanctions_sources, schemas, tenant, worklist | — |
-| **Verification loop** | `Request info` wrote a note and moved on; no way to track what was asked, whether it arrived, or whether the answer changed anything | 6-step evidence loop: request with HMAC link, receive and extract per doc type, re-evaluate against extracted facts, approve bound to evidence version, execute with claim-before-send, one publish per idempotency key and publish-failure handling. 8 endpoints for the loop (the exception approval among them) plus the worklist and outcomes reads, 3 operator screens, 0 improper executions on the 7-case evaluation corpus (a mocked harness) | Four identical origin-fraud pairs proved booking data alone is not enough. The loop is how the system collects what is missing and reaches a defensible decision |
-
-Three measured results worth stating plainly, because each corrected an assumption we
-had published or would have:
-
-- **HS classification recall went 40.0% → 26.7% → 92.9%.** Two worked examples
-  made Nano *worse* (few-shot, 26.7%); what fixed it was reasoning against a reference
-  extract of the published HS headings — 92.9% at 100% precision on the 30-case pairs
-  set, and **11 of 12 caught with 0 of 12 honest cases flagged** on a 24-case holdout of
-  substitutions the reference never mentions (rates over graded cases; with twelve of
-  each, the 95% interval on recall is 64–99% and the upper bound on false alarms
-  24.2%). A retrieval problem dressed as a reasoning problem does not respond to examples.
-- **Tuning cut the clean shipments the rules hold from 76.7% to 38.4%.** Tuned on the dev
-  half of a 1,000-case synthetic corpus and measured on the held-out half: **38.4%**
-  [28–49], precision 84.1% → 91.2%, recall 95.1% → 93.5% [90–96], sanctions-alias
-  and shell-company detection unchanged at 100%. Still high: at 0.2% fraud that is about
-  206 shipments held per real case, against roughly 19 red-channel inspections per
-  violation found by customs. We traced the remaining false positives to four findings on
-  dev, measured five candidate fixes and rejected all five, so the verifier is unchanged.
-  The largest lever left, counting a first-time shipper only as corroboration (dev
-  false-positive rate 35.1% → 21.9%, no recall lost on the corpus), would release new
-  counterparties' first shipments unreviewed, and is the operator's call. The
-  operating curve for the review threshold is on the Evaluation page of a build that
-  includes `896bbae`. It is a what-if over the rules' floors, not a setting: any non-zero
-  floor already withholds auto-clear, so moving along it would mean changing `reconcile()`
-  and the boundary. We left the threshold where it is.
-- **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
-  `$0.068`–`$0.088` on inference and 90–106 Tavily searches, so the free search tier
-  runs out around 200 cases while model spend is still negligible. Every cost figure
-  we had published before measuring this was a model-cost figure.
 
 ### The problem
 
@@ -577,7 +531,7 @@ Hackathon requirements this satisfies, per the Official Rules: a functional runt
 call to Nebius Token Factory (all seven agents) · at least one NVIDIA open source
 models (Nemotron 3 Nano and Super in the pipeline; Ultra measured against Super) · fits the **Best Apps and Agents** track · entered
 in another hackathon first, on code begun after this Submission Period opened, and
-significantly updated inside it, with the explanation given above · (bonus) a
+significantly updated inside it, with the explanation given in the section below · (bonus) a
 functional runtime Tavily call.
 
 The four judging criteria are Technological Implementation, Design, Potential Impact and
@@ -596,6 +550,86 @@ Quality of the Idea.
 Shipment records — including the historical route-cost baseline and the shipper
 transaction count the agents reason against — are synthetic or supplied per request; the
 verifier falls back to code-resident lane tables when no `avg_route_cost` is provided.
+
+### What was significantly updated during the Submission Period
+
+This began as a Google Cloud entry to a different hackathon, All Things Agentic 2026,
+on Vertex AI Gemini. That entry is public, in the same author's earlier repository
+under a second GitHub account:
+[CHAUPHUOCHOA/vf-logistics-hackathon-google](https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google),
+first commit 29 Aug 2026 (after this Submission Period opened on 26 Aug), last commit
+`755d998` on 31 Aug (Vietnam time; 30 Aug 23:46 UTC on GitHub). The **Before** column describes `755d998` unless it names a commit
+of this repository.
+
+This repository's first commit, `6bb1e59` (17 Sep), already contains the first step of
+the port, so the work is measured in two ranges. From a clone of this repository, after
+`git fetch https://github.com/CHAUPHUOCHOA/vf-logistics-hackathon-google.git main`:
+`git diff --shortstat 755d998 6bb1e59` reports **32 files, +1,833 / −1,380** for that
+first step; `git diff --shortstat 6bb1e59 00d896a` reports **297 files changed, 171,921
+insertions** across 49 commits for the first ten days, to 27 Sep; and
+`git diff --shortstat 6bb1e59 d76e64e` reports **395 files changed, +199,584 / −6,681**
+across 131 commits to 14 Oct. The ranges end at commits, not `HEAD`, so the figures stay
+true. Fifty-three more commits after `d76e64e`, from `3e6b1dd` (16 Oct) to `febc252` (20 Oct), change
+`src/`, `tests/` or `frontend/` again (167 files, +23,957 / −292, by `git diff --shortstat d76e64e febc252 -- src tests frontend`): they fix the verification loop (one publish per idempotency key, an
+exception route for releases over unresolved evidence, an `unknown` send state), add the receiver, the sent ledger and the one-audit-row-per-send rule, raise the tests to 2,095 backend and 1,729 frontend, and add the
+runner tooling that checked those fixes. They are outside the two ranges above.
+
+One thing was deliberately carried over rather than rebuilt: the deterministic
+governance layer — risk floor, untrusted-input boundary, delegation boundary, shipper
+identity verification. None of it is model-specific, and it is what constrains the
+system regardless of which model reasons. Carried over, not frozen: at `d76e64e`,
+`untrusted.py` is byte-for-byte the `755d998` file, while `verifier.py` grew from 487
+lines to 2,023 and `governance.py` from 492 to 894. The rows below were rebuilt.
+
+| | Before | Now | Why |
+|---|---|---|---|
+| **Models** | 4 agents on Gemini 3.5 Flash + Flash-Lite, Vertex AI | 7 agents, 3 models in the pipeline on Token Factory: Nano ×4 hops, Super ×2 (investigation and the debate), MiniCPM-V; Ultra measured and not adopted | The floor overrides a score but not a verdict, so the debate was the one place a stronger model might pay. Measured on 46 labelled debates, Ultra did not (5.2x the cost, a verdict less often, no better at telling fraud from honest trade), so the debate runs on Super |
+| **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,751 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
+| **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 107 files, 20,657 lines of TypeScript at `d76e64e` (tests excluded); it began as 7 screens, since joined by Access Control, Evaluation, three operator screens for the verification loop and a public upload page for shippers | The static page could not carry a session, and recording a decision had to be attributable |
+| **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
+| **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | code default `ANONYMOUS_ROLE=viewer` (deployed: `none`), API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
+| **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
+| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **2,095** backend tests passing at 96% coverage (CI runs the Firestore and Pub/Sub emulators), 1,729 frontend tests, and a mutation check that breaks 112 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **CI** | no test or lint CI in `755d998` (only a Cloud Build deploy config); the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (zero errors, strict on clean modules), tests in the emulators with a 92% coverage floor, frontend (with a coverage floor), and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
+| **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 16 modules that did not exist: auth, b2b, budget, dossier, evaluation, evidence, hs_reference, lineage, membership, observability, openapi, sanctions, sanctions_sources, schemas, tenant, worklist | — |
+| **Verification loop** | `Request info` wrote a note and moved on; no way to track what was asked, whether it arrived, or whether the answer changed anything | 6-step evidence loop: request with HMAC link, receive and extract per doc type, re-evaluate against extracted facts, approve bound to evidence version, execute with claim-before-send, one publish per idempotency key and publish-failure handling. 8 endpoints for the loop (the exception approval among them) plus the worklist and outcomes reads, 3 operator screens, 0 improper executions on the 7-case evaluation corpus (a mocked harness) | Four identical origin-fraud pairs proved booking data alone is not enough. The loop is how the system collects what is missing and reaches a defensible decision |
+
+Three measured results worth stating plainly, because each corrected an assumption we
+had published or would have:
+
+- **HS classification recall went 40.0% → 26.7% → 92.9%.** Two worked examples
+  made Nano *worse* (few-shot, 26.7%); what fixed it was reasoning against a reference
+  extract of the published HS headings — 92.9% at 100% precision on the 30-case pairs
+  set, and **11 of 12 caught with 0 of 12 honest cases flagged** on a 24-case holdout of
+  substitutions the reference never mentions (rates over graded cases; with twelve of
+  each, the 95% interval on recall is 64–99% and the upper bound on false alarms
+  24.2%). A retrieval problem dressed as a reasoning problem does not respond to examples.
+- **Tuning cut the clean shipments the rules hold from 76.7% to 38.4%.** Tuned on the dev
+  half of a 1,000-case synthetic corpus and measured on the held-out half: **38.4%**
+  [28–49], precision 84.1% → 91.2%, recall 95.1% → 93.5% [90–96], sanctions-alias
+  and shell-company detection unchanged at 100%. Still high: at 0.2% fraud that is about
+  206 shipments held per real case, against roughly 19 red-channel inspections per
+  violation found by customs. We traced the remaining false positives to four findings on
+  dev, measured five candidate fixes and rejected all five, so the verifier is unchanged.
+  The largest lever left, counting a first-time shipper only as corroboration (dev
+  false-positive rate 35.1% → 21.9%, no recall lost on the corpus), would release new
+  counterparties' first shipments unreviewed, and is the operator's call. The
+  operating curve for the review threshold is on the Evaluation page of a build that
+  includes `896bbae`. It is a what-if over the rules' floors, not a setting: any non-zero
+  floor already withholds auto-clear, so moving along it would mean changing `reconcile()`
+  and the boundary. We left the threshold where it is.
+- **Tavily, not the models, is the binding cost constraint.** A 20-case run spends
+  `$0.068`–`$0.088` on inference and 90–106 Tavily searches, so the free search tier
+  runs out around 200 cases while model spend is still negligible. Every cost figure
+  we had published before measuring this was a model-cost figure.
+
+The measurement work of 21 Oct 2026 (`05a8063` to `fb3a53f`, merged as `b6389c9`) is outside
+the ranges above. It added `scripts/compare_fraud_models.py` and a `--corpus` mode for
+`scripts/compare_debate_models.py`, the two reports in `data/model_comparison/`, the
+model-comparison card on the Evaluation page and the `/api/v1/evaluation` field behind it,
+and it moved the debate from Nemotron 3 Ultra to Super on the strength of those reports.
+It also corrected two defects in the older board mode of the comparison script: it read the
+whole verdict object as the verdict string and reported every debate as unresolved.
 
 ### Findings and learnings
 
@@ -801,10 +835,10 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Per-tenant spend ceiling | soft ceiling at the single model-call chokepoint |
 | Console login + audit attribution | a decision records the signed-in account, not a typed name |
 | Role-based access | anonymous viewer, reviewer, operator, governance admin; a session narrows the key and never widens it |
-| Measured evaluation | detection benchmark on a held-out split, HS classifier on a holdout set, public enforcement cases and a rules operating curve, all with 95% intervals, served at `/evaluation` by a build that includes `896bbae` |
+| Measured evaluation | detection benchmark on a held-out split, HS classifier on a holdout set, public enforcement cases and a rules operating curve, all with 95% intervals, served at `/evaluation` by a build that includes `896bbae`; and two model comparisons (Nano against Super on fraud where the rules score 0, Ultra against Super on 46 labelled debates) with the same intervals, in `data/model_comparison/` |
 
-The repository is public, so no judging-instruction share is required. Outstanding: the
-video, and one more deploy if `src/` or `frontend/` change after `fb3a53f`.
+The repository is public, so no judging-instruction share is required. Outstanding: the video; the test counts, which are to be refreshed from the next CI run on `master`; and the image gallery, which is to be captured from the live service.
+
 
 ---
 
@@ -938,6 +972,15 @@ on this codebase. The first two are the ones we would fix first.
 8. **Batch API** — for offline scoring of historical shipments (backtesting a new
    risk model against last year's freight), a batch endpoint at a lower per-token cost
    would make the difference between running it and not.
+9. **Say whether a JSON-schema mode exists for the Nemotron models.** Even with
+   `response_format={"type":"json_object"}`, Nemotron 3 Nano returned a reply that failed our
+   schema in 5 of 179 fraud-screening calls (2.8%): `recommendations` came back as a string
+   where the schema wants a list. Super, asked for JSON by its prompt alone because it does not
+   survive `json_object`, returned invalid JSON in 1 of 179. We handle both (a failed reply
+   refuses auto-clear and goes to a person), but we did not test a schema-constrained mode and
+   could not tell from the documentation whether one is offered for these models. A stated
+   answer, and an example, would remove this class of failure for anyone building on them.
+   The counts are in `data/model_comparison/fraud_floor0.json`.
 
 ### Nebius AI Cloud
 
