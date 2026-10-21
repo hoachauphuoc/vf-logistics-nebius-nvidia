@@ -39,8 +39,20 @@ async def _audit(
     case_id: str, action: str, detail: dict[str, Any], status: str = "done",
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
+    key = str(detail.get("idempotency_key") or "")
+    delegated = detail.get("executor")
+    message_id = detail.get("message_id") or (
+        delegated.get("message_id") if isinstance(delegated, dict) else None
+    )
+    one_publish = action == "publish_decision" and status == "done" and bool(key and message_id)
+    if one_publish:
+        # Reuse older random-id records too. The atomic create below decides a
+        # race with the sent ledger even if both writers read no earlier row.
+        earlier = await _earlier_publish(case_id, key, tenant_id)
+        if earlier is not None:
+            return earlier
     entry = {
-        "audit_id": new_id("audit"),
+        "audit_id": _publish_audit_id(case_id, key, tenant_id) if one_publish else new_id("audit"),
         "case_id": case_id,
         "action": action,
         "status": status,
@@ -52,7 +64,14 @@ async def _audit(
     # the tenant has to arrive -- an unscoped receipt would put one customer's
     # release or SAR draft into another customer's audit trail, and the audit
     # trail is the artefact a customs authority reads.
-    await get_store().add_audit(entry, tenant_id=tenant_id)
+    if one_publish:
+        created = await get_store().add_audit_once(entry, tenant_id=tenant_id)
+        if not created:
+            earlier = await _earlier_publish(case_id, key, tenant_id)
+            if earlier is not None:
+                return earlier
+    else:
+        await get_store().add_audit(entry, tenant_id=tenant_id)
     return entry
 
 
@@ -66,7 +85,9 @@ def _publish_audit_id(case_id: str, key: str, tenant_id: str | None) -> str:
     """
     import hashlib
 
-    digest = hashlib.sha256(f"{tenant_id or ''}\x00{case_id}\x00{key}".encode()).hexdigest()
+    from vf_logistics.tenant import resolve
+
+    digest = hashlib.sha256(f"{resolve(tenant_id)}\x00{case_id}\x00{key}".encode()).hexdigest()
     return f"audit-publish-{digest[:32]}"
 
 
