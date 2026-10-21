@@ -910,7 +910,7 @@ now vestigial** -- nothing calls Vertex AI, so the role is irrelevant.
 The other half holds only when the split is deployed. With `EXECUTOR_URL` set, the
 analysis identity can go without `pubsub.publisher`: it can reason about a shipment and
 cannot announce a decision about one. The deployed service does not set it, publishes
-directly, and holds `roles/pubsub.publisher` (README, *Deploy to Cloud Run*).
+directly, and holds `roles/pubsub.publisher` (REFERENCE.md, *Deploy to Cloud Run*).
 
 ---
 
@@ -1001,7 +1001,7 @@ An architecture document that omits these is marketing.
 | Debate | `nvidia/Nemotron-3-Ultra-550b-a55b` |
 | Vision | `openbmb/MiniCPM-V-4_5` |
 | Spend ceiling | `VF_TENANT_SPEND_CEILING_USD=50`, soft |
-| Anonymous floor | `viewer` (`ANONYMOUS_ROLE=viewer`, `VF_PUBLIC_READS=true`) |
+| Anonymous floor | `none` (`ANONYMOUS_ROLE=none`, `VF_PUBLIC_READS=false`): an anonymous visitor is sent to the sign-in screen and the API answers 401; the one-click guest judge (`VF_ONE_CLICK_JUDGE=true`) cannot release or approve |
 | Role lists | `ADMIN_EMAILS` 2 accounts, `REVIEWER_EMAILS` 1, `OPERATOR_EMAILS` none |
 | Console writes | session required, verified |
 | Multi-tenancy | off |

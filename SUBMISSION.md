@@ -69,8 +69,8 @@ itself.
 **API:** the same URL, under `/api/v1` — `GET /health`, `GET /api/v1/openapi.json`
 
 One Cloud Run service runs the console and the API in one container. The console is
-readable without signing in: an anonymous visitor is a real `viewer`. Recording a review
-decision needs an account; credentials are in the private testing-instructions field below.
+signed-in only: an anonymous visitor is sent to the sign-in screen, and **Continue as guest judge** signs in with one click. Recording a review
+decision needs a password account; credentials are in the private testing-instructions field below.
 
 The live service may be a build from before the changes merged on 14 Oct 2026, and before
 the verification-loop fixes of 16–17 Oct (`3e6b1dd` to `443c524`). Those 14 Oct changes are
@@ -138,10 +138,10 @@ first step; `git diff --shortstat 6bb1e59 00d896a` reports **297 files changed, 
 insertions** across 49 commits for the first ten days, to 27 Sep; and
 `git diff --shortstat 6bb1e59 d76e64e` reports **395 files changed, +199,584 / −6,681**
 across 131 commits to 14 Oct. The ranges end at commits, not `HEAD`, so the figures stay
-true. Six commits after `d76e64e`, from `3e6b1dd` (16 Oct) to `443c524` (17 Oct), change
-`src/` and `tests/` again: they fix the verification loop (one publish per idempotency key, an
-exception route for releases over unresolved evidence, an `unknown` send state) and add the
-runner tooling that checked those fixes. They are outside these ranges.
+true. Fifty-three more commits after `d76e64e`, from `3e6b1dd` (16 Oct) to `febc252` (20 Oct), change
+`src/`, `tests/` or `frontend/` again (167 files, +23,957 / −292, by `git diff --shortstat d76e64e febc252 -- src tests frontend`): they fix the verification loop (one publish per idempotency key, an
+exception route for releases over unresolved evidence, an `unknown` send state), add the receiver, the sent ledger and the one-audit-row-per-send rule, raise the tests to 2,095 backend and 1,729 frontend, and add the
+runner tooling that checked those fixes. They are outside the two ranges above.
 
 One thing was deliberately carried over rather than rebuilt: the deterministic
 governance layer — risk floor, untrusted-input boundary, delegation boundary, shipper
@@ -156,9 +156,9 @@ lines to 2,023 and `governance.py` from 492 to 894. The rows below were rebuilt.
 | **Agents** | intake, fraud, compliance, investigation | plus HS classifier, zero-day radar, auto-debate (1,751 lines) | Deterministic checks can match an HS code against a list but not against the cargo; sanctions lists lag the news; a 15-point floor/model gap needs arguing, not escalating |
 | **Console** | one static HTML page served by Flask | Next.js 16 in the same container as the API — 107 files, 20,657 lines of TypeScript at `d76e64e` (tests excluded); it began as 7 screens, since joined by Access Control, Evaluation, three operator screens for the verification loop and a public upload page for shippers | The static page could not carry a session, and recording a decision had to be attributable |
 | **Audit attribution** | `reviewer` read from the **request body as free text** | HMAC sessions, PBKDF2 operator records, audit names the authenticated account | Anyone could sign any name, which makes an audit trail decoration rather than evidence |
-| **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | `ANONYMOUS_ROLE=viewer`, API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
+| **Anonymous authority** | no authentication at all in `755d998`; then, mid-port, any visitor held `GOVERNANCE_ADMIN` on the live console and an unauth `POST /orchestrator/reset` cleared 307 real cases | code default `ANONYMOUS_ROLE=viewer` (deployed: `none`), API key on writes, split on HTTP method; the console forwards its key only with a verified session, which **narrows** it to the person's role | Found by doing it. The first fix closed writes but left roles decorative — the console's key made every signed-in user an admin — so roles now come from the person, and `/api/v1/auth/policy` reports what every route enforces |
 | **Cost control** | an estimate summed over the cases on screen; no ceiling, no output cap on any agent — after the port the provider default of 8,192 was hit twice by runaway calls that returned unparseable output | per-hop attribution, per-tenant soft ceiling at the one chokepoint, a switch ratchet, measured ceilings everywhere | A runaway costs money and produces nothing |
-| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **2,084** backend tests passing at 96% coverage (CI runs the Firestore and Pub/Sub emulators), 1,729 frontend tests, and a mutation check that breaks 112 lines and sees every one caught | A test nobody has seen fail is not evidence |
+| **Tests** | **no** unit tests in `755d998` (one self-check script); this repository's first commit added one HTTP script | **2,095** backend tests passing at 96% coverage (CI runs the Firestore and Pub/Sub emulators), 1,729 frontend tests, and a mutation check that breaks 112 lines and sees every one caught | A test nobody has seen fail is not evidence |
 | **CI** | none in `755d998`; the workflow added on 19 Sep filtered on branch `main` while the repo uses `master`, so it **never ran** until 24 Sep | five jobs: ruff, mypy (zero errors, strict on clean modules), tests in the emulators with a 92% coverage floor, frontend (with a coverage floor), and a container smoke test | A documented pipeline that does not execute is the same defect as an undocumented one |
 | **Structure** | flat root: `main.py` and 16 other modules at top level | `src/vf_logistics/` with 16 modules that did not exist: auth, b2b, budget, dossier, evaluation, evidence, hs_reference, lineage, membership, observability, openapi, sanctions, sanctions_sources, schemas, tenant, worklist | — |
 | **Verification loop** | `Request info` wrote a note and moved on; no way to track what was asked, whether it arrived, or whether the answer changed anything | 6-step evidence loop: request with HMAC link, receive and extract per doc type, re-evaluate against extracted facts, approve bound to evidence version, execute with claim-before-send, one publish per idempotency key and publish-failure handling. 8 endpoints for the loop (the exception approval among them) plus the worklist and outcomes reads, 3 operator screens, 0 improper executions on the 7-case evaluation corpus (a mocked harness) | Four identical origin-fraud pairs proved booking data alone is not enough. The loop is how the system collects what is missing and reaches a defensible decision |
@@ -649,13 +649,13 @@ investigation agent.
 
 ## Video script
 
-The shooting script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): eleven scenes,
+The shooting script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): eight scenes,
 each with the click path and the narration line it is timed against. The narration
 itself lives in [`scripts/build_narration.py`](scripts/build_narration.py), which
 synthesises the audio track and matching SRT subtitles per sentence, so caption
 timings are measured from real audio rather than interpolated from word counts. The
-eleven scene lengths sum to 165 seconds, under the three-minute limit. It is written as a
-pitch: the first sentence names Floorline and who it is for, and NVIDIA Nemotron and
+eight scene lengths sum to 165 seconds, under the three-minute limit. It follows two shipments, A and B, with the same booking data: the purchase invoice sends A to a human Release and B to a human Block.
+The second scene names Floorline and who it is for, and NVIDIA Nemotron and
 Nebius Token Factory are named aloud, not only on screen.
 
 An earlier `docs/video-script.txt` described the retired vanilla-HTML dashboard, a
@@ -670,11 +670,11 @@ both empty on camera, and a document upload takes roughly 30–60 seconds to rea
 terminal state, so narration over that scene needs to be long enough to cover
 it.
 
-The shot list is the one in `docs/DEMO_SCRIPT.md` (eleven clips); this file does not
+The shot list is the one in `docs/DEMO_SCRIPT.md` (eight clips); this file does not
 keep a second one. Tavily results are shown in the case trace of an escalated case
-(clip 5); a case cleared by the pre-filter ran no model and has no sources. Model Armor
+(clip 6); a case cleared by the pre-filter ran no model and has no sources. Model Armor
 is live and enforcing: `sample_docs/injected_bol.pdf` is blocked with `MATCH_FOUND`
-before the vision model sees it, `case_id` prefixed `CASE-BLOCKED-` (clip 9).
+before the vision model sees it, `case_id` prefixed `CASE-BLOCKED-` (shown on the Agents page; the video does not film it).
 
 ---
 
@@ -726,7 +726,7 @@ carry them on 15 Oct 2026.
 | **Category** | Best Apps and Agents |
 | **Public code repo URL** | https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | **Reproducible Testing instructions in README?** | **Yes** — README → *Reproducible testing* |
-| **Testing instructions (private)** | **Console:** https://vf-app-350828852747.asia-southeast1.run.app — the board, any case, the review queue, the audit trail and the evaluation figures are readable **without signing in**, because an anonymous visitor is a real viewer, so nothing is needed to assess the product. **To act, one click:** the login page and the board's *Start here* strip offer **Continue as guest judge**, which signs you in with no password as `guest-judge@vf-logistics.demo`, a governance admin — inject shipments or upload a document (DevOps), block a case or ask for information, and simulate a policy against the board. Anything that releases cargo or would carry over to the next judge needs a password sign-in: **Release** (on Review, and the verification loop's approve and execute), **Clear board** (DevOps), **Publish** or **Revoke** the delegation boundary, and editing the **pre-AI screening rules** (Governance). **Password accounts:** `judge@vf-logistics.demo`, password `<PASTE VF_JUDGE_PASSWORD>`, is a **governance admin**: it can release a shipment, see the spend figures and publish policy. `reviewer@vf-logistics.demo`, password `<PASTE VF_REVIEWER_PASSWORD>`, holds only the **Reviewer** role: it can decide a case and open its document, and the spend figures, document upload and policy publishing stay locked for it, naming the role that would unlock each — sign in with it to watch the access control refuse something. The audit trail names whichever account acted. **Verification loop:** sign in with a password account, open `/today` and pick a case with the ORIGIN_INPUTS_UNVERIFIED finding — two plywood shipments, `VF-DEMO-PLY-A` and `VF-DEMO-PLY-B`, are seeded for this, and a case released by an earlier judge cannot be released again. If both are already decided, make a fresh one: DevOps → *Submit one by hand* (an operator action, so the guest judge or `judge@vf-logistics.demo`) with origin `Vietnam`, destination `United States` and HS code `4412.33` raises the same finding and lands on `/today`. Click "Request evidence", copy the link, and open `/respond/<token>` in a new tab to upload a PDF (any of the bills of lading in the repository's `sample_docs/` will do). Back on the case page, the timeline shows the document received. Click "Re-evaluate", then "Release" (routes through approve + execute). The `/outcomes` page shows the resolved count. **Evaluation script:** `python scripts/run_verification_eval.py` runs 7 cases and reports 0 improper executions. **API only:** `GET /health` to warm it, `GET /api/v1/auth/policy` for what every route enforces, then read `GET /api/v1/orchestrator/state`. Full walkthrough in the README. |
+| **Testing instructions (private)** | **Console:** https://vf-app-350828852747.asia-southeast1.run.app — the deployed console asks everyone to sign in, and an anonymous request to the API answers 401. **One click, no password:** the login page offers **Continue as guest judge**, which signs you in as `guest-judge@vf-logistics.demo`, a governance admin; it can read the board, any case, the review queue, the audit trail and the evaluation figures, and it can inject shipments or upload a document (DevOps), block a case or ask for information, and simulate a policy against the board. Anything that releases cargo or would carry over to the next judge needs a password sign-in: **Release** (on Review, and the verification loop's approve and execute), **Clear board** (DevOps), **Publish** or **Revoke** the delegation boundary, and editing the **pre-AI screening rules** (Governance). **Password accounts:** `judge@vf-logistics.demo`, password `<PASTE VF_JUDGE_PASSWORD>`, is a **governance admin**: it can release a shipment, see the spend figures and publish policy. `reviewer@vf-logistics.demo`, password `<PASTE VF_REVIEWER_PASSWORD>`, holds only the **Reviewer** role: it can decide a case and open its document, and the spend figures, document upload and policy publishing stay locked for it, naming the role that would unlock each — sign in with it to watch the access control refuse something. The audit trail names whichever account acted. **Verification loop:** sign in with a password account, open `/today` and pick a case with the ORIGIN_INPUTS_UNVERIFIED finding — two plywood shipments, `VF-DEMO-PLY-A` and `VF-DEMO-PLY-B`, are seeded for this, and a case released by an earlier judge cannot be released again. If both are already decided, make a fresh one: DevOps → *Submit one by hand* (an operator action, so the guest judge or `judge@vf-logistics.demo`) with origin `Vietnam`, destination `United States` and HS code `4412.33` raises the same finding and lands on `/today`. Click "Request evidence", copy the link, and open `/respond/<token>` in a new tab to upload a PDF (any of the bills of lading in the repository's `sample_docs/` will do). Back on the case page, the timeline shows the document received. Click "Re-evaluate", then "Release" (routes through approve + execute). The `/outcomes` page shows the resolved count. **Evaluation script:** `python scripts/run_verification_eval.py` runs 7 cases and reports 0 improper executions. **API only:** `GET /health` is open and warms the service; every other route answers 401 without a session, so the console is the way in (`GET /api/v1/auth/policy` and `GET /api/v1/orchestrator/state` need a session too). Full walkthrough in the README. |
 
 **Which model provider(s) did you use?** → **Nebius Token Factory**, hosting
 **NVIDIA Nemotron 3 Nano** (`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`), **NVIDIA
@@ -757,7 +757,7 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 
 | Item | Status |
 |---|---|
-| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The shooting script is `docs/DEMO_SCRIPT.md` (eleven scenes, 165s) and the narration track is generated by `scripts/build_narration.py`; the narration text changed on 14 Oct, so the audio has to be regenerated from its `SCENES` before recording. |
+| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The shooting script is `docs/DEMO_SCRIPT.md` (eight scenes, 165s) and the narration track is generated by `scripts/build_narration.py`; the narration text changed on 21 Oct (the eight-scene plan), so the audio has to be regenerated from its `SCENES` before recording. |
 | Public code repository | done -- https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | Secrets out of the repository | done -- scanned the tracked files, the untracked working tree and the full git history for Tavily, Google, Nebius and private-key patterns: no hit. `.env` is git-ignored and was never committed; `.env.example` holds placeholders only; on Cloud Run the keys come from Secret Manager |
 | Devpost text description | this file |
@@ -767,7 +767,7 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case that reaches the models), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 6 integration points |
-| Automated test suite | 2,084 backend tests passing in CI, which runs the Firestore and Pub/Sub emulators (pytest, 96% coverage), 1,729 frontend tests (vitest, 61.6% coverage), mutation check 112/112 |
+| Automated test suite | 2,095 backend tests passing in CI, which runs the Firestore and Pub/Sub emulators (pytest, 96% coverage), 1,729 frontend tests (vitest, 61.6% coverage), mutation check 112/112 |
 | CI pipeline | GitHub Actions, five jobs, every one able to fail the build: ruff; mypy with zero errors, strict on the clean modules; pytest in the Firestore and Pub/Sub emulators with `--cov-fail-under=92`; frontend typecheck, lint, tests with a coverage floor, and build; and a container job that builds both images and smoke-tests the deployed one |
 | Auto-debate on score disputes | done -- fires without human intervention; a confident DISAGREE can send the case to an investigation it would otherwise skip, upward only; a person decides every disputed case |
 | Human feedback learning loop | done -- derived from reviewed cases, read fresh on every scored case; two human blocks raise risk by name, five human releases lower it only for a registry-verified counterparty, never below the floor |
