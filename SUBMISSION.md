@@ -72,14 +72,14 @@ One Cloud Run service runs the console and the API in one container. The console
 signed-in only: an anonymous visitor is sent to the sign-in screen, and **Continue as guest judge** signs in with one click. Recording a review
 decision needs a password account; credentials are in the private testing-instructions field below.
 
-The live service may be a build from before the changes merged on 14 Oct 2026, and before
-the verification-loop fixes of 16–17 Oct (`3e6b1dd` to `443c524`). Those 14 Oct changes are
-in this repository: the 95% intervals and the operating curve on the Evaluation page
-(`896bbae`), the stricter checks on automated release and the registry-only learning
-discount (`711e3e6`), the shipper history read fresh before each risk adjustment
-(`b5cd237`), the tenant-scoped document bucket (`17864e0`), and the Firestore store's
-refusal of an unversioned write over another tenant's case (`d76e64e`). A build from
-before them shows the evaluation as point figures only.
+The live service is Cloud Run revision `vf-app-00044-x7b`, deployed on 21 Oct 2026 from
+commit `cd2053f` (`GET /health` reports the revision). It includes the changes of 14 Oct 2026:
+the 95% intervals and the operating curve on the Evaluation page (`896bbae`), the stricter
+checks on automated release and the registry-only learning discount (`711e3e6`), the
+shipper history read fresh before each risk adjustment (`b5cd237`), the tenant-scoped
+document bucket (`17864e0`), and the Firestore store's refusal of an unversioned write
+over another tenant's case (`d76e64e`); and the verification-loop fixes of 16–17 Oct
+(`3e6b1dd` to `443c524`) and the work up to 20 Oct.
 
 ---
 
@@ -763,7 +763,7 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Devpost text description | this file |
 | README with spin-up instructions | `README.md` |
 | Reproducible testing instructions | `README.md` -> *Reproducible testing* |
-| Hosted project URL | done -- https://vf-app-350828852747.asia-southeast1.run.app, console and API in one service; it may be a build from before the 14 Oct changes named in the *Hosted project URL* section |
+| Hosted project URL | done -- https://vf-app-350828852747.asia-southeast1.run.app, console and API in one service; revision `vf-app-00044-x7b`, deployed 21 Oct 2026 from `cd2053f` |
 | Runtime call to Nebius Token Factory | done -- all seven agents |
 | NVIDIA open model used | done -- Nemotron 3 **Nano** (screening, every case that reaches the models), **Super** (investigation), **Ultra** (auto-debate) + **MiniCPM-V 4.5** for document vision. Four models, each on the job its rate justifies. |
 | Functional Tavily runtime call | done -- 6 integration points |
@@ -783,9 +783,7 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Measured evaluation | detection benchmark on a held-out split, HS classifier on a holdout set, public enforcement cases and a rules operating curve, all with 95% intervals, served at `/evaluation` by a build that includes `896bbae` |
 
 The repository is public, so no judging-instruction share is required. Outstanding: the
-video, and a live service built from the final commit; until then the live demo may lack
-the 14 Oct changes named in the *Hosted project URL* section (on 15 Oct it did not yet
-serve the operating curve).
+video, and one more deploy if `src/` or `frontend/` change after `cd2053f`.
 
 ---
 

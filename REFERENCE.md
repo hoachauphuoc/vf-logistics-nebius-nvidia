@@ -79,10 +79,9 @@ Details: [One click for judges](#one-click-for-judges).
   policy against the board on Governance; sign in as the Reviewer account and watch the
   console refuse to publish policy, naming the role it needs.
 - **Verify:** the console's Evaluation page (`/evaluation`) and `GET /api/v1/evaluation`
-  serve every committed report. The 95% intervals and the operating curve arrived with
-  the `896bbae` merge (14 Oct 2026): a build of this repository serves them, and a
-  deployment built before that merge, which the live demo may still be, shows the point
-  figures only. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
+  serve every committed report, with 95% intervals and the operating curve (since the
+  `896bbae` merge, 14 Oct 2026). The live service runs revision `vf-app-00044-x7b`,
+  deployed 21 Oct 2026 from `cd2053f`. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
   at no cost; [Reproducible testing](#reproducible-testing) has the rest.
 
 ## The problem
