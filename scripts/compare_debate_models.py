@@ -304,28 +304,6 @@ async def corpus_main(args: argparse.Namespace) -> int:
     rows: list[dict] = []
     stopped = False
 
-    async def debate(rec: dict, model: str) -> None:
-        nonlocal spent, stopped
-        async with sem:
-            if stopped:
-                return
-            row = await run_one(rec["case"], model)
-            row["is_fraud"] = rec["fraud"]
-            rows.append(row)
-            spent += row["cost_usd"]
-            if spent > args.max_cost_usd:
-                stopped = True
-            total = len(chosen) * 2
-            print(f"  [{len(rows)}/{total}] {row['model'].split('/')[-1][:22]:22} "
-                  f"{str(row['verdict']):9} {row['seconds']:6}s  spent ${spent:.3f}", flush=True)
-            # A partial report every 10 debates, so an interrupted run keeps what it paid for.
-            if len(rows) % 10 == 0:
-                write_report(args.out, build_report(True))
-
-    await asyncio.gather(*(debate(r, m) for r in chosen for m in (SUPER, ULTRA)))
-    if stopped:
-        print(f"ABORTED: spend ${spent:.4f} passed --max-cost-usd {args.max_cost_usd}; the report is partial")
-
     def build_report(partial: bool) -> dict:
         return {
             "kind": "debate_corpus",
@@ -347,6 +325,28 @@ async def corpus_main(args: argparse.Namespace) -> int:
                 "A debate with no verdict, or a forced default, counts against 'reached a verdict' and is left out of the DISAGREE rates.",
             ],
         }
+
+    async def debate(rec: dict, model: str) -> None:
+        nonlocal spent, stopped
+        async with sem:
+            if stopped:
+                return
+            row = await run_one(rec["case"], model)
+            row["is_fraud"] = rec["fraud"]
+            rows.append(row)
+            spent += row["cost_usd"]
+            if spent > args.max_cost_usd:
+                stopped = True
+            total = len(chosen) * 2
+            print(f"  [{len(rows)}/{total}] {row['model'].split('/')[-1][:22]:22} "
+                  f"{str(row['verdict']):9} {row['seconds']:6}s  spent ${spent:.3f}", flush=True)
+            # A partial report every 10 debates, so an interrupted run keeps what it paid for.
+            if len(rows) % 10 == 0:
+                write_report(args.out, build_report(True))
+
+    await asyncio.gather(*(debate(r, m) for r in chosen for m in (SUPER, ULTRA)))
+    if stopped:
+        print(f"ABORTED: spend ${spent:.4f} passed --max-cost-usd {args.max_cost_usd}; the report is partial")
 
     report = build_report(stopped)
     path = write_report(args.out, report)
