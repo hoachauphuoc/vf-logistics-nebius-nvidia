@@ -155,8 +155,10 @@ The review queue moved to `viewer` on purpose: it is a filtered view of cases th
 reason the console lent its key to anonymous reads in the first place.
 
 `VF_PUBLIC_READS` still defaults to false, so a deployment that forgets it is locked,
-not open. It is on here for a stated reason, the judging window, over synthetic data.
-**Anonymous reads must be turned off before a paying customer's data is in the store.**
+not open. It was on for the judging window over synthetic data; since revision 00042
+(2026-10-20) the deployed service runs with `VF_PUBLIC_READS=false` and `ANONYMOUS_ROLE=none`,
+so the anonymous 200 above no longer holds there. **Anonymous reads must stay off once a paying
+customer's data is in the store.**
 
 The proxy also refuses every write without a verified session, before the backend is
 asked, so an anonymous `POST /api/proxy/governance/simulate` is 401 even though the
@@ -926,7 +928,8 @@ An architecture document that omits these is marketing.
   change needs a new revision.
 - **Anonymous reads are off on the deployed service (2026-10-20).** `ANONYMOUS_ROLE=none` is set on
   `vf-app` (revision 00040), so case, review-queue and audit reads answer 401 without a credential;
-  `/health` and the console shell stay open. The default in code is still `viewer`, for a local demo over
+  with `VF_PUBLIC_READS=false` (revision 00042) every console page also redirects an anonymous visitor
+  to `/login`, so only `/health` and `/login` stay open. The default in code is still `viewer`, for a local demo over
   synthetic data. A visitor now needs a sign-in (the one-click judge session, where enabled, or a password).
 - **Document cases recorded before the intake step reached the billing rollups stay
   under-counted.** Intake is now rolled up like every other step, through
