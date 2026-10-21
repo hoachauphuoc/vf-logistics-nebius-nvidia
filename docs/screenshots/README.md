@@ -1,8 +1,9 @@
 # Image gallery for the Devpost submission
 
-Fifteen screenshots, 21 Oct 2026, taken from the live service (Cloud Run revision
+Seventeen screenshots, 21 Oct 2026, taken from the live service (Cloud Run revision
 `vf-app-00045-fxk`, deployed from `fb3a53f`) signed in as the one-click guest judge, except
-15, which is `docs/architecture.html`. Every case, company and person on screen is synthetic
+15, which is `docs/architecture.html`. Images 16 and 17 are a Deep Review run that day on
+`CASE-FULL-10-DIVERSION`, which added one debate step to that demo case. Every case, company and person on screen is synthetic
 demo data; the one account shown is `guest-judge@vf-logistics.demo`. No token, password or key
 is in any frame. Captions below are ready to paste.
 
@@ -23,12 +24,11 @@ is in any frame. Captions below are ready to paste.
 | `13-risk-radar.png` | Risk radar: blocked and incomplete checks, how clearances were reached, and the completed audits. |
 | `14-devops.png` | DevOps: a scripted batch of three shipments, a bill-of-lading upload through Model Armor, and one-by-hand submission. |
 | `15-architecture.png` | Architecture: models may raise risk and never lower it; an interactive demonstration of `effective = max(model, floor)`. |
+| `16-debate-trace-on-super.png` | The same trace after a Deep Review: the Senior Auditor debate ran on Nemotron 3 Super (10.2 s), and the verdict panel says the deterministic floor (80) overruled the model (78): the model may raise risk but never lower it. |
+| `17-senior-auditor-debate-verdict.png` | The debate itself: the auditor chose its own Tavily search in round 1 and rendered CONFIRM at 90% confidence in round 2, recommending a hold. A CONFIRM changes nothing, and nothing the debate says can clear a case. |
 
 ## Not captured, and why
 
-- **A debate trace on Nemotron 3 Super.** The live board's existing debate traces predate the
-  switch from Ultra to Super and still name Ultra. A trace on Super needs a new case, which
-  spends model credit and adds to the board; it is to be filmed with the video.
 - **Model Armor blocking `sample_docs/injected_bol.pdf`.** Uploading it creates a blocked case
   on the shared board. The injection probe on the agent console (image 11) runs the same
   screen without creating a case.

@@ -759,12 +759,12 @@ for it) → paste the *Feedback* section below.
 
 **Video demo link** → the public YouTube URL, once recorded (see *Submission checklist*).
 
-**Thumbnail and image gallery** → the fifteen screenshots in `docs/screenshots/`, with a
+**Thumbnail and image gallery** → the seventeen screenshots in `docs/screenshots/`, with a
 caption for each in its README, taken from revision `vf-app-00045-fxk` (the pipeline board, a
 review case where the floor overrides the model, a case trace naming the model on each hop,
 the dossier PDF, governance, the evaluation page with the model comparisons, the agent
-console, the audit trail and the architecture page). Two planned images are not there and
-the README says why: a debate trace on Super, and Model Armor blocking the injected sample.
+console, the audit trail, a debate on Super and the architecture page). One planned image is
+not there and the README says why: Model Armor blocking the injected sample.
 
 ### Additional info
 
