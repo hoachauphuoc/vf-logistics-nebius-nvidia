@@ -59,7 +59,7 @@ This began as an entry to a different hackathon (Google Cloud, Vertex AI Gemini)
 | Models | 4 agents on Gemini via Vertex AI | 7 agents on Token Factory: Nemotron 3 Nano and Super (Ultra measured, not adopted), plus MiniCPM-V |
 | Console | one static HTML page | Next.js 16 in the same container as the API |
 | Evidence loop | a note | request, receive, re-evaluate, approve, execute, with an audit trail |
-| Tests | none | 2,090 backend (96% coverage, with the Firestore and Pub/Sub emulators) and 1,731 frontend (62.0%); mypy 0 errors |
+| Tests | none | 2,120 backend (96% coverage, with the Firestore and Pub/Sub emulators) and 1,731 frontend (62.0%); mypy 0 errors |
 | CI | no test or lint CI, only a Cloud Build deploy config | five GitHub Actions jobs, each able to fail the build |
 
 ```bash
@@ -104,7 +104,7 @@ Try it in a few minutes: as guest judge, upload `sample_docs/injected_bol.pdf` o
 ## Reproducible testing
 
 ```bash
-# Backend: 2,090 tests; CI runs them inside the Firestore and Pub/Sub emulators (firebase emulators:exec)
+# Backend: 2,120 tests; CI runs them inside the Firestore and Pub/Sub emulators (firebase emulators:exec)
 pip install "pytest>=8.0.0" "pytest-asyncio>=0.23.0" "pytest-cov>=4.1.0" "pytest-mock>=3.12.0"
 python -m pytest tests/ -v --cov=vf_logistics --cov-fail-under=92
 

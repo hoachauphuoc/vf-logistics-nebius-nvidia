@@ -80,8 +80,8 @@ Details: [One click for judges](#one-click-for-judges).
   console refuse to publish policy, naming the role it needs.
 - **Verify:** the console's Evaluation page (`/evaluation`) and `GET /api/v1/evaluation`
   serve every committed report, with 95% intervals and the operating curve (since the
-  `896bbae` merge, 14 Oct 2026). The live service runs revision `vf-app-00045-fxk`,
-  deployed 21 Oct 2026 from `fb3a53f`. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
+  `896bbae` merge, 14 Oct 2026). The live service runs revision `vf-app-00047-228`,
+  deployed from `76d015e`. `python scripts/run_massive_benchmark.py --arm rules` reruns the rules in seconds
   at no cost; [Reproducible testing](#reproducible-testing) has the rest.
 
 ## The problem
@@ -427,7 +427,7 @@ how well it was chosen, not how well it works. Detail and caveats:
 book. This repository's first commit added one test file, `scripts/test_documents.py`,
 which drives a deployed service over HTTP.
 
-**Now:** **2,090 backend tests** pass in CI with none skipped (run `b6389c9`), at 96% line coverage (304 of 8,059 lines missed; CI
+**Now:** **2,120 backend tests** pass with none skipped (run on `76d015e` in the Firestore and Pub/Sub emulators, as CI does), at 96% line coverage (298 of 8,086 lines missed; CI
 runs them inside the Firestore and Pub/Sub emulators, so the `FirestoreStore` tests
 run for real; without the emulators the 18 emulator tests and the store parity suite
 skip). The console has 1,731 frontend tests in 91 files at 62.0% line coverage (8,371 of 13,506 lines). A mutation check —
@@ -1758,7 +1758,7 @@ python scripts/compare_fraud_models.py        # Nano vs Super on score-0 corpus 
 | Untyped links | 3 | A request-level link carries no document type, so with several documents requested it cannot say which slot an upload fills |
 | Decisions receiver | 19 | The Pub/Sub push endpoint accepts only a Google-signed push, applies each decision once per key and tenant (8 concurrent deliveries of one key apply it once on the emulator), and a message without a key is refused (`test_decision_receiver.py`, `test_applied_decisions.py`, `test_reference_receiver.py`) |
 | Sent ledger, hard kill and `/health` | 15 | A retry reads the sent ledger and does not publish again; an unreadable ledger sends nothing; a process killed right after the broker accepted leaves one message on the emulator; `/health` names the revision and the ledger (`test_sent_ledger.py`, `test_sim_hard_kill.py`, `test_health_deploy_info.py`) |
-| **Total** | **2,090** | all pass in CI, which runs the emulators; 106 test files. This table names areas of the hardening suite, not every file |
+| **Total** | **2,120** | all pass in the Firestore and Pub/Sub emulators, as CI runs them; 111 test files. This table names areas of the hardening suite, not every file |
 
 The hardening suite drives real request handlers and real code paths rather
 than asserting that routes are registered. An earlier version of it did the
@@ -2178,7 +2178,7 @@ collection effort.
 │       ├── zero_day_agent.py     Adverse media ahead of the lists — Nemotron 3 Nano
 │       ├── investigation_agent.py    Deep-dive investigation     — Nemotron 3 Super
 │       └── debate_agent.py       Senior Auditor debate           — Nemotron 3 Super
-├── tests/                        106 files, 2,090 tests
+├── tests/                        111 files, 2,120 tests
 ├── scripts/                      Not deployed; seeding, verification, docs, narration
 ├── sample_docs/                  Seven committed sample PDFs, one per mechanism
 ├── data/                         Sanctions, HS reference, synthetic corpus, benchmark and eval reports
