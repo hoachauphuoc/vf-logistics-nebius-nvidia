@@ -4,7 +4,7 @@ Deterministic checks set a risk **floor** for every shipment. AI agents may argu
 
 - **Hackathon:** Nebius x NVIDIA Global AI Hackathon · **Track:** Best Apps and Agents · **Bonus target:** Best Use of Tavily
 - **Live demo (console and API):** https://vf-app-350828852747.asia-southeast1.run.app — health at `/health`, API under `/api/v1`
-- **Demo video (under 3 minutes):** YOUTUBE_URL_PENDING
+- **Demo video (2:45, public on YouTube):** https://youtu.be/5jszEE6KAvc
 - **Licence:** MIT · **Full reference:** [REFERENCE.md](REFERENCE.md) · **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## What it does
@@ -17,6 +17,24 @@ Floorline screens shipments for a freight forwarder's compliance desk. Fraud in 
 4. **Argues disputes.** When the floor exceeds the model's score by 15 points or more, a Senior Auditor debate runs. A confident DISAGREE can send the case to a deep investigation it would otherwise skip, upward only. It can never clear a case.
 5. **Releases inside limits a named person published.** Clear cases are released under a delegation boundary; the rest go to a reviewer with the findings, the sources and a due-diligence dossier (PDF). The audit trail names the signed-in account.
 6. **Closes missing evidence.** The reviewer requests documents through per-document links, the shipper uploads without an account, Floorline extracts and re-evaluates, a person approves, and the decision is published once per idempotency key.
+
+### Demonstration: the same booking, different evidence
+
+The [165-second presentation](https://youtu.be/5jszEE6KAvc) follows two synthetic
+plywood shipments with the same declaration. Their supporting purchase invoices
+lead to different evidence findings and human decisions:
+
+| Case | Invoice evidence | Effective risk / rules floor | Recorded decision |
+|---|---|---|---|
+| A | Vietnamese inputs, consistent with the declared origin | 68 / 45 | Released by a reviewer |
+| B | Chinese veneer, contradicting the declared origin | 80 / 80 | Blocked by a reviewer |
+
+The workflow connects requests for missing documents, receipt, re-evaluation,
+human approval and recorded execution. The live-service screen recordings show
+previously reviewed cases and their existing decisions; no new approval or block
+action is performed during recording. The comparison is edited and time-condensed,
+with reading pauses. The documents are synthetic, and a status of `provided`
+does not guarantee document authenticity.
 
 ### The design rule
 
@@ -143,3 +161,4 @@ Without the emulators the emulator tests skip. [REFERENCE.md](REFERENCE.md#repro
 [REFERENCE.md](REFERENCE.md) (API, environment variables, measured results, findings, roadmap, repository layout) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/RECEIVER_CONTRACT.md](docs/RECEIVER_CONTRACT.md) · [docs/PROJECT_STORY.md](docs/PROJECT_STORY.md) · [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) · [SUBMISSION.md](SUBMISSION.md)
 
 Released under the MIT licence; see [LICENSE](LICENSE).
+
