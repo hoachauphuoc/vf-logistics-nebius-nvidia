@@ -121,9 +121,9 @@ making the model's opinion unable to help in one direction.
 
 `verifier.py` computes a **deterministic risk floor** from arithmetic and list lookups — no
 model calls, no network. An agent may **raise** risk above that floor. It may never lower
-it. The asymmetry is the point: escalating on model judgement is acceptable, exonerating on
-model judgement is not, because a wrong exoneration releases contraband while a wrong
-escalation costs a human ten minutes.
+it. The asymmetry is the point: an agent may escalate risk but may not exonerate a shipment
+the rules held. An incorrect release can move prohibited goods; an unnecessary escalation
+adds review work and delay. No customer review-time saving has been measured.
 
 Two consequences, and both were measured rather than assumed:
 
@@ -173,10 +173,11 @@ even the authority's own targeting holds about nineteen declarations for every o
 is wrong. A forwarder's compliance desk lives inside the same ratio. Whatever it holds is
 mostly honest, and every hold is a person's time and a customer's delay.
 
-The signals are weak alone and damning together. A freight charge 60% under the lane's
-history looks like a promotion; a shipper with two lifetime shipments looks like a new
-customer. A rules engine reads them one at a time, and an analyst has no time to read them
-together for every booking.
+The signals need context. A freight charge 60% under the lane's history can look like a
+promotion; a shipper with two lifetime shipments can look like a new customer. Rules can
+combine these conditions, but fixed thresholds alone do not explain a case's documents
+and context. The agents help assemble that evidence for the analyst rather than treating
+a combination of weak signals as proof of fraud.
 
 So the job is two jobs: hold the right shipments, and **make every hold quick and
 defensible to decide**. The second is where the time goes, and it is what a
@@ -638,12 +639,14 @@ Porting from Gemini's native PDF support meant adding a rasterisation step
 (`pypdfium2`, first page to PNG) before the vision model call — a detail that
 would have silently produced garbage transcriptions if missed.
 
-**Structured output travels across providers.** Gemini's
-`response_mime_type="application/json"` and the OpenAI-compatible
-`response_format={"type":"json_object"}` do the same job, so none of the
-agents' prompts or output schemas needed to change — only the transport
-underneath them did. That is what made a same-week model-layer swap possible
-without rewriting the governance, verifier, or orchestrator layers at all.
+**Keep the output contract, adapt the request mode per model.** The structured
+shipment and finding schemas survived the move from Gemini to Token Factory.
+Nano uses `response_format={"type":"json_object"}`. Super's investigation
+requests omit that option because the combination with reasoning produced
+unusable fragments; the prompt still asks for JSON and the response is checked
+against a schema. The debate uses native function calling. Sharing an
+OpenAI-compatible transport does not mean every agent should use the same
+output-mode setting.
 
 **A failed search must not read as a clean one.** Tavily is new to this system, and our
 first integration returned an empty list on any failure, so the compliance model was
@@ -704,6 +707,13 @@ investigation agent.
 
 ## Video script
 
+**Published presentation:** https://youtu.be/5jszEE6KAvc (public, 165 seconds).
+It includes live-service recordings of previously reviewed cases A and B and
+their existing release/block records. No new approval or block is performed
+during recording. The comparison is edited and time-condensed, with reading
+pauses. The notes below describe the shooting plan, not a claim that the
+published recording performs a fresh approval.
+
 The shooting script is [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): eight scenes,
 each with the click path and the narration line it is timed against. The narration
 itself lives in [`scripts/build_narration.py`](scripts/build_narration.py), which
@@ -747,8 +757,8 @@ tailwindcss, docker
 - https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia
 
 **About the project** (the story field) → paste `docs/PROJECT_STORY.md`, which follows
-Devpost's headings; the *Text description* above is the longer version. The story does
-not name the predecessor repository or the commit ranges, so the next answer carries them.
+Devpost's headings and includes the A/B demonstration, its recording limitations and
+the predecessor-project disclosure; the *Text description* above is the longer reference.
 
 **What was significantly updated** (wherever the form asks for it, or appended to the
 story) → paste *What was significantly updated during the Submission Period* above, with
@@ -757,7 +767,7 @@ its table.
 **Feedback on Nebius Token Factory, AI Cloud and NVIDIA tools** (wherever the form asks
 for it) → paste the *Feedback* section below.
 
-**Video demo link** → the public YouTube URL, once recorded (see *Submission checklist*).
+**Video demo link** → https://youtu.be/5jszEE6KAvc (public, 165 seconds).
 
 **Thumbnail and image gallery** → Devpost takes 15 images, so upload the set in `docs/screenshots/devpost/` in the numbered order (`01` is the 3:2 thumbnail; the folder README has a caption for each). The full set of seventeen screenshots is in `docs/screenshots/`, with a
 caption for each in its README, taken from revision `vf-app-00045-fxk` (the pipeline board, a
@@ -778,7 +788,7 @@ carry them on 15 Oct 2026.
 
 | Field | Answer |
 |---|---|
-| **Submitter Type** | Individual |
+| **Submitter Type** | Team (Hoa Chau Phuoc and Shinji Okada; representative: Hoa Chau Phuoc) |
 | **Country of residence** | Vietnam |
 | **Category** | Best Apps and Agents |
 | **Public code repo URL** | https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
@@ -811,11 +821,39 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 
 ---
 
+### Final Additional info clarifications
+
+**Did you fine-tune, prompt-engineer, or use Nemotron out of the box?**
+
+Prompt engineering, no fine-tuning. We retain fixed output schemas and validate
+model responses. Nano uses `response_format={"type":"json_object"}`. Super's
+investigation requests omit `response_format` because reasoning with JSON mode
+produced unusable fragments; its prompt asks for JSON and the response is checked
+against a schema. The Senior Auditor debate runs on Super and uses native function
+calling to request a Nano re-evaluation, search Tavily or render a verdict. Nothing
+in that verdict can lower the deterministic risk floor or clear a disputed case.
+
+For HS classification, a 1,376-token reference extract of the published headings
+improved Nano's recall from 40.0% to 92.9% on the 30-case set, and to 91.7% with no
+false alarms on the 24-case holdout. Two few-shot examples had reduced recall to
+26.7%, so the useful change was the reference, not fine-tuning or a larger model.
+
+**Which AI tools have you leveraged while working on this project?**
+
+Snowflake Cortex Code (Claude models) and Claude Code (Claude Sonnet, Opus and Haiku)
+were used as coding and documentation assistants, with human review before commit.
+OpenAI ChatGPT and Codex supported independent operational and governance review,
+targeted code fixes, and the preparation and editing of presentation materials and
+the demo video. The English narration is synthetic, based on a team member's voice
+with permission. Inside the product: NVIDIA Nemotron 3 Nano and Super (Ultra was
+evaluated and not adopted) and MiniCPM-V-4.5 on Nebius Token Factory, Tavily web search,
+and Google Cloud Model Armor as the input guardrail.
+
 ## Submission checklist
 
 | Item | Status |
 |---|---|
-| Demo video, up to 3 minutes | **OUTSTANDING** — mandatory. Record, upload to YouTube as public, paste the URL here and on Devpost. The shooting script is `docs/DEMO_SCRIPT.md` (eight scenes, 165s) and the narration track is generated by `scripts/build_narration.py`; the narration text changed on 21 Oct (the eight-scene plan), so the audio has to be regenerated from its `SCENES` before recording. |
+| Demo video, up to 3 minutes | **Published:** https://youtu.be/5jszEE6KAvc (165 seconds). Registered on Devpost and linked in the README. Synthetic demo documents; edited, time-condensed walkthrough; live-service footage shows previously reviewed cases and existing decisions, with reading pauses, not new approvals. |
 | Public code repository | done -- https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia |
 | Secrets out of the repository | done -- scanned the tracked files, the untracked working tree and the full git history for Tavily, Google, Nebius and private-key patterns: no hit. `.env` is git-ignored and was never committed; `.env.example` holds placeholders only; on Cloud Run the keys come from Secret Manager |
 | Devpost text description | this file |
@@ -840,7 +878,12 @@ and `external_search_results`), or in `GET /api/v1/billing/usage` -> `tavily_sea
 | Role-based access | anonymous viewer, reviewer, operator, governance admin; a session narrows the key and never widens it |
 | Measured evaluation | detection benchmark on a held-out split, HS classifier on a holdout set, public enforcement cases and a rules operating curve, all with 95% intervals, served at `/evaluation` by a build that includes `896bbae`; and two model comparisons (Nano against Super on fraud where the rules score 0, Ultra against Super on 46 labelled debates) with the same intervals, in `data/model_comparison/` |
 
-The repository is public, so no judging-instruction share is required. Outstanding: the video; the test counts, which are to be refreshed from the next CI run on `master`; and the image gallery, which is to be captured from the live service.
+The repository is public. The public video and 15 gallery images were registered on
+Devpost as checked on 24 Oct 2026. The test figures above remain attributed to the
+measured code commit `76d015e`; documentation edits do not constitute a new test run.
+Password-only judging access is separate from repository visibility: confirm that
+the private attachment contains working credentials and testing instructions,
+without publishing passwords in this file or in the public story.
 
 
 ---
@@ -1041,3 +1084,4 @@ judging closes it can be deleted:
 ```bash
 gcloud run services delete vf-app --region asia-southeast1
 ```
+
