@@ -1,10 +1,23 @@
+## Summary
+
+Floorline helps a freight forwarder's compliance desk move a held shipment from
+missing information to a documented decision. NVIDIA Nemotron agents on Nebius
+Token Factory analyse the evidence, deterministic rules set a risk floor that AI
+cannot lower, and a person decides every disputed case.
+
+The [165-second demo](https://youtu.be/5jszEE6KAvc) follows two synthetic shipments
+with the same declaration. Their purchase invoices lead to different evidence
+findings: a reviewer releases case A and blocks case B. The work is the complete
+loop: request missing documents, receive them, re-evaluate, approve and execute
+with a record of who acted.
+
 ## Inspiration
 
 A freight forwarder's compliance desk is a queue of PDFs. Someone checks the declared value against the cargo and the consignee against sanctions lists, and decides whether the container moves. When the queue is long the checking gets thin, and the cases that need the most attention are the ones designed to look boring.
 
 A model that can release a container can be talked into releasing one. So the question is what the system may do on its own, who decided that, and what happens when the document argues with the model.
 
-The answer is one line of asymmetry. `verifier.py` computes a deterministic risk **floor** from arithmetic and list lookups, with no model and no network. An agent may raise risk above the floor and never lower it: `effective = max(model, floor)`. A wrong exoneration releases contraband; a wrong escalation costs a person ten minutes. **Floorline** is the line the agents may climb above and never cross below.
+The answer is one line of asymmetry. `verifier.py` computes a deterministic risk **floor** from arithmetic and list lookups, with no model and no network. An agent may raise risk above the floor and never lower it: `effective = max(model, floor)`. An incorrect release can move prohibited goods; an unnecessary escalation adds review work and delay. **Floorline** is the line the agents may climb above and never cross below.
 
 ## What it does
 
@@ -15,6 +28,24 @@ Floorline screens shipments for a freight forwarder's compliance desk.
 - When the floor exceeds the model's score by 15 points or more, a Senior Auditor debate runs. It can send a case to a deeper investigation, upward only; it can never clear one.
 - Clear cases are released inside a delegation boundary that a named person published. The rest go to a reviewer with the findings, the sources and a due-diligence dossier.
 - Missing evidence is requested per document, received through a link without an account, re-evaluated, approved by a person and executed once per idempotency key. In the demo, two shipments with identical bookings end in different decisions only because their purchase invoices differ: one is released by a person, the other is stopped.
+
+## What the demo shows
+
+Both cases declare plywood moving from Vietnam to the United States, HS 4412.33,
+22,000 kg and USD 28,000. The purchase invoice is the distinguishing evidence.
+
+| | Case A | Case B |
+|---|---|---|
+| Invoice | Vietnamese inputs | Chinese veneer |
+| Evidence finding | Consistent with the declared origin | Contradicts the declared origin |
+| Effective risk / rules floor | 68 / 45 | 80 / 80 |
+| Recorded human decision | Released by a reviewer | Blocked by a reviewer |
+
+These are synthetic demo documents. The presentation is an edited, time-condensed
+walkthrough, and the live-service recordings show previously reviewed cases with
+their existing decisions. No new approval or block action is performed during
+recording. The side-by-side comparison includes reading pauses. An evidence status
+of `provided` does not guarantee document authenticity.
 
 ## How we built it
 
@@ -67,4 +98,5 @@ Intake tied to a booking reference issued against a customer account, so identit
 
 ## Try it
 
-Live demo: https://vf-app-350828852747.asia-southeast1.run.app (sign in with **Continue as guest judge**; the testing instructions have the password accounts). Code and setup: https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia
+Live demo: https://vf-app-350828852747.asia-southeast1.run.app (sign in with **Continue as guest judge** for password-free exploration; release and approval require a password account). Demo video: https://youtu.be/5jszEE6KAvc. Code and setup: https://github.com/hoachauphuoc/vf-logistics-nebius-nvidia
+
